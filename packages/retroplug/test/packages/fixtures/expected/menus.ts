@@ -100,7 +100,8 @@ function checkRow(placement: string, pkg: string, row: RoleRow): void {
 }
 
 /** One contributed view: its id unique across the product, its placement one the shell has, its body kind
- *  one the shell renders, and no `visible` on a window view (the type refuses that; this backs the type). */
+ *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and
+ *  no `visible` on a window view (the type refuses that; this backs the type). */
 function checkView(pkg: string, view: ViewDef): void {
   const owner = viewOwners.get(view.id);
   if (owner !== undefined) {
@@ -117,6 +118,16 @@ function checkView(pkg: string, view: ViewDef): void {
   if (!bodyKinds.has(kind)) {
     throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +
       `which is no body kind (the kinds are pixels, readout, component)`);
+  }
+  const body = view.body as { readonly open?: unknown; readonly component?: unknown };
+  if (kind === "component") {
+    if (typeof body.component !== "function") {
+      throw new Error(`the package ${pkg} declares the view ${view.id} with a component body and no ` +
+        "component (reactView builds the one a component body carries)");
+    }
+  } else if (typeof body.open !== "function") {
+    throw new Error(`the package ${pkg} declares the view ${view.id} with a ${kind} body and no open ` +
+      `(a ${kind} body's open is what the shell calls)`);
   }
   if (view.placement !== "tile" && (view as { readonly visible?: unknown }).visible !== undefined) {
     throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +

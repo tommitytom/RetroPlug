@@ -306,8 +306,9 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    `extends`, and one with `retroplug.host` declares every host module it imports (one of the shell's five:
    `retroplug-cli` for the `cli` surface, or a React module for `ui`). The
    generator refuses a missing module, a duplicate tool name or example name, an example outside `examples/`, a host
-   declaration the shell's list lacks, a missing `extends` on a package that lists examples or declares a UI host
-   module, and a React import or `.tsx` outside the package's `ts/ui/`.
+   declaration the shell's list lacks, and a missing `extends` on a package that lists examples or declares a UI host
+   module. Rule 3 (the boundary check) is what refuses React outside a package's `ts/ui/`: a `.tsx` there, a React host
+   module imported from another tree, and `@retroplug/ui-react` from a file that is not the package's UI.
 6. A protocol node's span label is the next free one (24 today: 16 up, with no gaps), which the manifest's `label` and
    the generator's check demand.
 7. A new contribution KIND is not data. It means editing `renderPackages` in
@@ -359,13 +360,17 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
     only what the shell's host-modules.json lists), and its `tsconfig.json` extends the generated
     `../retroplug/tsconfig.host-modules.json` so the typecheck resolves them; a package whose views are plain TS needs
     neither the dependency nor the host declarations. React is admitted only under a package's `ts/ui/` tree, so a React
-    view's test cannot live in `ts/test/`: the pure controller (open, reopen, close) is tested there over fake views and
-    a fake host ([view-session.test.ts](../packages/retroplug/test/ui/view-session.test.ts)), and what the component
-    draws is proved by a `test:ui` case in the shell, where the display is - which needs a product to list the package,
-    since the UI test binary embeds the production bundle. A plain-TypeScript view needs none of that: its own tests
+    view's test cannot live in `ts/test/`: the pure controller (open, reopen, close) is tested in the SHELL's suite, over
+    fake views and a fake host ([view-session.test.ts](../packages/retroplug/test/ui/view-session.test.ts)), and what the
+    component draws is proved by a `test:ui` case in the shell, where the display is - which needs a product to list the
+    package, since the UI test binary embeds the production bundle. A plain-TypeScript view needs none of that: its own tests
     live in the package's `ts/test/` over a fake host, as
     [ui-views.test.ts](../packages/lsdj/ts/test/ui-views.test.ts) does. The generated registry refuses a duplicate view
-    id (naming both packages), a placement or body kind the shell has not, and a `visible` on a window view.
+    id (naming both packages), a placement or body kind the shell has not, a session body with no `open` or a component
+    body with no `component`, and a `visible` on a window view. The `lvgljs-ui` widgets a component draws through are the
+    SHELL's type slice ([lvgljs-ui.d.ts](../packages/retroplug/ui/types/lvgljs-ui.d.ts)), since the package ships
+    TypeScript source and the slice is what `tsc` reads: a component pack that needs a widget the slice lacks extends
+    that shell file, which is the one thing about a component view a package cannot do alone.
 12. An **action** is a key binding the package owns (`defineUi({ actions })`): `{ id, label, keys?, pad?, run }`. Its id
     is prefixed by its own package's manifest name (`lsdj.debug-overlay`), because a stored binding profile keeps
     ids and a user's profile must name the owner; `label` is the bindings menus' row text, `keys`/`pad` are the

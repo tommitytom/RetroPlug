@@ -558,10 +558,11 @@ short-circuits on the project flag precisely because it runs on every menu rebui
   `Canvas` via `setBuffer` ([EmulatorTile.tsx:50](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx#L50)).
   Click → `setFocus`; an unfocused tile gets a translucent dim overlay, a focused one an accent
   border (both suppressed when it is the only tile). Between the dim and the border, `TileViews`
-  ([TileViews.tsx](../packages/retroplug/ui/views/TileViews.tsx)) mounts one `StableSlot` per registered
-  tile view whose `when` accepts the system: the two debug overlays are their carts' packages now
-  (`lsdj-overlay`, `risa-overlay`), and the slot's fixed place is what keeps a strip that appears
-  late from landing over the border and the render badge.
+  ([TileViews.tsx](../packages/retroplug/ui/views/TileViews.tsx)) mounts one `StableSlot` per REGISTERED tile view,
+  always: its `when` and its `visible` flag are checked inside the slot, so a view that starts drawing late swaps the
+  slot's single child rather than appending a widget. The two debug overlays are their carts' packages now
+  (`lsdj-overlay`, `risa-overlay`), and the slot's fixed place is what keeps a strip that appears late from landing over
+  the border and the render badge.
 - [`layout.ts`](../packages/retroplug/ui/screens/grid/layout.ts) is pure grid math
   (`GB_NATIVE_W/H`, `shapeFor`, `gridContentSize`, `getTileBounds`).
 

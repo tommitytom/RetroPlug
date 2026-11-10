@@ -14,8 +14,9 @@ export interface ViewSessionHandle {
   read<R>(reader: (session: OpenedSession) => R): R | null;
 }
 
-/** `shown` is the renderer's own reading of the view's visibility (`viewShown`, subscribed by the caller): a window
- *  view passes true, and each tile slot subscribes for itself, so a hidden view of any body kind does no work. */
+/** `shown` is the renderer's own reading of the view's visibility: a window view passes true (it shows whenever it is
+ *  open), and a tile slot passes what it subscribed to, so the controller closes a session the frame after a hide even
+ *  if the slot's own unmount comes later. */
 export function useViewSession(
   view: ViewDef,
   host: UiHost,

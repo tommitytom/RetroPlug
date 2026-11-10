@@ -251,7 +251,9 @@ export interface ProcessHost {
   exit(code: number): void;
 }
 
-/** A full-window view the shell owns, by the id a cart names it with: the LSDj HD player today. */
+/** The window views a package registers, by the id it names one with: what a menu row or an action opens. The id names a
+ *  registered WINDOW view (an unknown id, or a tile view's id, is reported and opens nothing), and the shell refuses one
+ *  whose `when` rejects the system, or a system that is gone, the same way (design 3.3). */
 export interface ViewsHost {
   open(id: string, systemId: number): void;
 }

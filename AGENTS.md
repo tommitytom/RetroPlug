@@ -209,7 +209,7 @@ The rules below are the parts that don't fit those.
   services, the views the shell renders and the app actions the key maps dispatch, imported only by the UI),
   `retroplug.cli` one default-exporting `defineCliTools` (the package's subcommands), and
   `retroplug.examples` its example sessions under `examples/`; `retroplug.host` names each host module the package
-  imports by bare specifier (`retroplug-cli` today), from the shell-owned list in
+  imports by bare specifier (the CLI SDK, or React's modules for a UI one), from the shell-owned list in
   `packages/retroplug/host-modules.json`. A tracker integration carries the cart hooks the
   shell's stores and renderer reach through it (`render`, `playback`, `sramSignature`, `songImport`), so a cart's code
   is never imported by the shell: `SystemsStore.loadEmbedded(id)` takes an embedded ROM's platform from the `embeds`

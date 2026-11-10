@@ -17,6 +17,7 @@ export function PixelView({
   width,
   height,
   placement,
+  shown,
 }: {
   view: ViewDef;
   host: UiHost;
@@ -26,9 +27,11 @@ export function PixelView({
   /** Where the view sits: only a window view shows the body's `unsupported` text, since a tile view whose open was
    *  refused draws nothing (the contract says so, and the overlays' own null render was that). */
   placement: "window" | "tile";
+  /** The view's own visibility, as the slot above read it (a window view is shown whenever it is open). */
+  shown: boolean;
 }) {
   const canvasRef = useRef<CanvasHandle | null>(null);
-  const { session, read } = useViewSession(view, host, system, true);
+  const { session, read } = useViewSession(view, host, system, shown);
 
   useNativeEvent("frame", () => {
     // Do not ask the session for a frame until there is a canvas to put it in: the session's `frame()` is a

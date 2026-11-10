@@ -341,8 +341,8 @@ function contributions(pkg) {
       out.examples.push({ name: example.name, entry: file });
     }
   }
-  // A host module the package's code imports by bare specifier (`retroplug-cli` today, React's modules in F4c): the
-  // shell's host-modules.json is the list, and the generated typecheck paths come from it.
+  // A host module the package's code imports by bare specifier (the CLI SDK for a `cli` file, React's modules for a
+  // `ui` one): the shell's host-modules.json is the list, and the generated typecheck paths come from it.
   if (retroplug.host !== undefined) {
     if (!Array.isArray(retroplug.host)) throw new Error(`${pkg.name}: retroplug.host is not a list`);
     for (const module of retroplug.host) {
@@ -877,7 +877,8 @@ function renderMenus({ packages, outDir }) {
   lines.push("}");
   lines.push("");
   lines.push("/** One contributed view: its id unique across the product, its placement one the shell has, its body kind");
-  lines.push(" *  one the shell renders, and no `visible` on a window view (the type refuses that; this backs the type). */");
+  lines.push(" *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and");
+  lines.push(" *  no `visible` on a window view (the type refuses that; this backs the type). */");
   lines.push("function checkView(pkg: string, view: ViewDef): void {");
   lines.push("  const owner = viewOwners.get(view.id);");
   lines.push("  if (owner !== undefined) {");
@@ -894,6 +895,16 @@ function renderMenus({ packages, outDir }) {
   lines.push("  if (!bodyKinds.has(kind)) {");
   lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +");
   lines.push('      `which is no body kind (the kinds are pixels, readout, component)`);');
+  lines.push("  }");
+  lines.push("  const body = view.body as { readonly open?: unknown; readonly component?: unknown };");
+  lines.push("  if (kind === \"component\") {");
+  lines.push("    if (typeof body.component !== \"function\") {");
+  lines.push("      throw new Error(`the package ${pkg} declares the view ${view.id} with a component body and no ` +");
+  lines.push('        "component (reactView builds the one a component body carries)");');
+  lines.push("    }");
+  lines.push("  } else if (typeof body.open !== \"function\") {");
+  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with a ${kind} body and no open ` +");
+  lines.push('      `(a ${kind} body\'s open is what the shell calls)`);');
   lines.push("  }");
   lines.push("  if (view.placement !== \"tile\" && (view as { readonly visible?: unknown }).visible !== undefined) {");
   lines.push("    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +");

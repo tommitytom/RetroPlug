@@ -1,4 +1,4 @@
-// Frame-divided polling, which the four watcher hooks in ui/app/ were each doing by hand.
+// Frame-divided polling, the one clock the shell's watchers and a package's debug readout have.
 //
 // Several pieces of state live on a background thread natively and push nothing into JS - an N8 SD job,
 // a Launchpad port scan, the song inside a running cart, an unsaved battery. The only way the UI learns

@@ -49,7 +49,9 @@
 // `ts/ui/` for `surface: "ui"`, its `ts/cli/` for `"cli"`), since a package's halves are separate programs. A `.tsx` is
 // also a use of `react/jsx-runtime` with no specifier naming it, because automatic JSX imports it implicitly, so the
 // declaration is the only place it shows; and a `.tsx` outside the package's `ts/ui/` tree is refused, that tree being
-// the one place a React host module is admissible from.
+// the one place a React host module is admissible from. The React kit (`@retroplug/ui-react`) is a workspace package
+// rather than a host module, so declaring it admits the import anywhere; rule 3 refuses it from a file outside that same
+// tree, where a view reaches the contract through `@retroplug/ui` alone.
 //
 // Rule 1's second half and rule 8's first are one leak: a test file may use its package's devDependencies, so source
 // that reaches a test file - by a relative import, or because the test file is published - hands those devDependencies
@@ -102,6 +104,9 @@ const PACKAGES = "packages";
 // yet, and the engine's tree (packages/native), which holds the node types no package owns. Both may import anything;
 // neither may be imported.
 const SHELLS = ["retroplug", "native"];
+/** The React kit, by package name: a workspace package, so rule 2 admits it wherever a manifest declares it, and one that
+ *  belongs to the UI surface alone, like the React host modules whose surface rule is in the import walk. */
+const UI_KIT = "@retroplug/ui-react";
 
 // TypeScript's scanner, resolved from the workspace root's `typescript-5` alias. The packages typecheck with TypeScript
 // 7, which exports no `preProcessFile`: the scanner this check reads imports with is 5.7's, kept beside the typechecker
@@ -316,7 +321,7 @@ function surfaceOf(pkg, file) {
 }
 
 /** The surfaces a host-module list entry provides: its `surface`, as one name or a list of the ones that share the
- *  module (F4c's React modules are the UI program's alone). An entry with none matches no file. */
+ *  module (the React modules are the UI program's alone, the CLI SDK the CLI's). An entry with none matches no file. */
 function surfacesOf(entry) {
   if (typeof entry.surface === "string") return [entry.surface];
   return Array.isArray(entry.surface) ? entry.surface.filter((s) => typeof s === "string") : [];
@@ -734,6 +739,16 @@ export function checkBoundaries({ root = REPO } = {}) {
           specifier,
           `${shown(root, file)}: imports "${specifier}", which is ${describeOwner(owner)}: no package may depend on ` +
             "the shell",
+        );
+        continue;
+      }
+      if (specifier === UI_KIT && surfaceOf(pkg, file) !== "ui") {
+        refuse(
+          "ui-kit",
+          shown(root, file),
+          specifier,
+          `${shown(root, file)}: imports "${specifier}", the React kit, which only the package's ts/ui/ tree may use: ` +
+            "React belongs to the UI surface, and a file outside it reaches a view through the @retroplug/ui contract",
         );
         continue;
       }

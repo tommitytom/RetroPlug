@@ -20,6 +20,7 @@
 //   ts/cli/, and React from a package's CLI tree);
 // - a .tsx outside the package's ts/ui/ tree, and a package whose .tsx has no react/jsx-runtime declaration (automatic
 //   JSX imports it with no specifier, so the .tsx is its only use);
+// - the React kit, a workspace package the manifest can declare, imported from a file that is not the package's UI;
 // - a declared package that does not exist;
 // - a `workspace:` or `link:` alias of the shell, which the key alone would present as a third-party name;
 // - an `npm:` alias naming a package the workspace does not have;
@@ -510,6 +511,19 @@ test("a React import from a package's CLI tree is refused as a surface error", a
   expect(report.refused).toEqual([
     'packages/alpha/ts/cli/tool.ts: imports "react", a ui host module, from a file that surface does not own: ' +
       "a ui host module is reached only from the package's ts/ui/ trees",
+  ]);
+});
+
+test("the React kit imported from a file outside the package's ts/ui/ is refused", async () => {
+  // @retroplug/ui-react is a workspace package, so rule 2 admits it wherever the manifest declares it; React belongs to
+  // the package's UI surface, whose files are the only ones rule 3 admits a kit import from.
+  const report = await drive("react-kit-outside-ui");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/alpha/ts/app.ts: imports "@retroplug/ui-react", the React kit, which only the package\'s ts/ui/ tree ' +
+      "may use: React belongs to the UI surface, and a file outside it reaches a view through the @retroplug/ui " +
+      "contract",
   ]);
 });
 

@@ -13,9 +13,10 @@
 //   with no nodes, a sync override whose key, node type or unused off-mode is wrong, two contributions whose generated
 //   identifiers mangle to one name, a label below 16, a gap, a role naming an undeclared or an unwired type, a named
 //   module that does not exist, a contribution its exports do not publish, a manifest whose name is not its
-//   directory's, a contribution outside ts/ and a contributing package the shell does not declare, an action id
-//   twice (one package or two), an action id its package does not prefix, and an action default on a key or pad
-//   name the shell does not resolve, a single uppercase letter the hosts never send, or one the shell already binds.
+//   directory's, a contribution outside ts/ and a contributing package the shell does not declare, a view body with no
+//   `open` (a session's) or no `component` (a component's), an action id twice (one package or two), an action id its
+//   package does not prefix, and an action default on a key or pad name the shell does not resolve, a single uppercase
+//   letter the hosts never send, or one the shell already binds.
 //   A dependency that contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering
 //   rather than refused; a package contributing an app and no nodes names no nodes module and still registers its app;
 //   a tsconfig that must extend the generated host-module paths because it lists an example session or declares a host
@@ -240,6 +241,26 @@ test("the generated menus module refuses a view with no body, naming the package
   expect(error).toBe(
     "the package alpha declares the view alpha-view with the body kind undefined, which is no body kind (the kinds " +
       "are pixels, readout, component)",
+  );
+});
+
+test("the generated menus module refuses a session body with no open", async () => {
+  // A pixels or readout body is opened by the shell, so one with no `open` could never draw; the check names the body
+  // kind rather than letting the renderer's first call fail.
+  const { error } = await drive("views-no-open");
+  console.log(`# view body with no open: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the view alpha-view with a readout body and no open (a readout body's open is what the " +
+      "shell calls)",
+  );
+});
+
+test("the generated menus module refuses a component body with no component", async () => {
+  const { error } = await drive("views-no-component");
+  console.log(`# component body with no component: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the view alpha-view with a component body and no component (reactView builds the one a " +
+      "component body carries)",
   );
 });
 

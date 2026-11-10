@@ -42,8 +42,8 @@ export function TileViews({
   );
 }
 
-/** One tile view's body: the view's own visibility (subscribed here, for every body kind, so a hidden component view
- *  mounts nothing either) and its `when`, then the renderer its kind names. */
+/** One tile view's body: the view's own visibility (subscribed here, for every body kind) and its `when`, then the
+ *  renderer its kind names. */
 function TileViewBody({
   view,
   host,
@@ -61,12 +61,17 @@ function TileViewBody({
     useCallback((onChange: () => void) => subscribeViewShown(view, onChange), [view]),
     useCallback(() => viewShown(view), [view]),
   );
-  if (!shown || !viewAppliesTo(view, system)) return null;
+  if (!viewAppliesTo(view, system)) return null;
+  // A component view's mount IS its work, so a hidden one mounts nothing. The two session renderers stay mounted and are
+  // handed the reading: their controller closes the session in the render that sees the hide, and they draw nothing
+  // while it is false, so a hidden view still opens no session and samples no RAM.
   if (view.body.kind === "component") {
-    return <ComponentView view={view} host={host} systemId={system.id} width={width} height={height} />;
+    return shown ? <ComponentView view={view} host={host} systemId={system.id} width={width} height={height} /> : null;
   }
   if (view.body.kind === "pixels") {
-    return <PixelView view={view} host={host} system={system} width={width} height={height} placement="tile" />;
+    return (
+      <PixelView view={view} host={host} system={system} width={width} height={height} placement="tile" shown={shown} />
+    );
   }
-  return <ReadoutView view={view} host={host} system={system} width={width} />;
+  return <ReadoutView view={view} host={host} system={system} width={width} shown={shown} />;
 }

@@ -4,8 +4,9 @@
 // version counter; a poll that needs to know a version reads the one it tracks itself.
 //
 // No React here on purpose: the module is reachable from the pure-TypeScript tests, whose tsconfig does not resolve
-// `react`. The React side is the shell's useRerender hook (`useRerenderOn(subscribeX, ...)`, what the app uses), or
-// `useSyncExternalStore(x.subscribe, ...)` as the LSDj debug readout does.
+// `react`. The React side is `useRerenderOn(subscribeX, ...)` from `@retroplug/ui-react`, plus
+// `useSyncExternalStore(x.subscribe, ...)` where a component reads a value rather than only repainting - the shell's
+// `TileViews` reads a tile view's `visible` flag that way.
 import type { Signal } from "../contribution";
 
 export interface Subscribable {

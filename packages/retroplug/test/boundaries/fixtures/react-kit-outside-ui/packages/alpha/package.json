@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/alpha",
+  "private": true,
+  "dependencies": {
+    "@retroplug/ui-react": "workspace:*"
+  }
+}

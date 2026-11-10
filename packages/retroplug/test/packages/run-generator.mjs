@@ -31,7 +31,8 @@
 //                   { error: <the generator's message, or null when it did not refuse> }
 //   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
 //   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service | views | views-duplicate-id |
-//   views-duplicate-across | views-bad-placement | views-bad-kind | views-no-body | views-window-visible
+//   views-duplicate-across | views-bad-placement | views-bad-kind | views-no-body | views-no-open | views-no-component |
+//   views-window-visible
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
 //   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
@@ -545,6 +546,44 @@ try {
       writeTree(
         "packages/alpha/ts/ui.ts",
         'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile" }] };\n',
+      );
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-no-open":
+      // A session body with nothing to open: the shell calls `body.open`, so this is a view that could never draw. The
+      // fixture is plain data (no typecheck), which is why the generated module's check is what catches it.
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
+          'body: { kind: "readout" } }] };\n',
+      );
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-no-component":
+      // A component body with no component: the shell mounts what `component` names, so an empty one draws nothing and
+      // reports nothing.
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
+          'body: { kind: "component" } }] };\n',
       );
       editManifest("alpha", (m) => {
         m.retroplug.ui = "ts/ui.ts";

@@ -1,11 +1,12 @@
 # Phase F4c: React in packages
 
 **Date:** 2026-11-10 · **Branch:** `feature/modularize`
-**Status:** designed 663632d16; prototyped (five stages, each Opus-reviewed and fixed); as built in section 12;
-plan next. Designed over `c8a35d34b` (the F4b tip). The user's decisions are the `### F4c` entries of
-`.superpowers/f-split/decisions.md` (taken 2026-11-10); approved by the user 2026-11-10. Sections 1 to 11 are corrected
-in place to what the prototype built, section 10 says what the prototype answered and what stayed open, and section 12
-records how.
+**Status:** built on `feature/modularize`: designed `663632d16`, planned `a35330a8a` and executed as the five task
+commits section 12 records (`7e4c4114b`, `666513625`, `a518a276a`, `fcb337418`, `484dba777`), which replay a five-stage
+prototype each stage of which was Opus-reviewed and fixed. Designed over `c8a35d34b` (the F4b tip). The user's
+decisions are the `### F4c` entries of `.superpowers/f-split/decisions.md` (taken 2026-11-10); approved by the user
+2026-11-10. Sections 1 to 11 are corrected in place to what the prototype built, section 10 says what the prototype
+answered and what stayed open, and section 12 records how.
 
 F4c is the last of the package split's fourth phase ([package-split.md](package-split.md)), after F4a
 ([modular-graph-phase-f4a-design.md](modular-graph-phase-f4a-design.md)) and F4b
@@ -299,8 +300,10 @@ tests exercise them through the generated fixture module). They refuse, each nam
 
 1. a view id declared twice (one package or two);
 2. a view with a `placement` that is neither `window` nor `tile`, a body `kind` that is none of the three (or no body at
-   all, which names the package rather than throwing), or a `visible` on a window view (the type refuses the last; the
-   data check backs the type, as `PLACEMENTS` does);
+   all, which names the package rather than throwing), a `pixels` or `readout` body with no `open` or a `component` body
+   with no `component` (the shell calls both, so an untyped pack's mistake would otherwise be a renderer's first failed
+   call), or a `visible` on a window view (the type refuses the last; the data check backs the type, as `PLACEMENTS`
+   does);
 3. an action id declared twice;
 4. an action id not prefixed by `<its own package name>.` (the manifest name, `lsdj`, as `UI_CONTRIBUTIONS`' `pkg`
    carries it), so a profile's stored id names its owner;
@@ -353,7 +356,7 @@ All of these are the shell's own files today, moved with their text unchanged bu
 
 | From (`packages/retroplug/ui/`) | To (`packages/ui-react/ts/ui/`) | Notes |
 | --- | --- | --- |
-| `lvgl/lv.ts` (139 lines) | `lv.ts` | the typed handles on `lvgljs-ui` (`ViewEx`, `TextEx`, `CanvasEx`, `CanvasHandle`, `LV_IMAGE_ALIGN_CONTAIN`) |
+| `lvgl/lv.ts` (80 lines) | `lv.ts` | the typed handles on `lvgljs-ui` (`ViewEx`, `TextEx`, `CanvasEx`, `CanvasHandle`, `LV_IMAGE_ALIGN_CONTAIN`) |
 | `lvgl/Box.tsx` (59) | `Box.tsx` | |
 | `lvgl/PixelCanvas.tsx` (11) | `PixelCanvas.tsx` | |
 | `lvgl/useNativeEvent.ts` (49) | `useNativeEvent.ts` | with its `NativeEvents` table, which mirrors the C++ emit sites by hand |
@@ -451,11 +454,11 @@ The shell holds one renderer per body kind, in `ui/views/`, each built from `@re
 - **`PixelView`**: `useNativeEvent("frame")` -> the canvas check -> `session.frame()` -> `PixelCanvas.setBuffer`,
   letterboxed by the canvas's CONTAIN alignment as today. The canvas is checked BEFORE the frame is read: the HD canvas's
   `frame()` is flush-and-diff, so a first (dirty) frame read while the ref was still null marked its tiles painted and
-  the screen stayed black for good (stage 2's guard; the unchanged `lsdj-hd` case caught it, and failed without it). It passes `pixels.buffer` when the array is the whole buffer and `pixels.slice().buffer`
-  when it is a view onto a larger one: the HD canvas's array is its own (no copy per frame, as now,
-  `LsdjHdScreen.tsx:42`), and an emulator frame is a subarray of the RPC wire buffer (`EmulatorTile.tsx:64-66` copies
-  for that reason). `EmulatorTile` itself stays: its frame comes from `backend.getFrame` with a `published` flag, which
-  is not a view.
+  the screen stayed black for good (stage 2's guard; the unchanged `lsdj-hd` case caught it, and failed without it).
+  It passes `pixels.buffer` when the array is the whole buffer and `pixels.slice().buffer` when it is a view onto a
+  larger one: the HD canvas's array is its own (no copy per frame, as now, `LsdjHdScreen.tsx:42`), and an emulator frame
+  is a subarray of the RPC wire buffer (`EmulatorTile.tsx:64-66` copies for that reason). `EmulatorTile` itself stays:
+  its frame comes from `backend.getFrame` with a `published` flag, which is not a view.
 - **`ReadoutView`**: `useFrameSampled(sample, signature)` -> `DebugReadout` with the tile's width and the view's id as
   its test id. The hook's memoised `sample` is the opened sampler's `sample`; its signature is the sampler's, or the
   lines and the flag.
@@ -692,8 +695,9 @@ window and tile test ids are the old ones.
 
 - **`tsconfig.base.json`** gains `"jsx": "react-jsx"`. It changes what `tsc` accepts and nothing a bundler emits:
   `tools/ts-options.js` names the compiler options each build uses (its header says why), and the UI build passes
-  `jsx: "automatic"` itself (`tools/build-ui.js:31`). The UI bundle is NOT byte-identical across the move and cannot be: esbuild heads each module with its path, so moving
-  a file moves bytes (1,997,971 -> 1,998,067 at stage 1). Stage 1 proves it by a normalised diff instead: with the
+  `jsx: "automatic"` itself (`tools/build-ui.js:31`). The UI bundle is NOT byte-identical across the move and cannot
+  be: esbuild heads each module with its path, so moving a file moves bytes (1,997,971 -> 1,998,067 at stage 1). Stage 1
+  proves it by a normalised diff instead: with the
   module-header comments dropped and the generated `import_*N` helper numbering canonicalised, the two bundles' line
   multisets are equal but for two blank lines and `tagTestId`'s body, which reads `globalThis.__rp_tagTestId` (`native`
   in `host/nativeHooks.ts` IS `globalThis`).
@@ -1019,7 +1023,11 @@ For `spec/07-remaining-work.md`'s F4c entry and the package split's closing note
   loads a registry; `ui-react` and every package's views are now plain `ts/ui/` modules the generated `menus.ts` alone
   pulls in), and **the shell's hard dependency on `launchpad`**, unchanged.
 - **A real `component` view.** The kind and its fixture ship; the first package that needs React for a view proves it on
-  a host, and its `test:ui` case lands with it.
+  a host, and its `test:ui` case lands with it. Its `lvgljs-ui` types are still the shell's 54-line slice
+  (`packages/retroplug/ui/types/lvgljs-ui.d.ts`), because the package ships TypeScript source rather than declarations
+  and the slice is what `tsc` reads instead; a component pack that needs a widget the slice lacks (a slider, a list)
+  extends that SHELL file, which no package can do. Moving what a pack needs into `@retroplug/ui-react`'s own
+  declarations (a types package for the host module, generated like the paths) is the fix when a pack needs it.
 - **A kit compile** (`host.kits` in the UI host) when a UI feature needs it, as F4b left it.
 - **Gamepad axis tokens as action bindings**, and a stick-driven action, if a package wants one (10.2).
 - **Windows, macOS, arm64 and CI** for F4c's scripts and packages, as F4a's and F4b's.
@@ -1035,8 +1043,9 @@ For `spec/07-remaining-work.md`'s F4c entry and the package split's closing note
   - gamepad axis tokens as action bindings (10.2), and the reopen key's width if the blink in E5 ever matters;
   - LSDj's overlay sampler has an unreachable `!state.supported` branch (the reader always answers supported); if
     the reader grows an unsupported decode the branch stops being dead;
-  - the `docs/*-plan.md` records and the dated audit docs still name the files this phase deleted; they are records of the trees
-    they describe and were not edited;
+  - the `docs/*-plan.md` records and the dated audit docs still name the files this phase deleted; they are records of
+    the trees they describe and are not rewritten, with one exception: `docs/ui-shared-utils-audit.md` had its four
+    links repointed, because the files it names MOVED and a doc link to a moved file fails `check:docs`;
   - `ReadoutSampler.signature` is optional and both overlays use the default (the lines and the flag); a later sampler whose
     state moves without its lines changing can supply its own.
 
@@ -1048,8 +1057,8 @@ back from stage 4 into stage 2, and the last pass amended stage 5), so the five 
 sha is older than the branch's. **The shas in this section are the PROTOTYPE's**: `d1352d6ef`, `eb20634ea`, `c956580c4`,
 `b841dc4e2` and stage 5, the commit that carries this section (so it cannot name its own sha: the tip of
 `proto/f4c-react`). The whole prototype is 176 files, +5,337 -973 over the design commit, leaving this document out,
-700 of the added lines the menu matrix's recorded JSON. Sections 1 to 11 above were corrected in place to what the build found; this section is the record
-of how, and the plan is written against it.
+700 of the added lines the menu matrix's recorded JSON. Sections 1 to 11 above were corrected in place to what the
+build found; this section is the record of how, and the plan is written against it.
 
 **The stages**, by commit subject and current sha (files changed, lines added and removed):
 
@@ -1068,8 +1077,9 @@ of how, and the plan is written against it.
 4. `b841dc4e2 feat(f4c): the LSDj HD player and the two debug overlays are the packages'` (51, +1611 -433): the moves
    (`hdView.ts`, `overlayView.ts`, `debugOverlay.ts` in lsdj and risa), the shell's view files, `lsdjDebug`, `uiViews`
    and `openLsdjHd` deleted, E1's re-record, the package `ui-views` cases and four fixture-gated `test:ui` cases.
-5. `feat(f4c): rule 9 and the literal scanner cover ui/, and the ratchet retires` (the tip; 38,
-   +449 -363 without this document): rule 9's third root and `UI_IMPORTS`, the scanner's third directory, the ratchet and its runner deleted, the fixtures, the docs.
+5. `feat(f4c): rule 9 and the literal scanner cover ui/, and the ratchet retires` (the tip; 38, +449 -363 without this
+   document): rule 9's third root and `UI_IMPORTS`, the scanner's third directory, the ratchet and its runner deleted,
+   the fixtures, the docs.
 
 **What each review found, and what the fix pass changed.**
 
@@ -1170,8 +1180,9 @@ of how, and the plan is written against it.
   skipping a missing directory, the RED an extracted pre-move tree.
 - **The docs pass touched more than the design's list** (stage 5): `AGENTS.md`, `spec/00`, `03`, `06`, `07`, `13`,
   `docs/lsdj.md`, `docs/package-split.md`, `packages/ui/package.json`'s description and the two carts', two stale code
-  comments, and the comments of the two byte-frozen `test-ui` headers (comments only). The F4b and F4c designs, the
-  `docs/*-plan.md` records and the dated audit docs were not edited.
+  comments, and the comments of the two byte-frozen `test-ui` headers (comments only). The F4b and F4c designs and the
+  `docs/*-plan.md` records were not edited, and of the dated audit docs only `docs/ui-shared-utils-audit.md`, whose four
+  links were repointed because the files they name moved (`check:docs` reads links by path).
 
 Existing tests whose shape changed, each judged by a stage review: the 15 `openLsdjHd: () => {}` stubs (gone with the
 member), `test/input/keymap.test.ts`, `gamepad.test.ts` and `test/menu/leaves.test.ts` (a value became a one-element
