@@ -226,6 +226,10 @@ export function App() {
 
   // Dispatch a resolved press's action ids: the shell's three (open/close the menu, or cycle the focused instance,
   // the cycles only in play), then each contributed action, which gets the focused system or null on the start screen.
+  // A contributed action does not fire while the menu is modal (a text prompt, or a capture row armed): the prompt
+  // takes the printable codes off the same key bus, so a letter a user types there must not also run a package's action
+  // (design section 7, E10). OpenMenu defers the same way for its own reason; the shell's other two keep today's
+  // behaviour.
   const runResolved = (ids: readonly string[]): void => {
     runActions(
       ids,
@@ -238,7 +242,7 @@ export function App() {
           if (playing) stores.project.systems.focusNext(-1);
         },
       },
-      contributedActions(),
+      isMenuModalActive() ? [] : contributedActions(),
       uiHost,
       empty ? null : stores.project.systems.focused(),
     );

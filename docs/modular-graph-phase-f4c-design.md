@@ -520,11 +520,11 @@ function runActions(ids, shell, contributed, host, systemId): void {            
 
 `App.tsx`'s key handler keeps its order (`:197-207`): Esc is the universal back, then `if (overlay) return`, then the key
 map; the backtick line (`:205`) and the `KEY_BACKTICK` constant (`:48`) go, the contributed action taking its place in
-the map. Contributed actions fire in the same states backtick does today: any state without a full-window overlay,
-whether the menu is open or not, and under an open window view (so backtick toggles an overlay while the HD view shows).
-OpenMenu's `isMenuModalActive` deferral (`toggleMenuCore`, `:180`) is its own and is not applied to contributed actions,
-which matches backtick's behaviour now (a capture row armed in the bindings menu, or a text prompt, still passes a
-backtick to the toggles) and is one of the open questions (10.6). A backtick the user bound to a shell action now
+the map. Contributed actions fire in every state without a full-window overlay, whether the menu is open or not, and
+under an open window view (so backtick toggles an overlay while the HD view shows), EXCEPT while the menu is modal: a
+text prompt or an armed capture row owns the key, so a press that lands there types or binds and runs no contributed
+action, which is the same deferral OpenMenu makes (`toggleMenuCore`, `:180`) and is E10. The shell's own three keep
+their own deferrals and their behaviour (the cycles still run). A backtick the user bound to a shell action now
 toggles the overlays AND runs that action (E9). The gamepad handler (`:210-214`) dispatches the same
 way. The three tests that read the old maps (`test/input/keymap.test.ts` 6 call sites, `test/input/gamepad.test.ts` 6,
 `test/menu/leaves.test.ts` 3) change from a value to a one-element list; nothing else reads them.
@@ -671,6 +671,13 @@ None changes audio, a saved file or a graph document. Each is listed with what w
   key bound to two actions like any other (5.5). Unreachable without that deliberate rebind and arguably a fix, a
   controller decision (stage 3 review) rather than a behaviour held. A key bound to two SHELL actions keeps today's
   single winner (5.5).
+- **E10. A contributed action does not fire while the menu is modal** (5.5, 10.6): a text prompt or an armed capture
+  row owns the key, so a backtick typed into a prompt no longer also toggles the debug overlays, and a key a package
+  bound can no longer fire while the user types it (the user's decision, the final review's Important 2). The shell's own
+  three are unchanged: `OpenMenu` keeps its own deferral and the cycles still run under a modal. What a user can see
+  move is small for the two shipped actions, because the profile-name prompt filters a backtick out and the free-text
+  prompts are the project's; the hazard it closes was general, since an action bound to a letter would otherwise fire on
+  every keystroke of a typed name.
 
 Not edges, and why: the HD player's reads, its 16-frame SRAM poll and its frame skip are the old session's, moved; the
 overlays' lines are the old lines; the Esc and game-input behaviour under the HD view is the old behaviour (5.1); the
@@ -939,7 +946,10 @@ by reading the code. Each item below ends with what the prototype answered, or s
 6. **Contributed actions are not deferred under a menu modal** (5.5): a bindings-capture row armed, or a text prompt,
    still passes a backtick to the toggles, exactly as it does now. Gating them on `isMenuModalActive` as `OpenMenu`
    is would be arguably better and is a behaviour change; the draft keeps backtick's.
-   *Kept as drafted* (not gated on `isMenuModalActive`); the new E9 is the one behaviour this brings beyond backtick's.
+   *Reversed after acceptance* (the final review's Important 2, the user's decision, 2026-11-10): a contributed action
+   does not fire while the menu is modal, which the shell's dispatch enforces with the same `isMenuModalActive`
+   `OpenMenu` reads. E10 is the one behaviour change (a backtick typed into a prompt or a capture row no longer also
+   toggles the overlays), and it is the right answer for a mechanism that is no longer one debug key.
 7. **A default that collides with a Game Boy button's default** (3.5): `Z`, `X`, `Enter` and the arrows would fire the
    action AND the joypad. Controller decision: refused too (check 6), since it changes no behaviour and only refuses a
    contribution. A user's own rebinding onto a joypad key is still allowed, as it is for the shell's actions today.

@@ -244,10 +244,12 @@ export interface UiService {
 }
 
 /** An app action a package contributes: a rebindable key or gamepad press, carried by the binding profiles and shown in
- *  the bindings menus beside the shell's own three. The shell dispatches it in the states the shell's app actions fire
- *  in (no full-window overlay), once per matching press, and reports a throw rather than letting it stop the others.
- *  Not persisted as a contribution: the profile stores the id, and an id absent from a stored profile reads the
- *  default here (src/bindingMap.ts `withActionDefaults`), so adding an action needs no migration. */
+ *  the bindings menus beside the shell's own three. The shell dispatches it on every press that resolves to it in a
+ *  state with no full-window overlay, EXCEPT while the menu is modal (a text prompt, or a capture row armed): a prompt
+ *  reads the printable keys off the same bus, so a key a user types there must not also run an action. It runs once per
+ *  matching press, and a throw is reported rather than letting it stop the others. Not persisted as a contribution: the
+ *  profile stores the id, and an id absent from a stored profile reads the default here (src/bindingMap.ts
+ *  `withActionDefaults`), so adding an action needs no migration. */
 export interface UiAction {
   /** "<package>.<name>", the manifest's package name and a dot: the profile stores it, so it names its owner, and the
    *  generated registry refuses an id its own package does not prefix. */
