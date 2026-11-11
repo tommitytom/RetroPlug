@@ -29,7 +29,7 @@ thread, live audio reconfigure, and dirty-region present.
 ## Gaps vs the DPF/JACK standalone (to reach parity)
 
 ### P1 — MIDI input — ✅ DONE
-Implemented via RtMidi ([MidiIo](../packages/native/src/host/input/MidiIo.hpp)) — virtual `RetroPlug In`
+Implemented via RtMidi ([MidiStream](../packages/midi/native/src/midi/MidiStream.hpp)) - virtual `RetroPlug In`
 port + selected hardware input(s) → a ring (producers serialized; the audio-thread drain stays lock-free) → `engine.stageMidi`.
 Hardware-verified (virtual ports open on ALSA, keyboard input fixed). Follow-ups: hotplug (ports scanned once
 at startup, and re-scanned on a device pick) and a real sub-block frame offset (staged at frame 0 today).

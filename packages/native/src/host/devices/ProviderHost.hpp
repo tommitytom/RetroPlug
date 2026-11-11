@@ -20,7 +20,7 @@ public:
     // section 3). Three kinds of product, and only the first implements anything:
     //
     //   - the SDL standalone owns a shared MIDI stream and holds MIDI and audio for the startup rendezvous, so it
-    //     fills all three (its own calls over MidiIo);
+    //     fills all three (its own calls over that stream, midi/MidiStream.hpp);
     //   - the headless host and the CLI have no stream to keep a pair out of and nothing to hold, so they fill none
     //     and this host RECORDS what it was told (productCalls), which is what a test reads;
     //   - a product that holds nothing resumes nothing, so a null `restored` is "done" and not "unsupported".

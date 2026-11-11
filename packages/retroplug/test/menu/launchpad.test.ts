@@ -137,7 +137,8 @@ class FakeFacet implements LaunchpadClient {
     if (input === "" || output === "") return fail("no port chosen");
     if (!this.inputs.includes(input)) return fail(`not connected: ${input}`);
     if (!this.outputs.includes(output)) return fail(`not connected: ${output}`);
-    // The real opener's words (RtMidiPort's RtMidiSinglePort), in ITS order: the claim opens the output first, so a
+    // The real backend's words (midi/RtMidiBackend.cpp's port classes), in ITS order: the claim opens the output first,
+    // so a
     // pair whose device is away is refused by the output.
     if (this.away.has(output)) return fail(`MIDI output port not found: ${output}`);
     if (this.away.has(input)) return fail(`MIDI input port not found: ${input}`);

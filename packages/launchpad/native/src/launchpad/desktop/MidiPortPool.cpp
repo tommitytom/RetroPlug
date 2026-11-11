@@ -3,17 +3,13 @@
 #include <exception>
 #include <utility>
 
-#include "launchpad/desktop/MidiPortFilter.hpp"
+#include "midi/PortFilter.hpp"
 
 namespace rp::launchpad {
 
 std::vector<int> MidiPortPool::openInputs(const std::vector<std::string>& names) {
     std::vector<int> handles;
     if (names.empty()) return handles;
-    if (!opener_) {
-        error_ = "no MIDI backend";
-        return std::vector<int>(names.size(), 0);
-    }
     // Raised BEFORE the opens, so the host's own stream has already let go of the inputs we are about to ask
     // for. Undone below if none of them opened and no other input is held.
     const bool  wasHeld = inputs_ > 0;
@@ -29,21 +25,13 @@ std::vector<int> MidiPortPool::openInputs(const std::vector<std::string>& names)
 }
 
 int MidiPortPool::openOutput(const std::string& name) {
-    if (!opener_) {
-        error_ = "no MIDI backend";
-        return 0;
-    }
     return openOne(false, name);
 }
 
 int MidiPortPool::openOne(bool input, const std::string& name) {
-    if (!opener_) {
-        error_ = "no MIDI backend";
-        return 0;
-    }
-    // The test-only allow list (MidiPortFilter.hpp) is refused here as well as by the opener, so a scan of a filtered
+    // The test-only allow list (midi/PortFilter.hpp) is refused here as well as by the backend, so a scan of a filtered
     // process cannot reach a port the process was not given, whatever backend the product injected.
-    if (!midiPortAllowed(name)) {
+    if (!rp::midi::midiPortAllowed(name)) {
         error_ = "MIDI port not allowed: " + name;
         return 0;
     }
@@ -51,7 +39,7 @@ int MidiPortPool::openOne(bool input, const std::string& name) {
     e.input = input;
     e.queue = std::make_shared<Queue>();
     try {
-        IMidiPort::Receiver receiver;
+        rp::midi::Receiver receiver;
         if (input) {
             receiver = [q = e.queue](const std::uint8_t* data, std::size_t n) {  // backend callback thread
                 if (!data || n == 0) return;
@@ -63,7 +51,7 @@ int MidiPortPool::openOne(bool input, const std::string& name) {
                 q->messages.emplace_back(data, data + n);
             };
         }
-        e.port = opener_(input, name, std::move(receiver));
+        e.port = input ? backend_.openInput(name, std::move(receiver)) : backend_.openOutput(name);
         if (!e.port) error_ = "MIDI port unavailable";
     } catch (const std::exception& ex) {
         error_ = ex.what();

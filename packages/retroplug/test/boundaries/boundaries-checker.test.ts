@@ -294,6 +294,34 @@ test("a native target's path is a use and a CMake comment is not, which the warn
   expect(report.warnings).toEqual(["alpha: declares @retroplug/gamma, which no file of its imports and no native target of it names"]);
 });
 
+test("a dependency's unlisted library target counts as a use, and one nothing links still warns", async () => {
+  // retroplug-midi and retroplug-audio are libraries a package links by name rather than manifest items (listing one
+  // would link RtMidi or PortAudio into every product), so the use has to be read from the dependency's own CMakeLists:
+  // the library it defines, not the targets its manifest lists. Beta is linked that way and gamma is not, and the warning
+  // is the one unused declaration that remains - a base of zero is the sentinel the real tree is held to.
+  const report = await drive("native-library-use");
+  console.log(`# ${(report.warnings as string[]).join("\n# ")}`);
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.warnings).toEqual([
+    "alpha: declares @retroplug/gamma, which no file of its imports and no native target of it names",
+  ]);
+});
+
+test("a target whose name merely STARTS with a dependency's is not a use of it", async () => {
+  // A `-` is part of a CMake target name, not a separator: alpha's own `gamma-lib-alpha` names no gamma target, and the
+  // declaration of it is alpha naming itself. Read with `-` as a boundary, the declaration credited alpha's dependency
+  // on gamma and the real tree's audio backends (each `retroplug-audio-<id>`) were never judged - the rule was vacuous
+  // exactly where the packages that need it are. Beta is linked for real, so its use still counts.
+  const report = await drive("native-target-prefix");
+  console.log(`# ${(report.warnings as string[]).join("\n# ")}`);
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.warnings).toEqual([
+    "alpha: declares @retroplug/gamma, which no file of its imports and no native target of it names",
+  ]);
+});
+
 test("a shell source importing a cart's module is refused, naming the file and the specifier (rule 9)", async () => {
   const report = await drive("shell-source-forbidden");
   console.log(`# ${(report.refused as string[]).join("\n# ")}`);

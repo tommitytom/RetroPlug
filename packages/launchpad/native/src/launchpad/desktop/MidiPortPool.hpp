@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include "launchpad/desktop/MidiPort.hpp"
+#include "midi/MidiBackend.hpp"
 
 namespace rp::launchpad {
 
@@ -39,7 +39,7 @@ public:
      *  read once a frame; overflow drops the newest and counts it. */
     static constexpr std::size_t kMaxQueued = 256;
 
-    explicit MidiPortPool(MidiPortOpener opener) : opener_(std::move(opener)) {}
+    explicit MidiPortPool(rp::midi::MidiBackend& backend) : backend_(backend) {}
     ~MidiPortPool() { closeAll(); }
     MidiPortPool(const MidiPortPool&)            = delete;
     MidiPortPool& operator=(const MidiPortPool&) = delete;
@@ -74,9 +74,9 @@ private:
         std::uint64_t        dropped = 0;
     };
     struct Entry {
-        bool                       input = false;
-        std::shared_ptr<Queue>     queue;  // shared with the receiver, so it outlives a late callback
-        std::unique_ptr<IMidiPort> port;   // LAST: destroyed first, cancelling the callback
+        bool                                input = false;
+        std::shared_ptr<Queue>              queue;  // shared with the receiver, so it outlives a late callback
+        std::unique_ptr<rp::midi::MidiPort> port;   // LAST: destroyed first, cancelling the callback
     };
 
     int openOne(bool input, const std::string& name);  // no held edges
@@ -84,8 +84,8 @@ private:
         if (onInputsHeld_) onInputsHeld_(held);
     }
 
-    MidiPortOpener       opener_;
-    InputsHeldFn         onInputsHeld_;
+    rp::midi::MidiBackend& backend_;
+    InputsHeldFn           onInputsHeld_;
     std::map<int, Entry> ports_;
     int                  next_   = 1;
     std::size_t          inputs_ = 0;

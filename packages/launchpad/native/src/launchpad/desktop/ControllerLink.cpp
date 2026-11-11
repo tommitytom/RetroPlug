@@ -6,12 +6,12 @@
 #include <exception>
 #include <utility>
 
-#include "launchpad/desktop/MidiPortFilter.hpp"
+#include "midi/PortFilter.hpp"
 
 namespace rp::launchpad {
 
-ControllerLink::ControllerLink(MidiPortOpener opener, bool writerThread)
-    : opener_(std::move(opener)), useWriter_(writerThread) {}
+ControllerLink::ControllerLink(rp::midi::MidiBackend& backend, bool writerThread)
+    : backend_(backend), useWriter_(writerThread) {}
 
 ControllerLink::~ControllerLink() {
     disconnect();
@@ -24,17 +24,14 @@ std::string ControllerLink::lastError() const {
 bool ControllerLink::connect(const std::string& inName, const std::string& outName,
                              std::vector<std::uint8_t> closeBytes) {
     disconnect();  // idempotent; also releases a previously claimed pair (with its close bytes) first
-    if (!opener_) {
-        error_ = "no MIDI backend";
-        return false;
-    }
-    // The test-only allow list (MidiPortFilter.hpp). Checked before anything opens, and named as the claim's own error, so
-    // a filtered process cannot take a port it was not given - whatever opener the product injected - and says which.
-    if (!midiPortAllowed(outName)) {
+    // The test-only allow list (midi/PortFilter.hpp). Checked before anything opens, and named as the claim's own error,
+    // so a filtered process cannot take a port it was not given - whatever backend the product injected - and says
+    // which. The RtMidi backend refuses one too; this is the check that runs for a fake as well.
+    if (!rp::midi::midiPortAllowed(outName)) {
         error_ = "MIDI port not allowed: " + outName;
         return false;
     }
-    if (!midiPortAllowed(inName)) {
+    if (!rp::midi::midiPortAllowed(inName)) {
         error_ = "MIDI port not allowed: " + inName;
         return false;
     }
@@ -47,9 +44,9 @@ bool ControllerLink::connect(const std::string& inName, const std::string& outNa
         // Output first, so the input's callback can never run against a half-built link. The receiver runs on the
         // backend's callback thread; `this` outlives the port (in_ is reset before the link is destroyed, and resetting
         // it cancels the callback), so capturing it is safe.
-        out_ = opener_(false, outName, nullptr);
-        in_  = opener_(true, inName,
-                       [this, gen](const std::uint8_t* data, std::size_t n) { pushInputRing(data, n, gen); });
+        out_ = backend_.openOutput(outName);
+        in_  = backend_.openInput(inName,
+                                  [this, gen](const std::uint8_t* data, std::size_t n) { pushInputRing(data, n, gen); });
     } catch (const std::exception& e) {
         error_ = e.what();
         in_.reset();

@@ -1,0 +1,35 @@
+{
+  "name": "@retroplug/midi",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The host's MIDI: one interface a backend fills (MidiBackend / MidiPort), RtMidi as the real one and an in-process fake for tests, the one MIDI stream the SDL app's audio loop and the CLI's facet share, one copy of the port filters (isHardwareMidiPort, the test-only RP_MIDI_PORT_ALLOW list), and the midi facet as a package provider with an rpc.",
+  "exports": {
+    ".": "./ts/app.ts",
+    "./app": "./ts/app.ts",
+    "./ui": "./ts/ui/index.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/node-sdk": "workspace:*",
+    "@retroplug/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
+    "native": [
+      {
+        "target": "retroplug-midi-facet",
+        "device": false,
+        "provider": "rp_midi_provider",
+        "rpc": { "header": "midi/facet/MidiRpcService.hpp", "register": "rp::midi::registerRpc" }
+      }
+    ]
+  }
+}

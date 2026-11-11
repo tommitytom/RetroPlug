@@ -1,9 +1,10 @@
-# The Launchpad pack (docs/modular-graph-phase-f3-design.md sections 2 and 3): rp.launchpad.surface-in / -out, the
-# control surface as nodes, and the link interface they drive the device through (launchpad/SurfaceLink.hpp), with the
-# desktop's half beside it: the claimed pair's transport (ControllerLink), the loose MIDI ports a TS scan opens
-# (MidiPortPool), the cross-process claim (PortClaim), the RtMidi backend (RtMidiPort), the provider that installs the
-# link and the facet the TS client reaches it through. Added by retroplug_package(launchpad) (cmake/packages.cmake).
-# Like any pack it depends on node-sdk alone; nothing here links a packages/native target.
+# The Launchpad pack (docs/modular-graph-phase-f3-design.md sections 2 and 3, over the midi package's backend interface
+# per docs/modular-graph-phase-f5b-design.md section 4): rp.launchpad.surface-in / -out, the control surface as nodes, and
+# the link interface they drive the device through (launchpad/SurfaceLink.hpp), with the desktop's half beside it: the
+# claimed pair's transport (ControllerLink), the loose MIDI ports a TS scan opens (MidiPortPool), the cross-process claim
+# (PortClaim), the provider that installs the link and the facet the TS client reaches it through. Added by
+# retroplug_package(launchpad) (cmake/packages.cmake). Its ports come from the midi package's interface: the pack keeps
+# no RtMidi translation unit and no copy of the port filters.
 
 # --- retroplug-launchpad: the rp_launchpad_package entry and rp.launchpad.surface-in / -out
 # (src/launchpad/SurfaceNodes.cpp), over the rp::launchpad::SurfaceLink a host binds by name (rp.host.devices/2). A
@@ -39,7 +40,8 @@ target_link_libraries(retroplug-launchpad-harness
 
 # --- retroplug-launchpad-desktop: the transport (src/launchpad/desktop/): ControllerLink, the claimed pair with its
 # fixed-slot rings and its writer thread; MidiPortPool, the loose ports a scan opens; PortClaim, the cross-process claim
-# under <configDir>/locks; RtMidiPort, the only RtMidi user (SysEx on). Its manifest entry names the provider
+# under <configDir>/locks. Its links and its scans open ports through the midi package's interface, over the pack's own
+# RtMidi instance ("RetroPlug Launchpad"). Its manifest entry names the provider
 # (rp_launchpad_provider, LaunchpadProvider.cpp: the link installed as `launchpad`, the pool, the facet's service) and
 # the facet (LaunchpadRpc.hpp, implemented in LaunchpadRpc.cpp; only its registerRpc is a template, which a product's
 # server instantiates, so the pack itself needs neither rpcpp nor QuickJS, only reflect-cpp's byte string). A product
@@ -49,12 +51,11 @@ retroplug_package_library(retroplug-launchpad-desktop
     ${CMAKE_CURRENT_SOURCE_DIR}/src/launchpad/desktop/LaunchpadProvider.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/launchpad/desktop/LaunchpadRpc.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/launchpad/desktop/MidiPortPool.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/launchpad/desktop/PortClaim.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/launchpad/desktop/RtMidiPort.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/launchpad/desktop/PortClaim.cpp)
 target_link_libraries(retroplug-launchpad-desktop
     PUBLIC  retroplug-launchpad   # the include root, launchpad/SurfaceLink.hpp, the package id
             retroplug-node-sdk    # transport/SpscRing.hpp (the send ring), graph/rp_provider.h, reflect-cpp
-    PRIVATE rtmidi                # deps/rtmidi, behind RtMidiPort.cpp alone (defined at root scope, cmake/rtmidi.cmake)
+            retroplug-midi        # midi/MidiBackend.hpp, midi/PortFilter.hpp, and the RtMidi instance the provider makes
             Threads::Threads)     # ControllerLink's writer thread
 
 # --- the pack's test binaries (cmake/test-binary.cmake), built by name; sources resolve against this directory.
@@ -65,12 +66,14 @@ target_link_libraries(retroplug-launchpad-desktop
 # ThreadSanitizer by tools/run-sanitizer.sh's launchpad leg), the writer thread's ordering and the provider's per-frame
 # wake, the close bytes replayed on disconnect and destruction, the audio path's two calls allocating nothing, the pool's
 # inputs-held edge, PortClaim's one claim per machine, and the provider and the facet over a fake opener: no hardware,
-# no MIDI system, no ALSA. The real RtMidi backend is linked (it is the desktop library's) but never opened.
+# no MIDI system, no ALSA. The fake it scripts is the midi package's (midi/FakeMidiBackend.hpp), so the pack's tests
+# drive the same backend interface the standalone does.
 retroplug_add_test_binary(
     NAME     retroplug-launchpad-test
     SOURCES  test/Controller.test.cpp
              test/SurfaceLink.test.cpp
     LIBS     retroplug-launchpad-desktop   # the transport, the pool, the claim, the provider, the facet
              retroplug-testing-allocator   # CountingAllocator: the drain and the push allocate and free nothing
+             retroplug-midi-test-support   # midi/FakeMidiBackend.hpp, the fake its rig is built on
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test              # FakePorts.hpp
     DEFS     RP_LAUNCHPAD_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/golden")  # the two types' descriptors

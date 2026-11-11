@@ -10,7 +10,7 @@
 // `${...}` that closes a span.
 //
 //   node test/source-literals/run-scan.mjs --platforms <id,...> --extensions <.ext,...> \
-//     --cores <id,...> --node-types <type,...> --node-prefixes <prefix,...> --carts <id,...> \
+//     --cores <id,...> --node-types <type,...> --node-prefixes <prefix,...> --node-exempt <type,...> --carts <id,...> \
 //     [--dirs src,cli,ui] [--root <dir>]
 //
 // The guarded sets are the console registry's, not this file's: the test imports the generated CONSOLES list and passes
@@ -45,6 +45,12 @@ const nodeTypes = option("--node-types");
 // set (the Launchpad's rp.launchpad.surface-in/-out, the N8's rp.n8.nes) has no manifest entry, so its types are its
 // package's alone and the shell spells none of them either. Matched as prefixes with their trailing dot.
 const nodePrefixes = option("--node-prefixes");
+// The node types the shell MAY spell (its own vocabulary: the strings it builds a node document with, and a node type it
+// names as a constant). Exempt from the family guard as well as the exact one, because a package's name can claim the
+// family a shell-owned type already sits in: the midi package's prefix is rp.midi. and core's routing node, which
+// buildGraph builds itself, is rp.midi.route. A value not listed here is guarded as before, so every OTHER type in that
+// family is still the package's.
+const nodeExempt = option("--node-exempt");
 // `--carts` may be EMPTY and the other four may not: a fixture tree whose generated package list declares no cart is
 // scanned with no cart guard, which is right, while every tree has consoles. An absent flag is still not the same as
 // an empty one - it would scan a real tree with none of the cart ids - so it is tested for undefined.
@@ -65,14 +71,16 @@ const EXTENSIONS = new Set(list(extensions));
 const CORES = new Set(list(cores));
 const NODE_TYPES = new Set(list(nodeTypes));
 const NODE_PREFIXES = list(nodePrefixes);
+const NODE_EXEMPT = new Set(list(nodeExempt ?? ""));
 const CARTS = new Set(list(carts));
 
 /** True for an exact guarded value: a platform id, an extension, a core id, a node type, a cart id (a kit format's,
  *  an embed's or a tracker integration's), or the `*.gb` glob. */
 const isGuarded = (value) =>
   // A prefix is a node type's family only: an RPC name in the same shape spells its method and version
-  // (`rp.system.memory/1`), and a node type's id carries no slash.
-  NODE_PREFIXES.some((prefix) => value.startsWith(prefix) && !value.includes("/")) ||
+  // (`rp.system.memory/1`), and a node type's id carries no slash. A shell-owned type is exempt from its family.
+  (!NODE_EXEMPT.has(value) &&
+    NODE_PREFIXES.some((prefix) => value.startsWith(prefix) && !value.includes("/"))) ||
   PLATFORMS.has(value) ||
   EXTENSIONS.has(value) ||
   CORES.has(value) ||

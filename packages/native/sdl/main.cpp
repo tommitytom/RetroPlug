@@ -66,7 +66,9 @@ extern "C" {
 #include "host/engine/EngineInvoker.hpp"
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/GamepadPump.hpp"        // the event->bus switch, shared with the plugin editor
-#include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
+#include "midi/RtMidiBackend.hpp"           // systemMidi(): the process's one RtMidi system
+#include "midi/MidiStream.hpp"               // the host's MIDI stream: virtual + hardware ports, the receive ring
+#include "midi/PortFilter.hpp"               // kAllInputs, extractRealtime, scanSuspendsInputs
 #include "host/devices/ProviderHost.hpp"     // the rp_device_host this product starts its providers with
 #include "rp_product_providers.hpp"          // generated: this product's providers (the N8's, the Launchpad pack's)
 #include "host/rpc/BackendRpcRegistration.hpp"
@@ -128,7 +130,7 @@ struct MidiClockSync {
     bool active = false;           // clock seen within the timeout
     bool stopped = false;          // explicit 0xFC latch (overrides clock presence)
     bool debug = false;            // RETROPLUG_DEBUG_AUDIO: report each tempo estimate's inputs
-    std::uint64_t droppedMessages = 0;  // MidiIo's ring drops, folded in so the report names the culprit
+    std::uint64_t droppedMessages = 0;  // the stream's ring drops, folded in so the report names the culprit
     bool manualPlaying = false;    // the local transport (Instance menu > MIDI Clock); used when no clock master
     double manualBpm = 120.0;      // the local tempo, likewise — what the sync roles clock at when we're the master
 
@@ -221,9 +223,13 @@ struct AppState {
     std::thread   audioPump;                   // headless fallback pump thread (no device); see audioPumpLoop
     std::atomic<bool> audioPumpRun{false};
     retroplug::GamepadManager gamepad;
-    retroplug::MidiIo midi;   // RtMidi in/out; drained into the Engine on the audio thread each block
-    std::vector<retroplug::MidiIo::Message> midiScratch;  // reused per block; reserved to the ring size in main()
+    rp::midi::MidiStream midi{rp::midi::systemMidi()};  // in/out; drained into the Engine on the audio thread each block
+    std::vector<rp::midi::MidiStream::Message> midiScratch;  // reused per block; reserved to the ring size in main()
     std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
+    // midi.json's single `input` / `output` as the file spells them ("" = None, "*" = every device), because the shim
+    // that reads and writes that file has to answer the Settings > MIDI pickers with one name until the selection is the
+    // project's. The stream itself holds lists.
+    std::string midiInputJson, midiOutputJson;
     MidiClockSync clockSync;                              // MIDI-clock → BPM/transport (audio thread only)
 
     // The local transport (Instance menu > Transport), across the UI/audio thread boundary. clockSync itself
@@ -253,10 +259,9 @@ struct AppState {
     // RETROPLUG_IDLE_RECLAIM_TEST: inert unless the smoke arms it. Holds this loop to the idle tick it owes the
     // engine (HostServices::reclaimOnIdle), which no in-process test can reach.
     retroplug::IdleReclaimProbe idleProbe;
-    // Whether audio has been started, and whether the control plane has reported its restored selection yet. main()
-    // holds MIDI and audio until the second is true (restoreControlSurface), so a restored surface's claim lands before
-    // the shared stream ever opens its ports and costs no restart; anything later goes through the reserve dance.
-    bool audioLive = false;
+    // Whether the control plane has reported its restored selection yet. main() holds MIDI and audio until it is true
+    // (restoreControlSurface), so a restored surface's claim lands before the shared stream ever opens its ports; a
+    // claim that arrives later is reserved through the stream's own handshake, which costs no audio stop either.
     bool controlSurfaceRestored = false;
 
     ~AppState() {
@@ -322,9 +327,11 @@ bool audioDebugEnabled();   // RETROPLUG_DEBUG_AUDIO (defined with the audio log
 void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, int hostApi, const std::string& device);
 void loadAudioConfig(AppState& a);
 void saveAudioConfig(AppState& a);
-// MIDI device (re)selection — declared here so the __rp_setMidiInput/Output hooks (bound earlier) can drive a
-// live device change; defined next to reconfigureAudio (it pauses the audio callback the same way).
-void reconfigureMidi(AppState& a, bool input, const std::string& name);
+// MIDI device (re)selection - declared here so the __rp_setMidiInput/Output hooks (bound earlier) can apply a live
+// change; defined next to the audio configuration. Neither stops audio: a selection change publishes a new output set
+// and waits out one block (the stream's epoch handshake), and an input port cancels its own callback as it closes.
+void selectMidi(AppState& a, bool input, const std::string& name, rp::midi::Apply mode);
+void applyMidiSelection(AppState& a, bool input, const std::string& name);
 void loadMidiConfig(AppState& a);
 
 // Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
@@ -662,9 +669,10 @@ JSValue jsSetClockBpm(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     return JS_UNDEFINED;
 }
 
-// __rp_getMidiConfig(): { inputs: string[], outputs: string[], selectedInput, selectedOutput } — the live
-// hardware MIDI ports + the current device selection, for the Settings > MIDI pickers. "" selection = the
-// default (All Devices for input, None for output). Standalone-only; absent in the plugin (DAW routes MIDI).
+// __rp_getMidiConfig(): { inputs: string[], outputs: string[], selectedInput, selectedOutput } - the live hardware MIDI
+// ports + the current device selection, for the Settings > MIDI pickers. One name each, as midi.json still spells the
+// selection until the project carries it ("" = None, "*" = every device). Standalone-only; absent in the plugin (DAW
+// routes MIDI).
 JSValue jsGetMidiConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     JSValue o = JS_NewObject(ctx);
     if (g_app) {
@@ -676,18 +684,18 @@ JSValue jsGetMidiConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
         };
         JS_SetPropertyStr(ctx, o, "inputs",  toArray(g_app->midi.listInputs()));
         JS_SetPropertyStr(ctx, o, "outputs", toArray(g_app->midi.listOutputs()));
-        JS_SetPropertyStr(ctx, o, "selectedInput",  JS_NewString(ctx, g_app->midi.inputSelection().c_str()));
-        JS_SetPropertyStr(ctx, o, "selectedOutput", JS_NewString(ctx, g_app->midi.outputSelection().c_str()));
+        JS_SetPropertyStr(ctx, o, "selectedInput",  JS_NewString(ctx, g_app->midiInputJson.c_str()));
+        JS_SetPropertyStr(ctx, o, "selectedOutput", JS_NewString(ctx, g_app->midiOutputJson.c_str()));
     }
     return o;
 }
 
-// __rp_setMidiInput(name) / __rp_setMidiOutput(name): choose a hardware device by port name (empty string =
-// the default). Applies immediately (reconnects the RtMidi port) + persists to midi.json.
+// __rp_setMidiInput(name) / __rp_setMidiOutput(name): choose a hardware device by port name ("" = None, "*" = every
+// device on the input side). Applies immediately, without stopping audio, and persists to midi.json.
 JSValue jsSetMidiInput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && argc >= 1) {
         const char* s = JS_ToCString(ctx, argv[0]);
-        reconfigureMidi(*g_app, true, s ? s : "");
+        applyMidiSelection(*g_app, true, s ? s : "");
         if (s) JS_FreeCString(ctx, s);
     }
     return JS_UNDEFINED;
@@ -695,7 +703,7 @@ JSValue jsSetMidiInput(JSContext* ctx, JSValueConst, int argc, JSValueConst* arg
 JSValue jsSetMidiOutput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && argc >= 1) {
         const char* s = JS_ToCString(ctx, argv[0]);
-        reconfigureMidi(*g_app, false, s ? s : "");
+        applyMidiSelection(*g_app, false, s ? s : "");
         if (s) JS_FreeCString(ctx, s);
     }
     return JS_UNDEFINED;
@@ -841,9 +849,9 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         for (int c = 0; c < N; ++c) { a.audioPlanar[c].resize(frames); a.audioPtrs[c] = a.audioPlanar[c].data(); }
 
     a.svc.invoker.drainInto(a.svc.engine);
-    // Drain MIDI the RtMidi callback thread staged into the ring, and hand it to the Engine — we own it on
-    // this (audio) thread, exactly like PluginDSP::run stages host MIDI. Frame 0 for now: live hardware MIDI
-    // carries no sub-block timing worth preserving (a proper offset from the block clock is a later step).
+    // Drain MIDI the backend's callback threads staged into the ring, and hand it to the Engine - we own it on this
+    // (audio) thread, exactly like PluginDSP::run stages host MIDI. Frame 0 for now: live hardware MIDI carries no
+    // sub-block timing worth preserving (a proper offset from the block clock is a later step).
     a.midi.poll(a.midiScratch);
     a.clockSync.sampleRate = a.sampleRate;
     a.clockSync.debug = audioDebugEnabled();
@@ -856,7 +864,7 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         // forwarding the wire bytes too would double-clock it. Testing only for a ONE-BYTE message (what
         // this did before) drops any clock a transport batched with another event, and a tempo estimate
         // missing pulses reads a whole ratio slow.
-        retroplug::extractRealtime(m.bytes, [&](std::uint8_t status) { a.clockSync.onByte(status); });
+        rp::midi::extractRealtime(m.bytes, [&](std::uint8_t status) { a.clockSync.onByte(status); });
         if (m.bytes.empty()) continue;
         // A physical N8 is fed from the graph, not from here: an rp.n8.nes node, placed by a system's "drive the real
         // cart" setting, takes the same protocol-node MIDI and bytes its emulated NES's core does, at their frames.
@@ -894,7 +902,7 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     // Host MIDI out (LSDj MI.OUT / Master Sync, the controller's launches) → the RtMidi out port, then clear
     // the block's queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW), but at once,
     // each message's frame dropped: RtMidi's out takes no timestamp, so a message goes when its block is rendered
-    // (spec/07-remaining-work.md). No length cap: MidiIo sends whatever it is given, and a control surface's LED
+    // (spec/07-remaining-work.md). No length cap: the stream sends whatever it is given, and a control surface's LED
     // traffic is sysex, so capping at 3 bytes would silently drop exactly the messages that matter.
     for (const auto& mo : a.svc.engine.midiOut())
         if (!mo.data.empty()) a.midi.send(mo.data.data(), mo.data.size());
@@ -949,38 +957,31 @@ void stopAudio(AppState& a) {
 // ---- the control surface, as this product answers for it ------------------------------------------
 //
 // The three calls a provider makes of the product that owns the shared MIDI stream (rp_provider.h, design section 3).
-// The Launchpad pack's facet asks for them and knows nothing about MidiIo; what they mean here is the two hazards a
-// claimed port has in a stream that is already open: the stream must let go of it BEFORE it is opened (a Windows input
-// is exclusive, and everywhere a pad press reaching both would fire every launch twice while notes out of the stream
-// would light the surface's pads), and reopening RtMidi's hardware ports under a running callback is exactly what
-// reconfigureMidi stops audio for. So: stop audio, re-apply, start - and only when a port this stream holds actually
-// moves, so a pick it never had open (the default, input None) costs no restart at all.
+// The Launchpad pack's facet asks for them and knows nothing about the stream's type; what they mean here is the two
+// hazards a claimed port has in a stream that is already open: the stream must let go of it BEFORE it is opened (a
+// Windows input is exclusive, and everywhere a pad press reaching both would fire every launch twice while notes out of
+// the stream would light the surface's pads), and closing an input under a running callback. Neither costs an audio
+// stop: an input's port cancels its own callback as it is destroyed, and the output set is replaced through the stream's
+// epoch handshake, which waits out at most the send in flight (one block's sends, none when audio is not running).
 
 bool AppState::onReserveMidi(void* ctx, const std::string& input, const std::string& output) {
     auto& a = *static_cast<AppState*>(ctx);
     if (a.midi.reservedInput() == input && a.midi.reservedOutput() == output) return true;  // already so
-    const bool bounce = a.audioLive && a.midi.reservationChanges(input, output);
-    if (bounce) stopAudio(a);
     a.midi.setReserved(input, output);
-    if (bounce) startAudio(a);
     std::fprintf(stderr, "[retroplug-sdl] control surface: reserved MIDI input '%s', output '%s'\n",
                  input.empty() ? "(none)" : input.c_str(), output.empty() ? "(none)" : output.c_str());
     return true;
 }
 
 void AppState::onSuspendInputs(void* ctx, bool suspended) {
-    // The scan's held edge, and the one platform where it is real (MidiIo.hpp's scanSuspendsInputs). Answering before
-    // touching the stream is what makes this a no-op off Windows rather than a MIDI outage for the scan's length.
-    if (!retroplug::scanSuspendsInputs()) return;
+    // The scan's held edge, and the one platform where it is real (midi/PortFilter.hpp's scanSuspendsInputs). Answering
+    // before touching the stream is what makes this a no-op off Windows rather than a MIDI outage for the scan's
+    // length.
+    // Off Windows (ALSA's sequencer, CoreMIDI) an input is SHARED: the scan hears everything the stream does without it
+    // closing anything.
+    if (!rp::midi::scanSuspendsInputs()) return;
     auto& a = *static_cast<AppState*>(ctx);
-    if (a.midi.hardwareInputsSuspended() == suspended) return;
-    // A Windows MIDI input is exclusive, so the stream must let go of the inputs a scan is about to listen on. Off Windows
-    // (ALSA's sequencer, CoreMIDI) an input is SHARED: the scan hears everything the stream does without it closing
-    // anything, so the guard above returns first and neither the user's MIDI nor the audio is disturbed.
-    const bool bounce = a.audioLive && a.midi.suspensionChanges(suspended);
-    if (bounce) stopAudio(a);
-    a.midi.setHardwareInputsSuspended(suspended);
-    if (bounce) startAudio(a);
+    a.midi.setHardwareInputsSuspended(suspended);  // logs the suspended / resumed line, and is a no-op if unchanged
 }
 
 void AppState::onRestored(void* ctx) { static_cast<AppState*>(ctx)->controlSurfaceRestored = true; }
@@ -1220,12 +1221,16 @@ void saveAudioConfig(AppState& a) {
     writeTextFile(audioCfgPath(a), rfl::json::write(c) + "\n");
 }
 
-// The chosen MIDI input/output device names (Settings > MIDI). "" = None in BOTH directions (the virtual
-// ports only), which is the default; the input also takes kAllInputs ("*") as an explicit "every device".
+// The chosen MIDI input/output device names (Settings > MIDI). "" = None in both directions (the virtual ports only),
+// the default; the input also takes rp::midi::kAllInputs ("*") as an explicit "every device".
 //
-// NOTE for anyone reading an old midi.json: "" used to mean All Devices on the input side, and there is no
-// way to tell that apart from "never chose" - both wrote the same empty string. So an existing file simply
-// lands on the new default, which is the behaviour a default change should have.
+// A SHIM, kept until the selection is the project's (a `midi` project section, its ports by name): this file holds one
+// name each, and the mapping onto the stream's lists lives in applyMidiSelection. Then it is ignored outright, like
+// audio.json, and the SDL app never shipped.
+//
+// NOTE for anyone reading an old midi.json: "" used to mean All Devices on the input side, and there is no way to tell
+// that apart from "never chose" - both wrote the same empty string. So an existing file simply lands on the current
+// default, which is the behaviour a default change should have.
 struct MidiCfgJson {
     std::string input;
     std::string output;
@@ -1233,18 +1238,40 @@ struct MidiCfgJson {
 
 std::string midiCfgPath(AppState& a) { return a.svc.host.configDir() + "/midi.json"; }
 
+// The one-name mapping onto the stream's lists, shared by the startup load and the picker's hooks. It neither persists
+// nor logs: reading the stored file back over itself would rewrite it at every launch, and the log line belongs to the
+// user's change, not to a value the file already held.
+//
+// `mode` is the stream's: the load DIFFS, so reopening a project costs no connection it already had, while the picker's
+// change REOPENS, which is the user's one remedy for a port that was unplugged and plugged back in (there is no hotplug
+// watch).
+void selectMidi(AppState& a, bool input, const std::string& name, rp::midi::Apply mode) {
+    if (input) {
+        a.midiInputJson = name;
+        if (name.empty()) a.midi.setInputs({}, false, mode);
+        else if (name == rp::midi::kAllInputs) a.midi.setInputs({}, true, mode);
+        else a.midi.setInputs({name}, false, mode);
+    } else {
+        a.midiOutputJson = name;
+        if (name.empty()) a.midi.setOutputs({}, mode);
+        else a.midi.setOutputs({name}, mode);
+    }
+}
+
 void loadMidiConfig(AppState& a) {
     const std::string json = slurpTextFile(midiCfgPath(a));
     if (json.empty()) return;
     const auto r = rfl::json::read<MidiCfgJson, rfl::DefaultIfMissing>(json);
     if (!r) return;
     const MidiCfgJson c = r.value();
-    a.midi.setInputSelection(c.input);   // stored now; applied when midi.open() connects the ports
-    a.midi.setOutputSelection(c.output);
+    // Applied when midi.open() publishes the ports: the same one-name mapping the picker's hooks use, in its diffing
+    // mode (nothing the file names is reopened here, because nothing is open yet).
+    selectMidi(a, true, c.input, rp::midi::Apply::Diff);
+    selectMidi(a, false, c.output, rp::midi::Apply::Diff);
 }
 
 void saveMidiConfig(AppState& a) {
-    const MidiCfgJson c{ a.midi.inputSelection(), a.midi.outputSelection() };
+    const MidiCfgJson c{ a.midiInputJson, a.midiOutputJson };
     writeTextFile(midiCfgPath(a), rfl::json::write(c) + "\n");
 }
 
@@ -1277,18 +1304,18 @@ void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, 
                  a.reqOutputDevice.empty() ? "default" : a.reqOutputDevice.c_str());
 }
 
-// Live MIDI device reselection (Settings > MIDI). Briefly stops audio so the callback / pump isn't mid
-// poll/send while we reconnect the RtMidi ports — PortAudio has no SDL_LockAudioDevice equivalent, and
-// Pa_StopStream joins the callback, so mutating the ports races nothing. A brief audio gap on a manual device
-// change is expected (rare action) — the audio-thread analog of reconfigureAudio's handoff.
-void reconfigureMidi(AppState& a, bool input, const std::string& name) {
-    stopAudio(a);
-    if (input) a.midi.setInputSelection(name);
-    else       a.midi.setOutputSelection(name);
-    startAudio(a);
-    saveMidiConfig(a);
+// Live MIDI device reselection (Settings > MIDI), while audio may be running. It does not stop audio: the stream closes
+// and opens inputs, each port cancelling its own callback as it goes, and replaces its output set through the epoch
+// handshake, which waits out at most the send in flight. A brief audio gap on a device change belongs to
+// reconfigureAudio alone, where the device itself changes.
+//
+// The picker offers one name each while midi.json is the selection's home (the shim): "" is None, "*" is every device
+// on the input side, and anything else is that port. The stream itself takes lists.
+void applyMidiSelection(AppState& a, bool input, const std::string& name) {
+    selectMidi(a, input, name, rp::midi::Apply::Reopen);
+    saveMidiConfig(a);  // the picker's change is the one that persists it (loadMidiConfig does not)
     std::fprintf(stderr, "[retroplug-sdl] MIDI %s device -> '%s'\n", input ? "input" : "output",
-                 name.empty() ? "None" : (name == retroplug::kAllInputs ? "All Devices" : name.c_str()));
+                 name.empty() ? "None" : (name == rp::midi::kAllInputs ? "All Devices" : name.c_str()));
 }
 
 // ---- screenshot (headless proof) ------------------------------------------------------------------
@@ -1684,9 +1711,9 @@ int main(int argc, char** argv) {
     // Apply any persisted device selection (Settings > MIDI) first, so open() connects the chosen device(s)
     // rather than the auto-all-inputs / virtual-only-output default.
     loadMidiConfig(app);
-    app.midi.open("RetroPlug");
+    app.midi.open();
     // poll() push_backs into this on the audio thread; at full ring size it never has to grow there.
-    app.midiScratch.reserve(retroplug::MidiIo::kCapacity);
+    app.midiScratch.reserve(rp::midi::MidiStream::kCapacity);
 
     // Restore the providers' persisted state (the N8's n8.cfg: reconnect the physical cart if it was left enabled).
     rp_restore_providers(app.providers);
@@ -1706,7 +1733,6 @@ int main(int argc, char** argv) {
     pinUiThreadAwayFromAudioCore(); // keep the 60 fps UI/emulator work off the audio thread's core
 #endif
     startAudio(app);
-    app.audioLive = true;
 
     app.idleProbe.armFromEnv(app.svc.engine);
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);
@@ -1873,7 +1899,6 @@ int main(int argc, char** argv) {
     stopAudio(app); // Pa_StopStream (joins the callback) or stop+join the fallback pump
     // Before anything else the control plane might still tick: a callback that restarted audio here would resurrect the
     // stream the next lines are closing.
-    app.audioLive = false;
     if (app.audioStream) { Pa_CloseStream(app.audioStream); app.audioStream = nullptr; }
     Pa_Terminate();
     if (std::getenv("RETROPLUG_SDL_MIDI_SELFTEST"))

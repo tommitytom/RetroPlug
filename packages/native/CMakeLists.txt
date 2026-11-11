@@ -151,11 +151,13 @@ target_link_libraries(retroplug-host PRIVATE retroplug-backend retroplug-tjs-run
 target_link_libraries(retroplug-host PRIVATE retroplug-launchpad-harness)
 # Its own N8 provider over a fake cart and its own Launchpad facet over fake ports (src/main.cpp): a test host starts the
 # providers it needs itself, over fakes, rather than rp_start_providers over real hardware.
-retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad)
-# FakeN8.hpp, the model of the cart this test host starts the N8 provider over, and FakePorts.hpp, the scripted Launchpad
-# its facet serves (src/main.cpp): test headers, in this binary alone, so no product carries a fake device.
+retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad midi)
+# FakeN8.hpp, the model of the cart this test host starts the N8 provider over, FakePorts.hpp and FakeMidiBackend.hpp, the
+# scripted Launchpad and MIDI system its facets serve (src/main.cpp): test headers, in this binary alone, so no product
+# carries a fake device.
 target_include_directories(retroplug-host PRIVATE ${CMAKE_SOURCE_DIR}/packages/n8/native/test
-                                                  ${CMAKE_SOURCE_DIR}/packages/launchpad/native/test)
+                                                  ${CMAKE_SOURCE_DIR}/packages/launchpad/native/test
+                                                  ${CMAKE_SOURCE_DIR}/packages/midi/native/test-support)
 
 set_target_properties(retroplug-host PROPERTIES
     CXX_STANDARD 20
@@ -264,7 +266,7 @@ add_dependencies(retroplug-cli-sdk-assets ${RP_BUNDLE_desktop_GENERATOR})
 add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend retroplug-tjs-runtime)
-retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad)
+retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad midi)
 add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first
 add_dependencies(retroplug-cli retroplug-ts-stripper-bundle)     # ...and the stripper bytecode
 add_dependencies(retroplug-cli retroplug-cli-sdk-assets)         # ...and the embedded SDK
@@ -327,13 +329,12 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/deps.cmake)
 # reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
 # bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
 # Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are in-tree submodules
-# (rtmidi + portaudio) or already required (SDL2 at root scope for gamepad input); PortAudio adds no new
-# system lib to build — ALSA is present via rtmidi, and libpipewire-0.3 (if installed) just upgrades it to the
-# native PipeWire host API, else it falls back to ALSA.
+# (portaudio, and rtmidi through the midi package) or already required (SDL2 at root scope for gamepad input);
+# PortAudio adds no new system lib to build - ALSA is present, and libpipewire-0.3 (if installed) just upgrades it
+# to the native PipeWire host API, else it falls back to ALSA.
 add_executable(retroplug-sdl
     sdl/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
@@ -341,7 +342,7 @@ target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
     retroplug-backend             # Engine + cores + rpcpp
     retroplug-tjs-runtime         # the txiki host its control plane runs on (sdl/main.cpp)
-    rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
+    retroplug-midi                # the host's MIDI stream over the midi package's backend (RtMidi, linked there)
     portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
     PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
 retroplug_product(retroplug-sdl PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad)

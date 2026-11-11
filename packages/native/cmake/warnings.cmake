@@ -54,6 +54,9 @@ if(MSVC)
         # The Launchpad pack: its transport and its facet (PortClaim.cpp is the one file whose Windows half only this
         # compiler ever sees), and its own test binary.
         retroplug-launchpad retroplug-launchpad-desktop retroplug-launchpad-test
+        # The midi package: the stream's epoch handshake, the RtMidi backend (supportsVirtual's and the virtual port's
+        # Windows halves) and the facet, with the test binary, whose cases carry the _putenv_s half.
+        retroplug-midi retroplug-midi-facet retroplug-midi-test
         # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
         retroplug-device-mode-objects retroplug-device-mode-test retroplug-box-usb-cdc
         # The device check's case generator (packages/graph-runtime/device-check/cases).

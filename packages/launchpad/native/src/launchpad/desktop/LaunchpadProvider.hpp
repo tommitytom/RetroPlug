@@ -14,13 +14,21 @@
 #include "launchpad/desktop/ControllerLink.hpp"
 #include "launchpad/desktop/LaunchpadRpc.hpp"
 #include "launchpad/desktop/MidiPortPool.hpp"
+#include "midi/MidiBackend.hpp"
 
 namespace rp::launchpad {
 
-// rp_launchpad_provider's create with the port opener and lister given, for a host whose ports are not deps/rtmidi's
-// (the tests hand a fake's, and open nothing). Null when `host` is null or of another ABI version, or when building the
-// provider threw (said on stderr): nothing it throws leaves here, as nothing may cross the C table.
-void* createProvider(const rp_device_host* host, MidiPortOpener opener, PortLister lister);
+// rp_launchpad_provider's create with the backend and lister given, for a host whose ports are not deps/rtmidi's (the
+// tests and the headless host hand a scripted fake's, and open nothing). Null when `host` is null or of another ABI
+// version, or when building the provider threw (said on stderr): nothing it throws leaves here, as nothing may cross the
+// C table.
+void* createProvider(const rp_device_host* host, rp::midi::MidiBackend& backend, PortLister lister);
+
+// The port list a picker or a scan reads from `backend`: every port the system names, through the one filter
+// (midi/PortFilter.hpp), so RetroPlug's own virtual ports, another instance's link ports and ALSA's Through are not
+// ports, and nothing the test-only allow list hides is listed. A scan writes a Device Inquiry out of every output it is
+// handed, so this list is its guard.
+PortLister launchpadPortLister(rp::midi::MidiBackend& backend);
 
 // The ControllerLink a started provider owns (a test reads its state; a product never does).
 ControllerLink& providerLink(void* self);

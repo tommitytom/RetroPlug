@@ -2,7 +2,7 @@
 #
 # The control-surface seam through the REAL standalone, with a fake Launchpad on the ALSA sequencer standing
 # in for the hardware (tools/fixtures/fake-launchpad.c). Everything between the two is the real thing: the
-# Launchpad pack's provider and facet, RtMidi, MidiIo's shared stream, and the TS that decides
+# Launchpad pack's provider and facet, RtMidi, the midi package's shared stream, and the TS that decides
 # (launchpadDevices.ts). Each leg is built so it would FAIL if the thing it names were broken - a log line alone
 # proves nothing:
 #
@@ -21,14 +21,15 @@
 #
 # It drives a scan, and a scan sends a Universal Device Inquiry out of every output the MIDI system lists, while the
 # shared stream on "All Devices" opens every input: on a developer's machine that is their own hardware. So the standalone
-# runs under RP_MIDI_PORT_ALLOW (MidiIo.hpp and the Launchpad pack's MidiPortFilter.hpp), set below to the two fakes' FULL
+# runs under RP_MIDI_PORT_ALLOW (one rule, midi/PortFilter.hpp, for the stream and the pack alike), set below to the two
+# fakes' FULL
 # port names - "<client>:<port> <client#>:<port#>" as RtMidi reports them, the client names being ones no real device
 # has - and a filtered process can neither list nor open anything else.
 #
 # The listing pass below is a REPORT, not the guard: it proves the filter is honoured on this machine before anything is
 # claimed or probed, and fails the run if a listed port is not a fake or is named like a Launchpad. What actually keeps
 # every leg off other gear is the filter itself, refused at every door - the pack's lister (what a scan's sweep reads), its
-# opener, its pool and its link, and MidiIo's shared stream - so the pool and the opener refuse a port the list did not
+# opener, its pool and its link, and the shared stream - so the pool and the opener refuse a port the list did not
 # name whether or not this pass ran.
 #
 # Linux only (ALSA sequencer). Not in CI. Usage: tools/run-sdl-controller.sh  (build retroplug-sdl first)
@@ -116,7 +117,7 @@ PY
 RETROPLUG_SDL_MIDI_LIST=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=5 "$BIN" >"$TMP/list.log" 2>&1 || { cat "$TMP/list.log" >&2; fail "listing run exited non-zero"; }
 # THE LISTING PASS, before anything is claimed or probed: under the filter the listing may hold exactly the two fakes and
 # nothing else, which is what says the filter is honoured here. It is not what keeps the legs safe - the pool, the opener,
-# the link and MidiIo each refuse a port the list did not name, so none of them can be reached from here whether or not
+# the link and the stream each refuse a port the list did not name, so none of them can be reached from here whether or not
 # this pass ran - but a build whose filter was broken would list this machine's own devices, and the run stops rather
 # than find out the hard way. The list is printed either way, so a run that skips less than expected says why.
 LISTED="$(sed -n "s/.*MIDI \(in\|out\) device: *'\([^']*\)'.*/\2/p" "$TMP/list.log")"
@@ -189,7 +190,7 @@ echo "  ok: Programmer mode first, LED traffic, the release last"
 
 # 4) A real scan, CLAIMED mid-session: the pair is wanted (enabled) but not known, and the Settings output is
 # pointed at the device. The scan finds it, persists it, and claims it with audio running - the live path:
-# MidiIo reopens around a running stream, and its output is held back.
+# The stream reopens around a running audio callback, and its output is held back.
 setcfg "cfg['controlSurface'] = {'input': '', 'output': '', 'enabled': True, 'device': ''}"
 echo "{\"input\":\"*\",\"output\":\"$PORT\"}" >"$RETROPLUG_USER_CONFIG_DIR/midi.json"
 m="$(mark)"
@@ -217,7 +218,7 @@ tail -n +"$claim_at" "$TMP/scan.log" | grep -qF "$KEYS" \
     || { cat "$TMP/scan.log" >&2; fail "the second device's notes stopped at the claim"; }
 grep -qF "MIDI out: '$PORT' is held by the control surface" "$TMP/scan.log" \
     || { cat "$TMP/scan.log" >&2; fail "the Settings output pointed at the device was not held back"; }
-# A scan's held edge is Windows-only (MidiIo.hpp's scanSuspendsInputs): an ALSA input is shared, so the scan hears the
+# A scan's held edge is Windows-only (midi/PortFilter.hpp's scanSuspendsInputs): an ALSA input is shared, so the scan hears the
 # very port the stream holds and the stream must not close it - doing so costs the user their MIDI and an audio restart
 # for the scan's seconds. A "suspended" line here means that regression is back.
 grep -q 'hardware inputs suspended' "$TMP/scan.log" \

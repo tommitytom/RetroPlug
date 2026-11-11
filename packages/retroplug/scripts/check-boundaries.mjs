@@ -220,6 +220,37 @@ function packageOf(specifier) {
   return name.startsWith("@retroplug/") ? name.slice("@retroplug/".length) : null;
 }
 
+/** The library targets a package's own CMakeLists.txt defines - `retroplug_package_library(name ...)` (packages in this
+ *  repository) and `add_library(name ...)` - as names. A package's manifest names the targets a PRODUCT links, and two
+ *  libraries are deliberately not manifest items (`retroplug-midi`, `retroplug-audio`: listing one would link RtMidi or
+ *  PortAudio into every product), so a package that links one by name is a use only this reading of its CMakeLists can
+ *  see. Textual, comments stripped, like the search this feeds; whether the link itself is legal is the configure
+ *  check's, which reads the real target properties. */
+function libraryTargets(dir) {
+  const out = new Set();
+  for (const file of walk(dir, (name) => name === "CMakeLists.txt")) {
+    const text = readFileSync(file, "utf8").replace(/#[^\n]*/g, "");
+    for (const match of text.matchAll(/(?:retroplug_package_library|add_library)\(\s*([A-Za-z0-9_.-]+)/g)) {
+      out.add(match[1]);
+    }
+  }
+  return [...out];
+}
+
+/** The characters a CMake target name is made of: a `-` is PART of a name, not a separator, so `retroplug-audio-sdl`
+ *  does not name `retroplug-audio` and a backend's own declaration cannot credit the dependency it is named after. */
+const TARGET_NAME_CHAR = "A-Za-z0-9_.+-";
+
+/** Whether `text` (one package's CMakeLists, comments stripped and its own declarations removed) names `target` as a
+ *  WHOLE token. The declarations are removed first: `add_library(retroplug-audio-sdl ...)` is the package naming its
+ *  own target, and reading that as a use of the `retroplug-audio` it starts with is the hole this closes. */
+function namesTarget(text, target) {
+  const declarations = /(?:retroplug_package_library|add_library)\(\s*[A-Za-z0-9_.+-]+/g;
+  const withoutOwn = text.replace(declarations, "add_library(");
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^${TARGET_NAME_CHAR}])${escaped}([^${TARGET_NAME_CHAR}]|$)`, "m").test(withoutOwn);
+}
+
 /** The workspace's packages, by name, in name order: the ones with a manifest under packages/. */
 function workspace(root) {
   const base = join(root, PACKAGES);
@@ -248,8 +279,12 @@ function workspace(root) {
         ...Object.entries(manifest.dependencies ?? {}).map(([key, spec]) => ({ key, spec, dev: false })),
         ...Object.entries(manifest.devDependencies ?? {}).map(([key, spec]) => ({ key, spec, dev: true })),
       ],
-      // The CMake targets its manifest names: one way a dependency counts as used.
-      targets: entries.map((entry) => entry.target).filter((target) => typeof target === "string"),
+      // The CMake targets its manifest names, and the libraries its own CMakeLists defines: the ways a dependency counts
+      // as used by another package's native tree.
+      targets: [
+        ...entries.map((entry) => entry.target).filter((target) => typeof target === "string"),
+        ...libraryTargets(join(base, entry.name)),
+      ],
     });
   }
   return new Map([...packages.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
@@ -859,7 +894,7 @@ export function checkBoundaries({ root = REPO } = {}) {
     for (const name of [...pkg.dependencies, ...pkg.devDependencies]) {
       const short = packageOf(name);
       const targets = short === null ? [] : (packages.get(short)?.targets ?? []);
-      if (targets.some((target) => new RegExp(`(^|[^A-Za-z0-9_])${target}([^A-Za-z0-9_]|$)`, "m").test(text))) {
+      if (targets.some((target) => namesTarget(text, target))) {
         markUsed(pkg, name);
         continue;
       }

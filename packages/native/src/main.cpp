@@ -46,6 +46,8 @@
 #include "n8/desktop/N8Rpc.hpp"
 #include "FakeN8.hpp"     // packages/n8/native/test: the cart this host's N8 provider opens its ports on
 #include "FakePorts.hpp"  // packages/launchpad/native/test: the scripted device its Launchpad facet serves
+#include "midi/FakeMidiBackend.hpp"     // packages/midi: the scripted MIDI system its facet serves
+#include "midi/facet/MidiProvider.hpp"  // its provider and facet (the midi package's, mounted over the fake)
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
@@ -182,7 +184,7 @@ int main(int argc, char** argv) try {
     std::filesystem::create_directories(launchpadConfigDir.path);
     rp::launchpad::test::Rig launchpadRig;
     // What a real machine lists BESIDES the device: RetroPlug's own virtual ports, a second instance's `RetroPlug
-    // Launchpad` link ports, and ALSA's Midi Through. The facet drops them (MidiPortFilter.hpp's isHardwareMidiPort), so
+    // Launchpad` link ports, and ALSA's Midi Through. The facet drops them (midi/PortFilter.hpp's isHardwareMidiPort), so
     // the pickers and a scan never see them, and test-native holds that through the production facet.
     launchpadRig.inputs  = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A", "Midi Through:Midi Through Port-0 14:0",
                             "RetroPlug:RetroPlug In 128:0", "RetroPlug Launchpad:LPProMK3 MIDI 129:0"};
@@ -199,8 +201,29 @@ int main(int argc, char** argv) try {
             if (self) rp_launchpad_provider()->destroy(self);
         }
     } surfaceProvider{svc.engine,
-                      rp::launchpad::createProvider(launchpadHost.get(), rp::launchpad::test::scriptedOpenerFor(launchpadRig),
+                      rp::launchpad::createProvider(launchpadHost.get(), launchpadRig,
                                                     rp::launchpad::test::listerFor(launchpadRig))};
+    // The midi package's facet over a SCRIPTED MIDI system, so test-native drives the production facet the CLI mounts -
+    // which is the one door a live-MIDI client has (both of the CLI's own facets and this one are the same seven
+    // methods). A machine with the same two controllers the Launchpad rig lists, so a case sees the same names through
+    // either facet, and nothing real is opened: the backend is the midi package's fake, never RtMidi.
+    rp::midi::FakeMidiBackend midiRig;
+    midiRig.inputs  = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A", "Midi Through:Midi Through Port-0 14:0",
+                       "RetroPlug:RetroPlug In 128:0", "RetroPlug Launchpad:LPProMK3 MIDI 129:0"};
+    midiRig.outputs = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A", "Midi Through:Midi Through Port-0 14:1",
+                       "RetroPlug:RetroPlug Out 128:1", "RetroPlug Launchpad:LPProMK3 MIDI 129:1"};
+    // A scripted machine: every write gets one reply on EVERY open input, so a case can see which inputs a stream
+    // actually opened (each open input contributes one message to the next poll).
+    midiRig.onSend = [](rp::midi::FakeMidiBackend& backend, const std::string&, const std::uint8_t*, std::size_t) {
+        const std::vector<std::uint8_t> reply{0xB0, 0x01, 0x02};
+        for (const auto& entry : backend.listening) backend.deliver(entry.first, reply);
+    };
+    struct MidiProvider {
+        void* self;
+        ~MidiProvider() {
+            if (self) rp_midi_provider()->destroy(self);
+        }
+    } midiProvider{rp::midi::createProvider(launchpadHost.get(), midiRig)};
     // The two facets the plugin and the SDL standalone deliberately do NOT mount, so they are not
     // in HostServices: ~AudioDriverRpcService has teardown side effects a host that never uses the
     // facet should not inherit.
@@ -227,6 +250,10 @@ int main(int argc, char** argv) try {
     svc.engineSvc.setProductCalls(&launchpadHost.productCalls());
     if (surfaceProvider.self) rp::launchpad::registerRpc(server, rp_launchpad_provider()->rpc_service(surfaceProvider.self));
     else std::fprintf(stderr, "[retroplug-host] the Launchpad provider did not start\n");
+    // The MIDI facet beside them: the live-MIDI seam a CLI session opens a stream through, over the scripted system
+    // above (test-native/midi-facet.test.ts holds what one does with it).
+    if (midiProvider.self) rp::midi::registerRpc(server, rp_midi_provider()->rpc_service(midiProvider.self));
+    else std::fprintf(stderr, "[retroplug-host] the MIDI provider did not start\n");
 
     JSValue global = JS_GetGlobalObject(ctx);
 

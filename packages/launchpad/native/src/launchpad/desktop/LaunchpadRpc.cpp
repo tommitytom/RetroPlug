@@ -1,11 +1,12 @@
 #include "launchpad/desktop/LaunchpadRpc.hpp"
 
+#include "midi/PortFilter.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
 
-#include "launchpad/desktop/MidiPortFilter.hpp"
 
 namespace rp::launchpad {
 namespace {
@@ -15,6 +16,14 @@ namespace {
 std::vector<std::uint8_t> bytesOf(const rfl::Bytestring& bytes) {
     const auto* at = reinterpret_cast<const std::uint8_t*>(bytes.data());
     return std::vector<std::uint8_t>(at, at + bytes.size());
+}
+
+/** The hardware ports among `names`, by the midi package's one rule (midi/PortFilter.hpp), under the stream's client
+ *  name: what this pack's ports contain as well, so a second instance's link is not a device. */
+std::vector<std::string> hardwareNames(const std::vector<std::string>& names) {
+    std::vector<std::string> out;
+    for (std::size_t i : rp::midi::hardwarePortIndices(names, "RetroPlug")) out.push_back(names[i]);
+    return out;
 }
 
 rfl::Bytestring byteStringOf(const std::vector<std::uint8_t>& bytes) {
@@ -50,14 +59,15 @@ void LaunchpadRpc::reserve(const std::string& input, const std::string& output) 
 
 LaunchpadPortsDto LaunchpadRpc::launchpadPorts() {
     LaunchpadPortsDto ports = lister_ ? lister_() : LaunchpadPortsDto{};
-    // One machine's view whichever lister this is, which is what a scan's sweep and both port pickers read: RetroPlug's
-    // own virtual ports (the shared stream's client, and this pack's `RetroPlug Launchpad` link ports, so a second
-    // instance's claimed pair is not taken for a device) and ALSA's "Midi Through" are dropped exactly as
-    // MidiIo::listInputs() drops them. A scan writes a Device Inquiry out of every output it is handed, so a name that is
-    // not a device must not reach one. This is NOT a filter to Launchpad-like names: a Launchpad on a TRS cable arrives
-    // on an interface's port, named after the interface.
-    ports.inputs  = allowedMidiPorts(ports.inputs);
-    ports.outputs = allowedMidiPorts(ports.outputs);
+    // One machine's view whichever lister this is, which is what a scan's sweep and both port pickers read: the midi
+    // package's one rule (midi/PortFilter.hpp) drops RetroPlug's own virtual ports (the shared stream's client, and this
+    // pack's `RetroPlug Launchpad` link ports, so a second instance's claimed pair is not taken for a device), ALSA's
+    // "Midi Through" and anything the test-only allow list hides. A scan writes a Device Inquiry out of every output it
+    // is handed, so a name that is not a device must not reach one - and the provider's lister filters as well, so this
+    // is the guard for a host whose lister is its own. This is NOT a filter to Launchpad-like names: a Launchpad on a
+    // TRS cable arrives on an interface's port, named after the interface.
+    ports.inputs  = hardwareNames(ports.inputs);
+    ports.outputs = hardwareNames(ports.outputs);
     return ports;
 }
 
@@ -71,11 +81,11 @@ LaunchpadStatusDto LaunchpadRpc::launchpadClaim(std::string input, std::string o
     // its front panel), its cross-process claims are given back and it rejoins the shared stream. Only then is the new
     // one picked up.
     //
-    // The reservation moves STRAIGHT to the new pair, with no empty reservation in between: the product sees one change of
-    // pair, so a swap costs ONE audio restart, and A's ports never come back into the shared stream for the span between
-    // two reservations. Emptying it here would also be wrong on the way in: the old pair is already closed above, so an
-    // empty reservation would reopen its ports only to close them again. A failure below hands the reservation back from
-    // its own `fail`, which is the only place an empty pair belongs.
+    // The reservation moves STRAIGHT to the new pair, with no empty reservation in between: the product sees one change
+    // of pair, so A's ports never come back into the shared stream for the span between two reservations. Emptying it
+    // here would also be wrong on the way in: the old pair is already closed above, so an empty reservation would reopen
+    // its ports only to close them again. A failure below hands the reservation back from its own `fail`, which is the
+    // only place an empty pair belongs.
     link_.disconnect();
     claimIn_.reset();
     claimOut_.reset();
@@ -86,8 +96,8 @@ LaunchpadStatusDto LaunchpadRpc::launchpadClaim(std::string input, std::string o
     };
     if (input.empty() || output.empty()) return fail("no port chosen");
     // Both ports must be HERE before anything is reserved: a stale or unplugged pick would otherwise reserve, fail to
-    // open and hand back - two reopens of the shared stream, and two audio restarts, for nothing. It is the SAME list the
-    // pickers and a scan read, filter included: a name that is not a device at all is not connected here either.
+    // open and hand back - two reopens of the shared stream for nothing. It is the SAME list the pickers and a scan
+    // read, filter included: a name that is not a device at all is not connected here either.
     if (lister_) {
         const LaunchpadPortsDto ports = launchpadPorts();
         if (std::find(ports.inputs.begin(), ports.inputs.end(), input) == ports.inputs.end())

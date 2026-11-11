@@ -3,28 +3,13 @@
 # relative source path below resolves exactly as it did inline. (add_subdirectory would NOT: it opens
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
-# Third-party runtime deps configured for OUR needs, plus the retroplug-cli N8 facets that ride on
-# them. These were interleaved with target definitions, which is how the retroplug-sdl banner ended
-# up split in half by seventy lines of rtmidi/serial/portaudio setup.
+# Third-party runtime deps configured for OUR needs. These were interleaved with target definitions, which is how the
+# retroplug-sdl banner ended up split in half by seventy lines of rtmidi/serial/portaudio setup. RtMidi is not a
+# dependency of this file: the midi package owns the stream, and the CLI mounts its facet by naming the pack.
 
-# RtMidi (deps/rtmidi submodule) is added at ROOT scope now (cmake/rtmidi.cmake), because a package's desktop target
-# links it and a package is configured before this file: see that file's header. The targets below link it as before.
-
-# --- retroplug-cli's live-MIDI facet: the TS N8 bridges' MIDI input -----------------------------------------------
-# The N8 tools (n8-load / n8-play / n8-bridge / n8-sync) are TS (packages/retroplug/cli/sessions/), and they reach the
-# cart through the N8 pack's facet (packages/n8, its session half), which every product that lists the pack mounts.
-# What the bridges need beside it is live MIDI in: the live-MIDI-input facet (MidiRpcService over RtMidi), which this
-# option builds into the CLI. ON by default; turn OFF to keep retroplug-cli (and thus the CI `all` build) free of
-# RtMidi (ALSA dev headers on Linux) - the bridges then find no MIDI input. `serial` reaches the CLI either way, through
-# the pack the CLI lists.
-option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli live-MIDI facet the N8 bridges poll (links RtMidi)" ON)
-if(RETROPLUG_N8_BRIDGE)
-    target_sources(retroplug-cli PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (shared with retroplug-sdl)
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiRpcService.cpp) # live-MIDI-input RPC facet (TS bridge seam)
-    target_link_libraries(retroplug-cli PRIVATE rtmidi)
-    target_compile_definitions(retroplug-cli PRIVATE RETROPLUG_N8_BRIDGE)
-endif()
+# RtMidi (deps/rtmidi submodule) is added at ROOT scope (cmake/rtmidi.cmake), because a package's desktop target links it
+# and a package is configured before this file: see that file's header. The midi package's library is its only consumer;
+# the products that start its provider link it through the package.
 
 # PortAudio (deps/portaudio submodule, `pipewire` branch) — the standalone's audio backend, replacing the SDL
 # audio device/callback for better latency + device handling than SDL's ALSA-compat path (the plugin uses its

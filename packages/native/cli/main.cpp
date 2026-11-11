@@ -26,10 +26,6 @@
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
-#ifdef RETROPLUG_N8_BRIDGE
-#include "host/input/MidiRpcService.hpp"   // the live-MIDI-input facet the TS bridges poll
-#endif
-
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
@@ -39,7 +35,7 @@
 #include "host/HostServices.hpp"
 #include "host/QuickJsGlobals.hpp"
 #include "host/devices/ProviderHost.hpp"  // the rp_device_host this product starts its providers with
-#include "rp_product_providers.hpp"       // generated, in this product's own include dir: its providers (the N8's)
+#include "rp_product_providers.hpp"       // generated, in this product's own include dir: its providers and their facets
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
@@ -197,12 +193,14 @@ int main(int argc, char** argv) try {
     // The backend service graph (see host/HostServices.hpp). The CLI exposes the whole surface (incl. the
     // debug facet), so it mounts every facet.
     HostServices svc;
-    // The providers of the packages this product names in its PROVIDERS list (the N8 pack's and the Launchpad pack's:
-    // docs/modular-graph-phase-f3-design.md sections 2 and 3), started after the engine and before a session can publish a
-    // graph, and their facets mounted below beside the CLI's own: every product registers its packs one way, and the N8
-    // sessions and Launchpad probe a CLI script opens arrive in the same facets. Never restored: a provider's persisted
-    // state is the UI's (n8.cfg's streaming link, left enabled in the standalone or the plugin), and restoring it here
-    // would claim the serial port the CLI's own N8 sessions open. For the same reason the facet's link half
+    // The providers of the packages this product names in its PROVIDERS list (the N8 pack's, the Launchpad pack's and the
+    // midi package's facet: docs/modular-graph-phase-f3-design.md sections 2 and 3,
+    // docs/modular-graph-phase-f5b-design.md section 4), started after the engine and before a session can publish a
+    // graph, and their facets mounted below beside the CLI's own through the generated rp_register_package_rpc: every
+    // product registers its packs one way, and the N8 sessions, the Launchpad probe and the live-MIDI bridges a CLI
+    // script opens arrive in the same facets. Never restored: a provider's persisted state is the UI's (n8.cfg's
+    // streaming link, left enabled in the standalone or the plugin), and restoring it here would claim the serial port
+    // the CLI's own N8 sessions open. For the same reason the facet's link half
     // (n8LinkConfig, n8SetPort, n8Connect, n8SetLookahead) is the UI's, which persists the n8.cfg the standalone and
     // the plugin share with this config dir: a CLI session uses the session half, never the link half. At every exit
     // the plans are reclaimed first, while the links the providers installed are alive (a node may use its handle in
@@ -237,14 +235,6 @@ int main(int argc, char** argv) try {
     BackendRpcServer server(transport, rpcpp::QuickJSCodec{ctx});
     registerAllBackendRpc(server, svc.host, svc.engineSvc, debugSvc, driver);
     rp_register_package_rpc(server, providers);
-
-#ifdef RETROPLUG_N8_BRIDGE
-    // The MIDI-input facet (CLI-only): the live MIDI the TS N8 bridges forward to the cart, which they reach through
-    // the N8 pack's facet mounted above. Deliberately kept out of registerAllBackendRpc so the plugin/test hosts don't
-    // drag in rtmidi.
-    retroplug::MidiRpcService midiSvc;
-    retroplug::registerMidiRpc(server, midiSvc);
-#endif
 
     JSValue global = JS_GetGlobalObject(ctx);
 

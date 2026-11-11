@@ -118,6 +118,9 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/midi':
+        specifier: workspace:*
+        version: link:../midi
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
@@ -235,6 +238,22 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/midi:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/n8:
     dependencies:
       '@retroplug/core':
@@ -337,6 +356,9 @@ importers:
       '@retroplug/mgb':
         specifier: workspace:*
         version: link:../mgb
+      '@retroplug/midi':
+        specifier: workspace:*
+        version: link:../midi
       '@retroplug/n8':
         specifier: workspace:*
         version: link:../n8

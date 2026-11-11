@@ -45,7 +45,7 @@ export HOME="$TMP/home"               # audio.json lives in $HOME/.config/retrop
 export SDL_VIDEODRIVER=dummy
 # The standalone's config, made explicit rather than left to HOME, and no MIDI port at all: a saved controlSurface would be
 # claimed at startup and written to at quit, and a saved midi.json would open real inputs. The filter's empty list means
-# "every port", so it names one nothing has (MidiIo.hpp's midiPortAllowedBy).
+# "every port", so it names one nothing has (midi/PortFilter.hpp's midiPortAllowedBy).
 export RETROPLUG_USER_CONFIG_DIR="$TMP/home/.config/retroplug"
 export RP_MIDI_PORT_ALLOW="RP_NO_PORT"
 mkdir -p "$XDG_RUNTIME_DIR" "$HOME/.config/retroplug" "$TMP/pwconf/pipewire.conf.d"

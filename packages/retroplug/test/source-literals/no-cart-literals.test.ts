@@ -32,7 +32,8 @@ const ROM_EXTENSIONS = [
 ].sort();
 const CORE_IDS = [...new Set(CONSOLES.map((console) => console.core))].sort();
 /** The one declared node type the shell spells, and why: the MIDI routing node's, which buildGraph builds itself for
- *  every document (core's manifest declares it). */
+ *  every document (core's manifest declares it). It is exempt from the family guard too, because the midi package's name
+ *  claims the rp.midi. prefix the routing node already sits in; every other rp.midi.* type is still guarded. */
 const SHELL_NODE_TYPES = ["rp.midi.route"];
 /** Every guarded node type: each console's system node, and every protocol node type a listed package's manifest
  *  declares (its script nodes), but for the shell's own. Both are the registries', so a package a product adds is
@@ -127,6 +128,8 @@ async function scan(root?: string, dirs = "src"): Promise<{ file: string; value:
     NODE_TYPES.join(","),
     "--node-prefixes",
     NODE_PREFIXES.join(","),
+    "--node-exempt",
+    SHELL_NODE_TYPES.join(","),
     "--carts",
     CART_IDS.join(","),
     "--dirs",

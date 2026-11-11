@@ -7,22 +7,27 @@
 #include <vector>
 
 #include "launchpad/SurfaceLink.hpp"
-#include "launchpad/desktop/RtMidiPort.hpp"
+#include "midi/RtMidiBackend.hpp"
+#include "midi/PortFilter.hpp"
 
 namespace rp::launchpad {
 namespace {
 
 // Everything the provider owns, in the order it is built and the reverse of the order it goes: the host it was handed
-// (copied, so the product's strings are read once and outlive the provider), the link, the pool and the facet over both.
+// (copied, so the product's strings are read once and outlive the provider), the link, the pool and the facet over
+// both.
 // The link is cleared from the registry before any of them is freed, so a lookup after the stop finds nothing: an
 // acquire answers null and the node that asks runs on its stub. That does not make it safe to stop the provider under a
 // plan, as a node holds the link it acquired (rp_device.h): a product reclaims its plans before it stops its providers.
+//
+// The backend is the provider's OWN: an instance under the client name "RetroPlug Launchpad", so a product's stream
+// ("RetroPlug") and a second instance's link (the same name) are both told apart from a device by the one filter, and
+// the pack never publishes a virtual port of its own, so no name but its opened ports exists on the wire.
 struct Provider {
-    Provider(const rp_device_host& given, MidiPortOpener portOpener, PortLister lister)
+    Provider(const rp_device_host& given, rp::midi::MidiBackend& midi, PortLister lister)
         : host(given),
-          opener(std::move(portOpener)),
-          link(opener),
-          pool(opener),
+          link(midi),
+          pool(midi),
           rpc(link, pool, &host, std::move(lister)) {
         // One claim per machine (PortClaim): two standalones restoring one config.json must not both take one device.
         // The config dir is the product's, copied above, so the locks live where its other state does.
@@ -49,12 +54,11 @@ struct Provider {
     Provider(const Provider&)            = delete;
     Provider& operator=(const Provider&) = delete;
 
-    rp_device_host host;
-    MidiPortOpener opener;  // the link's and the pool's: a test's fake is therefore the one a scan gets too
-    ControllerLink link;
-    MidiPortPool   pool;
-    LaunchpadRpc   rpc;
-    bool           installed = false;
+    rp_device_host  host;
+    ControllerLink  link;  // over the backend the creator gave: a test's fake is therefore the one a scan gets too
+    MidiPortPool    pool;
+    LaunchpadRpc    rpc;
+    bool            installed = false;
 };
 
 Provider& providerOf(void* self) {
@@ -62,14 +66,14 @@ Provider& providerOf(void* self) {
 }
 
 // The table's entries throw nothing (graph/rp_provider.h): a create that throws (an allocation) answers null and says
-// why.
+// why. The backend is the pack's own instance, constructed for the process's lifetime under the pack's client name: the
+// ports a link opens read "RetroPlug Launchpad:<device>", so a product's stream drops them as not hardware, and a
+// second instance's claimed pair is never taken for a device. Its construction is inside the try because it allocates
+// too: a throw there would otherwise leave a noexcept table entry with no answer at all.
 void* createWithRtMidi(const rp_device_host* host) noexcept {
     try {
-        return createProvider(host, rtMidiPortOpener("RetroPlug Launchpad"),
-                              [] {
-                                  const PortNames names = listMidiPorts();
-                                  return LaunchpadPortsDto{names.inputs, names.outputs};
-                              });
+        static const std::unique_ptr<rp::midi::MidiBackend> backend = rp::midi::rtMidiBackend("RetroPlug Launchpad");
+        return createProvider(host, *backend, launchpadPortLister(*backend));
     } catch (...) {
         std::fprintf(stderr, "[retroplug] the Launchpad provider did not start\n");
         return nullptr;
@@ -98,10 +102,23 @@ void wake(void* self) noexcept {
 
 }  // namespace
 
-void* createProvider(const rp_device_host* host, MidiPortOpener opener, PortLister lister) {
+PortLister launchpadPortLister(rp::midi::MidiBackend& backend) {
+    return [&backend] {
+        LaunchpadPortsDto out;
+        const std::vector<std::string> inputs  = backend.listInputs();
+        const std::vector<std::string> outputs = backend.listOutputs();
+        // The client name is the stream's ("RetroPlug"), which this pack's own "RetroPlug Launchpad:<device>" link
+        // ports contain as well, so one name drops both from what a picker or a scan is handed (midi/PortFilter.hpp).
+        for (std::size_t i : rp::midi::hardwarePortIndices(inputs, "RetroPlug")) out.inputs.push_back(inputs[i]);
+        for (std::size_t i : rp::midi::hardwarePortIndices(outputs, "RetroPlug")) out.outputs.push_back(outputs[i]);
+        return out;
+    };
+}
+
+void* createProvider(const rp_device_host* host, rp::midi::MidiBackend& backend, PortLister lister) {
     if (!host || host->abi_version != RP_PROVIDER_ABI_VERSION) return nullptr;
     try {
-        return new Provider(*host, std::move(opener), std::move(lister));
+        return new Provider(*host, backend, std::move(lister));
     } catch (const std::exception& e) {
         std::fprintf(stderr, "[retroplug] the Launchpad provider did not start: %s\n", e.what());
     } catch (...) {

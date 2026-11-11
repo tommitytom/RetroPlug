@@ -14,7 +14,7 @@ import { native } from "../../host/nativeHooks";
 /** The input selection meaning "every hardware port at once" - an explicit choice, not the default.
  *  Opening every device turns out to be a surprising thing to do by default: anything plugged in becomes a
  *  MIDI source, so a control surface's free-running clock ends up driving the host tempo and a controller's
- *  mixer ports send notes at the cart. Mirrors kAllInputs in MidiIo.hpp. */
+ *  mixer ports send notes at the cart. Mirrors kAllInputs in midi/PortFilter.hpp. */
 export const ALL_INPUTS = "*";
 
 export interface MidiConfig {

@@ -36,7 +36,7 @@
 #include "launchpad/desktop/ControllerLink.hpp"
 #include "launchpad/desktop/LaunchpadProvider.hpp"
 #include "launchpad/desktop/LaunchpadRpc.hpp"
-#include "launchpad/desktop/MidiPortFilter.hpp"
+#include "midi/PortFilter.hpp"
 #include "launchpad/desktop/MidiPortPool.hpp"
 #include "launchpad/desktop/PortClaim.hpp"
 
@@ -49,13 +49,11 @@ using rp::launchpad::DeviceMessage;
 using rp::launchpad::LaunchpadPortsDto;
 using rp::launchpad::LaunchpadRpc;
 using rp::launchpad::LaunchpadStatusDto;
-using rp::launchpad::MidiPortOpener;
 using rp::launchpad::MidiPortPool;
 using rp::launchpad::PortClaim;
 using rp::launchpad::kMaxDeviceMessage;
 using rp::launchpad::test::Bytes;
 using rp::launchpad::test::FakeHost;
-using rp::launchpad::test::openerFor;
 using rp::launchpad::test::Rig;
 using rp::launchpad::test::kCloseBytes;
 using rp::launchpad::test::kOtherClose;
@@ -86,7 +84,7 @@ rfl::Bytestring bytes(const Bytes& v) {
 /** Push `bytes` from the audio thread's side. */
 void push(ControllerLink& link, const Bytes& bytes) { link.pushOutput(bytes.data(), bytes.size()); }
 
-/** RP_MIDI_PORT_ALLOW (MidiPortFilter.hpp) for one case, put back exactly as it was when it goes. */
+/** RP_MIDI_PORT_ALLOW (midi/PortFilter.hpp) for one case, put back exactly as it was when it goes. */
 struct PortAllowList {
     explicit PortAllowList(const char* spec) {
         const char* was = std::getenv("RP_MIDI_PORT_ALLOW");
@@ -158,8 +156,7 @@ struct Facet {
     LaunchpadRpc& start() {
         const rp_provider* provider = rp_launchpad_provider();
         REQUIRE(provider != nullptr);
-        auto opener = openerFor(rig);
-        self        = rp::launchpad::createProvider(&host.table, std::move(opener), widePorts);
+        self        = rp::launchpad::createProvider(&host.table, rig, widePorts);
         REQUIRE(self != nullptr);
         rpc = static_cast<LaunchpadRpc*>(provider->rpc_service(self));
         REQUIRE(rpc != nullptr);
@@ -183,7 +180,7 @@ struct CountingServer {
 
 TEST_CASE("ControllerLink.connect claims the named pair, disconnect gives it back", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", kCloseBytes));
     CHECK(link.isConnected());
     CHECK(link.generation() == 1);
@@ -203,7 +200,7 @@ TEST_CASE("ControllerLink.connect claims the named pair, disconnect gives it bac
 
 TEST_CASE("ControllerLink surfaces a refused port, and holds NEITHER half", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     rig.refuse.insert("LP in");
     REQUIRE_FALSE(link.connect("LP in", "LP out", kCloseBytes));
     CHECK_FALSE(link.isConnected());
@@ -217,7 +214,7 @@ TEST_CASE("ControllerLink surfaces a refused port, and holds NEITHER half", "[la
 
 TEST_CASE("ControllerLink replays the close bytes on disconnect, once", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", kCloseBytes));
     link.disconnect();
     link.disconnect();  // idempotent: nothing held, nothing said twice
@@ -227,7 +224,7 @@ TEST_CASE("ControllerLink replays the close bytes on disconnect, once", "[launch
 TEST_CASE("ControllerLink replays the close bytes on DESTRUCT too", "[launchpad][link]") {
     Rig rig;
     {
-        ControllerLink link(openerFor(rig), false);
+        ControllerLink link(rig, false);
         REQUIRE(link.connect("LP in", "LP out", kCloseBytes));
     }
     CHECK(rig.written["LP out"] == std::vector<Bytes>{kCloseBytes});
@@ -236,7 +233,7 @@ TEST_CASE("ControllerLink replays the close bytes on DESTRUCT too", "[launchpad]
 
 TEST_CASE("ControllerLink: a reconnect says goodbye to the OLD device with the OLD bytes", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("A in", "A out", kCloseBytes));
     REQUIRE(link.connect("B in", "B out", kOtherClose));
     CHECK(rig.written["A out"] == std::vector<Bytes>{kCloseBytes});
@@ -250,7 +247,7 @@ TEST_CASE("ControllerLink: a reconnect says goodbye to the OLD device with the O
 
 TEST_CASE("ControllerLink: a message from the device reaches the audio-thread drain, in order", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     rig.deliver("LP in", {0x90, 0x0B, 0x7F});
     rig.deliver("LP in", {0xF0, 0x7E, 0xF7});
@@ -262,7 +259,7 @@ TEST_CASE("ControllerLink copies at most what the caller's slots hold, and keeps
     // A block drains in batches; a message the caller has no room for stays queued rather than being dropped or freed
     // on the audio thread.
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     for (int i = 0; i < 5; ++i) rig.deliver("LP in", {0x90, static_cast<std::uint8_t>(i), 0x7F});
     DeviceMessage two[2];
@@ -276,7 +273,7 @@ TEST_CASE("ControllerLink copies at most what the caller's slots hold, and keeps
 
 TEST_CASE("ControllerLink: queued output goes out on pump, not on push", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     push(link, {0xB0, 0x10, 0x7F});
     CHECK(rig.written["LP out"].empty());
@@ -288,7 +285,7 @@ TEST_CASE("ControllerLink: queued output goes out on pump, not on push", "[launc
 TEST_CASE("ControllerLink flushes what was queued BEFORE the close bytes", "[launchpad][link]") {
     // The device is not left half-painted: the last block's frames go out, then the goodbye.
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", kCloseBytes));
     push(link, {0xB0, 0x10, 0x01});
     link.disconnect();
@@ -297,7 +294,7 @@ TEST_CASE("ControllerLink flushes what was queued BEFORE the close bytes", "[lau
 
 TEST_CASE("ControllerLink drops rather than overruns an oversized message", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     const Bytes wide(kMaxDeviceMessage + 1, 0x22);
     push(link, wide);
@@ -313,7 +310,7 @@ TEST_CASE("ControllerLink drops rather than overruns an oversized message", "[la
 
 TEST_CASE("ControllerLink ignores output while disconnected, and counts it", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     push(link, {0x90, 0x01, 0x01});  // nothing held
     CHECK(link.dropped() == 1);
     // The paint a session kept pushing while the device was unplugged is what a repaint replaces, so it is counted: a
@@ -323,7 +320,7 @@ TEST_CASE("ControllerLink ignores output while disconnected, and counts it", "[l
 
 TEST_CASE("ControllerLink drops an oversized message FROM the device, and counts it", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     rig.deliver("LP in", Bytes(kMaxDeviceMessage + 1, 0xF0));  // a patch dump from a synth picked by mistake
     CHECK(drained(link).empty());
@@ -333,7 +330,7 @@ TEST_CASE("ControllerLink drops an oversized message FROM the device, and counts
 TEST_CASE("ControllerLink: send() goes out after what the session already queued", "[launchpad][link]") {
     // Letting the device go while the pair stays claimed: the LED frame must land before the goodbye, not after it.
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     push(link, {0xB0, 0x10, 0x02});
     const Bytes farewell{0xF0, 0x00, 0xF7};
@@ -345,7 +342,7 @@ TEST_CASE("ControllerLink: send() goes out after what the session already queued
 
 TEST_CASE("ControllerLink's writer thread delivers what is pushed, and disconnect flushes it", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), true);  // the provider's shape: its own thread
+    ControllerLink link(rig, true);  // the provider's shape: its own thread
     REQUIRE(link.connect("LP in", "LP out", kCloseBytes));
     push(link, {0xB0, 0x11, 0x03});
     // The writer waits up to 50 ms for a pump; one pump is the frame the session's output is written on. The test polls
@@ -362,7 +359,7 @@ TEST_CASE("the audio path allocates nothing: a drain, a push, the generation and
     // engine's own cases refuse for the nodes. The link keeps every message in a slot of its own and the node copies into
     // storage it owns, so nothing is allocated or freed - warmed first, since a port's open may allocate.
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     rig.deliver("LP in", {0x90, 0x0B, 0x7F});
     DeviceMessage slots[8];
@@ -419,7 +416,7 @@ TEST_CASE("ControllerLink: what an earlier claim received never reaches the next
     // the UI thread a second consumer, and a mid-drain reconnect a double free). Instead each slot carries the claim it
     // arrived under, and a slot from an earlier claim is dropped on drain.
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("A in", "A out", {}));
     rig.deliver("A in", {0x90, 0x0B, 0x7F});  // still queued when the swap happens
     REQUIRE(link.connect("B in", "B out", {}));
@@ -431,7 +428,7 @@ TEST_CASE("ControllerLink: a new claim's FIRST message is already its own", "[la
     // The claim's number is fixed before the input opens, so the receiver is bound to it: nothing can arrive tagged
     // with the previous claim or with "nothing".
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("A in", "A out", {}));
     drained(link);
     REQUIRE(link.connect("B in", "B out", {}));
@@ -441,7 +438,7 @@ TEST_CASE("ControllerLink: a new claim's FIRST message is already its own", "[la
 
 TEST_CASE("ControllerLink: output queued for an earlier claim is not written to the next device", "[launchpad][link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("A in", "A out", {}));
     push(link, {0xB0, 0x10, 0x7F});  // for A, never written: the claim ends first
     REQUIRE(link.connect("B in", "B out", {}));
@@ -461,7 +458,7 @@ TEST_CASE("a swap mid-drain leaves the audio thread a whole stream and no stale 
     // place" means. Output follows the same rule: what lands on claim N's port carries claim N's bytes and no other's.
     // Run this file under ThreadSanitizer (tools/run-sanitizer.sh) and the rings are checked, not merely exercised.
     Rig               rig;
-    ControllerLink    link(openerFor(rig), true);
+    ControllerLink    link(rig, true);
     std::atomic<bool> stop{false};
     std::atomic<bool> torn{false};
     std::atomic<int>  outOfOrder{0};
@@ -542,7 +539,7 @@ TEST_CASE("send() on the UI thread never waits for the write in flight, nor for 
     // message to the writer and returns; only the writer touches the port.
     Rig             rig;
     rig.sendDelayMs = 120;  // a bulk write as WinMM takes it, shorter so the case is quick
-    ControllerLink  link(openerFor(rig), true);  // the provider's shape: its own thread
+    ControllerLink  link(rig, true);  // the provider's shape: its own thread
     REQUIRE(link.connect("LP in", "LP out", {}));
     const Bytes bulk(538, 0x7F);
     push(link, bulk);
@@ -570,7 +567,7 @@ TEST_CASE("a stale claim's slots never reach the next claim's drain, determinist
     // slot it is handed to belong to the claim that was live when it read the generation. Without the filter the drain
     // hands back all sixteen (the earlier twelve included) under the fourth claim's number, and both checks are red.
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);  // no writer thread: nothing but this case touches the link
+    ControllerLink link(rig, false);  // no writer thread: nothing but this case touches the link
     std::atomic<bool> drain{false};
     std::atomic<int>  drained{0};
     std::atomic<int>  stale{0};
@@ -602,7 +599,7 @@ TEST_CASE("a stale claim's slots never reach the next claim's drain, determinist
 
 TEST_CASE("MidiPortPool: what an input hears is read once, in order", "[launchpad][pool]") {
     Rig          rig;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     const int    in = pool.openInputs({"Scan in"}).front();
     REQUIRE(in != 0);
     rig.deliver("Scan in", {0xF0, 0x01, 0xF7});
@@ -613,7 +610,7 @@ TEST_CASE("MidiPortPool: what an input hears is read once, in order", "[launchpa
 
 TEST_CASE("MidiPortPool: an output handle writes, an input handle does not", "[launchpad][pool]") {
     Rig          rig;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     const int    out = pool.openOutput("Scan out");
     const int    in  = pool.openInputs({"Scan in"}).front();
     REQUIRE(out != 0);
@@ -627,7 +624,7 @@ TEST_CASE("MidiPortPool: an output handle writes, an input handle does not", "[l
 TEST_CASE("MidiPortPool: a port that will not open is a 0 handle and a reason", "[launchpad][pool]") {
     Rig          rig;
     rig.refuse.insert("Gone");
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     CHECK(pool.openOutput("Gone") == 0);
     CHECK(pool.lastError() == "MIDI port not found: Gone");
     CHECK(pool.openInputs({"Gone", "Scan in"}).front() == 0);
@@ -637,7 +634,7 @@ TEST_CASE("MidiPortPool: a port that will not open is a 0 handle and a reason", 
 
 TEST_CASE("MidiPortPool: a full queue drops the newest and counts it", "[launchpad][pool]") {
     Rig          rig;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     const int    in = pool.openInputs({"Chatty in"}).front();
     REQUIRE(in != 0);
     for (std::size_t i = 0; i < MidiPortPool::kMaxQueued + 5; ++i) rig.deliver("Chatty in", {0x90, 0x01, 0x01});
@@ -647,7 +644,7 @@ TEST_CASE("MidiPortPool: a full queue drops the newest and counts it", "[launchp
 
 TEST_CASE("MidiPortPool: close stops delivery", "[launchpad][pool]") {
     Rig          rig;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     const int    in = pool.openInputs({"Scan in"}).front();
     REQUIRE(in != 0);
     pool.close(in);
@@ -663,7 +660,7 @@ TEST_CASE("MidiPortPool brackets held inputs, so the host can free its own strea
     // The callback's owner outlives the pool: the pool fires the edge in its destructor, which is how a scan that died
     // half way gives the inputs back.
     std::vector<bool> edges;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     pool.setOnInputsHeld([&](bool held) { edges.push_back(held); });
     const int a = pool.openInputs({"A in"}).front();
     REQUIRE(a != 0);
@@ -687,7 +684,7 @@ TEST_CASE("MidiPortPool opens a batch of inputs as ONE held edge, however many r
     rig.refuse.insert("Gone in");
     rig.refuse.insert("Gone too");
     std::vector<bool> edges;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     pool.setOnInputsHeld([&](bool held) { edges.push_back(held); });
     const std::vector<int> handles = pool.openInputs({"Gone in", "A in", "Gone too"});
     REQUIRE(handles.size() == 3);
@@ -702,7 +699,7 @@ TEST_CASE("MidiPortPool gives the inputs back if the only open fails", "[launchp
     Rig          rig;
     rig.refuse.insert("Gone in");
     std::vector<bool> edges;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     pool.setOnInputsHeld([&](bool held) { edges.push_back(held); });
     CHECK(pool.openInputs({"Gone in"}).front() == 0);
     CHECK(edges == std::vector<bool>{true, false});  // raised for the attempt, handed straight back
@@ -713,7 +710,7 @@ TEST_CASE("MidiPortPool gives the inputs back on closeAll - a scan that died hal
     // The callback's owner outlives the pool: the pool fires the edge in its destructor, which is how a scan that died
     // half way gives the inputs back.
     std::vector<bool> edges;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     pool.setOnInputsHeld([&](bool held) { edges.push_back(held); });
     REQUIRE(pool.openInputs({"A in", "B in"}).front() != 0);
     pool.closeAll();
@@ -725,31 +722,37 @@ TEST_CASE("MidiPortPool gives the inputs back on closeAll - a scan that died hal
 // ---- the test-only port filter --------------------------------------------------------------------------------
 
 TEST_CASE("the port filter: a filtered lister hides what a filtered opener refuses", "[launchpad][filter]") {
-    // RP_MIDI_PORT_ALLOW (MidiPortFilter.hpp) is what keeps a check off this machine's real MIDI hardware:
+    // RP_MIDI_PORT_ALLOW (midi/PortFilter.hpp) is what keeps a check off this machine's real MIDI hardware:
     // tools/run-sdl-controller.sh sets it to its two fakes' WHOLE port names ("RPFakeLPProMK3:LPProMK3 MIDI 128:0",
     // "RPTestKeys:RPTestKeys 129:0"), so the standalone's scan can neither list nor open anything else - no real device's
     // name contains those client names. It is a comma-separated list of SUBSTRINGS, because a backend's port name carries
     // client and port numbers that move as other clients come and go; a whole name is simply the strictest substring.
-    CHECK(rp::launchpad::midiPortAllowedBy("LPProMK3 MIDI:1 24:0", "LPProMK3 MIDI,RPTestKeys"));
-    CHECK(rp::launchpad::midiPortAllowedBy("RPTestKeys:1 32:0", "LPProMK3 MIDI, RPTestKeys"));  // the space is trimmed
-    CHECK_FALSE(rp::launchpad::midiPortAllowedBy("Zoom L6:1 20:0", "LPProMK3 MIDI,RPTestKeys"));
-    CHECK(rp::launchpad::midiPortAllowedBy("anything", ""));       // unset: every port, as an ordinary run is
-    CHECK(rp::launchpad::midiPortAllowedBy("anything", " , \t"));  // a list of separators is not "no ports at all"
+    CHECK(rp::midi::midiPortAllowedBy("LPProMK3 MIDI:1 24:0", "LPProMK3 MIDI,RPTestKeys"));
+    CHECK(rp::midi::midiPortAllowedBy("RPTestKeys:1 32:0", "LPProMK3 MIDI, RPTestKeys"));  // the space is trimmed
+    CHECK_FALSE(rp::midi::midiPortAllowedBy("Zoom L6:1 20:0", "LPProMK3 MIDI,RPTestKeys"));
+    CHECK(rp::midi::midiPortAllowedBy("anything", ""));       // unset: every port, as an ordinary run is
+    CHECK(rp::midi::midiPortAllowedBy("anything", " , \t"));  // a list of separators is not "no ports at all"
 
     PortAllowList allow("LPProMK3 MIDI,RPTestKeys");
-    // The lister: what a scan's sweep and the port pickers are handed.
-    CHECK(rp::launchpad::allowedMidiPorts({"LPProMK3 MIDI:1 24:0", "Zoom L6:1 20:0", "RPTestKeys:1 32:0"}) ==
-          std::vector<std::string>{"LPProMK3 MIDI:1 24:0", "RPTestKeys:1 32:0"});
+    // The lister: what a scan's sweep and the port pickers are handed. It is the backend's own lists, through the one
+    // filter (midi/PortFilter.hpp): a port the list hides cannot reach a scan that writes a Device Inquiry out of every
+    // output it is given.
+    Rig listerRig;
+    listerRig.inputs  = {"LPProMK3 MIDI:1 24:0", "Zoom L6:1 20:0", "RPTestKeys:1 32:0"};
+    listerRig.outputs = {"LPProMK3 MIDI:1 24:1", "Zoom L6:1 20:1", "RPTestKeys:1 32:1"};
+    const LaunchpadPortsDto listed = rp::launchpad::launchpadPortLister(listerRig)();
+    CHECK(listed.inputs == std::vector<std::string>{"LPProMK3 MIDI:1 24:0", "RPTestKeys:1 32:0"});
+    CHECK(listed.outputs == std::vector<std::string>{"LPProMK3 MIDI:1 24:1", "RPTestKeys:1 32:1"});
     // The pool: a handle per name, 0 for the refused one, and the opener never sees it.
     Rig          rig;
-    MidiPortPool pool(openerFor(rig));
+    MidiPortPool pool(rig);
     const std::vector<int> handles = pool.openInputs({"Zoom L6:1 20:0"});
     REQUIRE(handles.size() == 1);
     CHECK(handles.front() == 0);
     CHECK(pool.lastError() == "MIDI port not allowed: Zoom L6:1 20:0");
     CHECK(rig.events.empty());
     // The link's claim: refused before either port opens, and it says which.
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     CHECK_FALSE(link.connect("RPTestKeys in", "Zoom L6 out", {}));
     CHECK(link.lastError() == "MIDI port not allowed: Zoom L6 out");
     CHECK(rig.events.empty());
@@ -765,7 +768,7 @@ TEST_CASE("the port filter: a filtered lister hides what a filtered opener refus
 TEST_CASE("the provider installs the link as the pack's device, and takes it back on destroy", "[launchpad][provider]") {
     Rig   rig;
     FakeHost host;
-    void* self = rp::launchpad::createProvider(&host.table, openerFor(rig), [] { return LaunchpadPortsDto{}; });
+    void* self = rp::launchpad::createProvider(&host.table, rig, [] { return LaunchpadPortsDto{}; });
     REQUIRE(self != nullptr);
     // Installed under the name and interface the surface nodes ask for (rp.host.devices/2), so a plan binds it.
     CHECK(host.installs == 1);
@@ -783,7 +786,7 @@ TEST_CASE("the provider refuses a host of another ABI version", "[launchpad][pro
     Rig      rig;
     FakeHost host;
     host.table.abi_version = RP_PROVIDER_ABI_VERSION + 1;
-    CHECK(rp::launchpad::createProvider(&host.table, openerFor(rig), [] { return LaunchpadPortsDto{}; }) == nullptr);
+    CHECK(rp::launchpad::createProvider(&host.table, rig, [] { return LaunchpadPortsDto{}; }) == nullptr);
     CHECK(host.installs == 0);
 }
 
@@ -798,7 +801,7 @@ TEST_CASE("the facet lists every HARDWARE port, unfiltered to Launchpad-like nam
                                  {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A"}};
     };
     FakeHost host;
-    void* self = rp::launchpad::createProvider(&host.table, openerFor(rig), lister);
+    void* self = rp::launchpad::createProvider(&host.table, rig, lister);
     REQUIRE(self != nullptr);
     auto& rpc = *static_cast<LaunchpadRpc*>(rp_launchpad_provider()->rpc_service(self));
     const LaunchpadPortsDto ports = rpc.launchpadPorts();
@@ -814,7 +817,7 @@ TEST_CASE("the facet drops RetroPlug's own ports and Midi Through, so a scan nev
     // A scan sends a Universal Device Inquiry out of every output its list holds, and opens every input. RetroPlug's own
     // virtual output is the shared musical stream (a scan into it is heard by the carts), its own virtual input is where
     // a second instance's link listens, and ALSA's Through echoes the message back. The stream's own list has always
-    // dropped these (MidiIo::listInputs); the facet is what both pickers and the scan read, so it drops them too, and a
+    // dropped these (midi/PortFilter.hpp); the facet is what both pickers and the scan read, so it drops them too, and a
     // claim of one is refused as a port that is not there.
     Rig  rig;
     auto lister = [] {
@@ -824,7 +827,7 @@ TEST_CASE("the facet drops RetroPlug's own ports and Midi Through, so a scan nev
                                   "RetroPlug Launchpad:LPProMK3 MIDI 129:1", "Midi Through:Midi Through Port-0 14:1"}};
     };
     FakeHost host;
-    void* self = rp::launchpad::createProvider(&host.table, openerFor(rig), lister);
+    void* self = rp::launchpad::createProvider(&host.table, rig, lister);
     REQUIRE(self != nullptr);
     auto& rpc = *static_cast<LaunchpadRpc*>(rp_launchpad_provider()->rpc_service(self));
     const LaunchpadPortsDto ports = rpc.launchpadPorts();
@@ -942,7 +945,7 @@ TEST_CASE("the facet refuses a pick whose ports are not here, and reserves nothi
     Rig  rig;
     auto lister = [] { return LaunchpadPortsDto{{"LP in"}, {"LP out"}}; };
     FakeHost host;
-    void* self = rp::launchpad::createProvider(&host.table, openerFor(rig), lister);
+    void* self = rp::launchpad::createProvider(&host.table, rig, lister);
     REQUIRE(self != nullptr);
     auto& rpc = *static_cast<LaunchpadRpc*>(rp_launchpad_provider()->rpc_service(self));
 

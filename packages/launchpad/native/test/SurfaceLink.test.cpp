@@ -30,7 +30,6 @@ using rp::launchpad::DeviceMessage;
 using rp::launchpad::NoSurface;
 using rp::launchpad::SurfaceLink;
 using rp::launchpad::test::Bytes;
-using rp::launchpad::test::openerFor;
 using rp::launchpad::test::Rig;
 
 const rp_node_type* typeOf(const char* id) {
@@ -68,7 +67,7 @@ void holdDescriptorToGolden(const rp_node_type* t) {
 
 TEST_CASE("a link's generation is a claim's number, and 0 when nothing is held", "[launchpad][surface-link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     CHECK(link.generation() == 0);
     REQUIRE(link.connect("A in", "A out", {}));
     const std::uint32_t first = link.generation();
@@ -82,7 +81,7 @@ TEST_CASE("a link's generation is a claim's number, and 0 when nothing is held",
 TEST_CASE("a link's drain copies whole slots out, and its pushes are the device's LED traffic",
           "[launchpad][surface-link]") {
     Rig            rig;
-    ControllerLink link(openerFor(rig), false);
+    ControllerLink link(rig, false);
     REQUIRE(link.connect("LP in", "LP out", {}));
     rig.deliver("LP in", {0x90, 0x51, 0x7f});
     DeviceMessage slots[4];

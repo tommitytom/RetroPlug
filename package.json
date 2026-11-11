@@ -74,7 +74,8 @@
   },
   "retroplug": {
     "products": {
-      "desktop": ["core", "launchpad", "system", "sameboy", "dsp", "mgb", "lsdj", "lsdj-launchpad", "graph-runtime",
+      "desktop": ["core", "midi", "launchpad", "system", "sameboy", "dsp", "mgb", "lsdj", "lsdj-launchpad",
+                  "graph-runtime",
                   "n8-wire", "n8", "mesen", "smsggdj", "risa", "host-io", "native", "bliptoaster"],
       "plugin": ["core", "system", "sameboy", "dsp", "mgb", "lsdj", "graph-runtime", "n8-wire", "n8", "mesen",
                  "smsggdj", "risa", "host-io", "native", "bliptoaster"]

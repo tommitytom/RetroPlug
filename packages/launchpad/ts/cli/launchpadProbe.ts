@@ -236,8 +236,8 @@ function finish(surface: Surface, send: (b: number[]) => void, closePorts: () =>
 
 /** The loopback self-test, which needs no Launchpad at all, and is the one leg NOT on the Launchpad facet.
  *
- *  It measures the SHARED MIDI stream's receive path (MidiIo, our own virtual ports), which is what musical MIDI rides:
- *  a session or a cart. The facet has no virtual port - it opens real endpoints - so a message cannot be sent to
+ *  It measures the SHARED MIDI stream's receive path (MidiStream, our own virtual ports), which is what musical MIDI
+ *  rides: a session or a cart. The facet has no virtual port - it opens real endpoints - so a message cannot be sent to
  *  ourselves there, and the loopback stays on the stream it was written for.
  *
  *  It exists because the probe cannot test the RECEIVE half: a Launchpad sends notes and CCs, and only emits

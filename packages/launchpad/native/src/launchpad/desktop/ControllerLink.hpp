@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "launchpad/SurfaceLink.hpp"
-#include "launchpad/desktop/MidiPort.hpp"
+#include "midi/MidiBackend.hpp"
 #include "transport/SpscRing.hpp"
 
 namespace rp::launchpad {
@@ -52,9 +52,10 @@ public:
     // The audio thread's send ring: a whole repaint is one message, and a frame's worth of LED traffic is a handful.
     static constexpr std::size_t kOutCapacity = 32;
 
-    /** `writerThread` false keeps output on the caller's pump() - what the unit tests use, so a write can be asserted
-     *  on deterministically. The provider runs the thread. */
-    explicit ControllerLink(MidiPortOpener opener, bool writerThread = true);
+    /** The ports come from `backend`, the midi package's interface (the provider hands it its own RtMidi instance under
+     *  "RetroPlug Launchpad"; a test hands it a scripted fake). `writerThread` false keeps output on the caller's
+     *  pump() - what the unit tests use, so a write can be asserted on deterministically. The provider runs the thread. */
+    explicit ControllerLink(rp::midi::MidiBackend& backend, bool writerThread = true);
     ~ControllerLink();  // not virtual: a SurfaceLink is deleted through the host, which owns it, never through this
     ControllerLink(const ControllerLink&)            = delete;
     ControllerLink& operator=(const ControllerLink&) = delete;
@@ -123,10 +124,10 @@ private:
         std::vector<std::uint8_t> bytes;
     };
 
-    MidiPortOpener             opener_;
-    bool                       useWriter_;
-    std::unique_ptr<IMidiPort> out_;
-    std::unique_ptr<IMidiPort> in_;          // reset() cancels the callback before we return
+    rp::midi::MidiBackend&         backend_;
+    bool                           useWriter_;
+    std::unique_ptr<rp::midi::MidiPort> out_;
+    std::unique_ptr<rp::midi::MidiPort> in_;  // reset() cancels the callback before we return
     std::vector<std::uint8_t>  closeBytes_;  // opaque, from TS
     std::string                inName_, outName_;
     std::string                error_;       // main thread only (connect writes, the status reads)

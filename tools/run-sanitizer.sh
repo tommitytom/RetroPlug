@@ -73,6 +73,17 @@ if [ "$san" = thread ]; then
         echo "!! retroplug-launchpad-test failed under thread sanitizer" >&2
         rc=1
     fi
+    # The midi package's stream binary: the output set replaced under a send in flight, a close under one, the input ring
+    # with several producers and a delivery thread. TSan checks happens-before, not the weak-memory reordering the
+    # handshake's seq_cst is for (that one is argued in MidiStream::retire), but it is what catches a port freed under a
+    # send on this machine.
+    echo "==> building retroplug-midi-test (instrumented)"
+    cmake --build "$builddir" -j"$(nproc)" --target retroplug-midi-test
+    echo "==> running the midi package's stream under thread sanitizer"
+    if ! "$repo/$builddir/bin/retroplug-midi-test"; then
+        echo "!! retroplug-midi-test failed under thread sanitizer" >&2
+        rc=1
+    fi
 fi
 
 [ "$rc" -eq 0 ] && echo "==> host passed under $san sanitizer"
