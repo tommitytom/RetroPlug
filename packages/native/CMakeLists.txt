@@ -7,7 +7,6 @@
 #
 #   cmake/node-addon.cmake    retroplug-node, the N-API host (opt-in)
 #   cmake/bundles.cmake       the embedded control-plane, React-UI and script-node bytecode
-#   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
 #   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
 #   cmake/tests.cmake         the shell's eleven native test binaries (the console packages declare two more)
 #   cmake/warnings.cmake      /W4 /WX on our own targets (MSVC)
@@ -17,9 +16,9 @@
 # every relative source path reads as it did when it was inline. add_subdirectory would open a child
 # scope, re-root that variable, and scope target properties differently.
 #
-# ORDER IS SEMANTIC. CMake runs top to bottom and a target must exist before anything modifies it —
-# cmake/deps.cmake calls target_sources() on retroplug-cli, so it has to come after retroplug-cli is
-# defined. Move an include() and the failure is a confusing "unknown target", not a clear one.
+# ORDER IS SEMANTIC. CMake runs top to bottom and a target must exist before anything modifies it: a
+# block that calls target_sources() on retroplug-cli has to come after retroplug-cli is defined. Move
+# an include() and the failure is a confusing "unknown target", not a clear one.
 
 # quickjs.h's directory. Spelled out at six call sites before; it is deep enough that a typo in one
 # of them would fail confusingly, and short enough here to read.
@@ -321,9 +320,6 @@ add_dependencies(retroplug-example-session ${RP_BUNDLE_desktop_GENERATOR})
 # The embedded control-plane, React-UI and script-node bytecode bundles.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bundles.cmake)
 
-# rtmidi / serial / portaudio, and the retroplug-cli N8 transport facets built on them.
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/deps.cmake)
-
 # --- retroplug-sdl: the SDL2 standalone for framebuffer handhelds (Anbernic / muOS) + plain Linux.
 # muOS has no X11 (fbdev + Mali EGL only), so the DPF/pugl JACK standalone can't run there. This host
 # reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
@@ -338,14 +334,18 @@ add_executable(retroplug-sdl
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
+# `retroplug-audio` and `retroplug-midi` are unlisted library targets, linked by name (their manifests name no
+# `native` item for them: listing one would link AudioHost/RtMidi into every product). The two BACKENDS are linked by
+# retroplug_product: AUDIO_BACKENDS names them, so CI's `all` compiles both on every platform and no other product
+# links either.
 target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
     retroplug-backend             # Engine + cores + rpcpp
     retroplug-tjs-runtime         # the txiki host its control plane runs on (sdl/main.cpp)
+    retroplug-audio               # AudioHost, the backend interface and the null device
     retroplug-midi                # the host's MIDI stream over the midi package's backend (RtMidi, linked there)
-    portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
-    PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
-retroplug_product(retroplug-sdl PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad)
+    PkgConfig::SDL2)              # window + present + gamepad
+retroplug_product(retroplug-sdl PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad AUDIO_BACKENDS portaudio sdl)
 
 target_include_directories(retroplug-sdl PRIVATE
     # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include
@@ -356,9 +356,7 @@ target_include_directories(retroplug-sdl PRIVATE
     ${DPFJS_PATH}/deps/dpf/distrho
     # portable-file-dialogs (header-only): the OS-native file picker backing __rp_openFileBrowser. No link
     # libs on Linux/macOS (it fork/execs zenity/kdialog/osascript); Windows pulls comdlg32/ole32 via its header.
-    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs
-    # portaudio.h (the `portaudio` target doesn't export its include dir for a subdirectory build).
-    ${CMAKE_SOURCE_DIR}/deps/portaudio/include)
+    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
 add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
 

@@ -57,6 +57,10 @@ if(MSVC)
         # The midi package: the stream's epoch handshake, the RtMidi backend (supportsVirtual's and the virtual port's
         # Windows halves) and the facet, with the test binary, whose cases carry the _putenv_s half.
         retroplug-midi retroplug-midi-facet retroplug-midi-test
+        # The audio package, its two backends and the AudioHost test: AudioHost's render-ahead ring, the PortAudio
+        # backend (whose quietening is Linux code and whose Windows half is the PaUtil declaration) and the SDL one,
+        # whose callback is SDLCALL and whose SDL_GetDefaultAudioInfo call is 2.24's.
+        retroplug-audio retroplug-audio-portaudio retroplug-audio-sdl retroplug-audio-host-test
         # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
         retroplug-device-mode-objects retroplug-device-mode-test retroplug-box-usb-cdc
         # The device check's case generator (packages/graph-runtime/device-check/cases).

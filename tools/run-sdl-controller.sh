@@ -22,9 +22,8 @@
 # It drives a scan, and a scan sends a Universal Device Inquiry out of every output the MIDI system lists, while the
 # shared stream on "All Devices" opens every input: on a developer's machine that is their own hardware. So the standalone
 # runs under RP_MIDI_PORT_ALLOW (one rule, midi/PortFilter.hpp, for the stream and the pack alike), set below to the two
-# fakes' FULL
-# port names - "<client>:<port> <client#>:<port#>" as RtMidi reports them, the client names being ones no real device
-# has - and a filtered process can neither list nor open anything else.
+# fakes' FULL port names - "<client>:<port> <client#>:<port#>" as RtMidi reports them, the client names being ones no
+# real device has - and a filtered process can neither list nor open anything else.
 #
 # The listing pass below is a REPORT, not the guard: it proves the filter is honoured on this machine before anything is
 # claimed or probed, and fails the run if a listed port is not a fake or is named like a Launchpad. What actually keeps
@@ -52,7 +51,9 @@ if [ -n "${RP_MIDI_PORT_ALLOW:-}" ]; then
     exit 1
 fi
 
-export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+# The null audio backend, pinned for every leg: these legs are about the MIDI seam, and audio that opened a real device
+# would either play to whatever this machine's default card is or fail on a runner with none. No audio driver is named.
+export SDL_VIDEODRIVER=dummy RETROPLUG_SDL_AUDIO_BACKEND=null
 TMP="$(mktemp -d)"
 FAKE_PID=""
 KEYS_PID=""

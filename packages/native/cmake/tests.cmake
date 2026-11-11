@@ -198,6 +198,13 @@ set(_rp_refused_manifests
     "ScriptHeapFraction|\"heapBytes\": a whole number of bytes from 4096 to 524288"
     "ScriptHeapString|\"heapBytes\": a whole number of bytes from 4096 to 524288"
     "ProviderTargetWithEntry|keep the entry and drop the target"
+    # An audio backend (AUDIO_BACKENDS): a library a product names by id, with an id of its own, on the desktop only.
+    "AudioBackendWithEntry|is an audioBackend and an entry or a provider"
+    "AudioBackendWithProvider|is an audioBackend and an entry or a provider"
+    "AudioBackendOnDevice|and a device image links no audio backend"
+    "AudioBackendWithoutId|needs an \"id\": the name a product's AUDIO_BACKENDS and --audio-backend use"
+    "AudioBackendWithoutDevice|needs \"device\": true or false"
+    "AudioBackendDuplicateId|the audio backend id \"scratch\" is taken"
     # A package's embedded resources (its manifest's `embed`): the id names the generated array, and the file is the
     # package's own.
     "EmbedIdNotIdentifier|retroplug.embed[0] id m-gb is not a C identifier"
@@ -439,6 +446,48 @@ foreach(_rp_case IN LISTS _rp_gather_cases)
     endif()
 endforeach()
 
+# The audio backends' positive control: the generator itself, run by the product-lists fixture (so the header is
+# written by a configure that completes - a file(GENERATE) output is not readable in the configure that makes it), with
+# two ids and with none.
+foreach(_rp_audio_case "audio-header-named;rp_alpha_audio_backend;rp_gamma_audio_backend"
+                       "audio-header-none;none;none")
+    list(GET _rp_audio_case 0 _rp_name)
+    list(GET _rp_audio_case 1 _rp_first)
+    list(GET _rp_audio_case 2 _rp_second)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/product-lists
+                -B ${CMAKE_BINARY_DIR}/packages/product-lists-${_rp_name}
+                -DPRODUCT_LIST_CASE=${_rp_name} -DRP_ROOT=${CMAKE_SOURCE_DIR}
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(NOT _rp_result EQUAL 0)
+        message(FATAL_ERROR "product-lists/${_rp_name} did not configure:\n${_rp_output}")
+    endif()
+    set(_rp_header "${CMAKE_BINARY_DIR}/packages/product-lists-${_rp_name}/audio-header/rp_product_audio_backends.hpp")
+    if(NOT EXISTS "${_rp_header}")
+        message(FATAL_ERROR "product-lists/${_rp_name} wrote no ${_rp_header}")
+    endif()
+    file(READ "${_rp_header}" _rp_text)
+    if(_rp_first STREQUAL "none")
+        string(FIND "${_rp_text}" "this product names no audio backend" _rp_at)
+        if(_rp_at EQUAL -1)
+            message(FATAL_ERROR "product-lists/${_rp_name}: an empty list must say so, and does not")
+        endif()
+        string(FIND "${_rp_text}" "out.push_back(rp::audio::" _rp_at)
+        if(NOT _rp_at EQUAL -1)
+            message(FATAL_ERROR "product-lists/${_rp_name}: a product naming no backend has a list that is not empty")
+        endif()
+    else()
+        string(FIND "${_rp_text}" "rp::audio::${_rp_first}()" _rp_firstAt)
+        string(FIND "${_rp_text}" "rp::audio::${_rp_second}()" _rp_secondAt)
+        if(_rp_firstAt EQUAL -1 OR _rp_secondAt EQUAL -1)
+            message(FATAL_ERROR "product-lists/${_rp_name}: the header does not declare ${_rp_first} and ${_rp_second}")
+        endif()
+        if(NOT _rp_firstAt LESS _rp_secondAt)
+            message(FATAL_ERROR "product-lists/${_rp_name}: the factories are not in the order they were named")
+        endif()
+    endif()
+endforeach()
+
 # retroplug_product()'s list rules and the subsequence rule the root configure applies, which are refusals of the
 # DECLARATION rather than of a target's properties: test/packages/product-lists is a project of its own, and a case
 # must fail with its reason. `packages-no-list` holds the list rule (a product whose packages are no list's would
@@ -449,16 +498,29 @@ set(_rp_list_cases
     "list-unknown|refused|LIST names the product nowhere, which the root package.json's retroplug.products does not declare"
     "packages-no-list|refused|PACKAGES names no retroplug.products list, and this build makes bundles"
     "subsequence-out-of-order|refused|retroplug.products.out-of-order lists alpha out of the order"
-    "subsequence-twice|refused|retroplug.products.twice lists alpha twice")
+    "subsequence-twice|refused|retroplug.products.twice lists alpha twice"
+    # The audio backends a product names (AUDIO_BACKENDS): the ids its manifests declare, each once, each of a package it
+    # lists, and never on a device product. The positive controls are the fixture's own audio-header-named /
+    # audio-header-none below (the header a product's order generates, and the empty list), and the real products'
+    # headers, read by the configure's own checks.
+    "backend-unknown|refused|AUDIO_BACKENDS names `nowhere`, which no manifest declares"
+    "backend-twice|refused|AUDIO_BACKENDS names `alpha-audio` twice"
+    "backend-not-listed|refused|names `gamma-audio`, whose package `gamma` this product does not list"
+    "device-with-backends|refused|a device product links no audio backend, so AUDIO_BACKENDS names nothing it could")
 foreach(_rp_case IN LISTS _rp_list_cases)
     string(REPLACE "|" ";" _rp_case "${_rp_case}")
     list(GET _rp_case 0 _rp_name)
+    list(GET _rp_case 1 _rp_expect)
     list(GET _rp_case 2 _rp_reason)
     execute_process(
         COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/product-lists
                 -B ${CMAKE_BINARY_DIR}/packages/product-lists-${_rp_name}
                 -DPRODUCT_LIST_CASE=${_rp_name} -DRP_ROOT=${CMAKE_SOURCE_DIR}
         RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(NOT _rp_expect STREQUAL "refused")
+        message(FATAL_ERROR "test/packages/product-lists (${_rp_name}) is listed as ${_rp_expect}, and a fixture case is "
+                            "a refusal")
+    endif()
     if(_rp_result EQUAL 0)
         message(FATAL_ERROR "test/packages/product-lists (${_rp_name}) held; the configure must refuse it:\n${_rp_output}")
     endif()

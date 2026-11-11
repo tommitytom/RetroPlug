@@ -226,6 +226,11 @@ include(cmake/serial.cmake)
 # --- RtMidi: live MIDI in/out for the hosts and for a pack that owns a MIDI port (submodule at deps/rtmidi) ---
 include(cmake/rtmidi.cmake)
 
+# --- PortAudio: the audio package's PortAudio backend (submodule at deps/portaudio) ---
+# Root scope beside RtMidi, and before cmake/packages.cmake: the backend's target (packages/audio-portaudio) links this
+# one, and a package is added while the packages are configured.
+include(cmake/portaudio.cmake)
+
 # --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
 # The consoles RetroPlug never runs are compiled out (deps/mesen/CMakeLists.txt): the Super Nintendo with the Game Boy
 # (Super Game Boy couples them), the PC Engine and the WonderSwan. These are cache defaults, so a -D overrides any of

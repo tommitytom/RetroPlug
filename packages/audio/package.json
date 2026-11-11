@@ -1,0 +1,26 @@
+{
+  "name": "@retroplug/audio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The host's audio: one interface a backend fills (AudioBackend / AudioStream), the null device, and AudioHost - the open / start / stop / reconfigure sequence, the muted fallback with a status, render-ahead and the stats. PortAudio and SDL2 fill the interface in packages of their own.",
+  "exports": {
+    ".": "./ts/app.ts",
+    "./app": "./ts/app.ts",
+    "./ui": "./ts/ui/index.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts"
+  }
+}

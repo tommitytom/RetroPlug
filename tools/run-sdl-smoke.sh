@@ -24,7 +24,11 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+# The null audio backend pins this run to no device at all: with SDL_AUDIODRIVER exported and SDL second in the
+# product's AUDIO_BACKENDS order, an `auto` run on a runner whose PortAudio finds no device would open SDL's dummy
+# driver and run on that instead of the sleep-paced null pump these checks mean (and on a desk with no ALSA config the
+# default device is the real card). So no audio driver is named and the backend is the null one.
+export SDL_VIDEODRIVER=dummy RETROPLUG_SDL_AUDIO_BACKEND=null
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -107,6 +111,19 @@ run wheel 60 RETROPLUG_SDL_TEST_WHEEL=-3
 want "$LOG" "wheel: notches=\(0\.00,-3\.00\) at \([1-9][0-9]*,[1-9][0-9]*\)" \
      "wheel: SDL_MOUSEWHEEL did not reach the handler at the tracked cursor"
 echo "  ok: mouse wheel"
+
+# 5b) Settings > Audio through the JS seam: the Apply row's own call, with the arguments audioDraft.ts builds - a driver
+#     LABEL from the getter's list, and the chosen device. The hook behind it read that label as a BACKEND id once, so
+#     every Apply resolved to a backend that does not exist and muted the run; this reads the getter back and holds the
+#     old shape (drivers, driver, devicesByDriver, defaultByDriver, autoDriver, device) and an unmuted status.
+run audio-hook 20 RETROPLUG_SDL_TEST_AUDIO_HOOK=1
+want "$LOG" 'post-audio-hook: .*"drivers":\["Auto"' "audio hooks: the getter lost the drivers list"
+want "$LOG" 'post-audio-hook: .*"driver":"Auto"' "audio hooks: the selected driver is not the Auto label"
+want "$LOG" 'post-audio-hook: .*"devicesByDriver":{' "audio hooks: the getter lost devicesByDriver"
+want "$LOG" 'post-audio-hook: .*"defaultByDriver":{' "audio hooks: the getter lost defaultByDriver"
+want "$LOG" 'post-audio-hook: .*"autoDriver":' "audio hooks: the getter lost autoDriver"
+want "$LOG" 'post-audio-hook: .*"muted":false' "audio hooks: an Apply muted the run"
+echo "  ok: Settings > Audio through the JS seam"
 
 # 6) Close guard (P6): an OS close on a clean project isn't vetoed → exits well before the 120-frame budget.
 run quit 120 RETROPLUG_SDL_TEST_QUIT=1

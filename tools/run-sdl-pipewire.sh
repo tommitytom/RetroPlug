@@ -112,7 +112,12 @@ writecfg() { if [ "$1" = none ]; then rm -f "$CFG"; else printf '%s' "$1" > "$CF
 run() {
     local name="$1"; shift
     LOG="$TMP/$name.log"
-    env "$@" RETROPLUG_DEBUG_AUDIO=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=45 timeout 90 "$BIN" >"$LOG" 2>&1
+    # The backend is named for the run: SDL sits behind PortAudio in the product's preference order, and an Auto
+    # request would open SDL's own PipeWire driver (or its default) when portaudio's host API refuses, which is a
+    # different device than this leg is about. From the audio package's first release on, a leg that means PortAudio
+    # says so.
+    env "$@" RETROPLUG_SDL_AUDIO_BACKEND=portaudio RETROPLUG_DEBUG_AUDIO=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=45 \
+        timeout 90 "$BIN" >"$LOG" 2>&1
     RC=$?
     CHOSE=$(sed -n "s/.*audio: PortAudio \[\(.*\)\] '\(.*\)' [0-9]* Hz.*/\1|\2/p" "$LOG" | head -1)
 }
@@ -191,7 +196,8 @@ PY
 if start_session_manager; then
     writecfg '{"sampleRate":48000,"blockSize":512,"outChannels":8,"hostApi":18,"outputDevice":"RetroPlug Low Priority"}'
     LOG="$TMP/wide-output.log"
-    RETROPLUG_DEBUG_AUDIO=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=240 timeout 90 "$BIN" >"$LOG" 2>&1 &
+    RETROPLUG_SDL_AUDIO_BACKEND=portaudio RETROPLUG_DEBUG_AUDIO=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=240 \
+        timeout 90 "$BIN" >"$LOG" 2>&1 &
     APP_PID=$!
     for _ in $(seq 60); do grep -q "running " "$LOG" 2>/dev/null && break; sleep 0.25; done
     sleep 3

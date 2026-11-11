@@ -1,0 +1,20 @@
+{
+  "name": "@retroplug/audio-portaudio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The PortAudio backend of the host's audio: PortAudio's host APIs as drivers, its devices by name, the ALSA/PipeWire/JACK log quietening, and a stream whose pull is the device callback. No TypeScript.",
+  "dependencies": {
+    "@retroplug/audio": "workspace:*"
+  },
+  "retroplug": {
+    "native": [
+      {
+        "target": "retroplug-audio-portaudio",
+        "device": false,
+        "audioBackend": "rp_portaudio_backend",
+        "id": "portaudio"
+      }
+    ]
+  }
+}

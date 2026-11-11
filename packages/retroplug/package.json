@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@retroplug/bliptoaster": "workspace:*",
+    "@retroplug/audio": "workspace:*",
     "@retroplug/core": "workspace:*",
     "@retroplug/dsp": "workspace:*",
     "@retroplug/lsdj": "workspace:*",

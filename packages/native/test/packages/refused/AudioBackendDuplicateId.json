@@ -1,0 +1,10 @@
+{
+  "name": "@retroplug/refused-audio-backend-duplicate-id",
+  "private": true,
+  "retroplug": {
+    "native": [
+      { "target": "scratch-audio-one", "device": false, "audioBackend": "rp_scratch_audio_one", "id": "scratch" },
+      { "target": "scratch-audio-two", "device": false, "audioBackend": "rp_scratch_audio_two", "id": "scratch" }
+    ]
+  }
+}

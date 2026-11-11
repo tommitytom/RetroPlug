@@ -191,7 +191,8 @@ function(_retroplug_read_manifest name _manifest)
         endif()
         # No native entry: no targets, no entries, whatever else the manifest contributes.
         set_property(GLOBAL APPEND PROPERTY RP_PACKAGES ${name})
-        foreach(_p TARGETS ENTRIES DEVICE_ENTRIES DEVICE_TARGETS PROVIDERS PROVIDER_ENTRIES PROVIDER_TARGETS)
+        foreach(_p TARGETS ENTRIES DEVICE_ENTRIES DEVICE_TARGETS PROVIDERS PROVIDER_ENTRIES PROVIDER_TARGETS
+                  AUDIO_BACKENDS AUDIO_BACKEND_IDS AUDIO_BACKEND_TARGETS)
             set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_${_p} "")
         endforeach()
         _retroplug_read_declarations(${name} "${_json}")
@@ -220,6 +221,9 @@ function(_retroplug_read_manifest name _manifest)
     set(_providerEntries "")
     set(_providerTargets "")
     set(_entryTargets "")
+    set(_audioBackends "")
+    set(_audioBackendIds "")
+    set(_audioBackendTargets "")
     math(EXPR _last "${_count} - 1")
     foreach(_i RANGE ${_last})
         string(JSON _target ERROR_VARIABLE _err GET "${_native}" ${_i} target)
@@ -230,6 +234,45 @@ function(_retroplug_read_manifest name _manifest)
         string(JSON _entry ERROR_VARIABLE _noEntry GET "${_native}" ${_i} entry)
         string(JSON _provider ERROR_VARIABLE _noProvider GET "${_native}" ${_i} provider)
         string(JSON _rpc ERROR_VARIABLE _noRpc GET "${_native}" ${_i} rpc)
+        # An audio backend (AUDIO_BACKENDS): a library a PRODUCT names by id, not a node type and not a service. It is
+        # read before the emptiness test below, because an item that is only an audioBackend has no entry, no provider
+        # and no rpc, and would otherwise be taken for a bare target.
+        string(JSON _audioBackend ERROR_VARIABLE _noAudioBackend GET "${_native}" ${_i} audioBackend)
+        if(NOT _noAudioBackend)
+            string(JSON _isDevice ERROR_VARIABLE _err GET "${_native}" ${_i} device)
+            if(_err OR NOT (_isDevice STREQUAL "ON" OR _isDevice STREQUAL "OFF"))
+                message(FATAL_ERROR "retroplug_package(${name}): audioBackend ${_audioBackend} needs "
+                                    "\"device\": true or false")
+            endif()
+            if(_isDevice)
+                message(FATAL_ERROR "retroplug_package(${name}): audioBackend ${_audioBackend} is \"device\": true, "
+                                    "and a device image links no audio backend")
+            endif()
+            if(NOT (_noEntry AND _noProvider AND _noRpc))
+                message(FATAL_ERROR "retroplug_package(${name}): ${_target} is an audioBackend and an entry or a "
+                                    "provider (or an rpc) at once, which cannot be split: a product that names no "
+                                    "AUDIO_BACKENDS would drop the one and keep the other. Give the backend an item of "
+                                    "its own.")
+            endif()
+            string(JSON _id ERROR_VARIABLE _err GET "${_native}" ${_i} id)
+            if(_err OR NOT _id MATCHES "^[a-z][a-z0-9-]*$")
+                message(FATAL_ERROR "retroplug_package(${name}): audioBackend ${_audioBackend} needs an \"id\": "
+                                    "the name a product's AUDIO_BACKENDS and --audio-backend use, lowercase letters, "
+                                    "digits and dashes")
+            endif()
+            get_property(_takenIds GLOBAL PROPERTY RP_AUDIO_BACKEND_IDS)
+            if(_id IN_LIST _takenIds)
+                message(FATAL_ERROR "retroplug_package(${name}): the audio backend id \"${_id}\" is taken")
+            endif()
+            set_property(GLOBAL APPEND PROPERTY RP_AUDIO_BACKEND_IDS ${_id})
+            set_property(GLOBAL PROPERTY RP_AUDIO_BACKEND_${_id}_SYMBOL ${_audioBackend})
+            set_property(GLOBAL PROPERTY RP_AUDIO_BACKEND_${_id}_PACKAGE ${name})
+            set_property(GLOBAL PROPERTY RP_AUDIO_BACKEND_${_id}_TARGET ${_target})
+            list(APPEND _audioBackends ${_audioBackend})
+            list(APPEND _audioBackendIds ${_id})
+            list(APPEND _audioBackendTargets ${_target})
+            continue()
+        endif()
         if(_noEntry AND _noProvider AND _noRpc)
             continue()
         endif()
@@ -301,6 +344,9 @@ function(_retroplug_read_manifest name _manifest)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDERS ${_providers})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDER_ENTRIES ${_providerEntries})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDER_TARGETS ${_providerTargets})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_AUDIO_BACKENDS ${_audioBackends})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_AUDIO_BACKEND_IDS ${_audioBackendIds})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_AUDIO_BACKEND_TARGETS ${_audioBackendTargets})
     _retroplug_read_declarations(${name} "${_json}")
 
 endfunction()
@@ -1576,7 +1622,7 @@ endfunction()
 # the targets. A package with no native part (its contributions are its `app` and `protocol` members, TypeScript's) has
 # no entries and no targets, so listing it here contributes nothing to the registration and nothing to link.
 function(retroplug_product product)
-    cmake_parse_arguments(P "DEVICE" "LIST" "PACKAGES;TARGETS;PROVIDERS" ${ARGN})
+    cmake_parse_arguments(P "DEVICE" "LIST" "PACKAGES;TARGETS;PROVIDERS;AUDIO_BACKENDS" ${ARGN})
     if(P_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_product(${product}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
     endif()
@@ -1658,6 +1704,37 @@ function(retroplug_product product)
         endif()
         list(APPEND _seenProviders ${_pv})
     endforeach()
+    # Its audio backends, by id (AUDIO_BACKENDS portaudio sdl): the ids its manifest items carry. Named here, a
+    # backend's target is linked; a package listed with an audioBackend item and not named drops that target, so the
+    # CLI, the headless host, the render-host test, retroplug-ui-test and the Node addon link neither PortAudio nor SDL
+    # audio. A device image links neither at all.
+    if(P_DEVICE AND P_AUDIO_BACKENDS)
+        message(FATAL_ERROR "retroplug_product(${product}): a device product links no audio backend, so AUDIO_BACKENDS "
+                            "names nothing it could carry")
+    endif()
+    get_property(_backendIds GLOBAL PROPERTY RP_AUDIO_BACKEND_IDS)
+    set(_chosenIds "")
+    set(_chosenSymbols "")
+    set(_chosenTargets "")
+    foreach(_id IN LISTS P_AUDIO_BACKENDS)
+        if(NOT _id IN_LIST _backendIds)
+            message(FATAL_ERROR "retroplug_product(${product}): AUDIO_BACKENDS names `${_id}`, which no manifest "
+                                "declares (a retroplug.native item's \"audioBackend\" with that \"id\")")
+        endif()
+        if(_id IN_LIST _chosenIds)
+            message(FATAL_ERROR "retroplug_product(${product}): AUDIO_BACKENDS names `${_id}` twice")
+        endif()
+        get_property(_backendPackage GLOBAL PROPERTY RP_AUDIO_BACKEND_${_id}_PACKAGE)
+        if(NOT _backendPackage IN_LIST P_PACKAGES)
+            message(FATAL_ERROR "retroplug_product(${product}): AUDIO_BACKENDS names `${_id}`, whose package "
+                                "`${_backendPackage}` this product does not list")
+        endif()
+        get_property(_backendSymbol GLOBAL PROPERTY RP_AUDIO_BACKEND_${_id}_SYMBOL)
+        get_property(_backendTarget GLOBAL PROPERTY RP_AUDIO_BACKEND_${_id}_TARGET)
+        list(APPEND _chosenIds ${_id})
+        list(APPEND _chosenSymbols ${_backendSymbol})
+        list(APPEND _chosenTargets ${_backendTarget})
+    endforeach()
     foreach(_p IN LISTS P_PACKAGES)
         if(NOT _p IN_LIST _known)
             message(FATAL_ERROR "retroplug_product(${product}): no package `${_p}` (retroplug_package() adds one)")
@@ -1674,6 +1751,16 @@ function(retroplug_product product)
             endforeach()
             foreach(_left IN LISTS _providerTargets)
                 list(REMOVE_ITEM _t ${_left})
+            endforeach()
+        endif()
+        if(NOT P_DEVICE)
+            # Its audio backends: a target is kept only for an id this product names. A package with no audioBackend
+            # item has none, and its targets are unaffected.
+            get_property(_audioTargets GLOBAL PROPERTY RP_PACKAGE_${_p}_AUDIO_BACKEND_TARGETS)
+            foreach(_left IN LISTS _audioTargets)
+                if(NOT _left IN_LIST _chosenTargets)
+                    list(REMOVE_ITEM _t ${_left})
+                endif()
             endforeach()
         endif()
         # Its script pack's registration (_retroplug_script_targets), which every script pack's is a device's.
@@ -1801,10 +1888,13 @@ function(retroplug_product product)
 ${_decls}
 const rp_package* const* rp_register_packages(size_t* count) {
 ${_body}}${_embedSection}")
-    # A desktop product's providers, which a device product never has (a device image runs none).
+    # A desktop product's providers, which a device product never has (a device image runs none), and its audio
+    # backends: the factories its AUDIO_BACKENDS names, in that order, which AudioHost opens in preference order.
     if(NOT P_DEVICE)
         retroplug_providers_header("${RP_PRODUCTS_DIR}/${product}/rp_product_providers.hpp"
                                    "retroplug_product(${product})" ${P_PROVIDERS})
+        retroplug_audio_backends_header("${RP_PRODUCTS_DIR}/${product}/rp_product_audio_backends.hpp"
+                                        "retroplug_product(${product})" ${P_AUDIO_BACKENDS})
     endif()
     foreach(_t IN LISTS P_TARGETS)
         if(NOT TARGET ${_t})
@@ -2115,6 +2205,53 @@ inline void rp_wake_providers(rp::Providers& providers) { providers.wake(); }
 template <class Server>
 void rp_register_package_rpc(Server& server, const rp::Providers& providers) {
 ${_registers}}
+")
+endfunction()
+
+# retroplug_audio_backends_header(<file> <label> <id>...): generates <file>, the audio backends a product's
+# AUDIO_BACKENDS names - declared as the factories their manifests' audioBackend items name, and returned in the order
+# the product names them (a product that names none gets an empty list, and AudioHost then has the null device alone).
+# These are C++ functions returning a unique_ptr, not extern "C" table entries like a provider: the interface carries
+# std::string and ownership, so it crosses no C boundary. Header-only and inline on purpose, as the providers' header
+# is: a binary that never includes it (the render host, a test that opens no device) names no backend, and a static
+# library's members are linked only where something names them.
+function(retroplug_audio_backends_header file label)
+    set(_chosen ${ARGN})  # the product's AUDIO_BACKENDS, in its order
+    list(JOIN ARGN " " _listed)
+    set(_decls "")
+    set(_rows "")
+    set(_all "")
+    foreach(_id IN LISTS _chosen)
+        get_property(_symbol GLOBAL PROPERTY RP_AUDIO_BACKEND_${_id}_SYMBOL)
+        if(_symbol IN_LIST _all)
+            continue()
+        endif()
+        list(APPEND _all ${_symbol})
+        string(APPEND _decls "namespace rp::audio { std::unique_ptr<AudioBackend> ${_symbol}(); }\n")
+        string(APPEND _rows "    out.push_back(rp::audio::${_symbol}());\n")
+    endforeach()
+    if(NOT _rows)
+        set(_rows "    (void)0;  // this product names no audio backend: the host has the null device alone\n")
+    endif()
+    file(GENERATE OUTPUT "${file}" CONTENT
+"// Generated by ${label} in cmake/packages.cmake from the packages it lists: ${_listed}. Do not edit; edit the
+// product's AUDIO_BACKENDS or a manifest.
+//
+// The audio backends this product names, in ITS order - the preference order AudioHost tries them in (the null device
+// it appends itself). A product that names none returns an empty list.
+#pragma once
+
+#include <memory>
+#include <vector>
+
+#include \"audio/AudioBackend.hpp\"
+
+${_decls}
+// [control] A fresh backend per call, in this product's order.
+inline rp::audio::BackendList rp_product_audio_backends() {
+    rp::audio::BackendList out;
+${_rows}    return out;
+}
 ")
 endfunction()
 

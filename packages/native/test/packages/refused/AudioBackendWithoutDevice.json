@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/refused-audio-backend-without-device",
+  "private": true,
+  "retroplug": {
+    "native": { "target": "scratch-audio-backend", "audioBackend": "rp_scratch_audio_backend", "id": "scratch" }
+  }
+}

@@ -229,6 +229,47 @@ TEST_CASE("a sample-rate change re-rates the running plan's cores", "[engine-gra
     CHECK(raw->sampleRate_ == 44100.0);
 }
 
+TEST_CASE("a core re-rated to 44.1 kHz renders what one built at 44.1 kHz renders", "[engine-graph][c4]") {
+    // The startup order the audio design keeps (docs/modular-graph-phase-f5b-design.md section 6.6, report item 1): the
+    // engine is constructed and its cores are built at the DEFAULT rate, and AudioHost's prepare re-rates them once the
+    // device has opened at whatever rate it obtained. That is only sound if a re-rated core is the core it would have
+    // been built as, so this holds a GB and a NES to it: the same document, the same seeds, one run built at 44.1 kHz and
+    // one built at 48 kHz and re-rated before its first block, and the two streams must be identical sample for sample.
+    constexpr std::size_t kLane = 1024;  // one system's samples per block
+    auto renderAt = [](bool fromDefault) {
+        Engine e(fromDefault ? kRate : 44100.0);
+        rp::host::test::Roms roms;
+        REQUIRE(e.setGraph(request(e, roms, {{1, kGb}, {2, kNes}})).ok);
+        if (fromDefault) e.setSampleRate(44100.0);  // AudioHost's prepare, after the device obtained 44100
+        std::vector<float> lanes(2 * kLane);
+        float*             outs[2] = {&lanes[0], &lanes[kLane]};
+        std::vector<float> stream;
+        for (int block = 0; block < 40; ++block) {
+            std::fill(lanes.begin(), lanes.end(), 0.0f);
+            e.processBlock(static_cast<std::uint32_t>(kLane), outs, 2);
+            REQUIRE(e.faultCount() == 0);
+            stream.insert(stream.end(), lanes.begin(), lanes.end());
+        }
+        return stream;
+    };
+    const std::vector<float> fresh  = renderAt(false);
+    const std::vector<float> rerated = renderAt(true);
+    REQUIRE(fresh.size() == rerated.size());
+    CHECK(fresh == rerated);
+    // Not silence, and EACH core's lane is not silence: the mix's non-silence alone would let a silent NES pass, and a
+    // core that goes silent after a re-rate is exactly what a rate the core never took looks like.
+    const auto sounds = [](const float* from, const float* to) {
+        return std::any_of(from, to, [](float v) { return v != 0.0f; });
+    };
+    bool gbLane = false, nesLane = false;
+    for (std::size_t at = 0; at + 2 * kLane <= fresh.size(); at += 2 * kLane) {
+        gbLane  = gbLane || sounds(fresh.data() + at, fresh.data() + at + kLane);
+        nesLane = nesLane || sounds(fresh.data() + at + kLane, fresh.data() + at + 2 * kLane);
+    }
+    CHECK(gbLane);
+    CHECK(nesLane);
+}
+
 TEST_CASE("bad tap requests are refused", "[engine-graph][b2]") {
     Engine e(kRate);
     rp::host::test::Roms roms;

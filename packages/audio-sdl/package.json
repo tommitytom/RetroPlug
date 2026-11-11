@@ -1,0 +1,20 @@
+{
+  "name": "@retroplug/audio-sdl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The SDL2 backend of the host's audio: SDL's audio drivers as drivers, one driver initialised at a time, float32 output with a pull callback at 2, 4, 6 or 8 channels. No TypeScript.",
+  "dependencies": {
+    "@retroplug/audio": "workspace:*"
+  },
+  "retroplug": {
+    "native": [
+      {
+        "target": "retroplug-audio-sdl",
+        "device": false,
+        "audioBackend": "rp_sdl_backend",
+        "id": "sdl"
+      }
+    ]
+  }
+}

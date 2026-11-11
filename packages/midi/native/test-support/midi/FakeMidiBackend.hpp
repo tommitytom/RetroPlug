@@ -149,7 +149,10 @@ public:
 
     /** Play the device: deliver `msg` on input `name`, as that port's callback thread would. Called under the fake's
      *  own lock, so an input the control thread closes at that moment cannot be destroyed between the lookup and the
-     *  call (the port is alive until its own destructor takes the same lock, which waits for this delivery). */
+     *  call (the port is alive until its own destructor takes the same lock, which waits for this delivery). An INLINE
+     *  receiver therefore runs under that lock: a receiver that sends synchronously on the same fake (a thru) would
+     *  deadlock on its non-recursive mutex, so a case that needs one delivers through a threaded port
+     *  (`threadedDelivery`, which is also the shape RtMidi has). */
     void deliver(const std::string& name, const Bytes& msg) {
         std::lock_guard<std::mutex> lk(mutex_);
         const auto                  it = deliverers_.find(name);

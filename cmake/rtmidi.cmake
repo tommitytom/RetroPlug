@@ -4,8 +4,7 @@
 # EXCLUDE_FROM_ALL, so the `rtmidi` target is built only because a target links it.
 #
 # Included at ROOT scope, before cmake/packages.cmake: a package's native/CMakeLists.txt is added while that list's
-# packages are configured, and one of them (launchpad) links this target, which must exist by then. packages/native's
-# cmake/deps.cmake used to add it; its own targets link the target defined here.
+# packages are configured, and the midi package's library links this target, which must exist by then.
 set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)

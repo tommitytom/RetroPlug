@@ -28,6 +28,31 @@ importers:
         specifier: npm:typescript@5.7.3
         version: typescript@5.7.3
 
+  packages/audio:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/audio-portaudio:
+    dependencies:
+      '@retroplug/audio':
+        specifier: workspace:*
+        version: link:../audio
+
+  packages/audio-sdl:
+    dependencies:
+      '@retroplug/audio':
+        specifier: workspace:*
+        version: link:../audio
+
   packages/bliptoaster:
     dependencies:
       '@retroplug/core':
@@ -329,6 +354,9 @@ importers:
 
   packages/retroplug:
     dependencies:
+      '@retroplug/audio':
+        specifier: workspace:*
+        version: link:../audio
       '@retroplug/bliptoaster':
         specifier: workspace:*
         version: link:../bliptoaster
