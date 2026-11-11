@@ -117,7 +117,7 @@ writes with a re-read, so two processes can share the file.
   `MidiPortPool`, `RtMidiPort`), the provider and the facet (`LaunchpadRpc`) - beside
   [ui/launchpadDevices.ts](../packages/launchpad/ts/ui/launchpadDevices.ts), which drives the
   facet, and the MI.MAP app in [packages/lsdj-launchpad](../packages/lsdj-launchpad).
-- **Prove a change:** `retroplug-launchpad-test` (one of the eleven `pnpm test:plugin` binaries),
+- **Prove a change:** `retroplug-launchpad-test` (one of the fourteen `pnpm test:plugin` binaries),
   `pnpm test:native launchpad` (the facet's cases over the headless host's scripted device, and
   `launchpadDevices.ts`'s over it), `pnpm test launchpad`, `pnpm test:native lsdj-launchpad`,
   `tools/run-launchpad-loopback.sh` for the shared MIDI stream's receive path, and `pnpm sdl:controller` for the whole

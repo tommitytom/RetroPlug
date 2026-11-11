@@ -792,7 +792,7 @@ section 10) and these files hold what it writes.
 | **mock TS** | [`testing/mockBackend.ts`](../packages/retroplug/testing/mockBackend.ts) (in-memory, no native, no emulator) | `pnpm test` | [run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) on the `tjs` binary | `test/` |
 | **real host** | the real Backend RPC surface (fs/config/codec + a live `SameBoySystem` on the real engine graph, the protocol script nodes running in its script host) | `pnpm test:native` | [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) on `retroplug-host` | `test-native/` |
 | **LVGL React UI** | the real UI bundle on a software LVGL display driven by `UiHarness` | `pnpm test:ui` | [run-ui-tests.mjs](../packages/retroplug/scripts/run-ui-tests.mjs) on `retroplug-ui-test` | `test-ui/` |
-| **C++ unit** | native classes directly, no TS in the loop | `pnpm test:plugin` | [run-plugin-tests.mjs](../packages/retroplug/scripts/run-plugin-tests.mjs) over thirteen Catch2 binaries | `packages/native/test/`, and each package's `native/test/` |
+| **C++ unit** | native classes directly, no TS in the loop | `pnpm test:plugin` | [run-plugin-tests.mjs](../packages/retroplug/scripts/run-plugin-tests.mjs) over fourteen Catch2 binaries | `packages/native/test/`, and each package's `native/test/` |
 
 Each pnpm script first builds its runner via `cmake-build.js` (mock → `tjs-cli`; native →
 `retroplug-host`; UI → `retroplug-ui-test`), so a `pnpm test*`

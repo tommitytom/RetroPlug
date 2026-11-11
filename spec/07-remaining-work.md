@@ -597,7 +597,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `graph-runtime`, `core` and `dsp` are workspace packages with a manifest each, and every product's
   `rp_register_packages()` is generated (the `[packages]` golden); portable nodes' settings are `rp::text`, `rp::list`,
   `rp::choice` and numeric resource ids; `node.hpp` builds for the device (`RP_DEVICE`) and reads msgpack
-  (`RP_SETTINGS_MSGPACK`) with a reader of our own; `retroplug-device-mode-test` is one of the thirteen `test:plugin`
+  (`RP_SETTINGS_MSGPACK`) with a reader of our own; `retroplug-device-mode-test` is one of the fourteen `test:plugin`
   binaries;
   and `pnpm device:check` links the RP2350 image of every portable `rp.core` and `rp.dsp` type under a trap on the heap,
   on exceptions and on RTTI, a CI step. Nothing was re-recorded. What is left, in order:
@@ -1021,7 +1021,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   not F5a's), and no `/W4 /WX` build has seen it; fix it as its own change.
 
 - **F5b built: the SDL standalone's audio and MIDI as packages** ([modular-graph-phase-f5b-design.md](../docs/modular-graph-phase-f5b-design.md),
-  on `feature/modularize`; five stages). A merge of `feature/sdl-standalone` (the `MidiIo` ring fix); `packages/midi`
+  on `feature/modularize`; six stages). A merge of `feature/sdl-standalone` (the `MidiIo` ring fix); `packages/midi`
   (`MidiBackend` / `MidiPort`, RtMidi under one `systemMidi()`, `FakeMidiBackend`, the one copy of the port filters,
   `MidiStream` - the branch's ring, the output set swapped with NO audio stop, the reservation and the scan's held edge
   - and the facet as a provider, which the CLI and the headless host start by naming `midi`; the Launchpad pack depends
@@ -1048,6 +1048,15 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   wait the output-set swap bounds); macOS (CoreMIDI, CoreAudio, the framework build); MIDI-in frame offsets; device
   hotplug; the `rp.midi` family's split (core owns `rp.midi.route` alone, the midi package every other `rp.midi.*`
   type); and MIDI clock phase lock. The `rp.midi.*` node family and `MidiStream` are the layer that follow-up extends.
+  **Also left, from the design's section 12:** `MidiStream::send` runs every selected hardware output's send INLINE on
+  the audio callback, so a ~170 ms WinMM bulk SysEx (a controller app's LED traffic) blocks the audio thread that long -
+  pre-existing, and the fix is a writer thread per hardware output like the Launchpad link's, not the retire list;
+  `paWinWasapiAutoConvert` was owed and is now set on every WASAPI stream (the follow-up); `lost()` on a really removed
+  device is unproved for both backends (the leg is a `pw-cli destroy` of the open sink mid-run, then the muted line);
+  SDL's PipeWire node has 2 output ports for a wide request while the host renders the requested width (R11, cause not
+  established); the PipeWire data loop is still RT-pinned by rtkit overrides (tune only on ALSA, per the release list);
+  and no check pairs a config section's key with the UI service that reads it, so a typo in one is silent (F5a's
+  pairing-check item, one more key).
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the
   follow-up that closed it): `packages/system` (the contract every console implements and the engine drives, the

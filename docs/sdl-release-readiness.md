@@ -102,8 +102,10 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
   including a complete `MidiClockSync` unit test. Move `MidiClockSync` to `src/host` with a Catch2 test;
   gate the rest behind one self-test entry point.
 - [x] **Split `sdl/main.cpp`** (~1900 lines) into audio / input / window / hooks units. *F5b: `app.hpp` and
-  `window.cpp` / `input.cpp` / `hooks.cpp` / `audioLoop.cpp` / `main.cpp`, one namespace, a pure move (every line
-  that is not a declaration appears verbatim).*
+  `window.cpp` / `input.cpp` / `hooks.cpp` / `audioLoop.cpp` / `main.cpp`, one namespace, a pure move: of the old
+  `main.cpp`'s 1683 non-blank lines, 1676 appear verbatim in exactly one of the six files and 7 are reshaped
+  deliberately (the two generated product includes, the out-of-line destructor and its two body lines, and the
+  namespace braces).*
 - [ ] **Stale comments, here and in `sdl-standalone.md`:** "SDL2 audio callback" (it's PortAudio), "SDL
   drives Mali GLES2 internally" (`SDL_RENDERER_SOFTWARE` forces the software renderer), header says the
   gamepad feeds the keypad indev (`pumpGamepad`'s comment says it must not), `see audioCb` (gone),

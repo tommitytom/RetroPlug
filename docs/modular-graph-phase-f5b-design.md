@@ -1,7 +1,9 @@
 # Phase F5b: the SDL standalone's audio and MIDI as packages
 
-**Date:** 2026-11-11 · **Branch:** `feature/modularize` **Status:** designed `793c655fd`; prototyped (S0-S4 with S2b, each
-Opus-reviewed and fixed); as built in section 13; plan next. The design was written over `f0f56c3ff` (the F5a tip). The
+**Date:** 2026-11-11 · **Branch:** `feature/modularize` **Status:** designed `793c655fd`; prototyped as six stages on the
+unpushed `proto/f5b-audio-midi` (each reviewed and fixed; the as-built record is section 13); executed on
+`feature/modularize` as the plan `3c860286e` and six task commits `605c8b6a3`..`27f99be3d`, then the final review and its
+follow-up fix pass (section 14). The design was written over `f0f56c3ff` (the F5a tip). The
 user's decisions are the `### F5` entries of `.superpowers/f-split/decisions.md` (the 2026-11-11 ones); the user approved
 the design section by section as presented (packages and product wiring; the audio interface and `AudioHost`; the MIDI
 interface, `MidiStream` and its users; config sections, settings and startup; build, proof, edges and process), which
@@ -194,7 +196,8 @@ is the stage's commit; a trial merge (`git merge-tree`, run by the controller) c
 `packages/native/cmake/tests.cmake` and `packages/retroplug/scripts/run-plugin-tests.mjs` and nowhere else, so the stage
 needs no review beyond reading the diff.
 
-**As built.** `925fd40d9`, the two conflicts exactly as predicted and resolved as stated; `retroplug-midi-test` ran 25
+**As built.** The prototype's `925fd40d9`, replayed on `feature/modularize` as `605c8b6a3` (section 14); the two
+conflicts exactly as predicted and resolved as stated; `retroplug-midi-test` ran 25
 cases, plain and under TSan three runs of three with `halt_on_error=1`. The Opus review read the merge against
 `cfeb80e00..feature/sdl-standalone` file by file and found it exact (five files byte-identical, nothing dropped, nothing
 doubled). The stage was never touched by a fix pass.
@@ -527,10 +530,14 @@ the fake); `n8-bridge` sessions through the CLI's facet. **Held**: `sdl:smoke`, 
 and the native boundary check with the new package, and the device images' hashes (nothing portable moves).
 
 **As built.** The review's additions are cases of their own: the log lines asserted byte for byte through the stream's
-sink (three case names had claimed them), a threaded-delivery case that swaps the input selection and the reservation
-under a delivery thread and counts receiver calls after close (0), the exclusive-port reopen case (RED: the port lost,
-`opened in=1 out=0`; green after Diff/Reopen), the back-to-back-sends bound, a re-pick that reopens, and a
-single-sender case. `retroplug-midi-test` ends at 47 cases (24 at the base), and a standing `tsanmidi` kit leg runs it
+sink (three case names had claimed them), a threaded-delivery case that swaps the INPUT SELECTION under a delivery
+thread (one port kept, one let go) and holds that the port the destructor joined owes nothing (every queued message
+drained, and nothing reaching a closed port), the exclusive-port reopen case (RED: the port lost, `opened in=1 out=0`;
+green after Diff/Reopen), the back-to-back-sends bound (one in-flight send waited out, never the run of them), a re-pick
+that reopens, and a case that sends three messages from ONE thread on the path the single-caller assert guards (an
+assertion that fires cannot itself be a case: what holds two senders apart is the Debug assert plus `AudioHost`
+guaranteeing one renderer). `retroplug-midi-test` ends at 48 cases (24 at the base; 47 at the prototype's tip, plus the
+follow-up's renamed-session case), and a standing `tsanmidi` kit leg runs it
 under ThreadSanitizer (`tools/run-sanitizer.sh`'s midi leg beside the Launchpad's). The midi targets joined
 `_rp_werror_targets` (they had moved out of targets Windows judged at `/W4 /WX`) with `_CRT_SECURE_NO_WARNINGS`, and
 `check:boundaries` learned a dependency's own library targets (a textual `retroplug_package_library` read, with `-`, `.`
@@ -798,8 +805,10 @@ own commit after the S2 review, so that the move reviews as one diff:
 section 5 also asks for it in `src/host` with a Catch2 test, which this phase does not do and section 12 leaves. The
 test scaffolding in `main()` stays (the same section's other item).
 
-**As built** (`1932627c6`). The move is verbatim: of the old `main.cpp`'s 1683 non-blank lines, 1680 appear unchanged in
-exactly one of the six files, and the three that do not are the anonymous-namespace braces. What was added is only what
+**As built** (`1932627c6`; `ede472ed7` on `feature/modularize`). The move is verbatim: of the old `main.cpp`'s 1683
+non-blank lines, 1676 appear unchanged in exactly one of the six files, and the other seven are reshaped deliberately -
+the two generated product includes, the out-of-line destructor and its two body lines, and the namespace braces. What was
+added is only what
 the split needs: `app.hpp`'s `#pragma once` and include block, one `#include "app.hpp"` per unit, banners, the
 cross-unit declarations and `extern AppState* g_app;`. Five facts differ from the table. (1) `main.cpp` keeps the
 largest piece (the man page, the boot, `main()` and the frame loop), so its history stays with it; the other five are
@@ -811,8 +820,9 @@ helpers; `app.hpp` includes neither generated product header, which `main.cpp` a
 External linkage is the answer to MSVC's C4505 (an unused static under `/W4 /WX`), and the namespace is what keeps the
 generic names (`present`, `setupUi`, `handleEvents`, `callGlobal`) off the global scope: it is in S2b, though the previous
 history carried it in S3, because a fixup against the final tree would have been an empty patch and the move was done at
-a stop of its own. S2b's five translation units pass `c++ -fsyntax-only` with the worktree's include paths, which is the
-only proof short of a configure that the stage's own tree compiles.
+a stop of its own. That the five units compile is held by a real build, not by `-fsyntax-only`: the stage's tree was
+configured and `all` built warning-free at `ede472ed7` (report item 5's finding that a syntax-only pass over translated
+units proves nothing), and `sdl:controller` then ran the linked `retroplug-sdl` it produced.
 
 ### 5.6 What changes, by file
 
@@ -1297,9 +1307,10 @@ in this container PortAudio's ALSA backend cannot enumerate the private config's
 virtual PCM) and the guard refuses the card control nodes, so the host reports "no default output device" and falls to
 `null` with a status, exit 0, no `/dev/snd/pcm*` node attempted and the private config's default the null PCM; on a
 machine where PortAudio's ALSA can list that PCM the leg passes on the open instead and says which happened. Not in CI
-(the runners have no PipeWire); the devcontainer ships one. The run goes through the `/dev/snd` guard (decision 30): 25
-checks pass and 0 are skipped, the guard having refused 2788 card paths (PortAudio's ALSA control-node probe, no PCM node)
-and logged 299 audio-library dlopens.
+(the runners have no PipeWire); the devcontainer ships one. The run goes through the device guard (decision 30): 25
+checks pass and 0 are skipped at the prototype (27 after the follow-up's stale-driver leg, which holds that a saved
+driver this run does not have falls back to Auto), the guard having refused every card CONTROL node PortAudio's ALSA
+probe asked for (about a thousand paths a run, no PCM node) and logged about 300 audio-library dlopens.
 
 **The guard** is `tools/sdl-audio-guard/` (`nosnd.c`, `build-guard.sh`, `guard-env.sh`): an `LD_PRELOAD` shim refusing,
 before the syscall, every `/dev/snd` node but `seq` and `timer`, every video node (`/dev/video*`, `/dev/media*`,
@@ -1448,11 +1459,13 @@ reviewing (F4a to F5a's routing). As run, the reviews were S0 with S1, then S2, 
 judged the S2 fix pass and the split), then the whole prototype, and each review's findings became a fix pass folded
 into the stage that owns the file (autosquash, with one stop for S2b's namespace move), so no stage commit narrates a
 review. Each stage leaves the tree green on every oracle of section 9 it
-can reach. After any fix-pass rebase, each stage's tree is extracted after the final rewrite, proven equal to its
+can reach. The shas below are the PROTOTYPE branch's (`proto/f5b-audio-midi`, unpushed); 13.1 maps each to the commit on
+`feature/modularize` that replays it. After any fix-pass rebase, each stage's tree is extracted after the final rewrite, proven equal to its
 commit, and typechecked and tested alone, never symlinking the worktree's `build/` for a run that writes.
 
 0. **The SDL branch merge** (section 3). *Exit:* `retroplug-midi-test` 25 cases and the TSan ring case green;
-   `test:plugin`, `sdl:smoke`. As built: `925fd40d9`, 25 cases, TSan clean, the review found it exact.
+   `test:plugin`, `sdl:smoke`. As built: `605c8b6a3` (`925fd40d9` on the prototype), 25 cases, TSan clean, the review
+   found it exact.
 1. **The `midi` package** (section 4): the interface, `MidiStream`, the fake, the facet as a provider, the Launchpad
    onto it, the CLI's `PROVIDERS`, the harness edits `sdl:controller` needs for the lines this stage moves. *Exit:* the
    output-swap case under TSan; the Launchpad's 53 cases over the fake; `launchpad-facet`, `launchpad-devices` and the
@@ -1467,15 +1480,16 @@ commit, and typechecked and tested alone, never symlinking the worktree's `build
    neither into any other product; `sdl:smoke` on `null`; `sdl:pipewire` with its greps unchanged on a PortAudio run. As
    built `6bb3469ef`; `sdl:pipewire` did NOT run at S2 (the user's strict Zoom L6 rule, decision 30): it moved to S4,
    guarded, so the PortAudio move was proved by reading until then. `tsanaudio` joined the kit.
-2b. **The `main.cpp` split** (section 5.5): a pure move, `1932627c6`. *Exit:* 1680 of 1683 lines verbatim, the five
-   units compile (`c++ -fsyntax-only`), `sdl:smoke` and `sdl:controller` green on `null` under the guard.
+2b. **The `main.cpp` split** (section 5.5): a pure move, `ede472ed7` (`1932627c6` on the prototype). *Exit:* 1676 of
+   1683 lines verbatim plus the seven reshaped ones named in 5.5, a configure and `all` build warning-free at the tree,
+   `sdl:smoke` and `sdl:controller` green on `null` under the guard.
 3. **TypeScript** (section 6). *Exit:* the config-section rules, `portMatch`'s table, the service and row tests (Rescan
    and the `--block-size` override among them); the recorded matrix's three cases re-recorded with the diff as the
    record; `sdl:controller` on the project-section form; `reaper:params` on the plugin's bundles (no plugin file
    changed). As built `6568fe4c6`; `reaper:params` ran at the tip (2725 / 644), not at S3.
 4. **The SDL-audio leg and the docs** (section 7). *Exit:* `sdl:pipewire` in both modes; the docs pass; the readiness
-   ticks. As built the tip of `proto/f5b-audio-midi`: `sdl:pipewire` 25 passed 0 skipped under the guard, the linkage
-   check, the guard tracked, the docs.
+   ticks. As built the tip of `proto/f5b-audio-midi` (`27f99be3d` on `feature/modularize`): `sdl:pipewire` 25 passed 0
+   skipped under the guard at the prototype (27 after the follow-up), the linkage check, the guard tracked, the docs.
 
 After the prototype: a plan generator, Flash-Next implementers, the serial acceptance kit (adding `reaper:all`, a fresh
 clone's typecheck before any build, BlipToaster and NESVJ on scratch copies, and the SDL legs above; no hardware leg),
@@ -1657,22 +1671,29 @@ ones listed as owed.
 
 ### 13.1 The stage commits
 
-| Stage | Commit | Subject |
-| --- | --- | --- |
-| S0 | `925fd40d9` | merge feature/sdl-standalone: the MidiIo ring fix and the SDL release-readiness list |
-| S1 | `7b547cf29` | feat(midi): the midi package (MidiBackend, MidiStream, RtMidi and fake backends, the CLI facet as a provider) and the Launchpad onto it |
-| S2 | `6bb3469ef` | feat(audio): the audio packages, AudioHost and AUDIO_BACKENDS |
-| S2b | `1932627c6` | refactor(sdl): split main.cpp into the window, input, hooks and audio loop |
-| S3 | `6568fe4c6` | feat(settings): config sections, and the audio and MIDI settings as packages |
-| S4 | the tip of `proto/f5b-audio-midi` | feat(sdl): the SDL-audio leg, the linkage check and the docs |
+| Stage | Prototype (`proto/f5b-audio-midi`) | `feature/modularize` | Subject |
+| --- | --- | --- | --- |
+| S0 | `925fd40d9` | `605c8b6a3` | merge feature/sdl-standalone: the MidiIo ring fix and the SDL release-readiness list |
+| S1 | `7b547cf29` | `f4a6198d2` | feat(midi): the midi package (MidiBackend, MidiStream, RtMidi and fake backends, the CLI facet as a provider) and the Launchpad onto it |
+| S2 | `6bb3469ef` | `f98e6e8b7` | feat(audio): the audio packages, AudioHost and AUDIO_BACKENDS |
+| S2b | `1932627c6` | `ede472ed7` | refactor(sdl): split main.cpp into the window, input, hooks and audio loop |
+| S3 | `6568fe4c6` | `eac8b9674` | feat(settings): config sections, and the audio and MIDI settings as packages |
+| S4 | `ec5eff770` | `27f99be3d` | feat(sdl): the SDL-audio leg, the linkage check and the docs |
+
+The left column exists only on the local, UNPUSHED `proto/f5b-audio-midi` branch (`ec5eff770`, the tip the
+whole-prototype review read, is on no branch at all); the right column is the history `feature/modularize` carries, one
+commit per stage, and it is what the plan's tasks replay. Sections 3 and 10 name the prototype's shas where they were
+written from the prototype's run.
 
 The shas are the final ones: four fix passes rewrote the history (non-interactive `git rebase -i` with a written todo,
 `fixup` for the files only one stage touches and `exec git commit --amend -F` for the messages, one `edit` stop for S2b's
 namespace move), and after the last one every stage tree was extracted, proved byte-equal to its commit (a SHA-256 of
 every tracked file against `git cat-file blob`: 3698, 3724, 3729, 3739 and 3743 files for S1, S2, S2b, S3 and S4, no
 mismatch), installed on its own (`pnpm install --offline`, the submodules symlinked read-only) and typechecked and tested
-alone: `typecheck`, `menu`, `packages` and `hosts` exit 0 at each, with S3's six new test files at S3 and S4. S2b's five
-translation units also pass `c++ -fsyntax-only`, the only proof short of a configure that its own tree compiles. The
+alone: `typecheck`, `menu`, `packages` and `hosts` exit 0 at each, with S3's six new test files at S3 and S4. S2b's
+compiling is held by a real build of its own tree (Task 4 configured and built `all` warning-free, and ran
+`sdl:controller` on the linked binary); `c++ -fsyntax-only` was claimed for it and proves nothing about a translated
+unit, so the record does not rest on it. The
 stage messages describe the feature, not the review: S1's and S3's were reworded after the whole-prototype review (the
 first S1 body was the S1 review's fix list and part of it was false at its own tree). The plan must also know: S2b carries
 the namespace move (`retroplug::sdl`, `app.hpp` without the generated headers, `~AppState` out of line); S3's tree keeps
@@ -1815,8 +1836,8 @@ Each is also corrected in place in sections 1 to 12; this is the one list.
 
 20. `sdl:smoke` exports no `SDL_AUDIODRIVER` (null is pinned), gained the E7, E12, startup-order and menu legs, and
     `RETROPLUG_SDL_TEST_MENU` is a new hook; `RETROPLUG_SDL_TEST_TRANSPORT` no longer sets a tempo.
-21. The `/dev/snd` guard is tracked (`tools/sdl-audio-guard/`) and all three harnesses source it; the kit gained the legs
-    `tsanmidi`, `tsanaudio`, `audiolink`, `pipewire` and `nosnd`. `sdl:pipewire` gained an Auto leg, an SDL-audio mode with
+21. The device guard is tracked (`tools/sdl-audio-guard/`) and all three SDL harnesses AND `tools/reaper-env.sh` source
+    it; the kit gained the legs `tsanmidi`, `tsanaudio`, `audiolink`, `pipewire` and `nosnd`. `sdl:pipewire` gained an Auto leg, an SDL-audio mode with
     a live-menu leg and counted skips; its ALSA-fallback leg holds the clean degradation, not an ALSA open.
 22. `check-doc-links` reports a dead link inside a `*-plan.md` record as a warning. The readiness ticks name the stage, not
     a hash.
@@ -1832,14 +1853,14 @@ The kit (`.superpowers/verify/tip-verify-par.sh`, parallel, `TV_SKIP_SDLCTL=1`, 
 | --- | --- | --- | --- |
 | `test` (`pnpm test`) | 2425 cases, 231 files | 2484, 237 | S3's config, midi and audio files and the fix passes' cases |
 | `native`, `nativeci` | 629 cases, 172 files | 634, 173 | S1's E11 and facet cases, S3's project-section cases |
-| `plugin` | 13 binaries | 14 | `retroplug-audio-host-test` (20 cases) |
-| `retroplug-midi-test` | 24 | 47 | S1 and its fix passes |
+| `plugin` | 13 binaries | 14 | `retroplug-audio-host-test` (23 cases after the follow-up) |
+| `retroplug-midi-test` | 24 | 48 | S1 and its fix passes, plus the follow-up's renamed-session case |
 | `retroplug-engine-graph-test` | 337 cases | 338 | the re-rate equality case |
 | `retroplug-launchpad-test` | 53 | 53 | held, over the fake |
 | `parity` | exit 0, 250 | exit 0, 250 | nothing moved |
 | `sdl` | skipped (L6) | exit 0 | S2 pinned `null` |
-| `tsanaudio`, `tsanmidi` | absent | exit 0 | the new TSan legs |
-| `audiolink`, `pipewire`, `nosnd` | absent | exit 0 | S4's legs: `pipewire` 25 passed, 0 failed, 0 skipped |
+| `tsanaudio`, `tsanmidi` | absent | exit 0 | the new TSan legs: `tools/run-sanitizer.sh` builds and runs `retroplug-audio-host-test`, `retroplug-midi-test` and `retroplug-launchpad-test` under ThreadSanitizer |
+| `audiolink`, `pipewire`, `nosnd` | absent | exit 0 | S4's legs: `pnpm check:audio-linkage` (tracked, the same script the kit's `audiolink` leg runs) and `pipewire` 27 passed, 0 failed, 0 skipped after the follow-up's stale-driver leg |
 | `docs` | 101 files clean | 102 clean, 1 warning | one new doc; a plan record's dead link is a warning |
 | `typecheck` | no audio, midi | audio and midi Done | S2, S1 |
 | `boundaries` | 0 warnings | 0 warnings | |

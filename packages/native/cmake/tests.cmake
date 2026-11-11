@@ -4,9 +4,10 @@
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
 # --- native test binaries ---------------------------------------------------------------------------
-# Thirteen Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING), which
-# `pnpm test:plugin` builds and runs: eleven here and the two the console packages declare (retroplug-sameboy-test in
-# packages/sameboy/native, retroplug-mesen-test in packages/mesen/native). The N8 pack's three (`pnpm test:n8`'s two, and
+# Fourteen Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING), which
+# `pnpm test:plugin` builds and runs: nine here and the five the packages declare (retroplug-sameboy-test and
+# retroplug-mesen-test in the console packages, retroplug-midi-test, retroplug-audio-host-test and
+# retroplug-launchpad-test in theirs). The N8 pack's three (`pnpm test:n8`'s two, and
 # a harness that needs a real console on a USB port) are packages/n8/native/CMakeLists.txt's. The shared shape lives in
 # retroplug_add_test_binary(): see cmake/test-binary.cmake at the root; what is written out here is only what differs per
 # test.

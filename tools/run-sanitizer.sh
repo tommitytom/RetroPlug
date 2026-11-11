@@ -84,6 +84,16 @@ if [ "$san" = thread ]; then
         echo "!! retroplug-midi-test failed under thread sanitizer" >&2
         rc=1
     fi
+    # The audio host over the fake backend: the ring cut by the renderer below and copied by the callback above, the
+    # selection changed under a pull, the fallback's stop beside a pull, and the stats one thread reports. The fake
+    # pulls on its own thread, so the orders between those two are what TSan watches.
+    echo "==> building retroplug-audio-host-test (instrumented)"
+    cmake --build "$builddir" -j"$(nproc)" --target retroplug-audio-host-test
+    echo "==> running the audio host under thread sanitizer"
+    if ! "$repo/$builddir/bin/retroplug-audio-host-test"; then
+        echo "!! retroplug-audio-host-test failed under thread sanitizer" >&2
+        rc=1
+    fi
 fi
 
 [ "$rc" -eq 0 ] && echo "==> host passed under $san sanitizer"

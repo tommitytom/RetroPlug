@@ -8,7 +8,7 @@
 #   cmake/node-addon.cmake    retroplug-node, the N-API host (opt-in)
 #   cmake/bundles.cmake       the embedded control-plane, React-UI and script-node bytecode
 #   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
-#   cmake/tests.cmake         the shell's eleven native test binaries (the console packages declare two more)
+#   cmake/tests.cmake         the shell's nine native test binaries (the packages declare five more)
 #   cmake/warnings.cmake      /W4 /WX on our own targets (MSVC)
 #
 # They are include()d, not add_subdirectory()'d, which matters: include() keeps the CURRENT
@@ -416,7 +416,7 @@ set_target_properties(retroplug-ui-test PROPERTIES
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-ui-bundle)
 
-# The shell's eleven native test binaries (EXCLUDE_FROM_ALL; built by name), and the configure checks the packages'
+# The shell's nine native test binaries (EXCLUDE_FROM_ALL; built by name), and the configure checks the packages'
 # manifests, boundary fixtures and device entries are held to.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
 

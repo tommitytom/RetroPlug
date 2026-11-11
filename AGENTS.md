@@ -314,7 +314,7 @@ The rules below are the parts that don't fit those.
   **`PROVIDERS` is the product's half: a product starts only the providers it names.** The list has no default (a
   provider opens ports and runs threads), the order it names them in is the start order, a duplicate is refused, and a
   manifest item may not be both an `entry` and a `provider`. The SDL standalone, the headless host and the CLI name
-  `n8 launchpad midi` (the CLI and the headless host mount the stream's facet as a provider; the SDL app uses
+  `n8 launchpad` (the CLI and the headless host mount the stream's facet as a provider; the SDL app uses
   `MidiStream` itself); the plugin names `n8` alone and carries the `plugin` product list, which `launchpad`,
   `lsdj-launchpad` and `midi` are not in, so a DAW host is handed no control surface and the plugin's bundles carry
   none of those packages. **The provider ABI is 2:** `reserve_midi` keeps a claimed pair out of the shared
@@ -365,7 +365,11 @@ The rules below are the parts that don't fit those.
   carried it (so an additive field a newer build wrote survives), an absent key reads its contributor's defaults but is
   not written until set, and a block stamped newer than its contributor is refused at section scope. The generic
   `config` host group (`section` / `setSection`) is how a pack reads and writes its block, through a re-read of the file.
-  Details: [docs/modular-graph-phase-f5b-design.md](docs/modular-graph-phase-f5b-design.md).
+  Two checks of it are tracked scripts, not kit-only: `pnpm check:audio-linkage`
+  ([tools/check-audio-linkage.sh](tools/check-audio-linkage.sh)) holds the binaries that name no backend to carrying
+  neither factory symbol nor an audio-library dependency, and [tools/run-sanitizer.sh](tools/run-sanitizer.sh)'s thread
+  run builds and runs `retroplug-audio-host-test`, `retroplug-midi-test` and `retroplug-launchpad-test` under
+  ThreadSanitizer beside the native legs. Details: [docs/modular-graph-phase-f5b-design.md](docs/modular-graph-phase-f5b-design.md).
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch

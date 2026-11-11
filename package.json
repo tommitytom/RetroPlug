@@ -15,6 +15,7 @@
     "typecheck": "node packages/retroplug/scripts/lib/packages.mjs && pnpm -r typecheck",
     "check:docs": "node tools/check-doc-links.mjs",
     "check:boundaries": "node packages/retroplug/scripts/check-boundaries.mjs",
+    "check:audio-linkage": "tools/check-audio-linkage.sh",
     "test": "node scripts/cmake-build.js tjs-cli retroplug-devtest-script-pack && node packages/retroplug/scripts/run-tests.mjs",
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "lsdj:gen-offsets": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/gen-lsdj-offsets.mjs",
