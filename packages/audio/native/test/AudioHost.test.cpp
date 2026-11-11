@@ -44,6 +44,10 @@ struct TestClient final : AudioClient {
     std::atomic<int>                   inFlight{0};
     std::atomic<int>                   maxInFlight{0};
     bool                               renderSleeps = false;
+    // A render that does not come back until the case lets it: how a case holds a pull IN PROGRESS while the UI polls.
+    std::atomic<bool> blockRender{false};
+    std::atomic<bool> renderEntered{false};
+    std::atomic<bool> releaseRender{false};
 
     void prepare(double sampleRate, int maxBlockFrames, int ch) override {
         if (log) log->push_back("prepare " + std::to_string(static_cast<int>(sampleRate)) + " " +
@@ -62,6 +66,9 @@ struct TestClient final : AudioClient {
         while (now > was && !maxInFlight.compare_exchange_weak(was, now)) {
         }
         if (renderSleeps) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        renderEntered.store(true);
+        while (blockRender.load() && !releaseRender.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        renderEntered.store(false);
         for (int i = 0; i < frames; ++i) {
             for (int c = 0; c < channels; ++c) {
                 const double v =
@@ -117,6 +124,19 @@ struct Lines {
         return items;
     }
 };
+
+/** Poll like a RUNNING frame loop (one look every few ms) until the host reports a change or `within` passes. The
+ *  watchdog's bound is the gap between pulls measured with the UI running: a single long sleep is a pause the host
+ *  deliberately restamps rather than blaming on the device (the resume case), so a case that means "the device died
+ *  while the app kept running" has to keep polling. */
+bool pollUntilTrip(AudioHost& host, std::chrono::milliseconds within) {
+    const auto deadline = std::chrono::steady_clock::now() + within;
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        if (host.poll()) return true;
+    }
+    return false;
+}
 
 /** A host over one fake backend, the fake and the client sharing one event log. */
 struct Rig {
@@ -241,14 +261,74 @@ TEST_CASE("the watchdog: a started device that pulls nothing falls back, and a s
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         CHECK_FALSE(rig.host->poll());
     }
-    // Then the device stops: after the bound, the host treats it as lost and mutes.
-    std::this_thread::sleep_for(std::chrono::milliseconds(40));
-    CHECK(rig.host->poll());
+    // Then the device stops: after the bound, with the UI still polling, the host treats it as lost and mutes.
+    CHECK(pollUntilTrip(*rig.host, std::chrono::milliseconds(200)));
     CHECK(rig.host->status().backend == "null");
     // And it never fires while stopped.
     rig.host->stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(40));
     CHECK_FALSE(rig.host->poll());
+}
+
+TEST_CASE("a pull in progress is not a stall: the watchdog trips on the GAP between pulls, never inside one") {
+    // The probe: the bound was compared against the END of the PREVIOUS pull, so a pull that had been inside the engine
+    // longer than the bound (a ~170 ms WinMM SysEx in the block, a slow core) was read as a dead device and a healthy
+    // run was muted until Apply. A pull that is running is the device working, so the bound is the gap between pulls.
+    Rig rig;
+    REQUIRE(rig.host->apply(rig.config()));
+    rig.host->setWatchdogBound(std::chrono::milliseconds(20));
+    auto& stream = *rig.fwd().lastStream;
+    rig.client.blockRender = true;
+    std::thread puller([&] { stream.drive(32); });
+    while (!rig.client.renderEntered.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));  // three bounds, all of them INSIDE one pull
+    CHECK_FALSE(rig.host->poll());
+    CHECK(rig.host->status().backend == "fake");  // still live, not muted
+    rig.client.releaseRender = true;
+    puller.join();
+    rig.client.blockRender = false;
+    // ...and the gap is what the bound measures: no pull at all, while the UI keeps looking, is a stall.
+    CHECK(pollUntilTrip(*rig.host, std::chrono::milliseconds(400)));
+    CHECK(rig.host->status().backend == "null");
+}
+
+TEST_CASE("a resume after a long pause is not a trip: an absence the UI caused is restamped, not blamed on the device") {
+    // The probe: `steady_clock` counts across a debugger pause and a laptop's sleep, so the first poll after one saw a
+    // gap far past the bound and muted a device that had simply not been given a frame to pull in.
+    Rig rig;
+    REQUIRE(rig.host->apply(rig.config()));
+    rig.host->setWatchdogBound(std::chrono::milliseconds(20));
+    rig.fwd().lastStream->drive(32);
+    CHECK_FALSE(rig.host->poll());
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));  // the whole process paused, the UI included
+    CHECK_FALSE(rig.host->poll());  // the first frame back restamps: no device verdict from the UI's own absence
+    CHECK(rig.host->status().backend == "fake");
+    // Now the UI IS running and the device is still silent, so the verdict comes as usual.
+    CHECK(pollUntilTrip(*rig.host, std::chrono::milliseconds(400)));
+    CHECK(rig.host->status().backend == "null");
+}
+
+TEST_CASE("a device whose callback will not stop mutes the run in bounded time, and starts nothing beside it") {
+    // The probe: falling back called the backend's stop(), which waits for the callback, so a wedged render froze the UI
+    // thread itself - worse than before F5b, when only the emulator froze. The host gives up after a bound, reports the
+    // mute, and leaves the stream alone: the null pump would render the engine beside a pull that still owns it.
+    Rig rig;
+    REQUIRE(rig.host->apply(rig.config()));
+    rig.host->setWatchdogBound(std::chrono::milliseconds(20));
+    rig.fwd().lastStream->refusesToStop = true;
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(pollUntilTrip(*rig.host, std::chrono::milliseconds(400)));
+    const auto took = std::chrono::steady_clock::now() - start;
+    CHECK(took < std::chrono::milliseconds(600));  // bounded, not "as long as the callback takes"
+    CHECK(rig.host->status().backend == "fake");   // NOT the null pump: no second renderer beside that pull
+    CHECK(rig.host->status().error.find("stopped pulling") != std::string::npos);
+    // Muted, and quiet from then on (there is nothing left to lose), and a later Apply says why it cannot proceed
+    // rather than freeing a stream whose thread is still running.
+    CHECK_FALSE(rig.host->poll());
+    CHECK_FALSE(rig.host->apply(rig.config(44100, 256, 2)));
+    CHECK(rig.host->status().error.find("still inside a pull") != std::string::npos);
+    // The case lets the callback go, so the stream is joined before it is destroyed.
+    rig.fwd().lastStream->refusesToStop = false;
 }
 
 TEST_CASE("render-ahead produces the in-callback stream sample for sample, across ragged pulls") {
@@ -357,8 +437,7 @@ TEST_CASE("a device that starts and never pulls is caught by the watchdog, and t
     // Shortened for the case: with no pull at all, the host mutes after the bound.
     rig.host->setWatchdogBound(std::chrono::milliseconds(20));
     CHECK_FALSE(rig.host->poll());  // inside the bound, nothing yet
-    std::this_thread::sleep_for(std::chrono::milliseconds(40));
-    CHECK(rig.host->poll());
+    CHECK(pollUntilTrip(*rig.host, std::chrono::milliseconds(200)));
     CHECK(rig.host->status().backend == "null");
     CHECK(rig.host->status().error.find("stopped pulling") != std::string::npos);
 }

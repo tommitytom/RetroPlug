@@ -32,6 +32,7 @@
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "graph/Packages.hpp"
+#include "transport/MidiTypes.hpp"
 #include "host/HostServices.hpp"
 #include "host/IdleReclaimProbe.hpp"
 #include "host/engine/DspCommand.hpp"
@@ -66,6 +67,15 @@ Engine::GraphRequest request(Engine& e, rp::host::test::Roms& roms, std::vector<
     for (const DocSystem& s : systems) slots.push_back(s.id);
     rp::host::test::withRoms(e, systems, roms);
     return rp::host::test::graphRequest(rp::host::test::stereoDocument(systems, channels), slots);
+}
+
+// The same, over the perSystem shape: slot i's mix on host channels 2i and 2i + 1, so a case reads EACH system's own
+// output rather than the sum of them.
+Engine::GraphRequest perSystemRequest(Engine& e, rp::host::test::Roms& roms, std::vector<DocSystem> systems) {
+    std::vector<SystemId> slots;
+    for (const DocSystem& s : systems) slots.push_back(s.id);
+    rp::host::test::withRoms(e, systems, roms);
+    return rp::host::test::graphRequest(rp::host::test::perSystemDocument(systems), slots);
 }
 
 // `r`, re-arming the tap to `mode` on `id`.
@@ -236,17 +246,34 @@ TEST_CASE("a core re-rated to 44.1 kHz renders what one built at 44.1 kHz render
     // been built as, so this holds a GB and a NES to it: the same document, the same seeds, one run built at 44.1 kHz and
     // one built at 48 kHz and re-rated before its first block, and the two streams must be identical sample for sample.
     constexpr std::size_t kLane = 1024;  // one system's samples per block
+    constexpr int         kOut   = 4;    // the perSystem shape: slot 0 (the GB) on 0/1, slot 1 (the NES) on 2/3
+    constexpr int         kBoot  = 90;   // ~1 s: the NES fixture boots before it plays what it is sent
+    constexpr int         kSend  = kBoot + 10;
+    constexpr int         kBlocks = 200;
     auto renderAt = [](bool fromDefault) {
         Engine e(fromDefault ? kRate : 44100.0);
         rp::host::test::Roms roms;
-        REQUIRE(e.setGraph(request(e, roms, {{1, kGb}, {2, kNes}})).ok);
+        REQUIRE(e.setGraph(perSystemRequest(e, roms, {{1, kGb}, {2, kNes}})).ok);
         if (fromDefault) e.setSampleRate(44100.0);  // AudioHost's prepare, after the device obtained 44100
-        std::vector<float> lanes(2 * kLane);
-        float*             outs[2] = {&lanes[0], &lanes[kLane]};
+        // The NES fixture (BOOT BLIPTOASTER) makes sound only for what it is SENT - it is a synth cart - so a run with
+        // no note has silent NES lanes and would hold nothing. One Pulse1 note, sent at the same block in both runs, is
+        // what makes "the NES is audible after a re-rate" a fact rather than a hope (the same note the NES tap's own
+        // case drives).
+        SystemBase* const nes = e.findSystem(2);
+        REQUIRE(nes != nullptr);
+        MidiEvent note;
+        note.frame = 0;
+        note.size  = 3;
+        note.data[0] = 0x90;  // NoteOn, channel 1 -> Pulse1
+        note.data[1] = 60;
+        note.data[2] = 100;
+        std::vector<float> lanes(kOut * kLane);
+        float*             outs[kOut] = {&lanes[0], &lanes[kLane], &lanes[2 * kLane], &lanes[3 * kLane]};
         std::vector<float> stream;
-        for (int block = 0; block < 40; ++block) {
+        for (int block = 0; block < kBlocks; ++block) {
+            if (block == kSend) nes->onMidi(&note, 1);
             std::fill(lanes.begin(), lanes.end(), 0.0f);
-            e.processBlock(static_cast<std::uint32_t>(kLane), outs, 2);
+            e.processBlock(static_cast<std::uint32_t>(kLane), outs, kOut);
             REQUIRE(e.faultCount() == 0);
             stream.insert(stream.end(), lanes.begin(), lanes.end());
         }
@@ -256,15 +283,16 @@ TEST_CASE("a core re-rated to 44.1 kHz renders what one built at 44.1 kHz render
     const std::vector<float> rerated = renderAt(true);
     REQUIRE(fresh.size() == rerated.size());
     CHECK(fresh == rerated);
-    // Not silence, and EACH core's lane is not silence: the mix's non-silence alone would let a silent NES pass, and a
-    // core that goes silent after a re-rate is exactly what a rate the core never took looks like.
+    // Not silence, and EACH system's OWN lanes are not silence. This has to be per system: the mix's non-silence would
+    // let a silent NES pass (a NES silent in BOTH runs compares equal, which is the vacuous case this case exists to
+    // rule out), and a core that goes silent after a re-rate is exactly what a rate the core never took looks like.
     const auto sounds = [](const float* from, const float* to) {
         return std::any_of(from, to, [](float v) { return v != 0.0f; });
     };
     bool gbLane = false, nesLane = false;
-    for (std::size_t at = 0; at + 2 * kLane <= fresh.size(); at += 2 * kLane) {
-        gbLane  = gbLane || sounds(fresh.data() + at, fresh.data() + at + kLane);
-        nesLane = nesLane || sounds(fresh.data() + at + kLane, fresh.data() + at + 2 * kLane);
+    for (std::size_t at = 0; at + kOut * kLane <= fresh.size(); at += kOut * kLane) {
+        gbLane  = gbLane || sounds(fresh.data() + at, fresh.data() + at + 2 * kLane);
+        nesLane = nesLane || sounds(fresh.data() + at + 2 * kLane, fresh.data() + at + kOut * kLane);
     }
     CHECK(gbLane);
     CHECK(nesLane);

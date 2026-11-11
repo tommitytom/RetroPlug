@@ -47,6 +47,19 @@ test("WinMM's trailing index moves, and the saved name still finds its port", ()
   expect(resolvePort("IAC Driver Bus 1", COREMIDI)).toBe("IAC Driver Bus 1");
 });
 
+test("the WinMM index rule needs WinMM's shape: a CoreMIDI name is never re-pointed at its neighbour", () => {
+  // The numbers in "IAC Driver Bus 1" / "Bus 2" are the DEVICE's, not RtMidi's index (a CoreMIDI endpoint is listed
+  // under its own display name), so stripping them re-points a saved port at a DIFFERENT device - which the Launchpad's
+  // rematch then writes into config.json. The tier needs a listing whose trailing numbers ARE the list positions.
+  expect(resolvePort("IAC Driver Bus 1", ["IAC Driver Bus 2"])).toBe(null);
+  expect(resolvePort("IAC Driver Bus 1", COREMIDI)).toBe("IAC Driver Bus 1");  // exact, so no tier runs
+  expect(resolvePort("Bus 1", ["Bus 2", "Bus 3"])).toBe(null);
+  // One name cannot show a progression, so a one-port listing never uses the tier.
+  expect(resolvePort("MIDISPORT 2x2 Port A 9", ["MIDISPORT 2x2 Port A 1"])).toBe(null);
+  // ...and a listing that IS WinMM's shape still resolves, which is what the tier is for.
+  expect(resolvePort("MIDISPORT 2x2 Port A 9", WINMM)).toBe("MIDISPORT 2x2 Port A 1");
+});
+
 test("CoreMIDI's repeated device name folds to one, in both directions", () => {
   expect(resolvePort("Launchpad Pro MK3 Launchpad Pro MK3", COREMIDI)).toBe("Launchpad Pro MK3");
   expect(resolvePort("Launchpad Pro MK3", ["Launchpad Pro MK3 Launchpad Pro MK3"]))

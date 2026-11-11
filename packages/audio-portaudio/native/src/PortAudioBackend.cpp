@@ -19,6 +19,11 @@
 
 #include <portaudio.h>
 
+#if defined(_WIN32)
+// Shared-mode WASAPI's stream flags: see the paWinWasapiAutoConvert note in open().
+#include <pa_win_wasapi.h>
+#endif
+
 namespace rp::audio {
 namespace {
 
@@ -83,6 +88,15 @@ std::vector<std::string> outputDevicesForHostApi(PaHostApiIndex idx) {
     return out;
 }
 
+/** Whether a host API has a device a stream could open: a driver whose API exists but has no output is as unusable as
+ *  one PortAudio does not name, and a saved choice of it must fall back the same way. */
+bool hostApiHasOutput(PaHostApiIndex idx) {
+    const PaHostApiInfo* h = (idx >= 0) ? Pa_GetHostApiInfo(idx) : nullptr;
+    if (!h) return false;
+    if (h->defaultOutputDevice != paNoDevice) return true;
+    return !outputDevicesForHostApi(idx).empty();
+}
+
 std::string defaultOutputName(PaHostApiIndex idx) {
     const PaHostApiInfo* h = (idx >= 0) ? Pa_GetHostApiInfo(idx) : nullptr;
     if (!h || h->defaultOutputDevice == paNoDevice) return {};
@@ -106,10 +120,11 @@ PaDeviceIndex findOutputDeviceByName(PaHostApiIndex idx, const std::string& name
 // then WASAPI on Windows (report item 10: MME is the first host there, and the release-readiness list names it), else
 // the host of the platform default output.
 //
-// WINDOWS, for the agent that runs it (E14, R2): a shared-mode WASAPI device refuses a rate other than its mix format
-// unless PaWasapiStreamInfo::flags has paWinWasapiAutoConvert set, and this open passes no host API specific flags. So
-// a saved rate WASAPI will not take fails the OPEN, and the host moves to the next BACKEND (SDL), not to MME: if the
-// Windows run shows that, the fix is the flag or a fallback to the platform default's host inside this backend.
+// WINDOWS (E14): a shared-mode WASAPI device refuses a rate that is not the endpoint's mix format - and a channel count
+// the endpoint does not have - unless the stream says it may convert, and PortAudio converts only with
+// paWinWasapiAutoConvert set. open() therefore attaches a PaWasapiStreamInfo with that flag to every WASAPI stream, or
+// Auto's new preference would trade MME for a request WASAPI refuses (and the host would move on to the next BACKEND,
+// SDL, instead of staying on the platform's default host).
 PaHostApiIndex autoHostApiIndex() {
     auto hasOutput = [](PaHostApiTypeId type) {
         const PaHostApiIndex idx = Pa_HostApiTypeIdToHostApiIndex(type);
@@ -328,7 +343,17 @@ public:
             }
         }
 
-        const PaHostApiIndex hostIdx = request.driver.empty() ? autoHostApiIndex() : hostApiForDriver(request.driver);
+        // A driver the RUN does not have is not a mute: a saved "pipewire" on a boot where the server is not up yet, a
+        // saved "wasapi" on a machine without it, must fall back to the automatic choice with a warning, which is what
+        // the resolution did before this backend owned it. The status then names the driver that really opened (below),
+        // so Settings shows where the sound is going rather than what the file asked for.
+        PaHostApiIndex hostIdx = request.driver.empty() ? paHostApiNotFound : hostApiForDriver(request.driver);
+        if (!request.driver.empty() && !hostApiHasOutput(hostIdx)) {
+            std::fprintf(stderr, "[retroplug-sdl] audio: driver '%s' is not in this PortAudio, using the automatic choice\n",
+                         request.driver.c_str());
+            hostIdx = paHostApiNotFound;
+        }
+        if (hostIdx < 0) hostIdx = autoHostApiIndex();
         if (hostIdx < 0) {
             error = "PortAudio: no driver '" + request.driver + "' with an output device";
             return nullptr;
@@ -358,6 +383,19 @@ public:
         out.sampleFormat              = paFloat32;  // interleaved float, frame-major (what the pull writes)
         out.suggestedLatency          = Pa_GetDeviceInfo(dev)->defaultLowOutputLatency;
         out.hostApiSpecificStreamInfo = nullptr;
+#if defined(_WIN32)
+        // WASAPI only: the flag lets the shared-mode engine convert the rate and channel count instead of refusing the
+        // open. The struct must live until Pa_OpenStream has read it, so it is a local beside the parameters.
+        PaWasapiStreamInfo   wasapi{};
+        const PaHostApiInfo* hostApi = Pa_GetHostApiInfo(hostIdx);
+        if (hostApi && hostApi->type == paWASAPI) {
+            wasapi.size                   = sizeof(PaWasapiStreamInfo);
+            wasapi.hostApiType            = paWASAPI;
+            wasapi.version                = 1;
+            wasapi.flags                  = paWinWasapiAutoConvert;
+            out.hostApiSpecificStreamInfo = &wasapi;
+        }
+#endif
         // A block of 0 asks for the server's own quantum: what render-ahead wants, so a fixed-quantum server schedules
         // the callback at its cycle rather than at ours.
         const unsigned long callbackFrames =
@@ -377,7 +415,10 @@ public:
 
         const PaDeviceInfo* deviceInfo = Pa_GetDeviceInfo(dev);
         StreamInfo          info;
-        info.driver       = driverId(*Pa_GetHostApiInfo(hostIdx));
+        // The device's OWN host API, not the one the choice resolved to: a last-resort device can belong to another
+        // (the platform default), and a status or log line naming the requested driver while another one plays is the
+        // bug that made "I picked PipeWire, Settings says PipeWire, and it is ALSA" possible.
+        info.driver       = driverId(*Pa_GetHostApiInfo(deviceInfo->hostApi));
         info.device       = deviceInfo->name;
         info.channels     = request.channels;
         info.blockFrames  = request.blockFrames;

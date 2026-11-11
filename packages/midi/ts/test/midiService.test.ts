@@ -32,7 +32,12 @@ interface Rig {
 }
 
 /** A host over a mutable section and a fake stream. Only the groups this package reaches are real. */
-function rig(overrides: { describe?: () => MidiDescription; throwOnApply?: boolean } = {}): Rig {
+function rig(overrides: {
+  describe?: () => MidiDescription;
+  throwOnApply?: boolean;
+  /** What the device does with an apply: a fake whose ports OPEN, so a case can hold what the rows read afterwards. */
+  onApply?: (selection: MidiSelection, mode: string) => void;
+} = {}): Rig {
   const mockSection: MidiSection = { ...SECTION };
   const applied: { selection: MidiSelection; mode: string }[] = [];
   const clock: number[] = [];
@@ -43,6 +48,7 @@ function rig(overrides: { describe?: () => MidiDescription; throwOnApply?: boole
     apply: (selection, mode = "diff") => {
       if (overrides.throwOnApply) throw new Error("the port refused to open");
       applied.push({ selection, mode });
+      overrides.onApply?.(selection, mode);
     },
     transport: () => ({ playing: false, external: false, bpm: 120, localBpm: mockSection.clockBpm }),
     setTransport: (playing) => transportSet.push(playing),
@@ -143,15 +149,57 @@ test("a saved name that is not present at all is shown as missing", () => {
 
 test("a saved port that resolved but did not open is unchecked, and tapping it retries the open", () => {
   // The saved port is present, but the stream has no such port open (it refused, exclusive on Windows): the row is
-  // unchecked and it is NOT missing - it is here, and the tap's whole job is to try it again.
-  const r = rig({ describe: () => ({ ...DESCRIPTION, openedInputs: [] }) });
+  // unchecked and it is NOT missing - it is here, and the tap's whole job is to try it again. The tap must also SHOW
+  // that it worked: it changes no section byte and raises none of the edges the poll reacts to, so the row reads the
+  // machine again after the apply - a row left at "[ ]" over a port that is now open is the tap looking dead, and it is
+  // the only remedy Windows has for an exclusive port.
+  let opened: string[] = [];
+  const r = rig({
+    describe: () => ({ ...DESCRIPTION, openedInputs: opened }),
+    onApply: (_selection, mode) => {
+      if (mode === "reopen") opened = ["Launchpad Pro MK3"];  // the reopen is what opens it; the first poll's diff is not
+    },
+  });
   r.setSection({ inputs: [{ name: "Launchpad Pro MK3" }] });
-  const rows = menu("settings.midi").build(r.host, null, { systems: [], assetRom: () => null, romPatterns: [] });
-  expect(rows.find((row) => row.id === "midi-input-0")!.label).toBe("[ ] Launchpad Pro MK3");
-  expect(rows.some((row) => row.id === "midi-missing-in-0")).toBe(false);
-  rows.find((row) => row.id === "midi-input-0")!.onSelect!();
+  const svc = service();
+  svc.start!(r.host);
+  const build = () => menu("settings.midi").build(r.host, null, { systems: [], assetRom: () => null, romPatterns: [] });
+  expect(svc.poll!.run(r.host)).toBe(true);  // the first poll applies the saved selection (a diff: still refused)
+  expect(build().find((row) => row.id === "midi-input-0")!.label).toBe("[ ] Launchpad Pro MK3");
+  expect(build().some((row) => row.id === "midi-missing-in-0")).toBe(false);
+  build().find((row) => row.id === "midi-input-0")!.onSelect!();
   expect(r.section.inputs).toEqual([{ name: "Launchpad Pro MK3" }]); // the retry did not rewrite the project
   expect(r.applied.at(-1)!.mode).toBe("reopen"); // it asked the stream to open it again
+  expect(svc.poll!.run(r.host)).toBe(true);       // ...and the repaint it caused is reported
+  expect(build().find((row) => row.id === "midi-input-0")!.label).toBe("[x] Launchpad Pro MK3");
+});
+
+test("Rescan reopens every saved port and the rows follow it, not the listing the menu was built from", () => {
+  // The other dead-looking row: Rescan's work is a reopen, which moves no section byte either. It lists AFTER the apply
+  // for the same reason the retry does, and it is what makes a port that was unplugged and plugged back in appear.
+  let present: string[] = [];
+  let opened: string[] = [];
+  const r = rig({
+    describe: () => ({ ...DESCRIPTION, inputs: present, openedInputs: opened }),
+    onApply: (_selection, mode) => {
+      if (mode !== "reopen") return;  // the rescan is what replugs the device; a project load's diff changes nothing
+      present = ["Launchpad Pro MK3"];
+      opened = ["Launchpad Pro MK3"];
+    },
+  });
+  r.setSection({ inputs: [{ name: "Launchpad Pro MK3" }] });
+  const svc = service();
+  svc.start!(r.host);
+  const build = () => menu("settings.midi").build(r.host, null, { systems: [], assetRom: () => null, romPatterns: [] });
+  svc.poll!.run(r.host);
+  // Before the rescan the port is nowhere on the machine, so the saved entry is the missing row.
+  expect(build().some((row) => row.id === "midi-missing-in-0")).toBe(true);
+  build().find((row) => row.id === "midi-rescan")!.onSelect!();
+  expect(r.applied.at(-1)!.mode).toBe("reopen");
+  expect(svc.poll!.run(r.host)).toBe(true);
+  const after = build();
+  expect(after.some((row) => row.id === "midi-missing-in-0")).toBe(false);
+  expect(after.find((row) => row.id === "midi-input-0")!.label).toBe("[x] Launchpad Pro MK3");
 });
 
 test("a renumbered port reads checked, and one tap takes the saved name out", () => {

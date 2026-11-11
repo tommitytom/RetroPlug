@@ -21,13 +21,15 @@ bool contains(const std::vector<std::string>& names, const std::string& name) {
 
 }  // namespace
 
-MidiStream::MidiStream(MidiBackend& backend) : backend_(&backend) {}
+MidiStream::MidiStream(MidiBackend& backend)
+    : backend_(&backend), clientName_(backend.clientName()), filterName_(backend.familyName()) {}
 
 MidiStream::~MidiStream() { close(); }
 
 bool MidiStream::open() {
     close();  // idempotent: a second open replaces the first, ports and ring alike
     clientName_ = backend_->clientName();
+    filterName_ = backend_->familyName();
     log_.store(std::getenv("RETROPLUG_MIDI_LOG") != nullptr);  // set before a callback thread can start
     if (!backend_->usable()) return false;
     if (backend_->supportsVirtual()) {
@@ -72,14 +74,14 @@ void MidiStream::close() {
 std::vector<std::string> MidiStream::listInputs() const {
     const std::vector<std::string> raw = backend_->listInputs();
     std::vector<std::string>       out;
-    for (std::size_t i : hardwarePortIndices(raw, clientName_)) out.push_back(raw[i]);
+    for (std::size_t i : hardwarePortIndices(raw, filterName_)) out.push_back(raw[i]);
     return out;
 }
 
 std::vector<std::string> MidiStream::listOutputs() const {
     const std::vector<std::string> raw = backend_->listOutputs();
     std::vector<std::string>       out;
-    for (std::size_t i : hardwarePortIndices(raw, clientName_)) out.push_back(raw[i]);
+    for (std::size_t i : hardwarePortIndices(raw, filterName_)) out.push_back(raw[i]);
     return out;
 }
 
@@ -114,7 +116,7 @@ void MidiStream::setHardwareInputsSuspended(bool suspended) {
 void MidiStream::applyInputs(Apply mode) {
     const std::vector<std::string> names = backend_->listInputs();
     std::vector<std::string>       want;
-    for (std::size_t i : inputPortsToOpen(names, clientName_, selectedIn_, allInputs_, reservedIn_, inputsSuspended_))
+    for (std::size_t i : inputPortsToOpen(names, filterName_, selectedIn_, allInputs_, reservedIn_, inputsSuspended_))
         want.push_back(names[i]);
     if (mode == Apply::Diff && want == openInputs_) return;
     // Said once per real change: it describes the state the stream is now in, not a call it answered.
@@ -171,7 +173,7 @@ void MidiStream::applyOutputs(Apply mode) {
             emit("MIDI out: '" + sel + "' is held by the control surface");
             continue;
         }
-        if (matchPortIndex(names, clientName_, sel)) {
+        if (matchPortIndex(names, filterName_, sel)) {
             if (!contains(want, sel)) want.push_back(sel);
         } else {
             emit("MIDI out: selected port '" + sel + "' not present");

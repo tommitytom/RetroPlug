@@ -21,10 +21,16 @@ test("a missing or junk block reads the defaults, field by field", () => {
   });
 });
 
-test("the backend is one of the closed set, and never a library's number", () => {
+test("a saved backend is any id the product lists, and a blank one is Auto", () => {
   for (const id of ["auto", "portaudio", "sdl", "null"]) expect(parse({ backend: id }).backend).toBe(id);
-  expect(parse({ backend: "PortAudio" }).backend).toBe("auto");
-  expect(parse({ backend: "18" }).backend).toBe("auto");
+  // A third-party backend's id (a package with an `audioBackend` manifest item, or a fork's own) must be SAVABLE: the
+  // set native knows is a build's, and snapping an unknown id to Auto would make a pick that --audio-backend accepts
+  // impossible to keep. Native answers an id no backend has by falling back to Auto, with its status saying what ran.
+  expect(parse({ backend: "my-dsp-card" }).backend).toBe("my-dsp-card");
+  // Junk is still junk: a non-string is not an id, and a blank one is the absence of a choice.
+  expect(parse({ backend: "18" }).backend).toBe("18");
+  expect(parse({ backend: "  " }).backend).toBe(DEFAULT_AUDIO_SECTION.backend);
+  expect(parse({ backend: 18 }).backend).toBe(DEFAULT_AUDIO_SECTION.backend);
 });
 
 test("rate and block are positive integers; the width is 2, 4, 6 or 8", () => {

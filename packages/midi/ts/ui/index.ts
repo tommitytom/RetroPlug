@@ -60,6 +60,22 @@ function applySection(
   }
 }
 
+/** Apply, then read the machine AGAIN, so the rows show what the apply actually opened. Every apply path needs it: the
+ *  retry tap and the Rescan row change no section byte, and neither raises any of the edges the poll reacts to, so
+ *  without this second read the row keeps printing "[ ]" over a port that is now open and the tap looks dead (it is the
+ *  one remedy Windows has for an exclusive port, and the Rescan row's whole purpose). Read after the apply, not before:
+ *  a listing taken first still says the port is closed. A click or a service edge is one of the moments a describe is
+ *  allowed (a builder never probes), and the read is what makes the next poll report a repaint. */
+function applyAndRelist(
+  dev: MidiDeviceHost,
+  section: MidiSection,
+  mode: "diff" | "reopen",
+  described: MidiDescription,
+): void {
+  applySection(dev, section, mode, described);
+  listing = { dev, value: dev.describe() ?? described };
+}
+
 /** The listing the rows render from, with the DEVICE it belongs to. The service refreshes its own; a builder only reads
  *  it, because a describe is a probe of the machine (on ALSA an RtMidi client created and destroyed, which every other
  *  client sees announced). Keyed by the device, so a host that swaps its stream (a test rig, a rebuilt session) reads
@@ -122,7 +138,7 @@ function midiSettingsChildren(host: UiHost): MenuItem[] {
         ...(direction === "inputs" ? { allInputs: false } : {}),
       });
     } else if (named.length > 0) {
-      applySection(dev, section, "reopen", described); // saved, resolved, refused: try it again
+      applyAndRelist(dev, section, "reopen", described); // saved, resolved, refused: try it again
     } else {
       write({ [direction]: [...entries, { name: port }] });
     }
@@ -165,8 +181,7 @@ function midiSettingsChildren(host: UiHost): MenuItem[] {
       ...action("midi-rescan", "Rescan", () => {
         const fresh = dev.describe();
         if (!fresh) return;
-        listing = { dev, value: fresh };
-        applySection(dev, section, "reopen", fresh);
+        applyAndRelist(dev, section, "reopen", fresh);
       }),
       keepOpen: true,
     },
@@ -286,9 +301,8 @@ const midiService: UiService = {
           lastSection = key;
           lastRevision = revision;
           reapplyRequested = false;
-          applySection(dev, section, "diff", fresh);
           // What the apply opened, so the checkboxes follow a pick without waiting for another edge.
-          listing = { dev, value: dev.describe() ?? fresh };
+          applyAndRelist(dev, section, "diff", fresh);
         }
       }
       const bpm = section.clockBpm || DEFAULT_CLOCK_BPM;

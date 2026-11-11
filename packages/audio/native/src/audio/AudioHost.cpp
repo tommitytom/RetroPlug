@@ -52,6 +52,21 @@ constexpr int kCallbackPriority        = 80;
 constexpr int kCallbackPriorityAhead   = 85;
 constexpr int kRendererPriority        = 80;
 
+/** How long the UI thread waits for a device's callback to come back when it must take the device away: long enough
+ *  for one block to finish (a 186 ms quantum plus a bulk SysEx inside it), short enough that the window does not visibly
+ *  freeze. A callback that is still inside a pull after this is not joined - the run is muted and the stream stays. */
+constexpr std::chrono::milliseconds kStopBound{1000};
+
+/** Marks a pull as running for its whole body, however it returns: the watchdog reads it to tell a long block from a
+ *  dead device, and closing a device whose callback is in a pull would block on exactly that pull. */
+struct PullScope {
+    explicit PullScope(std::atomic<bool>& flag) : flag_(flag) { flag_.store(true, std::memory_order_relaxed); }
+    ~PullScope() { flag_.store(false, std::memory_order_relaxed); }
+    PullScope(const PullScope&)            = delete;
+    PullScope& operator=(const PullScope&) = delete;
+    std::atomic<bool>& flag_;
+};
+
 /** Best effort, ONCE PER THREAD: real-time scheduling and the audio core for the calling thread. Per thread, not per
  *  process: a re-opened stream's callback is a new thread, and each one asks once for itself. Without RT permission,
  *  the default scheduling stands, and the UI's own pin away from the audio core is this product's (main.cpp). */
@@ -92,7 +107,9 @@ AudioHost::AudioHost(BackendList preference, AudioClient& client)
 }
 
 AudioHost::~AudioHost() {
-    closeCurrent();
+    // A callback that will not come back is left where it is: joining it here would hang the host's shutdown on a thread
+    // that may never return, and the process is going away anyway.
+    if (closeCurrent(kStopBound)) client_->release();
 }
 
 void AudioHost::logLine(const std::string& text) const {
@@ -248,7 +265,7 @@ bool AudioHost::openAndStart(const AudioConfig& config, Resolved& resolved, Stre
         // A stream that opens and never starts is an OPEN failure: nothing pulls, so the emulator would sit frozen and
         // the status would claim a device. The backend's own words go into the status, and the caller falls to null.
         error = startError.empty() ? resolved.backend->label() + ": the audio device would not start" : startError;
-        closeCurrent();
+        closeCurrent(kStopBound);
         return false;
     }
     started_ = true;
@@ -263,7 +280,12 @@ bool AudioHost::apply(const AudioConfig& config) {
     // A muted host never takes this path: the same request is how a user retries the device that refused.
     if (started_ && stream_ && sameChoice(config, config_) && backend_ && backend_->id() != "null") return live();
 
-    closeCurrent();
+    // A callback that will not stop still owns the engine, so the old stream cannot be freed and a new device must not
+    // render beside it: the apply is refused, and the status says why (a later Apply retries).
+    if (!closeCurrent(kStopBound)) {
+        error_ = "the audio device's callback is still inside a pull";
+        return false;
+    }
     client_->release();
     config_ = config;
 
@@ -298,27 +320,49 @@ bool AudioHost::apply(const AudioConfig& config) {
 }
 
 void AudioHost::stop() {
-    closeCurrent();
-    client_->release();
+    // The engine goes back to the control plane only when the callback has really stopped: a pull that is still running
+    // is still rendering it.
+    if (closeCurrent(kStopBound)) client_->release();
 }
 
 bool AudioHost::poll() {
     if (!started_ || !stream_ || !backend_) return false;
     if (backend_->id() == "null") return false;  // the fallback is already the answer
+    const std::int64_t now      = nowMs();
+    const std::int64_t lastPoll = lastPollMs_.exchange(now, std::memory_order_relaxed);
+    // A pull that is still running is a LIVE device, whatever it is doing: one block's work (a WinMM bulk SysEx inside
+    // the render) can outlast any bound, and closing the device would block on exactly that pull. So the bound is the
+    // GAP between pulls, never one pull's own duration.
+    if (inPull_.load(std::memory_order_relaxed)) return false;
+    if (lastPoll != 0 && now - lastPoll > watchdogBound_.count()) {
+        // The UI itself did not run for longer than the bound - a debugger pause, a laptop asleep, a wedged frame. The
+        // device had no chance to pull while the process was stopped, so that absence is no verdict: restamp and decide
+        // on a later frame, when the UI really has been running.
+        lastPullMs_.store(now, std::memory_order_relaxed);
+        return false;
+    }
     std::string reason;
     if (stream_->lost()) {
         reason = "the audio device went away";
     } else {
-        // A backend that never reports still falls back: a pull that has not finished for a few block durations while
-        // the stream is started is a stall, and today's app freezes on one (the emulator advances only inside a pull).
-        // The clock starts at start(), so a stream that starts and NEVER pulls is caught too.
+        // A backend that never reports still falls back: no pull for a few block durations while the stream is started
+        // and none in progress is a stall. The clock starts at start(), so a stream that starts and NEVER pulls is
+        // caught too.
         const std::int64_t last = lastPullMs_.load(std::memory_order_relaxed);
-        if (last != 0 && nowMs() - last > watchdogBound_.count()) reason = "the audio device stopped pulling";
+        if (last != 0 && now - last > watchdogBound_.count()) reason = "the audio device stopped pulling";
     }
     if (reason.empty()) return false;
 
     const AudioStatus before = status();
-    closeCurrent();
+    if (!closeCurrent(kStopBound)) {
+        // Muted, and no fallback: the null pump would render the engine beside a pull that still owns it, and the window
+        // must not wait for a callback that may never return. Recovery is the user's apply.
+        error_   = reason;
+        started_ = false;
+        logLine("audio: " + reason + " (muted; the callback is still inside a pull)");
+        const AudioStatus after = status();
+        return before.backend != after.backend || before.device != after.device || before.error != after.error;
+    }
     client_->release();
     if (!fallbackToNull(reason)) {
         // Nothing to run on: the engine went back to the control plane, and the status says what happened. Recovery is
@@ -355,17 +399,24 @@ bool AudioHost::fallbackToNull(const std::string& reason) {
     return true;
 }
 
-void AudioHost::closeCurrent() {
+bool AudioHost::closeCurrent(std::chrono::milliseconds bound) {
     stopRenderer();
     if (stream_) {
-        stream_->stop();
+        if (!stream_->stopWithin(bound)) {
+            // The callback is still inside a pull. Everything below is left as it is - the ring the pull may read, the
+            // block it was shaped for, the stream itself - because the host has given up waiting, not the callback.
+            return false;
+        }
         stream_.reset();
     }
     started_     = false;
     ringFrames_  = 0;  // the next run sizes its own, so a pull can never read this one's
     blockFrames_ = 0;
     pulls_.store(0, std::memory_order_relaxed);
+    inPull_.store(false, std::memory_order_relaxed);
     lastPullMs_.store(0, std::memory_order_relaxed);
+    lastPollMs_.store(0, std::memory_order_relaxed);
+    return true;
 }
 
 void AudioHost::setWatchdogFor(int blockFrames) {
@@ -380,6 +431,7 @@ void AudioHost::setWatchdogFor(int blockFrames) {
 }
 
 void AudioHost::pull(float* interleaved, int frames, bool underflow) {
+    const PullScope pulling(inPull_);
     // The audio path's first call on this thread: real-time priority and the audio core, once (per thread) - but only
     // on a REAL device's thread. The null device's pump is a sleep-paced emulator loop with nothing to keep ahead of,
     // and a test that pulls by hand would leave the control process's own thread (and every thread it later creates)

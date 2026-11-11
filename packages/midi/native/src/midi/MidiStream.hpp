@@ -27,6 +27,10 @@
 // CONTROL thread's (hwOut_), and a published set only names them: a port leaving the selection is unpublished, waited
 // out, and only then closed, which is also what lets a name be reopened at all where a port is exclusive (Windows).
 //
+// The filters judge a listing by the backend's FAMILY (MidiBackend::familyName), not by the name this stream publishes
+// under: a session's stream is "RetroPlug N8" and a new name for it would otherwise turn the standalone's virtual output
+// and a claimed Launchpad's link into devices it may open (the E11 "every input" default makes that reachable).
+//
 // Logging: every line the harnesses grep goes through one sink, by default the "[retroplug-sdl] " voice to stderr that
 // the app has always written (the CLI prints it too), so a test asserts the very bytes that reach the console.
 
@@ -153,7 +157,8 @@ private:
     void emit(const std::string& line);  // one log line, prefix included, through sink_ or stderr
 
     MidiBackend* backend_;  // non-const on purpose: a listing probes the system, and listInputs() is const
-    std::string  clientName_ = "RetroPlug";  // copied from the backend at open(): what the filters judge a port by
+    std::string  clientName_ = "RetroPlug";  // copied from the backend at open(): the name this stream PUBLISHES under
+    std::string  filterName_ = "RetroPlug";  // the backend's FAMILY, copied at open(): what the filters judge a port by
     LogSink      sink_;                      // empty: stderr
     bool         open_       = false;
     // RETROPLUG_MIDI_LOG: dump in + out bytes to stderr. Set by open() on the control thread and read by the ports'

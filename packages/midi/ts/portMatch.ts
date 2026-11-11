@@ -9,7 +9,9 @@
 //      other clients come and go. This tier keeps the rest of the name, so a multi-port interface's "MIDI 1" and
 //      "MIDI 2" still tell its two ports apart;
 //   3. the index RtMidi appends to EVERY Windows WinMM name stripped ("MIDISPORT 2x2 Port A 1" against "... 2"), which
-//      changes with the driver's enumeration order.
+//      changes with the driver's enumeration order. This tier needs a listing with WinMM's SHAPE (winmmShaped below):
+//      RtMidi's index is the port's position in the list, and a name whose own trailing number is not one - CoreMIDI's
+//      "IAC Driver Bus 1", ALSA's everything - must never be re-pointed at its neighbour.
 //
 // Every tier folds runs of spaces and surrounding whitespace, and CoreMIDI's immediate repeat of the device name
 // ("Launchpad Pro MK3 Launchpad Pro MK3" against "Launchpad Pro MK3"). The tiers are separate because one strip cannot
@@ -22,7 +24,7 @@
 export function resolvePort(saved: string, present: readonly string[]): string | null {
   if (!saved) return null;
   if (present.includes(saved)) return saved;
-  for (const strip of STRIPS) {
+  for (const strip of stripsFor(present)) {
     const want = foldPortName(strip(saved));
     if (!want) return null;
     const matches = present.filter((name) => foldPortName(strip(name)) === want);
@@ -32,14 +34,27 @@ export function resolvePort(saved: string, present: readonly string[]): string |
   return null;
 }
 
-/** One stripping rule: what each tier cuts off a name's end before the shared fold. The ALSA rule runs first and is the
- *  narrower one, so a name it resolves exactly is never handed to the index rule. */
-const STRIPS: readonly ((name: string) => string)[] = [
-  // ALSA's client:port suffix, at the end of the name and nowhere else.
-  (name) => name.trim().replace(/\s+\d+:\d+$/, ""),
-  // RtMidi's WinMM "<name> <index>" suffix (deps/rtmidi appends the port number to every Windows name).
-  (name) => name.trim().replace(/\s+\d+$/, ""),
-];
+/** Whether a listing has WinMM's SHAPE. RtMidi appends each port's own INDEX there, so every name ends in " <n>" and the
+ *  numbers are the list positions, 0..n-1 in order - a fact about the LISTING, which is what makes the index tier safe
+ *  to skip. CoreMIDI lists endpoints under their display names, so "IAC Driver Bus 1" / "Bus 2" fails it (2 is not the
+ *  position 0 or 1), and so does a listing of one port (one name cannot show a progression). ALSA's names end in
+ *  client:port and fail it too. */
+function winmmShaped(present: readonly string[]): boolean {
+  if (present.length < 2) return false;
+  return present.every((name, index) => name.trim().endsWith(` ${index}`));
+}
+
+/** The stripping tiers that apply to `present`, in order: what each cuts off a name's end before the shared fold. The
+ *  ALSA rule is the narrower one and always applies (no other platform spells a name with "client:port"); the index
+ *  rule applies only to a WinMM-shaped listing (deps/rtmidi appends the port number to every Windows name). */
+function stripsFor(present: readonly string[]): readonly ((name: string) => string)[] {
+  const strips: ((name: string) => string)[] = [
+    // ALSA's client:port suffix, at the end of the name and nowhere else.
+    (name) => name.trim().replace(/\s+\d+:\d+$/, ""),
+  ];
+  if (winmmShaped(present)) strips.push((name) => name.trim().replace(/\s+\d+$/, ""));
+  return strips;
+}
 
 /** A name with the machine's punctuation folded away: runs of spaces, and CoreMIDI's immediate repeat of the whole
  *  device name ("Device Device", "Device Device Port A"), which a port that carries its device's name lists. */

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Assemble the aarch64 (glibc 2.35) sysroot the cross toolchain links against, into .arm64/sysroot.
-# One-time (per checkout / after a dep change). Matches the CI handheld-arm64 job's Ubuntu 22.04 arm64
-# dep set, so a locally cross-built binary is glibc- and lib-compatible with the device (glibc 2.38 ceiling).
+# One-time (per checkout / after a dep change). The Ubuntu 22.04 arm64 package set the handheld's crosstool
+# (tools/arm-build.sh, and the feature/handheld-perf device run) links against, so a locally cross-built binary is
+# glibc- and lib-compatible with the device (glibc 2.38 ceiling). CI builds no aarch64 SDL binary: its build jobs run
+# ubuntu-24.04 and ubuntu-24.04-arm hosts, whose SDL is 2.30, so that package set does not match them.
 #
 # How: download the Ubuntu 22.04 arm64 base rootfs, use proot + qemu-aarch64-static to `apt-get
 # --download-only` the -dev packages + their full dependency closure (download never invokes the arm dpkg,
@@ -15,7 +17,8 @@ repo="$(cd "$(dirname "$0")/.." && pwd)"
 arm="$repo/.arm64"
 sysroot="$arm/sysroot"
 base_url="https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-arm64.tar.gz"
-# The device libs (mirrors .github/workflows/build.yml handheld-arm64 / profile-host-arm64 apt lines).
+# The device libs: Ubuntu 22.04's, which is where libsdl2-dev is 2.0.20 (the version SdlAudioBackend guards
+# SDL_GetDefaultAudioInfo against).
 pkgs=(libsdl2-dev libasound2-dev libpipewire-0.3-dev libdbus-1-dev libcurl4-openssl-dev libffi-dev libssl-dev libpng-dev zlib1g-dev)
 
 for tool in proot qemu-aarch64-static curl dpkg-deb python3; do

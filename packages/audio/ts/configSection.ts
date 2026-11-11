@@ -38,8 +38,9 @@ export const DEFAULT_AUDIO_SECTION: AudioSection = Object.freeze({
   outChannels: 2,
 });
 
-/** The backends a saved choice may name. "null" is the fallback the host takes by itself; it is in the closed set
- *  because a harness pins it and a file may record it, but no row offers it. */
+/** The backends THIS build's product names, for a doc, a check or a test: "null" is the fallback the host takes by
+ *  itself, and "auto" the absence of a choice. It is not the set a saved value must be in - see parseAudioSection, which
+ *  keeps any id, so a backend a product adds (or a fork's own) can be saved and a later build can read the file. */
 export const AUDIO_BACKENDS = ["auto", "portaudio", "sdl", "null"] as const;
 
 /** The channel counts a device can be opened at (2 = stereo mix; 4/6/8 spread the project's routing across pairs). */
@@ -57,7 +58,10 @@ function parseAudioSection(raw: unknown): AudioSection {
   const backend = stringOf(block.backend);
   const channels = block.outChannels;
   return {
-    backend: (AUDIO_BACKENDS as readonly string[]).includes(backend) ? backend : DEFAULT_AUDIO_SECTION.backend,
+    // Any non-empty id: the set of backends is the PRODUCT's (cmake/packages.cmake's AUDIO_BACKENDS), and native falls
+    // back to Auto for one no backend of this build has. Validating the membership here would refuse a third-party
+    // backend's id at save time, so a pick --audio-backend accepts could never be kept.
+    backend: backend.trim() === "" ? DEFAULT_AUDIO_SECTION.backend : backend,
     driver: stringOf(block.driver),
     device: stringOf(block.device),
     sampleRate: positiveInt(block.sampleRate, DEFAULT_AUDIO_SECTION.sampleRate),

@@ -19,8 +19,19 @@ namespace rp::midi {
 using Receiver = std::function<void(const std::uint8_t*, std::size_t)>;
 
 /** One endpoint, one direction, owned by whoever opened it. Destroying an input cancels its callback: when the
- *  destructor returns, no receiver call is running and none will run. An output's send may block (a WinMM bulk SysEx
- *  waits for the bytes to leave the wire), which is why the Launchpad pack writes on a thread of its own. */
+ *  destructor returns, no receiver call is running and none will run - as strongly as each platform can promise it, which
+ *  is what a stream freeing a port under a delivery thread rests on:
+ *
+ *  - ALSA (RtMidi's own thread): the thread is joined, so the promise is exact;
+ *  - WinMM (a short-message callback the OS delivers): the callback holds no lock this destructor takes and there is
+ *    nothing to join, so a call already inside the receiver when the destructor runs can still finish. Nothing in tree
+ *    delivers on WinMM while a port is destroyed (the control thread closes ports, and the stream's own send path never
+ *    frees one under a delivery), so it is a promise the platform cannot keep rather than one the code breaks;
+ *  - CoreMIDI: the source is disposed and its connection torn down, which stops further deliveries, and a call already
+ *    running is again not waited for.
+ *
+ *  An output's send may block (a WinMM bulk SysEx waits for the bytes to leave the wire), which is why the Launchpad
+ *  pack writes on a thread of its own. */
 class MidiPort {
 public:
     virtual ~MidiPort() = default;
@@ -46,6 +57,12 @@ public:
     /** The client name this system opens its ports under: what other tools see, and what the port filters judge a name
      *  by. The backend owns it, once, so the ports it opens and the ports it publishes cannot be named differently. */
     virtual std::string clientName() const = 0;
+    /** The FAMILY every client name of this app's belongs to ("RetroPlug"), which is what the port filters judge a name
+     *  by: a stream renamed for its session ("RetroPlug N8", "RetroPlug Loopback") must still refuse THIS app's own
+     *  ports - the standalone's virtual output, a claimed Launchpad's link - as hardware, and the family is the one
+     *  thing all of them share. A backend whose ports are not named after the app overrides this; it defaults to the
+     *  app's name because every client name in the product is built from it. */
+    virtual std::string familyName() const { return "RetroPlug"; }
     /** This system again under `clientName`, for a caller whose virtual ports must be told apart from this instance's.
      *  The CLI's facet publishes one stream per session, each named after the session ("RetroPlug N8", "RetroPlug
      *  Loopback"), which is a name a DAW routes to; the Launchpad pack likewise holds its own instance under its own

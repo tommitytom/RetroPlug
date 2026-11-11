@@ -332,6 +332,37 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    rp_product_audio_backends()`; only the unit that constructs the host includes it. `tools/check-audio-linkage.sh`
    (the kit's `audiolink` leg) holds the binaries to it: no `Pa_*` symbol and no audio-library dependency in
    `retroplug-cli`, `retroplug-host` or the Node addon.
+
+   **What a backend author needs** ([AudioBackend.hpp](../packages/audio/native/src/audio/AudioBackend.hpp) is the
+   contract and its comments are the rules). The item is refused without an `id` or a `device` value, with an id a
+   manifest already declares (or `auto` / `null`, which are the host's own), beside an `entry` or a `provider`, or with
+   `device: true`. The factory's `AudioBackend::id()` must return the manifest's id, because that is what a saved choice
+   is matched to, and the target is linked into the products that NAME the id, so the factory needs no export macro. The
+   backend is constructed at product start but must initialise NO library there: `drivers`, `devices` and `autoDriver`
+   are the first use, and the host calls them only for the backend in force (or on an explicit "More drivers..." step),
+   which is what keeps a run that never chose it from opening a device. `drivers` / `devices` must never disturb a
+   running stream. `open` returns a stream that is NOT started; `stop` joins the callback (idempotent, with
+   `stopWithin(bound)` for a backend whose stop could wait), `pull` never runs on two threads at once, and `lost()` /
+   `info()` are read from the control thread beside the callback. The log line the harnesses grep
+   (`audio: <label> [<driver label>] '<device>' N Hz, B frames, C ch`) is the host's, so `label()`, `driverLabel()` and
+   `StreamInfo` are what a leg reads. `AUDIO_BACKENDS` in
+   [packages/audio/ts/configSection.ts](../packages/audio/ts/configSection.ts) is the product's list for a doc or a
+   test, NOT a set a saved `audio.backend` is validated against: the section keeps any non-empty id, because native is
+   what knows the set.
+
+   **A package that uses MIDI** takes its own backend rather than a shared stream: link the unlisted `retroplug-midi`
+   library by name (as `launchpad` and the shell's facet do) and declare `@retroplug/midi` in its `dependencies`; take
+   an instance through `rtMidiBackend("<client>")` in
+   [RtMidiBackend.hpp](../packages/midi/native/src/midi/RtMidiBackend.hpp) (never construct RtMidi itself, and keep
+   "RetroPlug" in the client name: the port filters judge a listing by that FAMILY, so a stream's own and every sibling
+   RetroPlug's ports stay out of its "all devices"); filter through
+   [PortFilter.hpp](../packages/midi/native/src/midi/PortFilter.hpp)'s one copy, which honours the test-only
+   `RP_MIDI_PORT_ALLOW`; keep a pair a control surface holds out of the shared stream through the provider ABI's
+   `reserve_midi`; write a blocking send (WinMM's bulk SysEx, ~170 ms) on a thread of its own, never from the audio
+   callback; and test over
+   [FakeMidiBackend.hpp](../packages/midi/native/test-support/midi/FakeMidiBackend.hpp), which is test support, so a
+   test binary adds `retroplug-midi-test-support` and no product does. Its rows live in its `ts/ui/` and read the host's
+   `midiDevice` group when the product owns a stream.
 5. The four members through which a package owns part of a project and of the graph. `retroplug.app` may declare
    `projectSections`: a block of a project's `settings`, as `{ key, schema, defaults, version?, migrations?, merge? }`.
    The key is the block's name under `settings`, and it is never one of the shell's own core keys

@@ -221,6 +221,16 @@ check "PortAudio: a stale device falls back to the default" "PipeWire|RetroPlug 
 grep -q "not found in the chosen driver" "$LOG" && { echo "  ok: stale device warned"; PASS=$((PASS+1)); } \
     || { echo "  FAIL: stale device did not warn"; FAIL=$((FAIL+1)); }
 
+# A saved DRIVER this run does not have (a "pipewire" saved before the server came up, a "wasapi" on a machine without
+# it) must do what a stale device does: warn and fall back to the automatic choice, never mute. The leg holds BOTH
+# halves: the device the automatic choice picks, and the driver the status names being the one that really opened.
+writecfg portaudio "pipewire-that-isnt-here"
+run stale-driver portaudio
+check "PortAudio: a saved driver this PortAudio does not have falls back to Auto" "PipeWire|RetroPlug High Priority"
+grep -q "driver 'pipewire-that-isnt-here' is not in this PortAudio" "$LOG" \
+    && { echo "  ok: the missing driver warned"; PASS=$((PASS+1)); } \
+    || { echo "  FAIL: a missing driver fell back silently"; cat "$LOG" >&2; FAIL=$((FAIL+1)); }
+
 # Explicitly picking the PipeWire driver.
 setdefault rp-low
 writecfg portaudio "pipewire" "" 44100 128

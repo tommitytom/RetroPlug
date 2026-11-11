@@ -186,13 +186,18 @@ public:
             if (name) out.names.push_back(name);
         }
         // SDL 2.24 and later name the default device; the same shape as PortAudio's defaultOutputName, which is what an
-        // empty device selection resolves to.
+        // empty device selection resolves to. Older SDL has no such call - 2.0.20 is what the handheld's sysroot
+        // carries (tools/arm-sysroot.sh) - so there the row shows "Default" and an opening with no device named takes
+        // the driver's default, which is the same run without the name. The guard is a version test, not a probe of
+        // the symbol, so an older libSDL2 a binary is LOADED against cannot leave a dangling call behind.
+#if SDL_VERSION_ATLEAST(2, 24, 0)
         char*         defaultName = nullptr;
         SDL_AudioSpec spec{};
         if (SDL_GetDefaultAudioInfo(&defaultName, &spec, 0) == 0 && defaultName) {
             out.defaultName = defaultName;
             SDL_free(defaultName);
         }
+#endif
         return out;
     }
 
@@ -241,12 +246,16 @@ public:
         // driver's default) where it does not. "Default" was neither - open() cannot reopen it.
         info.device = usedDefault ? "" : request.device;
         if (info.device.empty()) {
+            // As in devices(): the name is a 2.24 addition, and an empty one already means the driver's default, which
+            // is what an older SDL leaves us with.
+#if SDL_VERSION_ATLEAST(2, 24, 0)
             char*         defaultName = nullptr;
             SDL_AudioSpec spec{};
             if (SDL_GetDefaultAudioInfo(&defaultName, &spec, 0) == 0 && defaultName) {
                 info.device = defaultName;
                 SDL_free(defaultName);
             }
+#endif
         }
         info.sampleRate  = have.freq;
         info.blockFrames = have.samples;

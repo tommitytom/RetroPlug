@@ -127,7 +127,9 @@ public:
     void stop();
 
     /** The UI frame: a lost stream (or one the watchdog has not seen a pull from) falls back to the null device, and
-     *  the status moves. True when the status changed. */
+     *  the status moves. True when the status changed. It never blocks on a callback that is inside a pull: a pull in
+     *  progress is a live device, not a stall, and a stop that will not come back mutes the run instead of freezing the
+     *  window. */
     bool poll();
 
     AudioStatus      status() const;
@@ -146,7 +148,8 @@ public:
     void pull(float* interleaved, int frames, bool underflow);
     static void pullTrampoline(void* ctx, float* interleaved, int frames, bool underflow);
 
-    /** The watchdog's bound: a started device that has run no pull for this long is treated as lost. `apply` sets it
+    /** The watchdog's bound: a started device with no pull IN PROGRESS and none finished for this long is treated as
+     *  lost - the bound is the GAP between pulls, never one pull's own duration. `apply` sets it
      *  to max(250 ms, 4 x the duration of the LONGER of the block the run renders in and the device's own quantum: under
      *  render-ahead the stream is opened with a block of 0 and pulls in its own quantum, which can outlast the render
      *  block. A test may shorten it. */
@@ -183,7 +186,10 @@ private:
      *  no usable device still runs the emulator (the sleep-paced pump). False when even that failed. */
     bool fallbackToNull(const std::string& reason);
     void setWatchdogFor(int blockFrames);  // the bound a block's duration allows
-    void closeCurrent();                   // stops and frees the stream, and ends the renderer if one runs
+    /** Stops and frees the stream and ends the renderer if one runs, waiting at most `bound` for the callback. False
+     *  when the callback was still inside a pull: then nothing below the stream (the ring it reads, the engine it owns)
+     *  is touched, and the stream stays alive. */
+    bool closeCurrent(std::chrono::milliseconds bound);
     void startRenderer(int blockFrames, int channels);
     void stopRenderer();
     void renderLoop(int blockFrames, int channels);
@@ -214,11 +220,14 @@ private:
     std::atomic<bool>          renderRun_{false};
     int                        blockFrames_ = 0;  // the block the engine was shaped for (the watchdog's, the stats')
 
-    // The watchdog's witness: when a pull last finished, when the stream started, and the bound. A stream that starts
-    // and never pulls is caught by the start stamp; the bound scales with the block, so one long block (a 186 ms
-    // quantum, a WinMM SysEx inside it) is not a stall.
+    // The watchdog's witness: whether a pull is running, when one last finished, when the UI last looked, and the bound.
+    // A stream that starts and never pulls is caught by the start stamp; a pull that is still inside the engine is a
+    // live device (a long block is one block's work, not a stall); and the UI's own absence - a debugger pause, a laptop
+    // asleep - restamps instead of blaming the device for a gap the device had no chance to fill.
     std::atomic<std::uint64_t>    pulls_{0};
+    std::atomic<bool>             inPull_{false};
     std::atomic<std::int64_t>     lastPullMs_{0};
+    std::atomic<std::int64_t>     lastPollMs_{0};
     std::chrono::milliseconds     watchdogBound_{250};
 
     // The stats (RETROPLUG_SDL_AUDIO_STATS): load, worst block, real frames/s and underruns, every few seconds. One

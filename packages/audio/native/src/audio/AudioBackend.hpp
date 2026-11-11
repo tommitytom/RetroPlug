@@ -5,6 +5,7 @@
 // vocabulary and a saved choice can carry it by name. PortAudio, SDL2 and the null device fill it; nothing above this
 // header names an audio library, so the host - and a test - see names and a pull callback.
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -72,6 +73,16 @@ public:
     virtual bool start(std::string& error) = 0;
     /** Returns once no pull can run. */
     virtual void stop() = 0;
+    /** `stop`, bounded: true when the callback is joined and no pull can run, false when it was still inside one after
+     *  `bound`. The host calls this form on its UI thread when it must take a device away - a device that has stopped
+     *  pulling must not freeze the window behind a callback that may never return (before F5b the emulator froze with
+     *  it). A stream that answers false has NOT stopped: its thread is still running, so the host keeps it alive and
+     *  renders nothing beside it. The default cannot bound a join, so it stops unbounded and says so, which is right for
+     *  a backend whose stop never waits on the engine's own work. */
+    virtual bool stopWithin(std::chrono::milliseconds /*bound*/) {
+        stop();
+        return true;
+    }
     virtual StreamInfo info() const = 0;
     /** The device went away, or the stream stopped by itself: the host's cue to fall back (a finished PortAudio stream,
      *  an SDL device whose status is no longer PLAYING). */
@@ -91,7 +102,17 @@ public:
  *    SDL_AudioQuit, which closes every open device, so a listing answers for the driver in force only
  *    (devicesListableFor above);
  *  - `open` returns a stream that is NOT started. The host shapes the engine between open and start, so a backend that
- *    started inside `open` would pull into an engine that is not ready for it. */
+ *    started inside `open` would pull into an engine that is not ready for it.
+ *
+ *  Three more the host relies on without checking:
+ *
+ *  - `pull` NEVER runs on two threads at once, and `stop` (or a `stopWithin` that returned true) returns only after no
+ *    pull can run. That is what lets the host's engine take one renderer at a time - `MidiStream::send` is called from
+ *    inside a pull and is single-sender by assumption - and what makes a re-apply safe.
+ *  - `stop` is idempotent: a second call on a stopped stream is a no-op that returns rather than throwing or waiting for
+ *    a callback that will never run.
+ *  - `lost()` and `info()` are called from the CONTROL thread (the UI's poll) while the callback thread is pulling: they
+ *    read state and never take a lock the callback holds, or the frame stalls behind the audio path. */
 class AudioBackend {
 public:
     virtual ~AudioBackend() = default;

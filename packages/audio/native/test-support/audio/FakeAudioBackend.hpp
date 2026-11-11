@@ -36,6 +36,9 @@ public:
         // (or its own block) on a thread of its own until stop(), which is how a re-apply is exercised under a pull.
         bool        pullOnStart = false;
         int         pullFrames  = 0;
+        // A callback that will NOT come back (a render wedged inside the engine): the host's bounded stop gets false
+        // and nothing is joined. The case releases it itself, by clearing this and calling stop().
+        bool        refusesToStop = false;
         std::thread worker;
         std::atomic<bool> running{false};
         std::vector<std::string>* log = nullptr;  // the backend's event log, so a case reads start/stop with the rest
@@ -56,6 +59,14 @@ public:
                 });
             }
             return started;
+        }
+        bool stopWithin(std::chrono::milliseconds) override {
+            if (!refusesToStop) {
+                stop();
+                return true;
+            }
+            if (log) log->push_back("stop-refused");
+            return false;  // no join: the thread is still inside a pull, as a wedged render's would be
         }
         void stop() override {
             running.store(false);

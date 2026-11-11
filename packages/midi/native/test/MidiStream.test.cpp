@@ -167,6 +167,32 @@ TEST_CASE("all devices opens every hardware input, once each, and no virtual one
     CHECK(got[0].seq < got[1].seq);
 }
 
+TEST_CASE("a session's name is not the family: a renamed stream still refuses every RetroPlug port as hardware") {
+    // The CLI's facet renames a stream for its session ("RetroPlug N8", "RetroPlug Loopback") - a name a DAW routes to -
+    // and no input means every hardware input, which is the bridge's default. The machine then lists this app's OWN
+    // ports: the standalone's virtual output is a readable ALSA output so it lists as an input, and so is a claimed
+    // Launchpad's link. Judged by the session's name they are hardware, and "all" would forward RetroPlug's own MIDI
+    // into the session's graph (E11); judged by the FAMILY they are the app's, as they are to the stream that published
+    // them. No allow list here on purpose: the filter, not a test-only list, is what keeps them out.
+    FakeMidiBackend backend;
+    backend.inputs  = {"RetroPlug:RetroPlug Out 128:1", "RetroPlug Launchpad:LPProMK3 MIDI 129:1", "Keys in"};
+    backend.outputs = {"RetroPlug:RetroPlug In 128:0", "RetroPlug Launchpad:LPProMK3 MIDI 129:0", "Synth out"};
+    std::unique_ptr<rp::midi::MidiBackend> renamed = backend.withClientName("RetroPlug N8");
+    auto&                                  session = static_cast<FakeMidiBackend&>(*renamed);
+    MidiStream                             stream(session);
+    stream.setInputs({}, true);
+    stream.setOutputs({"Synth out"});
+    REQUIRE(stream.open());
+    CHECK(stream.listInputs() == std::vector<std::string>{"Keys in"});
+    CHECK(stream.listOutputs() == std::vector<std::string>{"Synth out"});
+    CHECK(session.listening.count("Keys in") == 1);
+    CHECK(session.listening.count("RetroPlug:RetroPlug Out 128:1") == 0);
+    CHECK(session.listening.count("RetroPlug Launchpad:LPProMK3 MIDI 129:1") == 0);
+    // The virtual pair this stream publishes is its SESSION's, still: the family decides what is hardware, the client
+    // name decides what is published.
+    CHECK(session.events.front() == "virtual in:RetroPlug N8");
+}
+
 TEST_CASE("a name that is not present opens nothing, and a later apply picks it up when it appears") {
     Machine             machine;
     FakeMidiBackend&    backend = machine.backend;
