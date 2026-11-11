@@ -328,8 +328,14 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bundles.cmake)
 # (portaudio, and rtmidi through the midi package) or already required (SDL2 at root scope for gamepad input);
 # PortAudio adds no new system lib to build - ALSA is present, and libpipewire-0.3 (if installed) just upgrades it
 # to the native PipeWire host API, else it falls back to ALSA.
+# The shell is six translation units (docs/modular-graph-phase-f5b-design.md 5.5): the shared state and the declarations
+# in app.hpp, then the window, the input, the hooks, the audio loop and main.
 add_executable(retroplug-sdl
     sdl/main.cpp
+    sdl/window.cpp
+    sdl/input.cpp
+    sdl/hooks.cpp
+    sdl/audioLoop.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
@@ -341,7 +347,7 @@ add_executable(retroplug-sdl
 target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
     retroplug-backend             # Engine + cores + rpcpp
-    retroplug-tjs-runtime         # the txiki host its control plane runs on (sdl/main.cpp)
+    retroplug-tjs-runtime         # the txiki host its control plane runs on
     retroplug-audio               # AudioHost, the backend interface and the null device
     retroplug-midi                # the host's MIDI stream over the midi package's backend (RtMidi, linked there)
     PkgConfig::SDL2)              # window + present + gamepad
