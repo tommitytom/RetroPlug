@@ -222,7 +222,7 @@ struct AppState {
     std::atomic<bool> audioPumpRun{false};
     retroplug::GamepadManager gamepad;
     retroplug::MidiIo midi;   // RtMidi in/out; drained into the Engine on the audio thread each block
-    std::vector<retroplug::MidiIo::Message> midiScratch;  // reused per block (no per-block alloc)
+    std::vector<retroplug::MidiIo::Message> midiScratch;  // reused per block; reserved to the ring size in main()
     std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
     MidiClockSync clockSync;                              // MIDI-clock → BPM/transport (audio thread only)
 
@@ -1685,6 +1685,8 @@ int main(int argc, char** argv) {
     // rather than the auto-all-inputs / virtual-only-output default.
     loadMidiConfig(app);
     app.midi.open("RetroPlug");
+    // poll() push_backs into this on the audio thread; at full ring size it never has to grow there.
+    app.midiScratch.reserve(retroplug::MidiIo::kCapacity);
 
     // Restore the providers' persisted state (the N8's n8.cfg: reconnect the physical cart if it was left enabled).
     rp_restore_providers(app.providers);

@@ -7,7 +7,8 @@
 // packages' own audio paths (retroplug-sameboy-test, retroplug-mesen-test),
 // the native file watcher (retroplug-watcher-test), the ThorVG-backed
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
-// the MIDI device-selection policy (retroplug-midi-test), the control-surface
+// the MIDI device-selection policy + MidiIo's multi-producer input ring
+// (retroplug-midi-test), the control-surface
 // pack's transport, provider and facet (retroplug-launchpad-test), the
 // node-graph engine's foundations
 // (retroplug-graph-test), the engine on the graph: its system nodes, the

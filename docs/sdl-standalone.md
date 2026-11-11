@@ -7,6 +7,9 @@ needs X11/pugl, which rules out framebuffer-only targets (e.g. muOS handhelds �
 SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the primary standalone; keep
 `retroplug-jack` around for debugging DPF/plugin behaviour.**
 
+> **Release readiness:** the open bugs and gaps that block swapping this in for the DPF standalone are
+> tracked as a checklist in [sdl-release-readiness.md](sdl-release-readiness.md). Tick items there as they land.
+
 ## What the SDL host already does
 
 - Full control-plane + React/LVGL UI on one shared `TjsHostRuntime` (same graph as the plugin), embedded
@@ -27,7 +30,7 @@ thread, live audio reconfigure, and dirty-region present.
 
 ### P1 — MIDI input — ✅ DONE
 Implemented via RtMidi ([MidiIo](../packages/native/src/host/input/MidiIo.hpp)) — virtual `RetroPlug In`
-port + selected hardware input(s) → a lock-free ring drained in the audio callback → `engine.stageMidi`.
+port + selected hardware input(s) → a ring (producers serialized; the audio-thread drain stays lock-free) → `engine.stageMidi`.
 Hardware-verified (virtual ports open on ALSA, keyboard input fixed). Follow-ups: hotplug (ports scanned once
 at startup, and re-scanned on a device pick) and a real sub-block frame offset (staged at frame 0 today).
 
@@ -43,7 +46,8 @@ CoreMIDI on mac, WinMM/WinRT on Windows), small, permissively licensed, still ma
 implementation isn't worth it when RtMidi is exactly that abstraction.)
 
 Design:
-- **Input** — `RtMidiIn` callback (its own thread) pushes `{arrival, bytes}` into a lock-free SPSC ring; the
+- **Input**: `RtMidiIn` callback (its own thread) pushes `{arrival, bytes}` into a ring (one callback thread per open port, so
+  producers serialize on a mutex; the drain stays lock-free); the
   audio callback drains it at block start and stages via the existing control→audio MIDI ring (`stageMidiIn`,
   NOT `stageMidi` directly — RtMidi is cross-thread). Frame offset can be approximate (live hardware MIDI
   jitters anyway; block-quantized is fine).

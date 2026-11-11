@@ -481,10 +481,16 @@ retroplug_add_test_binary(
 
 # Guards the MIDI device-selection policy (Settings > MIDI): the pure, RtMidi-free helpers in
 # MidiIo.hpp (hardwarePortIndices / matchPortIndex) that decide which hardware ports to open for a
-# given selection. Header-only helpers → links just Catch2 (no RtMidi, no backend).
+# given selection. Also guards MidiIo's input ring under concurrent producers (one RtMidi callback thread
+# per open input port). That compiles MidiIo.cpp, hence the rtmidi link - but the ring test only drives
+# injectForTest / poll, which never touch RtMidi, so no MIDI system is needed. Build it in build-tsan/ for
+# the ThreadSanitizer pass over the ring.
 retroplug_add_test_binary(
     NAME     retroplug-midi-test
     SOURCES  test/midi/MidiPortSelect.test.cpp
+             test/midi/MidiIoRing.test.cpp
+             src/host/input/MidiIo.cpp
+    LIBS     rtmidi
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src                     # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
              ${CMAKE_SOURCE_DIR}/packages/launchpad/native/src)  # the pack's copy of the allow-list rule, held case by case
 
