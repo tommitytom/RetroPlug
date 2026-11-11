@@ -7,7 +7,7 @@ import type { MidiDescription, MidiDeviceHost, MidiSelection } from "@retroplug/
 import type { UiHost } from "@retroplug/ui/contribution";
 import type { MenuItem } from "@retroplug/ui/menu";
 import midiUi from "../ui/index";
-import { MIDI_SECTION_KEY, type MidiSection } from "../configSection";
+import { CLOCK_BPM_MAX, MIDI_SECTION_KEY, type MidiSection } from "../configSection";
 
 const DESCRIPTION: MidiDescription = {
   inputs: ["Launchpad Pro MK3", "Arturia KeyStep 32"],
@@ -56,6 +56,7 @@ function rig(overrides: {
   };
   const host = {
     midiDevice: device,
+    menuOpen: true,  // a case that does not care reads the rows as if the menu were on screen
     project: {
       section: (key: string) => {
         if (key !== MIDI_SECTION_KEY) throw new Error(`no section ${key}`);
@@ -241,6 +242,26 @@ test("the control surface's port is shown held, never as a pick and never as mis
   expect(rows.some((row) => row.id.startsWith("midi-missing-in-"))).toBe(false);
 });
 
+test("a transport change repaints while the menu is on screen, and costs nothing while it is not", () => {
+  // The MIDI Clock submenu prints the transport (source, state, tempo), and the poll runs every frame. An external clock
+  // starting or stopping has to show while that submenu is up; with no menu open there is no row printing it, and a
+  // repaint per clock edge - a whole App render - is what a handheld's frame budget cannot pay for.
+  let transport = { playing: false, external: true, bpm: 125, localBpm: 120 };
+  const r = rig();
+  (r.host.midiDevice as { transport: () => typeof transport }).transport = () => transport;
+  const svc = service();
+  svc.start!(r.host);
+  svc.poll!.run(r.host);  // settled, menu open (the rig's default)
+  transport = { playing: true, external: true, bpm: 125, localBpm: 120 };
+  expect(svc.poll!.run(r.host)).toBe(true);  // the row showing the clock moved
+  (r.host as { menuOpen?: boolean }).menuOpen = false;
+  svc.poll!.run(r.host);  // the rows as they read with no menu: transport gone from the key
+  transport = { playing: false, external: true, bpm: 125, localBpm: 120 };
+  expect(svc.poll!.run(r.host)).toBe(false);  // no menu, nothing printing the transport: no repaint
+  (r.host as { menuOpen?: boolean }).menuOpen = true;
+  expect(svc.poll!.run(r.host)).toBe(true);   // the menu came back: the rows must show the clock as it is now
+});
+
 test("opening Settings > MIDI re-applies the saved section once, and a render asks for nothing", () => {
   // No section change: the list a project was resolved against may be older than the machine. The container's open hook
   // asks for one diff, the poll answers it, and building the rows - which App does on EVERY render - costs nothing.
@@ -344,6 +365,26 @@ test("the MIDI Clock submenu shows the transport and writes the tempo to the pro
   const transport = clock.children!.find((row) => row.id === "inst-clock-transport")!;
   transport.onCycle!(1); // Stopped -> Playing
   expect(r.transportSet).toEqual([true]);
+});
+
+test("a tempo step the clamp turns into no change writes nothing, so it does not dirty the project", () => {
+  // A project already at the top: a further step must not call setSection with the same value, or the project is marked
+  // dirty by a press that did nothing and the close guard asks to save it.
+  const r = rig();
+  r.setSection({ clockBpm: CLOCK_BPM_MAX });
+  let writes = 0;
+  const setSection = (r.host.project as { setSection: (k: string, p: Record<string, unknown>) => void }).setSection;
+  (r.host.project as { setSection: (k: string, p: Record<string, unknown>) => void }).setSection = (k, p) => {
+    writes++;
+    setSection(k, p);
+  };
+  const rows = menu("instance.clock").build(r.host, null, { systems: [], assetRom: () => null, romPatterns: [] });
+  const tempo = rows.find((row) => row.id === "inst-clock")!.children!.find((row) => row.id === "inst-clock-tempo")!;
+  tempo.onCycle!(1);
+  expect(writes).toBe(0);
+  expect(r.section.clockBpm).toBe(CLOCK_BPM_MAX);
+  tempo.onCycle!(-1);  // ...and a step that DOES move still writes
+  expect(writes).toBe(1);
 });
 
 test("the rows are the project's: a pick writes the section and leaves the missing ones alone", () => {

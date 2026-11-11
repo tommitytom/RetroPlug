@@ -8,7 +8,7 @@ import { UserConfigStore } from "../../src/userConfigStore";
 import { parseUserConfigResult, serializeUserConfig, USER_CONFIG_SCHEMA } from "../../src/userConfigSerialization";
 import { DEFAULT_USER_CONFIG, type ConfigModel, configFileShape } from "../../src/userConfig";
 import {
-  assertConfigSectionKey, configSectionEntryOf, CORE_CONFIG_KEYS, type ConfigSectionEntry,
+  assertConfigSectionKey, configSectionEntryOf, CORE_CONFIG_KEYS, putConfigSection, type ConfigSectionEntry,
 } from "../../src/configSections";
 import { userConfigSchema } from "../../src/userConfig";
 import { SHELL_CONFIG_KEYS } from "../../src/generated/packages";
@@ -124,7 +124,8 @@ test("a core key is refused as a config section, and a prototype key with it", (
 test("a root key no package contributes is kept verbatim, through a read and through a write", () => {
   // The plugin's case in miniature: this store has no contributors at all, and the file carries a standalone's blocks.
   const future = { anything: [1, 2, "three"], nested: { deep: true } };
-  const audio = { backend: "portaudio", driver: "pipewire", device: "Speakers", sampleRate: 48000, blockSize: 512, outChannels: 2 };
+  const audio = { backend: "portaudio", driver: "pipewire", device: "Speakers", sampleRate: 48000, blockSize: 512,
+    outChannels: 2 };
   const be = new MockBackend("/config");
   be.seed(CONFIG, stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG, futureSection: future, audio }));
   const store = new UserConfigStore(be, () => {}, []);
@@ -234,11 +235,13 @@ test("a section write is computed over the file on disk, so another process's ch
   // Two standalones (or a plugin and a standalone) share config.json. A loaded "a", B wrote "b" into the same block,
   // and A's write must merge over B's value: the old path merged over A's in-memory copy and put "a" back.
   const be = new MockBackend("/config");
-  be.seed(CONFIG, stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG, versioned: { knob: "a", size: 0 } }));
+  be.seed(CONFIG, stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG,
+    versioned: { knob: "a", size: 0 } }));
   const store = new UserConfigStore(be, () => {}, [VERSIONED_ENTRY]);
   store.load();
   // B's write, behind this store's back.
-  be.seed(CONFIG, stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG, versioned: { knob: "b", size: 0 } }));
+  be.seed(CONFIG, stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG,
+    versioned: { knob: "b", size: 0 } }));
   expect(store.setSection("versioned", { size: 3 })).toBeTruthy();
   expect(JSON.parse(be.readText(CONFIG)!).versioned).toEqual({ knob: "b", size: 3, schemaVersion: 2 });
 });
@@ -247,7 +250,8 @@ test("a section write over a block a NEWER build wrote is refused, not overwritt
   // The refuse-newer rule at section scope, over the file as it is now: the in-memory block was this build's, and only
   // the re-read can see that a newer one landed.
   const be = new MockBackend("/config");
-  be.seed(CONFIG, stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG, versioned: { knob: "a", size: 0 } }));
+  be.seed(CONFIG, stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG,
+    versioned: { knob: "a", size: 0 } }));
   const store = new UserConfigStore(be, () => {}, [VERSIONED_ENTRY]);
   store.load();
   const newer = { schemaVersion: 9, knob: "z", size: 7 };
@@ -309,6 +313,21 @@ test("a section this session set is written from its parsed value, and only that
   // The untouched block keeps the field this build's schema drops.
   expect(written.versioned).toEqual({ knob: "a", size: 0, later: "kept while untouched" });
   expect(written.other).toEqual({ knob: "a", size: 5, schemaVersion: 2 });
+});
+
+test("a hand-edited __proto__ block is written back as an own key, not swallowed as a prototype", () => {
+  // A file may carry a root key spelled `__proto__` (the section registry REFUSES contributing one, so no build
+  // declares it), and the verbatim-keep rule says the writer keeps what it cannot attribute. A plain assignment would
+  // set the shape object's prototype and drop the key from the file, so the write goes through defineProperty.
+  const raw = JSON.parse('{"schemaVersion": 3, "__proto__": {"knob": "from a newer build"}}') as Record<string, unknown>;
+  // The store's own shape for an unknown root key: an own, enumerable property of `sections` (parseConfigSections).
+  const sections: Record<string, unknown> = {};
+  putConfigSection(sections, "__proto__", raw["__proto__"]);
+  const model: ConfigModel = { core: { ...DEFAULT_USER_CONFIG }, sections, raw };
+  const shape = configFileShape(model);
+  expect(Object.prototype.hasOwnProperty.call(shape, "__proto__")).toBe(true);
+  expect(JSON.stringify(shape).includes('"__proto__":{"knob":"from a newer build"}')).toBe(true);
+  expect(Object.getPrototypeOf(shape)).toBe(Object.prototype);  // the shape's own prototype did not move
 });
 
 test("the shell's core key list is the schema's, and the generator's refusal list is the same list", () => {

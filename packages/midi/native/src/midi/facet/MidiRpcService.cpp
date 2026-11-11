@@ -27,6 +27,9 @@ bool MidiRpcService::midiOpen(std::string clientName, std::string input) {
             renamed_    = std::move(renamed);
             stream_     = std::make_unique<MidiStream>(*renamed_);
             clientName_ = clientName;
+            // A rename is a new SYSTEM, not a new selection: an output picked before it must survive, or a public SDK
+            // consumer that selects first and opens later loses its mirror silently.
+            if (!selectedOut_.empty()) stream_->setOutputs({selectedOut_});
         }
     }
     // The selection is set BEFORE open(), so it is applied once, as the port is published: "" and "*" are every
@@ -40,7 +43,9 @@ bool MidiRpcService::midiOpen(std::string clientName, std::string input) {
 
 void MidiRpcService::midiSelectOutput(std::string output) {
     // "" is the virtual port only; a name is that one output. Applied live once open() has run, and diffed: the port a
-    // session stops mirroring is let go and the one it keeps is not disturbed.
+    // session stops mirroring is let go and the one it keeps is not disturbed. Remembered, so a later rename (a new
+    // backend, see midiOpen) re-applies it.
+    selectedOut_ = output;
     if (output.empty()) stream_->setOutputs({});
     else stream_->setOutputs({std::move(output)});
 }

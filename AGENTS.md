@@ -309,7 +309,7 @@ The rules below are the parts that don't fit those.
   the link's). Its desktop target (`retroplug-launchpad-desktop`) holds the protocol-free transport (`ControllerLink`,
   with the RtMidi callback thread that fills its generation-tagged receive ring, the writer thread that drains the
   send ring, and a UI queue of its own so `send()` never waits for a write in flight; `PortClaim`; `MidiPortPool`;
-  `RtMidiPort`), the provider (`rp_launchpad_provider`) and the facet (`LaunchpadRpc`, 12 synchronous `launchpad*`
+  `MidiPort`), the provider (`rp_launchpad_provider`) and the facet (`LaunchpadRpc`, 12 synchronous `launchpad*`
   methods, TS's only door to a port through `createLaunchpadClient(call)` in `@retroplug/launchpad/client`).
   **`PROVIDERS` is the product's half: a product starts only the providers it names.** The list has no default (a
   provider opens ports and runs threads), the order it names them in is the start order, a duplicate is refused, and a
@@ -465,8 +465,9 @@ The rules below are the parts that don't fit those.
 - **`retroplug-sdl` is in the default build** — `build.sh` builds it, and CI covers it
   (CI builds `all`) on all four platforms. It needs nothing extra installed: SDL2 is
   already REQUIRED at root scope for every plugin variant, and rtmidi is an in-tree
-  submodule. `pnpm sdl:smoke` builds it by name then runs the headless smoke; that smoke
-  is still NOT a CI step, so CI proves it compiles + links, not that it runs.
+  submodule. `pnpm sdl:smoke` builds it by name then runs the headless smoke, and `build.yml` runs that smoke
+  (linux-x64), so CI proves it links AND runs - on the null backend with the device guard in front of it, which also
+  fails the run if the null pin touched a device path. `sdl:controller` and `sdl:pipewire` are not CI steps.
   `pnpm sdl:pipewire` is the audio-device half the smoke can't cover (it runs on the null device): it stands up a
   PRIVATE PipeWire server + three null sinks in its own `XDG_RUNTIME_DIR` and asserts WHICH output device the host
   opens, in BOTH audio modes. PortAudio's legs: the session default sink (`default.audio.sink`) wins, an explicit

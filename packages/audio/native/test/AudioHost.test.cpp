@@ -155,11 +155,12 @@ struct Rig {
         host = std::make_unique<AudioHost>(std::move(preference), client);
     }
 
-    AudioConfig config(int rate = 48000, int block = 512, int channels = 2) const {
+    AudioConfig config(int rate = 48000, int block = 512, int channels = 2, int renderAhead = 0) const {
         AudioConfig c;
-        c.sampleRate = rate;
-        c.blockSize  = block;
-        c.channels   = channels;
+        c.sampleRate        = rate;
+        c.blockSize         = block;
+        c.channels          = channels;
+        c.renderAheadFrames = renderAhead;
         return c;
     }
 
@@ -169,7 +170,8 @@ struct Rig {
 }  // namespace
 
 TEST_CASE("a reconfigure runs stop, release, open, prepare(what the DEVICE obtained), start") {
-    // The order report item 2 settled: the engine is re-rated to the rate the device came up at, not to the rate that
+    // The order the design settled (section 5.2, row 28): the engine is re-rated to the rate the device came up at, not
+    // to the rate that
     // was asked for. A device that adopts 44100 while 48000 was requested must reach prepare as 44100.
     Rig rig;
     rig.fwd().adoptRate = 44100;
@@ -334,8 +336,7 @@ TEST_CASE("a device whose callback will not stop mutes the run in bounded time, 
 TEST_CASE("render-ahead produces the in-callback stream sample for sample, across ragged pulls") {
     // The ring must be invisible in the OUTPUT: a render-ahead host playing into ragged device callbacks produces the
     // byte-for-byte stream a host rendering inside the callback does.
-    auto pullAll = [](AudioHost& host, FakeAudioBackend::Stream& stream, const std::vector<int>& sizes,
-                      std::vector<float>* out) {
+    auto pullAll = [](FakeAudioBackend::Stream& stream, const std::vector<int>& sizes, std::vector<float>* out) {
         for (int frames : sizes) {
             stream.drive(frames);
             out->insert(out->end(), stream.captured.begin(), stream.captured.end());
@@ -346,7 +347,7 @@ TEST_CASE("render-ahead produces the in-callback stream sample for sample, acros
     Rig plain;
     REQUIRE(plain.host->apply(plain.config(48000, 512, 2)));
     std::vector<float> plainOut;
-    pullAll(*plain.host, *plain.fwd().lastStream, ragged, &plainOut);
+    pullAll(*plain.fwd().lastStream, ragged, &plainOut);
     plain.host->stop();
 
     Rig ahead;
@@ -358,7 +359,7 @@ TEST_CASE("render-ahead produces the in-callback stream sample for sample, acros
     while (ahead.client.position.load() < 4096 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     std::vector<float> aheadOut;
-    pullAll(*ahead.host, *ahead.fwd().lastStream, ragged, &aheadOut);
+    pullAll(*ahead.fwd().lastStream, ragged, &aheadOut);
     ahead.host->stop();
 
     REQUIRE(plainOut.size() == aheadOut.size());
@@ -414,14 +415,25 @@ TEST_CASE("describe() enumerates only the backend in force: a null run touches n
 }
 
 TEST_CASE("the stats line reports load, the real frame rate and underruns") {
-    // The line 4b9e39ea8 added, backend neutral: a case reads it from the client's host with a short interval.
-    Rig rig;
+    // The line the renderer reports, backend neutral, with a short interval so a case sees it: the shape is the harnesses'
+    // grep (load, max, blocks of the device's block, real frames/s, underruns).
+    Rig    rig;
+    Lines  lines;
+    rig.host->setLogSink([&](const std::string& line) { lines.add(line); });
     rig.host->setStatsForTest(true, std::chrono::milliseconds(1));
     REQUIRE(rig.host->apply(rig.config(48000, 480, 2)));
     for (int i = 0; i < 12; ++i) rig.fwd().lastStream->drive(480);
     rig.host->stop();
     CHECK(rig.client.position.load() == 12 * 480);
     CHECK(rig.host->status().blockFrames == 480);
+    const auto all   = lines.snapshot();
+    const auto stats = std::find_if(all.begin(), all.end(), [](const std::string& l) {
+        return l.find("audio stats: load ") != std::string::npos;
+    });
+    REQUIRE(stats != all.end());
+    CHECK(stats->find("max ") != std::string::npos);
+    CHECK(stats->find("blocks of 480") != std::string::npos);
+    CHECK(stats->find("underflows ") != std::string::npos);
 }
 
 TEST_CASE("a device that starts and never pulls is caught by the watchdog, and the bound scales with the block") {
@@ -440,6 +452,26 @@ TEST_CASE("a device that starts and never pulls is caught by the watchdog, and t
     CHECK(pollUntilTrip(*rig.host, std::chrono::milliseconds(200)));
     CHECK(rig.host->status().backend == "null");
     CHECK(rig.host->status().error.find("stopped pulling") != std::string::npos);
+}
+
+TEST_CASE("the device's own quantum is read from its pulls: the status row and the watchdog's bound follow it") {
+    // Render-ahead asks the backend for ITS quantum (blockFrames 0), so neither the status nor the bound knows it until
+    // the device pulls: the row showed "0 frames" and the bound was the render block's, so a 16384-frame callback (341 ms
+    // at 48 kHz) tripped a healthy device. Both read what the pull reports, from the second pull on.
+    Rig rig;
+    REQUIRE(rig.host->apply(rig.config(48000, 512, 2, /*renderAhead=*/2048)));
+    auto& stream = *rig.fwd().lastStream;
+    CHECK(stream.description.blockFrames == 0);  // what a backend reports when it was asked for its own quantum
+    CHECK(rig.host->status().blockFrames == 0);
+    for (int i = 0; i < 4; ++i) stream.drive(4096);
+    CHECK(rig.host->status().blockFrames == 4096);
+    // Four quanta is 341 ms: with polls every 10 ms (the UI running), no trip inside that window...
+    rig.client.blockRender = false;
+    for (int i = 0; i < 30; ++i) {
+        stream.drive(4096);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        CHECK_FALSE(rig.host->poll());
+    }
 }
 
 TEST_CASE("a stream that opens and will not start is an open failure: null, with the reason, and the engine back") {
@@ -528,8 +560,10 @@ TEST_CASE("render-ahead wraps its ring many times over and counts no underrun on
     AudioConfig cfg       = ahead.config(48000, 256, 2);
     cfg.renderAheadFrames = 2048;  // 2096 framing: the ring wraps more than nine times over the pulls below
     REQUIRE(ahead.host->apply(cfg));
+    // The ring holds renderAheadFrames (2048) and stops there until a pull takes it, so waiting for 4096 would always
+    // spend the whole timeout; a primed ring is what the pulls below need.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (ahead.client.position.load() < 4096 && std::chrono::steady_clock::now() < deadline)
+    while (ahead.client.position.load() < 1024 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     std::vector<float> aheadOut;
     for (int i = 0; i < 200; ++i) {

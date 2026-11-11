@@ -1056,7 +1056,16 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   SDL's PipeWire node has 2 output ports for a wide request while the host renders the requested width (R11, cause not
   established); the PipeWire data loop is still RT-pinned by rtkit overrides (tune only on ALSA, per the release list);
   and no check pairs a config section's key with the UI service that reads it, so a typo in one is silent (F5a's
-  pairing-check item, one more key).
+  pairing-check item, one more key). Three smaller ones the final review recorded and the follow-up left:
+  **a MIDI pick on the start screen dirties the empty untitled project** (so the close guard asks to save a project that
+  holds nothing but the pick; the fix is to exempt a section-only change to an empty, pathless project, which the
+  project store's dirty rule would have to learn); **Settings > MIDI's checklist does not notice a claim made while its
+  own container is open** (the Launchpad's claim reaches the stream's reservation natively, but the row's `reserved`
+  pair is a describe snapshot; a cheap no-probe `state()` read on `MidiDeviceHost` would fix it); and **the audio draft's
+  sibling-backend cache is per backend change, not per visit**, and an Apply still reaches the device when
+  `setSection` refused a read-only config. The E8 note for the release pairing: a pre-F5b PLUGIN build (a strict root
+  schema) drops a newer standalone's `audio` key on its next `config.json` write, which is unavoidable and is what
+  "release the plugin beside a newer standalone" costs.
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the
   follow-up that closed it): `packages/system` (the contract every console implements and the engine drives, the

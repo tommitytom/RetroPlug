@@ -354,7 +354,7 @@ The store ALSO carries every non-core ROOT key of the file as a package's sectio
 written back as the file carried it, and a section write is computed over the file ON DISK (the store re-reads
 first), so two processes sharing `config.json` cannot revert each other. The UI's device groups (`audioDevice`,
 `midiDevice`, both optional - the plugin and the DPF standalone bind neither hook, so their rows are not drawn) are
-what the audio and midi packages' Settings rows read; `[spec/05](05-data-persistence.md)` has the on-disk rules.
+what the audio and midi packages' Settings rows read; [spec/05](05-data-persistence.md) has the on-disk rules.
 
 ### BindingsStore - [`src/bindingsStore.ts`](../packages/retroplug/src/bindingsStore.ts)
 

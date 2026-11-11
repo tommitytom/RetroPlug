@@ -17,8 +17,8 @@ namespace retroplug::sdl {
 //   * window + present : SDL2 software renderer (LVGL renders into a CPU ARGB8888 buffer; we upload it
 //                        with SDL_UpdateTexture + SDL_RenderCopy — SDL drives Mali GLES2 internally, so
 //                        no manual GL, no desktop-GL-over-Mali fuss).
-//   * audio            : an SDL2 audio callback that drives Engine::processBlock per block (mirrors
-//                        PluginDSP::run / AudioDriverRpcService::audioLoop, minus DPF).
+//   * audio            : the audio packages' AudioHost owns the device and calls this app's client, which drives
+//                        Engine::processBlock per block (mirrors PluginDSP::run, minus DPF).
 //   * input            : SDL keyboard → the LVGL keypad indev + the "key" JS bus; GamepadManager →
 //                        the gamepad-* JS bus (emulator input / TS bindings) AND the keypad indev
 //                        (menu navigation, since a handheld has no arrow keys).
@@ -63,7 +63,8 @@ bool bootControlPlane(AppState& a) {
         });
     });
 
-    // Systems bake the sample rate at construct — set it BEFORE the bundle composes / autoloads.
+    // Cores are built at this rate and re-rated once by prepare when the device opens (the startup order, E13): set it
+    // BEFORE the bundle composes / autoloads.
     a.svc.engine.setSampleRate(a.sampleRate);
 
     a.host.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
@@ -148,7 +149,7 @@ int main(int argc, char** argv) {
         else if (arg == "--height" && i + 1 < argc) app.height = static_cast<std::uint32_t>(std::atoi(argv[++i]));
         // Default audio block size (frames). The compiled-in default is 512 (low latency); a low-power device passes a
         // bigger buffer here (the muOS launcher uses 4096) so the callback keeps its deadline. It overrides the `audio`
-        // section's block for this run (design 6.2, report item 8), which is why it is kept beside the backend override
+        // section's block for this run (design 6.2, E12), which is why it is kept beside the backend override
         // and applied wherever the device is opened.
         else if (arg == "--block-size" && i + 1 < argc) {
             const int b = std::atoi(argv[++i]);
@@ -228,10 +229,9 @@ int main(int argc, char** argv) {
         app.midi.injectForTest(noteOn, 3);
     }
 
-    // Test hook: drive the transport seam the way the menu does — through the JS global, not the atomic —
-    // so a missing or renamed bind shows up as playing=0 in the report below rather than as a row that
-    // silently disappears from the menu. Any non-empty string is truthy to JS_ToBool.
-    // Test hook: start the transport through the same global the MIDI Clock row uses. The TEMPO is deliberately not set
+    // Test hook: start the transport through the same global the MIDI Clock row uses, and through the JS global rather
+    // than the atomic, so a missing or renamed bind shows up as playing=0 in the report below rather than as a row that
+    // silently disappears from the menu (any non-empty string is truthy to JS_ToBool). The TEMPO is deliberately not set
     // here: it comes from the autoloaded project's `midi.clockBpm`, applied by the midi package's service, which is what
     // E7 (the tempo is the project's) means - a hook that also set it would let E7 regress with this line still green.
     if (std::getenv("RETROPLUG_SDL_TEST_TRANSPORT")) callGlobal(app.host, "__rp_setTransport", "1");

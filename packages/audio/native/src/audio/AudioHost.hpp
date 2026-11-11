@@ -2,7 +2,7 @@
 
 // The host's audio: the whole open / start / stop / reconfigure sequence, the fallback to the null device with a status
 // the UI shows, a lost device as the same fallback, render-ahead and the stats (docs/modular-graph-phase-f5b-design.md
-// section 5.2). It never names the Engine: the product's render loop is behind AudioClient, which is where today's
+// section 5.2). It never names the Engine: the product's render loop is behind AudioClient, which is where the app's
 // renderAudioBlock lives.
 //
 // The order a reconfigure runs in is stop, release, open, [render-ahead's ring and renderer], prepare(info()), start.
@@ -43,7 +43,7 @@ public:
      *  quiescent, and it HANDS THE ENGINE BACK to the audio thread before it returns: the host's next call is start(),
      *  and the first pull must find an engine it may render. */
     virtual void prepare(double sampleRate, int maxBlockFrames, int channels) = 0;
-    /** Render one interleaved block: today's renderAudioBlock, with the buffer sized by the caller. */
+    /** Render one interleaved block, with the buffer sized by the caller: the app's renderAudioBlock, byte for byte. */
     virtual void render(float* interleaved, int frames) = 0;
     /** Take the engine back from the audio thread (the invoker drain), so prepare can re-rate it. */
     virtual void release() = 0;
@@ -186,6 +186,9 @@ private:
      *  no usable device still runs the emulator (the sleep-paced pump). False when even that failed. */
     bool fallbackToNull(const std::string& reason);
     void setWatchdogFor(int blockFrames);  // the bound a block's duration allows
+    /** The watchdog's bound in ms: `watchdogBound_`, and at least four of the device's own pull when it pulls more than
+     *  the run's block (an unspecified quantum). */
+    std::int64_t watchdogMs() const;
     /** Stops and frees the stream and ends the renderer if one runs, waiting at most `bound` for the callback. False
      *  when the callback was still inside a pull: then nothing below the stream (the ring it reads, the engine it owns)
      *  is touched, and the stream stays alive. */
@@ -228,6 +231,10 @@ private:
     std::atomic<bool>             inPull_{false};
     std::atomic<std::int64_t>     lastPullMs_{0};
     std::atomic<std::int64_t>     lastPollMs_{0};
+    bool                          ringTooSmall_ = false;  // the once-only warning above (the pull's thread)
+    // What the device actually pulls, once it has pulled: the quantum when the backend reported none (render-ahead asks
+    // for the backend's own), which both the status row and the watchdog's bound read.
+    std::atomic<int>              observedPullFrames_{0};
     std::chrono::milliseconds     watchdogBound_{250};
 
     // The stats (RETROPLUG_SDL_AUDIO_STATS): load, worst block, real frames/s and underruns, every few seconds. One

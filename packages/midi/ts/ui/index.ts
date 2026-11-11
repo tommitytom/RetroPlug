@@ -93,7 +93,12 @@ function listedPorts(d: MidiDescription | null): string {
 
 /** Everything the rows print, so the poll reports a repaint only when one of them moved - a section change that does not
  *  show is no reason to rebuild the whole UI. */
-function rowsKey(d: MidiDescription | null, section: MidiSection, t: TransportState | null): string {
+function rowsKey(
+  d: MidiDescription | null,
+  section: MidiSection,
+  t: TransportState | null,
+  menuOpen: boolean,
+): string {
   return JSON.stringify({
     listed: listedPorts(d),
     opened: d ? { inputs: d.openedInputs, outputs: d.openedOutputs } : null,
@@ -101,7 +106,10 @@ function rowsKey(d: MidiDescription | null, section: MidiSection, t: TransportSt
     allInputs: section.allInputs,
     outputs: section.outputs,
     bpm: section.clockBpm,
-    transport: t ? [t.playing, t.external, Math.round(t.bpm), Math.round(t.localBpm)] : null,
+    // The transport is only a ROW's content (the MIDI Clock submenu's source/state/tempo), and this poll runs every
+    // frame: an external clock starting or stopping must repaint while that submenu is on screen, and must not cost a
+    // whole App render while no menu is (a handheld's frame budget).
+    transport: menuOpen && t ? [t.playing, t.external, Math.round(t.bpm), Math.round(t.localBpm)] : null,
   });
 }
 
@@ -209,10 +217,12 @@ function clockChildren(host: UiHost, t: NonNullable<ReturnType<MidiDeviceHost["t
       infoRow("inst-clock-tempo", `Tempo: ${Math.round(t.bpm)} BPM`),
     ];
   }
-  const step = (delta: number) =>
-    host.project.setSection(MIDI_SECTION_KEY, {
-      clockBpm: Math.min(CLOCK_BPM_MAX, Math.max(CLOCK_BPM_MIN, Math.round(bpm + delta))),
-    });
+  // A step that the clamp turns into no change writes nothing: a tempo already at 20 or 999 must not dirty the project
+  // for a press it did not act on (the close guard would then ask to save it).
+  const step = (delta: number) => {
+    const next = Math.min(CLOCK_BPM_MAX, Math.max(CLOCK_BPM_MIN, Math.round(bpm + delta)));
+    if (next !== Math.round(bpm)) host.project.setSection(MIDI_SECTION_KEY, { clockBpm: next });
+  };
   return [
     cycler("inst-clock-transport", "Transport", ["Stopped", "Playing"], t.playing ? 1 : 0, (n) =>
       host.midiDevice?.setTransport(n === 1),
@@ -311,7 +321,7 @@ const midiService: UiService = {
         dev.setClockBpm(bpm);
       }
       // The rows follow the listing, the section and the transport: a poll repaints only when one of them moved.
-      const rows = rowsKey(listing?.value ?? null, section, dev.transport());
+      const rows = rowsKey(listing?.value ?? null, section, dev.transport(), host.menuOpen !== false);
       const moved = rows !== lastRows;
       lastRows = rows;
       return moved;

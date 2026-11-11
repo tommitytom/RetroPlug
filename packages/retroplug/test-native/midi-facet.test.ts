@@ -1,7 +1,7 @@
 // The midi package's facet through the real native host: its provider and its RPC facet over a SCRIPTED MIDI system
-// (packages/native/src/main.cpp starts it with packages/midi/native/src/midi/FakeMidiBackend.hpp, a machine listing a
-// Pro MK3 and an interface's port, and answering every write on each open input). No hardware, no rtmidi, and the same
-// facet code the CLI mounts - this is the one door a live-MIDI client has.
+// (packages/native/src/main.cpp starts it with packages/midi/native/test-support/midi/FakeMidiBackend.hpp, a machine
+// listing a Pro MK3 and an interface's port, and answering every write on each open input). No hardware, no rtmidi, and
+// the same facet code the CLI mounts - this is the one door a live-MIDI client has.
 //
 // What only this file can hold: the live-MIDI contract at its one edge (docs/modular-graph-phase-f5b-design.md E11).
 // `open("")` opens EVERY hardware input, as the contract says and as `n8-bridge` with no `--midi-in` expects; it read
@@ -114,6 +114,10 @@ const NAME_CHILD = "RP_MIDI_NAME_CHILD";
 if (tjs.env[NAME_CHILD] === "1") {
   const c = createMidiClient();
   c.open("RetroPlug N8", "");
+  // A rename is a new SYSTEM, not a new selection: an output picked before it must survive it (the SDK is public to
+  // consumers, which may pick before they open, and a session renamed later must not lose its mirror silently).
+  c.selectOutput(IFACE);
+  c.open("RetroPlug Loopback", "");
   c.close();
   tjs.exit(0);
 }
@@ -131,4 +135,9 @@ test("a session's own client name is the name its virtual ports are published un
   expect(err.includes("MIDI: virtual ports 'RetroPlug N8 In' / 'RetroPlug N8 Out' open")).toBe(true);
   // The session's name is its own: it did not publish under the host's default name.
   expect(err.includes("MIDI: virtual ports 'RetroPlug In' / 'RetroPlug Out' open")).toBe(false);
+  // ...and the SECOND name (a rename, so a new backend instance) still mirrors the output picked before it: the line
+  // comes after that instance's own virtual-port line, so it is the renamed stream that reopened it.
+  const renamed = err.indexOf("MIDI: virtual ports 'RetroPlug Loopback In' / 'RetroPlug Loopback Out' open");
+  expect(renamed >= 0).toBe(true);
+  expect(err.indexOf(`MIDI out: connected hardware port '${IFACE}'`, renamed)).toBeGreaterThan(renamed);
 });

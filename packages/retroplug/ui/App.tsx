@@ -102,11 +102,10 @@ export function App() {
     },
     [stores],
   );
-  const uiHost = useMemo(() => createUiHost(stores, { views: { open: openViewOf }, beginImport }), [
-    stores,
-    beginImport,
-    openViewOf,
-  ]);
+  const uiHost = useMemo(
+    () => createUiHost(stores, { views: { open: openViewOf }, beginImport, menuOpen }),
+    [stores, beginImport, openViewOf, menuOpen],
+  );
   // The product's UI services: the devices whose state lives in the native host (the N8 Pro's card job, a control
   // surface's scan and its startup restore) started, subscribed and polled at their own cadences.
   useUiServices(uiHost);

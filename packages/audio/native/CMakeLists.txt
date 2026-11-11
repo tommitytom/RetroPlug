@@ -25,7 +25,8 @@ add_library(retroplug-audio-test-support INTERFACE)
 target_include_directories(retroplug-audio-test-support INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/test-support)
 
 # --- the package's test (cmake/test-binary.cmake), built by name: retroplug-audio-test is the per-channel tap suite's
-# name (cmake/tests.cmake), so this one is retroplug-audio-host-test (report item 14). Build it in build-tsan/ too: the
+# name (cmake/tests.cmake), so this one is retroplug-audio-host-test (design row 28, R15). Build it in build-tsan/ too:
+# the
 # render-ahead case is the one that would show a ring raced with a device callback.
 retroplug_add_test_binary(
     NAME     retroplug-audio-host-test

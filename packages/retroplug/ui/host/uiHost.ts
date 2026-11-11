@@ -30,6 +30,9 @@ export type { UiHost } from "@retroplug/ui/contribution";
 export interface UiHostPeers {
   readonly views: ViewsHost;
   readonly beginImport: (sys: SystemInfo, source: Uint8Array) => void;
+  /** Whether the menu is on screen (the shell's own state): what a poll needs to know before repainting for a value only
+   *  a row prints. Undefined is "assume it could be". */
+  readonly menuOpen?: boolean;
 }
 
 /** The host groups an import uses - the file I/O, the PNG codec and the running systems - over a backend and a systems
@@ -64,6 +67,9 @@ export function createUiHost(stores: AppStores, peers: UiHostPeers): UiHost {
     dialogs: { browse: (opts) => stores.backend.openFileBrowser(opts) },
     devices,
     views: peers.views,
+    // Only when the shell says: an absent key means "assume the menu could be up", and a host built without it keeps
+    // exactly its groups.
+    ...(peers.menuOpen === undefined ? {} : { menuOpen: peers.menuOpen }),
     // The project's own settings, as this UI's packages read and edit them (docs/modular-graph-phase-f5a-design.md
     // section 6.4): the Launchpad's submenu is the client, and nothing about the section - its key's shape, the closed
     // values its `target` may take, what a section stamped newer than this build means - is the shell's business.

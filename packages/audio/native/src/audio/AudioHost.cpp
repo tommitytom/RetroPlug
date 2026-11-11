@@ -16,7 +16,7 @@
 namespace rp::audio {
 namespace {
 
-// Today's log voice, kept byte for byte: the harnesses grep "[retroplug-sdl] audio: PortAudio [h] 'd' N Hz, B frames,
+// The log voice the harnesses grep, byte for byte: "[retroplug-sdl] audio: PortAudio [h] 'd' N Hz, B frames,
 // C ch" (tools/run-sdl-pipewire.sh's sed and grep), and the CLI prints the same prefix through the midi package.
 constexpr const char* kLogPrefix = "[retroplug-sdl] ";
 
@@ -133,7 +133,9 @@ AudioStatus AudioHost::status() const {
         out.device  = info_.device;
     }
     out.sampleRate  = info_.sampleRate;
-    out.blockFrames = info_.blockFrames;
+    // The device's own quantum when it reported one, and what it actually pulls when it did not: a backend asked for its
+    // own quantum (render-ahead) answers 0 until the first callback, and a status row showing "0 frames" reads as a bug.
+    out.blockFrames = info_.blockFrames > 0 ? info_.blockFrames : observedPullFrames_.load(std::memory_order_relaxed);
     out.channels    = info_.channels;
     out.error       = error_;
     return out;
@@ -235,6 +237,12 @@ std::unique_ptr<AudioStream> AudioHost::openFor(const AudioConfig& config, Resol
 bool AudioHost::openAndStart(const AudioConfig& config, Resolved& resolved, StreamInfo& info, std::string& error) {
     std::unique_ptr<AudioStream> stream = openFor(config, resolved, info, error);
     if (!stream) return false;
+    if (info.sampleRate <= 0) {
+        // A device that reports no rate would have been shaped at 1 Hz (prepare's max(1, ...)), which is a stream that
+        // runs at a rate no clock ever asks for and one the engine cannot render at: an open failure with the reason.
+        error = resolved.backend->label() + ": the device reported no sample rate";
+        return false;
+    }
     // Render-ahead is decided BEFORE the request is made (a backend asked for its own quantum is asked because the
     // renderer fills whole blocks); the null device never renders ahead, so a fallback asks for its block and renders
     // in the pull.
@@ -349,7 +357,7 @@ bool AudioHost::poll() {
         // and none in progress is a stall. The clock starts at start(), so a stream that starts and NEVER pulls is
         // caught too.
         const std::int64_t last = lastPullMs_.load(std::memory_order_relaxed);
-        if (last != 0 && now - last > watchdogBound_.count()) reason = "the audio device stopped pulling";
+        if (last != 0 && now - last > watchdogMs()) reason = "the audio device stopped pulling";
     }
     if (reason.empty()) return false;
 
@@ -419,6 +427,16 @@ bool AudioHost::closeCurrent(std::chrono::milliseconds bound) {
     return true;
 }
 
+std::int64_t AudioHost::watchdogMs() const {
+    // The bound the run's block allows, and at least four of what the DEVICE actually pulls: an unspecified quantum (a
+    // fixed-quantum server's) is not known when apply() sizes the bound, and a 16384-frame callback is 341 ms at 48 kHz.
+    const std::int64_t pulled = observedPullFrames_.load(std::memory_order_relaxed);
+    std::int64_t       bound  = watchdogBound_.count();
+    if (pulled > 0 && info_.sampleRate > 0)
+        bound = std::max<std::int64_t>(bound, static_cast<std::int64_t>(4.0 * 1000.0 * pulled / info_.sampleRate));
+    return bound;
+}
+
 void AudioHost::setWatchdogFor(int blockFrames) {
     // A few block durations, never under 250 ms: an 8192-frame quantum at 44.1 kHz is 186 ms between pulls, so a fixed
     // quarter of a second would trip on one block's own duration (and a WinMM SysEx inside the block adds its 170 ms).
@@ -439,11 +457,21 @@ void AudioHost::pull(float* interleaved, int frames, bool underflow) {
     if (backend_ && backend_->id() != "null" && std::this_thread::get_id() != controlThread_)
         tuneAudioThread(renderAhead_ ? kCallbackPriorityAhead : kCallbackPriority);
     pulls_.fetch_add(1, std::memory_order_relaxed);
+    if (frames > observedPullFrames_.load(std::memory_order_relaxed))
+        observedPullFrames_.store(frames, std::memory_order_relaxed);  // the device's quantum, once it has pulled
     if (frames <= 0) {
         lastPullMs_.store(nowMs(), std::memory_order_relaxed);
         return;
     }
     if (renderAhead_) {
+        // A device pulling MORE frames than the ring holds can never be served: the ring is max(renderAhead, 2*block)
+        // and an unspecified quantum (a fixed-quantum server's) is not known when it is sized. Say so once, because the
+        // run then underruns on every pull - silence, not a small error.
+        if (static_cast<std::size_t>(frames) > ringFrames_ && !ringTooSmall_) {
+            ringTooSmall_ = true;
+            logLine("audio: the device pulls " + std::to_string(frames) + " frames a callback but the render-ahead ring " +
+                    "holds " + std::to_string(ringFrames_) + "; raise --render-ahead");
+        }
         // Copy what the renderer has queued and pad a short ring with silence. The underrun is counted only once the
         // ring has primed: the first pulls of a fresh stream are meant to find it empty.
         const std::uint64_t read  = ringRead_.load(std::memory_order_relaxed);

@@ -17,7 +17,13 @@ fi
 
 case "$(uname -s)" in
     Linux) : ;;
-    *) echo "error: the /dev/snd guard is a Linux facility (this is $(uname -s))" >&2; exit 1 ;;
+    *)
+        # Not a failure: there is no /dev/snd, /dev/video or /dev/ttyACM to guard on macOS or Windows, and a harness that
+        # sources guard-env.sh there runs unguarded by design. Nothing is printed on stdout, so a caller that would have
+        # preloaded the path finds it empty.
+        echo "notice: the device guard is a Linux facility (this is $(uname -s)); nothing built" >&2
+        exit 0
+        ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

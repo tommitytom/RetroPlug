@@ -1395,7 +1395,10 @@ What a user, a script or a test sees change. Each is listed with what was found;
 - **E7. The clock tempo is saved in the project.** It was `audio.json`'s `clockBpm` (`:1197`). A project switch applies
   the new project's tempo; the transport still starts stopped.
 - **E8. `config.json` gains `audio`; `controlSurface`'s bytes are unchanged.** The Launchpad's section keeps the root
-  key and the four fields. The shape of the file changes by one key; `schemaVersion` stays 3.
+  key and the four fields. The shape of the file changes by one key; `schemaVersion` stays 3. A PRE-F5b build sharing the
+  file sees an unknown root key: the standalone keeps it verbatim, and a pre-F5b PLUGIN (whose root schema is strict)
+  drops it on its next write - the unavoidable cost of releasing the plugin beside a newer standalone, and what the
+  version stamp exists to make visible.
 - **E9. A project saved in the standalone carries `midi`, which the plugin keeps verbatim.** A fresh project written by
   the PLUGIN has no `midi` block (F5a's E8 at one more key); a `.rplg` the standalone wrote opens in the plugin and back
   with the key where it was.

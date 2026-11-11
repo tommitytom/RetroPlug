@@ -82,8 +82,9 @@ public:
      * the ports published cannot be named differently. False when the backend refuses (no MIDI system): the host then
      * runs without MIDI. */
     bool open();
-    /** Free every port and empty the ring. Safe beside a send: the set is unpublished and waited out, then the virtual
-     *  output, whose sends the same handshake covers. */
+    /** Free every port. The RECEIVE ring keeps what arrived (a message that arrived before the close is still one that
+     *  arrived, and the consumer's index must not be reset under it). Safe beside a send: the set is unpublished and
+     *  waited out, then the virtual output, whose sends the same handshake covers. */
     void close();
     bool isOpen() const { return open_; }
 

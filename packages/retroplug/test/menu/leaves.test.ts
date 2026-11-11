@@ -1621,7 +1621,7 @@ test("the SameBoy display rows cycle their role config, gated by model and GB-on
 });
 
 test("building the menus never enumerates a sibling audio backend", async () => {
-  // C1 of the F5b S3 review: a builder that asks every backend for its drivers initialises PortAudio and SDL audio at
+  // The S3 fault: a builder that asks every backend for its drivers initialises PortAudio and SDL audio at
   // launch (and on every menu render) whatever the run pinned. The fake describes only the backend IN FORCE and counts
   // every backendDrivers call, so this is the same path the native hook takes.
   const fake = new FakeAudioDevice().install();
@@ -1650,7 +1650,8 @@ test("building the menus never enumerates a sibling audio backend", async () => 
     expect(findItem(audioItems, "audio-drivers-more")).toBeTruthy();
     findItem(audioItems, "audio-drivers-more")!.onSelect!();
     expect(fake.backendDriversCalls).toEqual(["sdl"]);
-    const audioRows = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+    const audioRows = () =>
+      submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
     // The fetched backend's drivers are in the row now: Auto -> PortAudio's two -> SDL's one.
     findItem(audioRows(), "audio-driver")!.onCycle!(1);
     findItem(audioRows(), "audio-driver")!.onCycle!(1);

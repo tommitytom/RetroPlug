@@ -44,6 +44,12 @@ public:
         std::vector<std::string>* log = nullptr;  // the backend's event log, so a case reads start/stop with the rest
         std::vector<float> captured;              // what the last pull wrote
 
+        /** A stream a case drops without stopping it (an apply that replaced it, a case's own cleanup) must not take
+         *  the process down on a joinable thread: it stops the pump it started, as a backend's destructor must. A
+         *  stream the host already stopped has nothing left and logs nothing here. */
+        ~Stream() override {
+            if (worker.joinable()) stop();
+        }
         bool start(std::string& error) override {
             started = !startFails;
             if (!started && error.empty()) error = startError;
@@ -129,8 +135,9 @@ public:
         auto stream         = std::make_unique<Stream>();
         stream->description = StreamInfo{request.driver, request.device.empty() ? "Fake Out" : request.device,
                                         adoptRate > 0 ? adoptRate : request.sampleRate,
-                                        actualBlock > 0 ? actualBlock
-                                                        : (request.blockFrames > 0 ? request.blockFrames : 512),
+                                        // 0 when the request asked for the backend's own quantum (render-ahead), which is
+                                        // what a real backend reports until its first callback: the host has to cope.
+                                        actualBlock > 0 ? actualBlock : request.blockFrames,
                                         request.channels};
         stream->pull = pull;
         stream->ctx  = ctx;

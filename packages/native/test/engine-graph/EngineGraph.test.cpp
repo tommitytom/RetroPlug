@@ -240,7 +240,7 @@ TEST_CASE("a sample-rate change re-rates the running plan's cores", "[engine-gra
 }
 
 TEST_CASE("a core re-rated to 44.1 kHz renders what one built at 44.1 kHz renders", "[engine-graph][c4]") {
-    // The startup order the audio design keeps (docs/modular-graph-phase-f5b-design.md section 6.6, report item 1): the
+    // The startup order the audio design keeps (docs/modular-graph-phase-f5b-design.md section 6.6, row 28): the
     // engine is constructed and its cores are built at the DEFAULT rate, and AudioHost's prepare re-rates them once the
     // device has opened at whatever rate it obtained. That is only sound if a re-rated core is the core it would have
     // been built as, so this holds a GB and a NES to it: the same document, the same seeds, one run built at 44.1 kHz and

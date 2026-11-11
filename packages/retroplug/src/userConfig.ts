@@ -146,9 +146,16 @@ export function configFileShape(
     // A block this session did not set goes back as the file carried it: a contributor's parse drops the fields this
     // build does not know, and config.json is shared by builds of different ages (a release plugin beside a newer
     // standalone). Only a key whose value this session authored is written from its parsed form.
-    out[key] = Object.prototype.hasOwnProperty.call(raw, key) && !written.includes(key)
-      ? raw[key]
-      : serializeConfigSectionValue(key, value, contributors);
+    // As an OWN, enumerable property: a hand-edited `__proto__` file key is data this build keeps (configSections.ts's
+    // putConfigSection), and assigning it here would set this object's prototype and drop the key from the write.
+    Object.defineProperty(out, key, {
+      value: Object.prototype.hasOwnProperty.call(raw, key) && !written.includes(key)
+        ? raw[key]
+        : serializeConfigSectionValue(key, value, contributors),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
   return out;
 }

@@ -277,7 +277,7 @@ TEST_CASE("a diff re-applies only what moved: a port the selection keeps is neve
 }
 
 TEST_CASE("an exclusive port: a re-pick must let the port go before it is opened again, or it is lost") {
-    // The review's probe, over the fake's model of a WinMM port: a second open of a name this stream still holds is
+    // A WinMM port's model, over the fake: a second open of a name this stream still holds is
     // refused. A re-pick that opened before it closed therefore lost the device it meant to heal - the output went
     // silent for good, and the event log says so (a refused open, then a close, then nothing).
     Machine          machine;
@@ -597,6 +597,30 @@ TEST_CASE("an output swap under a send in flight: every send lands on one live p
     CHECK(backend.totalReceived() == static_cast<std::size_t>(kSends));
 }
 
+TEST_CASE("a diff closes what it drops before it opens what it adds: a renamed device is not refused") {
+    // WinMM exclusivity is per DEVICE and a re-resolve lands on the same device under a new index ("Synth 1" to
+    // "Synth 2"): opening the new name while the old handle is still held is refused, and the device stays lost until a
+    // tap. The add is tried once with the old handle held (opening first is what keeps every send on a live port), and
+    // on that refusal the drop is let go and the add retried - so the close precedes the second, successful open.
+    Machine          machine;
+    FakeMidiBackend& backend = machine.backend;
+    backend.outputs          = {"Synth 1", "Synth 2"};
+    backend.exclusivePorts   = true;
+    backend.deviceOf         = {{"Synth 1", "synth"}, {"Synth 2", "synth"}};  // one device, two enumerations
+    MidiStream stream(backend);
+    stream.setOutputs({"Synth 1"});
+    REQUIRE(stream.open());
+    backend.events.clear();
+    stream.setOutputs({"Synth 2"});
+    const auto at = [&](const std::string& event) {
+        const auto it = std::find(backend.events.begin(), backend.events.end(), event);
+        REQUIRE(it != backend.events.end());
+        return static_cast<std::size_t>(it - backend.events.begin());
+    };
+    CHECK(at("close out:Synth 1") < at("open out:Synth 2"));
+    CHECK(stream.openedOutputs() == std::vector<std::string>{"Synth 2"});
+}
+
 TEST_CASE("a swap behind back-to-back long sends waits out one send, never the run of them") {
     // A WinMM bulk SysEx blocks about 170 ms inside send(), and a block may send several. The wait must be bounded by
     // the ONE send in flight - the set the swap published is what the next send reads - so a reconfigure waits one
@@ -702,8 +726,8 @@ TEST_CASE("send() has ONE caller, and what two would break") {
     // send() marks a send in flight by making the epoch odd on entry and even on exit, and a swap waits that one send
     // out. A SECOND caller breaks the mark: A's entry makes it odd, B's entry makes it EVEN again while A is still
     // inside a port, and a swap that lands between them publishes and retires at once - the port A is writing is freed
-    // under it. The review's probe measured exactly that (two senders, 200 swaps, 2 sends reaching a closed port in 20
-    // runs), which is why send() asserts the entry found the counter even (an assert, so a Debug build fails loudly;
+    // under it (two senders, 200 swaps, 2 sends reaching a closed port in 20 runs, the probe that found it), which is why
+    // send() asserts the entry found the counter even (an assert, so a Debug build fails loudly;
     // the release build carries none). A block sends sequentially, which is the caller this stream is written for.
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;

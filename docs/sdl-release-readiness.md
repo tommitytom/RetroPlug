@@ -26,13 +26,13 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
   and `reconfigureMidi` / the Launchpad callbacks are gone. Only a real device change (`AudioHost::apply`) stops
   and restarts the stream, once. See [modular-graph-phase-f5b-design.md](modular-graph-phase-f5b-design.md) 4.3
   and edge E5.*
-- [x] **Dead audio device = frozen app.** *Fixed in F5b: `AudioHost` owns a backend-neutral no-pull watchdog (a
+- [x] **Dead audio device = frozen app.** *The WATCHDOG is proved in F5b (a
   started device that runs no pull for a few block durations, never under 250 ms, falls to the `null` device with
   a status Settings shows), each backend reports its own `lost()`, and a stream that opens but will not start is
   an open failure that falls back. The false-trip hazard a permanent mute once had is gone too: while the status
   carries an error, Settings > Audio's Apply stays live as the retry.*
-- [x] **Bad persisted audio config = muted forever.** *Fixed in F5b: the `audio` section is a stamped
-  config.json section whose parse clamps junk to defaults per field; a failed open falls to the `null` device with
+- [x] **Bad persisted audio config = muted forever.** *Fixed in F5b: the `audio` section is a config.json section
+  (additive, so unstamped) whose parse clamps junk to defaults per field; a failed open falls to the `null` device with
   `AudioHost`'s status carrying the reason, which Settings > Audio renders as "Muted: why"; and Apply is the
   live retry while it does.*
 - [x] **RT tuning applies once per process** (*audit*). *Fixed in F5b: `AudioHost` tunes PER THREAD (a
@@ -89,7 +89,8 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 ## 4. Config / persistence
 
 - [x] **`audio.json` / `midi.json` are unversioned.** *Fixed in F5b: both files are gone. The audio choice is
-  config.json's stamped `audio` section (written atomically through the TS store's re-read) and the ports/tempo are
+  config.json's `audio` section (written atomically through the TS store's re-read; additive, so unstamped) and the
+  ports/tempo are
   the project's `midi` section; the old files are neither read nor deleted (edge E1).*
 
 ## 5. Code quality / duplication

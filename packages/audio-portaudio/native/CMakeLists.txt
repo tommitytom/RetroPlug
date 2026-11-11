@@ -1,4 +1,4 @@
-# The PortAudio backend (docs/modular-graph-phase-f5b-design.md section 5.3): today's PortAudio code out of the SDL
+# The PortAudio backend (docs/modular-graph-phase-f5b-design.md section 5.3): the SDL app's PortAudio code, as a
 # app's main.cpp - the host-API and device lookup, the low-latency request, the obtained rate and the wide-output
 # warning, the ALSA/PipeWire/JACK log quietening run before Pa_Initialize at the backend's first use - behind the audio
 # package's interface. Added by retroplug_package(audio-portaudio); its manifest item is what a product names in
@@ -17,7 +17,7 @@ target_link_libraries(retroplug-audio-portaudio PUBLIC retroplug-audio PRIVATE p
 
 if(UNIX AND NOT APPLE)
     # The quietening calls snd_lib_error_set_handler directly, which libasound must therefore be linked for by name:
-    # until now it arrived through rtmidi's static link, which is another package's business (report item 22).
+    # it also arrives through rtmidi's static link, which is another package's business (design row 29).
     find_package(ALSA REQUIRED)
     target_link_libraries(retroplug-audio-portaudio PRIVATE ALSA::ALSA)
     target_link_libraries(retroplug-audio-portaudio PRIVATE ${CMAKE_DL_LIBS})  # the libjack dlopen

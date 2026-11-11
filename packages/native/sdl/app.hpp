@@ -303,10 +303,9 @@ struct AppState {
  *  __rp_* window hooks all reach it, unlike the plugin's per-context routing for multi-instance DAWs. */
 extern AppState* g_app;
 
-// The audio device's configuration, and MIDI's: declared here so a hook (hooks.cpp) and the frame loop (main.cpp) can
-// drive them, and defined beside the audio client (audioLoop.cpp).
-// Audio device (re)configuration - declared here so the __rp_audioApply hook can drive a live sample-rate / block-size
-// / backend change. AudioHost runs the sequence; these build its Config from the product's request and the run's flags.
+// The audio device's configuration: declared here so a hook (hooks.cpp) and the frame loop (main.cpp) can drive it, and
+// defined beside the audio client (audioLoop.cpp). AudioHost runs the sequence; these build its Config from the
+// product's request and the run's flags.
 bool audioDebugEnabled();   // RETROPLUG_DEBUG_AUDIO
 rp::audio::AudioConfig audioConfigOf(const AppState& a);
 void applyAudioConfig(AppState& a);
@@ -324,7 +323,7 @@ constexpr std::uint32_t kMinWindowH = 432;
 
 // What each unit holds: window.cpp (the LVGL glue, setupSdl's video and game controller, setupUi, present, the
 // window-size latches, the screenshot), input.cpp (key translation, the gamepad pump, handleEvents), hooks.cpp
-// (callGlobal, the __rp_* window hooks, the file dialog, the audio and MIDI hooks, installWindowHooks), audioLoop.cpp
+// (callGlobal, the __rp_* window hooks, the file dialog, the audio hooks, installWindowHooks), audioLoop.cpp
 // (the audio client, the control-surface calls, the audio and MIDI configuration), main.cpp (the boot, main, the
 // arguments, the test hooks, the frame loop).
 // The product's audio client: the engine behind AudioHost's interface (defined here because main() constructs it before

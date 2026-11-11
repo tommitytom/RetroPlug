@@ -188,8 +188,8 @@ check() { # check <what> <expected>
 
 # Auto, with NO flag: the saved section says `auto`, which is the state a user's config.json is in, and Auto resolves to
 # the first backend the product names that opens - PortAudio, whose host API preference takes PipeWire when the
-# server is there - and its driver's default device, which IS the session default. (Before F5b the same three cases
-# ran this way; pinning every leg had left the default path untested.)
+# server is there - and its driver's default device, which IS the session default. Pinning every leg would leave that
+# path untested, which is why this one runs with no flag.
 setdefault rp-high
 writecfg auto
 run auto-default ""
@@ -424,7 +424,7 @@ if start_session_manager; then
         && { echo "  ok: SDL pair 1 is linked to the sink"; PASS=$((PASS+1)); } \
         || { echo "  FAIL: SDL pair 1 is not linked to the sink (found $SDL_LINKED links)"; FAIL=$((FAIL+1)); }
 
-    # A live stream survives a menu build (S2 review C2): the Settings > Audio rows ask the SDL backend for its device
+    # A live stream survives a menu build (the S2 fault): the Settings > Audio rows ask the SDL backend for its device
     # list, and a listing must never switch the driver (SDL_AudioQuit closes every open device). The hook drives the
     # real menu to Settings > Audio from the SDL queue; the leg holds the stream OPEN across it, the same node/ports
     # before and after, and exactly one open line.
@@ -461,7 +461,8 @@ DLOPENS=$(dlopen_count)
 # card's video nodes (the wireplumber monitors, which the config above disables), or a serial device. The control-node
 # refusals are PortAudio's ALSA enumeration, which every run performs.
 PCM=$(pcm_refused_count)
-OTHER=$(grep -cE ' refused /dev/(video|media|v4l-subdev|ttyACM|ttyUSB|ttyDbgProbe|serial/|hidraw|bus/usb/)' "$NOSND_LOG" 2>/dev/null || true)
+OTHER=$(grep -cE ' refused /dev/(video|media|v4l-subdev|ttyACM|ttyUSB|ttyDbgProbe|serial/|hidraw|bus/usb/)' \
+    "$NOSND_LOG" 2>/dev/null || true)
 echo "  guard: $REFUSED refused /dev/snd path(s) (${PCM:-0} card pcm), ${OTHER:-0} video/serial path(s)," \
      "$DLOPENS audio-library dlopen(s) (see $NOSND_LOG)"
 if [ "${PCM:-0}" -ne 0 ] || [ "${OTHER:-0}" -ne 0 ]; then

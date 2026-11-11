@@ -28,6 +28,10 @@ export type UiHost = Host<
 > & {
   readonly audioDevice?: AudioDeviceHost;
   readonly midiDevice?: MidiDeviceHost;
+  /** Whether the shell's MENU is on screen. A service's poll runs every frame whatever is drawn, so a value that only
+   *  a row prints (the transport's clock) has to know whether any row is showing it: a repaint per external clock start
+   *  or stop costs a whole App render, which is a handheld's frame budget. Absent means "assume it could be". */
+  readonly menuOpen?: boolean;
 };
 
 /** A value a package owns and the shell watches: a view's `visible`, a debug flag. `get` is synchronous and cheap

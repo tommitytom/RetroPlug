@@ -36,7 +36,11 @@ trap 'rm -rf "$TMP"' EXIT
 # initialisation or a driver fallback still cannot open a real card (PortAudio probes every ALSA device at
 # Pa_Initialize). The kit may already have put the same guard in front; this does not add a second copy then.
 . "$REPO_DIR/tools/sdl-audio-guard/guard-env.sh" "$TMP/guard"
+# This run's own log, unless an outer harness (the verification kit) already set one for the whole run: only a log the
+# smoke owns says anything about the smoke alone.
+if [ -n "${NOSND_LOG:-}" ]; then OWN_NOSND_LOG=0; else OWN_NOSND_LOG=1; fi
 export NOSND_LOG="${NOSND_LOG:-$TMP/nosnd.log}"
+: >"$NOSND_LOG"
 
 # This is the standalone a developer runs, so it reads their own config: a saved, enabled controlSurface is CLAIMED at
 # startup and its close bytes go out at quit, and a project's saved `midi` selection opens real inputs. A smoke that
@@ -150,7 +154,8 @@ echo "  ok: Settings > Audio through the JS seam"
 # 5c) `--block-size` over the section (E12): the file asks for 512, the flag for 256, and the device the service
 #     applied runs at the flag's block. A launch script's quantum must win over the saved choice without being saved.
 SAVED_CFG="$RETROPLUG_USER_CONFIG_DIR/config.json"
-printf '{"schemaVersion":3,"audio":{"backend":"null","driver":"","device":"","sampleRate":48000,"blockSize":512,"outChannels":2}}\n' >"$SAVED_CFG"
+printf '%s\n' '{"schemaVersion":3,"audio":{"backend":"null","driver":"","device":"","sampleRate":48000,"blockSize":512,'\
+'"outChannels":2}}' >"$SAVED_CFG"
 run block-saved 30 RETROPLUG_SDL_TEST_AUDIO_STATUS=1
 want "$LOG" 'post-audio-status: .*"blockFrames":512' "block override: the saved section did not open at its block"
 LOG="$TMP/block-flag.log"
@@ -160,8 +165,8 @@ fi
 want "$LOG" 'post-audio-status: .*"blockFrames":256' "block override: --block-size did not win over the section"
 rm -f "$SAVED_CFG"
 echo "  ok: --block-size overrides the audio section"
-printf '{"schemaVersion":3,"audio":{"backend":"null","driver":"","device":"","sampleRate":48000,"blockSize":512,"outChannels":2}}\n' \
-    >"$RETROPLUG_USER_CONFIG_DIR/config.json"
+printf '%s\n' '{"schemaVersion":3,"audio":{"backend":"null","driver":"","device":"","sampleRate":48000,"blockSize":512,'\
+'"outChannels":2}}' >"$RETROPLUG_USER_CONFIG_DIR/config.json"
 
 # 6) Close guard (P6): an OS close on a clean project isn't vetoed → exits well before the 120-frame budget.
 run quit 120 RETROPLUG_SDL_TEST_QUIT=1
@@ -177,4 +182,11 @@ want "$LOG" "\[idle-reclaim\] self-test: tick [0-9]+ freed [1-9][0-9]* replaced 
      "idle: the frame loop did not reclaim what the audio thread handed back"
 echo "  ok: idle reclaim"
 
+# The null pin's other half, and the one CI can hold: a run on the null backend refuses NOTHING and loads NO audio
+# library. The guard's log is where that shows - an entry means a backend or a device was reached for after all, which is
+# the thing the pin exists to prevent. Only when the smoke owns the log (an outer harness's covers its whole run).
+if [ "$OWN_NOSND_LOG" = 1 ] && [ -s "$NOSND_LOG" ]; then
+    cat "$NOSND_LOG" >&2
+    fail "the null-pinned run touched a device path or loaded an audio library (see the log above)"
+fi
 echo "SDL smoke OK"

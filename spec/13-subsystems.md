@@ -114,7 +114,7 @@ writes with a re-read, so two processes can share the file.
 
 - Code: [packages/launchpad](../packages/launchpad) - the portable target (`retroplug-launchpad`, `device: true`) with
   the two surface nodes, and `retroplug-launchpad-desktop` with the transport (`ControllerLink`, `PortClaim`,
-  `MidiPortPool`, `RtMidiPort`), the provider and the facet (`LaunchpadRpc`) - beside
+  `MidiPortPool`, `MidiPort`), the provider and the facet (`LaunchpadRpc`) - beside
   [ui/launchpadDevices.ts](../packages/launchpad/ts/ui/launchpadDevices.ts), which drives the
   facet, and the MI.MAP app in [packages/lsdj-launchpad](../packages/lsdj-launchpad).
 - **Prove a change:** `retroplug-launchpad-test` (one of the fourteen `pnpm test:plugin` binaries),
@@ -161,7 +161,8 @@ the firmware embeds); see [modular-graph-phase-e3-design.md](../docs/modular-gra
 A second standalone with near-full parity with the DPF one, built for handhelds (proven on
 Anbernic/muOS). It composes the same backend service graph as every other host
 ([02-native-host.md](02-native-host.md)); what differs is the shell — SDL for window, input and
-gamepad, PortAudio for output, RtMidi for MIDI.
+gamepad, and the audio and MIDI packages' backends for output and MIDI (PortAudio and SDL audio, chosen at
+runtime and named by the product's `AUDIO_BACKENDS`; RtMidi behind `packages/midi`).
 
 It is in the default `all` target, so every CI platform compiles and links it and it rides in the
 build artifact, but it is deliberately **not** in any release: `release.yml`'s packaging steps are

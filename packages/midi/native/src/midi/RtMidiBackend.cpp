@@ -11,6 +11,14 @@
 #include "RtMidi.h"
 #include "midi/PortFilter.hpp"
 
+#if defined(__linux__)
+#include <alsa/asoundlib.h>
+
+#include <cstdarg>
+#include <cstdlib>
+#include <mutex>
+#endif
+
 #if defined(__APPLE__)
 #include <CoreMIDI/CoreMIDI.h>
 
@@ -20,6 +28,29 @@
 
 namespace rp::midi {
 namespace {
+
+#if defined(__linux__)
+/** libasound prints every failure it meets, and a standalone run opens MIDI BEFORE its audio device (the startup order):
+ *  a null-pinned run used to show the sequencer's complaints, addressed to a backend that had not run yet. So this
+ *  package quiets ALSA itself, once, before it builds its first client - silent unless RETROPLUG_DEBUG_AUDIO asks for
+ *  the text. PortAudioBackend installs the same kind of handler for its own enumeration; whichever runs first wins and
+ *  both are quiet, so the order does not matter. */
+void alsaLogHandler(const char* file, int line, const char* function, int err, const char* fmt, ...) {
+    if (!std::getenv("RETROPLUG_DEBUG_AUDIO")) return;
+    std::fprintf(stderr, "[retroplug-sdl] ALSA %s:%d:(%s) ", file ? file : "?", line, function ? function : "?");
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(stderr, fmt, args);
+    va_end(args);
+    if (err) std::fprintf(stderr, ": %s", snd_strerror(err));
+    std::fputc('\n', stderr);
+}
+
+void quietAlsaLogs() {
+    static std::once_flag once;
+    std::call_once(once, [] { snd_lib_error_set_handler(alsaLogHandler); });
+}
+#endif
 
 /** True when an RtMidiIn/RtMidiOut can safely be CONSTRUCTED. On macOS this creates (and then keeps) the process's one
  *  CoreMIDI client first.
@@ -185,7 +216,11 @@ private:
  *  tools see and what the port filters judge a name by, so two instances of this are two named systems. */
 class RtMidiBackend final : public MidiBackend {
 public:
-    explicit RtMidiBackend(std::string clientName) : clientName_(std::move(clientName)) {}
+    explicit RtMidiBackend(std::string clientName) : clientName_(std::move(clientName)) {
+#if defined(__linux__)
+        quietAlsaLogs();
+#endif
+    }
 
     std::string id() const override { return "rtmidi"; }
     std::string clientName() const override { return clientName_; }

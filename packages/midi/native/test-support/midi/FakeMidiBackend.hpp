@@ -92,6 +92,10 @@ public:
     // failure a re-pick has to avoid by letting the port go first, and it is off for every ordinary case. Inputs are
     // exclusive on Windows too, so the flag covers both directions.
     bool exclusivePorts = false;
+    // What DEVICE a port belongs to, for that rule: WinMM refuses a second open of a DEVICE, and RtMidi spells one
+    // device's two enumerations differently ("Synth 1" / "Synth 2"), so a re-resolve lands on a new NAME of a device
+    // still held. A name no case maps is its own device.
+    std::map<std::string, std::string> deviceOf;
     // A send hook, called by every output port once the bytes are recorded: a scripted device answers an inquiry
     // through it (the Launchpad pack's Pro MK3), and a case can watch a write arrive.
     std::function<void(FakeMidiBackend&, const std::string&, const std::uint8_t*, std::size_t)> onSend;
@@ -232,9 +236,13 @@ private:
     std::unique_ptr<MidiPort> open(bool input, const std::string& name, Receiver receiver) {
         if (refuse.count(name) || !usableFlag) throw std::runtime_error("MIDI port not found: " + name);
         if (exclusivePorts) {
+            const auto device = [this](const std::string& port) {
+                const auto it = deviceOf.find(port);
+                return it == deviceOf.end() ? port : it->second;
+            };
             std::lock_guard<std::mutex> lk(mutex_);
             for (const auto& r : records_)
-                if (r->name == name && r->input == input && !r->closed)
+                if (r->input == input && !r->closed && device(r->name) == device(name))
                     throw std::runtime_error("MIDI port is already in use: " + name);
         }
         auto rec = std::make_shared<FakePortRecord>();
@@ -295,18 +303,20 @@ inline FakePort::FakePort(FakeMidiBackend& backend, std::shared_ptr<FakePortReco
 }
 
 inline FakePort::~FakePort() {
+    // UNROUTED first, under the fake's lock: `deliver` reads worker_.joinable() while holding that lock, so joining
+    // before unroute would read the thread object from two threads at once. Once closePort has returned no delivery can
+    // find this port, and one that was already inside it has finished queueing.
+    backend_.closePort(record_);
     if (worker_.joinable()) {
         {
             std::lock_guard<std::mutex> lk(queueMutex_);
             stop_ = true;
         }
         queueWake_.notify_one();
-        worker_.join();  // no receiver call is running when this returns
+        worker_.join();  // drains what was queued: no receiver call is running when this returns
     }
-    // Unrouted under the fake's lock, so a delivery already in flight finishes before this returns and no later one can
-    // look the port up; only then does the receiver a delivery would call go away (the MidiPort contract: no receiver
-    // call runs once the destructor has returned).
-    backend_.closePort(record_);
+    // The receiver a delivery would call goes away last (the MidiPort contract: no receiver call runs once the
+    // destructor has returned).
     receiver_ = nullptr;
 }
 

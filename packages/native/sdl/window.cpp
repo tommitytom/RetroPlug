@@ -88,7 +88,7 @@ bool setupSdl(AppState& a) {
     // A stable application name → the Wayland app_id / X11 WM_CLASS, so a tiling WM's window rules can target
     // RetroPlug (e.g. Hyprland `windowrulev2 = tile, class:(RetroPlug)`). Set before SDL_Init.
     SDL_SetHint(SDL_HINT_APP_NAME, "RetroPlug");
-    // Audio is PortAudio now (not SDL) — init only video + gamepad here.
+    // Audio is the audio packages' (PortAudio or SDL audio, by the product's backends): init only video + gamepad here.
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "[retroplug-sdl] SDL_Init failed: %s\n", SDL_GetError());
         return false;
@@ -171,7 +171,8 @@ void applyWindowSize(AppState& a, std::uint32_t w, std::uint32_t h, bool fromWm)
     const std::uint32_t stride = lv_draw_buf_width_to_stride(w, cf);
     a.drawBuf.assign(static_cast<std::size_t>(stride) * h, 0);
     lv_display_set_resolution(a.display, w, h);
-    lv_display_set_buffers(a.display, a.drawBuf.data(), nullptr, static_cast<std::uint32_t>(a.drawBuf.size()), LV_DISPLAY_RENDER_MODE_DIRECT);
+    lv_display_set_buffers(a.display, a.drawBuf.data(), nullptr, static_cast<std::uint32_t>(a.drawBuf.size()),
+                           LV_DISPLAY_RENDER_MODE_DIRECT);
 
     // SDL streaming texture: recreate at the new size (can't be resized in place).
     if (a.texture) SDL_DestroyTexture(a.texture);

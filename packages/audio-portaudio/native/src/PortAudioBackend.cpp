@@ -54,6 +54,10 @@ std::string driverIdFor(PaHostApiTypeId type, const std::string& hostApiName) {
         case paDirectSound:     return "directsound";
         case paASIO:            return "asio";
         case paAudioScienceHPI: return "audioscience";
+        case paAL:              return "al";
+        case paBeOS:            return "beos";
+        case paAudioIO:         return "audioio";
+        case paPulseAudio:      return "pulseaudio";
         case paInDevelopment:   break;
     }
     std::string id;
@@ -116,9 +120,9 @@ PaDeviceIndex findOutputDeviceByName(PaHostApiIndex idx, const std::string& name
     return paNoDevice;
 }
 
-// The Auto output host API: PipeWire when its host API has an output device (today's rule, which the harness greps),
-// then WASAPI on Windows (report item 10: MME is the first host there, and the release-readiness list names it), else
-// the host of the platform default output.
+// The Auto output host API: PipeWire when its host API has an output device (the rule the harness greps), then WASAPI
+// on Windows (design row 28, E14: MME is the first host there, and the release-readiness list names it), else the host
+// of the platform default output.
 //
 // WINDOWS (E14): a shared-mode WASAPI device refuses a rate that is not the endpoint's mix format - and a channel count
 // the endpoint does not have - unless the stream says it may convert, and PortAudio converts only with

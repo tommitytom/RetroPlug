@@ -27,15 +27,15 @@ MidiStream::MidiStream(MidiBackend& backend)
 MidiStream::~MidiStream() { close(); }
 
 bool MidiStream::open() {
-    close();  // idempotent: a second open replaces the first, ports and ring alike
+    close();  // idempotent: a second open replaces the first, every port and the virtual pair
     clientName_ = backend_->clientName();
     filterName_ = backend_->familyName();
     log_.store(std::getenv("RETROPLUG_MIDI_LOG") != nullptr);  // set before a callback thread can start
     if (!backend_->usable()) return false;
     if (backend_->supportsVirtual()) {
         // A backend with no virtual ports says so (MidiBackend::supportsVirtual) rather than attempting one that cannot
-        // exist: WinMM's openVirtualPort raises a warning and returns, so the old code announced two ports that were
-        // not there. Linux and macOS are unchanged: the line is the one the harnesses read.
+        // exist: WinMM's openVirtualPort raises a warning and returns, so a pair announced there is a pair that is not
+        // there. Linux and macOS are unchanged: the line is the one the harnesses read.
         try {
             virtualIn_ =
                 backend_->openVirtualInput([this](const std::uint8_t* data, std::size_t n) { pushRing(data, n); });
@@ -156,7 +156,8 @@ void MidiStream::applyInputs(Apply mode) {
             emit("MIDI: input open failed for '" + name + "': " + e.what());
         }
     }
-    for (const std::string& name : want)  // what OPENED, in the selection's order (a name that refused is missing)
+    // What OPENED, in this listing's order (a name that refused is missing).
+    for (const std::string& name : want)
         for (const auto& entry : hwIn_)
             if (entry.first == name) {
                 openInputs_.push_back(name);
@@ -194,23 +195,48 @@ void MidiStream::applyOutputs(Apply mode) {
         hwOut_.clear();
         openOutputs_.clear();
     }
+    // What this change drops, kept ready for the retry below and closed at the end.
+    std::vector<std::string> dropped;
+    for (const std::string& name : openOutputs_)
+        if (!contains(keep, name)) dropped.push_back(name);
     // A port the selection ADDS opens while the set it is joining is still published, so a send in that gap reaches the
-    // ports the change keeps and nothing goes nowhere.
+    // ports the change keeps and nothing goes nowhere. The one exception is the exclusive case below, where the add
+    // cannot succeed until the drop has gone.
     std::vector<std::string> next = keep;
     for (const std::string& name : want) {
         if (contains(next, name)) continue;
-        try {
-            hwOut_.emplace_back(name, backend_->openOutput(name));
-            next.push_back(name);
-            emit("MIDI out: connected hardware port '" + name + "'");
-        } catch (const std::exception& e) {
-            emit("MIDI: output open failed for '" + name + "': " + e.what());
+        bool opened = false;
+        for (int attempt = 0; attempt < 2 && !opened; ++attempt) {
+            try {
+                hwOut_.emplace_back(name, backend_->openOutput(name));
+                next.push_back(name);
+                emit("MIDI out: connected hardware port '" + name + "'");
+                opened = true;
+            } catch (const std::exception& e) {
+                if (attempt == 0 && !dropped.empty()) {
+                    // Where a port is EXCLUSIVE (WinMM), a re-resolve can land on the SAME device under a new index
+                    // ("Synth 1" to "Synth 2") and the open is refused while this stream still holds the old handle: the
+                    // device would stay lost until a tap. Let the ports this change drops go first - the kept set is
+                    // published, so no send is inside one - and try the add once more.
+                    publishOutputs(next);  // waits out the send in flight
+                    for (auto it = hwOut_.begin(); it != hwOut_.end();) {
+                        if (contains(next, it->first)) {
+                            ++it;
+                            continue;
+                        }
+                        it = hwOut_.erase(it);  // closed now: no published set names it and no send is inside it
+                    }
+                    dropped.clear();
+                } else {
+                    emit("MIDI: output open failed for '" + name + "': " + e.what());
+                }
+            }
         }
     }
     openOutputs_ = next;
     publishOutputs(openOutputs_);
-    // Only now are the ports the selection dropped closed: the set just published no longer names them, and the send
-    // that could still have been inside one has been waited out.
+    // The net for anything the published set does not name: a reopen's list (already empty), a drop the retry above
+    // closed early, and a port whose open was refused (it was never in hwOut_).
     for (auto it = hwOut_.begin(); it != hwOut_.end();) {
         if (contains(openOutputs_, it->first)) {
             ++it;

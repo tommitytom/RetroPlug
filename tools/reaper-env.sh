@@ -116,16 +116,20 @@ reaper_guard_summary() {
     [ "${RP_GUARD_REPORTED:-0}" = "1" ] && return 0
     RP_GUARD_REPORTED=1
     local log="${NOSND_LOG:-}"
-    [ -n "$log" ] && [ -f "$log" ] || { echo "reaper-env[$RP_JOB_TAG]: guard: no log (the guard never loaded)"; return 0; }
-    local all control pcm video tty disks dlopens
+    if [ -z "$log" ] || [ ! -f "$log" ]; then
+        echo "reaper-env[$RP_JOB_TAG]: guard: no log (the guard never loaded)"
+        return 0
+    fi
+    local all control pcm video tty dlopens
     all=$(grep -c ' refused ' "$log" 2>/dev/null || true)
     control=$(grep -c ' refused /dev/snd/control' "$log" 2>/dev/null || true)
     pcm=$(grep -c ' refused /dev/snd/pcm' "$log" 2>/dev/null || true)
     video=$(grep -cE ' refused /dev/(video|media|v4l-subdev)' "$log" 2>/dev/null || true)
     tty=$(grep -cE ' refused /dev/(ttyACM|ttyUSB|ttyDbgProbe|serial/|hidraw|bus/usb/)' "$log" 2>/dev/null || true)
     dlopens=$(grep -c ' dlopen ' "$log" 2>/dev/null || true)
-    echo "reaper-env[$RP_JOB_TAG]: guard: ${all:-0} refused device path(s) (${control:-0} card control, ${pcm:-0} card pcm," \
-         "${video:-0} video, ${tty:-0} serial/hid/usb), ${dlopens:-0} audio-library dlopen(s) (see $log)"
+    echo "reaper-env[$RP_JOB_TAG]: guard: ${all:-0} refused device path(s) (${control:-0} card control," \
+         "${pcm:-0} card pcm, ${video:-0} video, ${tty:-0} serial/hid/usb)," \
+         "${dlopens:-0} audio-library dlopen(s) (see $log)"
     if [ "${pcm:-0}" -ne 0 ] || [ "${video:-0}" -ne 0 ] || [ "${tty:-0}" -ne 0 ]; then
         echo "reaper-env[$RP_JOB_TAG]: FAIL: the guard refused a card playback, video or serial node - this run reached" \
              "for hardware it must never touch" >&2
@@ -174,8 +178,8 @@ reaper_env_up() {
     # copy: jackd's ALSA backend opens every card's control node at startup (32 of them on this desk), Reaper probes the
     # audio devices itself, and this machine's ALSA default is a real mixer. The guard refuses those nodes before the
     # syscall, its log is this job's alone (a fresh file per tag), and reaper_guard_summary() reads it at teardown.
-    REPO_DIR="$RP_REPO_DIR" . "$RP_REPO_DIR/tools/sdl-audio-guard/guard-env.sh" "$RP_REPO_DIR/build/reaper-guard-$RP_JOB_TAG" \
-        || return 1
+    REPO_DIR="$RP_REPO_DIR" \
+        . "$RP_REPO_DIR/tools/sdl-audio-guard/guard-env.sh" "$RP_REPO_DIR/build/reaper-guard-$RP_JOB_TAG" || return 1
     export NOSND_LOG="$RP_LOG_DIR/nosnd.log"
     : >"$NOSND_LOG"
     export HOME="$REAPER_CFG"

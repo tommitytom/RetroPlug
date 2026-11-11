@@ -57,9 +57,8 @@ Design:
 - Where there's genuinely no MIDI source, an on-screen keyboard is a later nicety.
 
 ### P2 — MIDI output — ✅ DONE
-The audio callback (`ProductAudioClient::pull`) drains `engine.midiOut()` to the `RtMidiOut` virtual port each block
-(as the plugin's `run` drains
-it to the DAW after `processBlock`, [PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp)) and mirrors it
+The audio callback (`ProductAudioClient::render`, which `AudioHost`'s pull calls) drains `engine.midiOut()` to the
+shared MIDI stream each block (as the plugin's `run` drains it to the DAW after `processBlock`, [PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp)) and mirrors it
 to the selected hardware output port, if any. It sends each message at once, its frame in the block dropped
 (RtMidi's out takes no timestamp), where the plugin hands the DAW each at its frame; scheduling it is the
 standalone's own work ([07-remaining-work.md](../spec/07-remaining-work.md)). Hardware-verified: LSDj
@@ -243,7 +242,7 @@ that draws the row), and a run that pins a backend offers no such step. A pick s
 with the same **Apply** as rate/block/channels (one stream reopen), saved in the `audio` section's
 `backend`/`driver` ids. An explicit backend or driver that will not open falls back to the NULL device with a status
 row ("Muted: <why>") - the Apply row stays live while muted, and that is the retry. Auto tries the product's backends
-in order, which is what makes a failed PickAudio fall to SDL. **JACK is on by default** now that it's dlopen'd (no
+in order, which is what makes a failed open fall to the next BACKEND. **JACK is on by default** now that it's dlopen'd (no
 launch penalty); **Pulse/sndio/OSS stay force-off** (`libsdl2-dev` drags in their dev libs and they'd bloat the driver
 list).
 

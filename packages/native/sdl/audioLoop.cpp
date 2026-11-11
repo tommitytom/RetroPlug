@@ -24,11 +24,6 @@ void pinUiThreadAwayFromAudioCore() {
 void pinUiThreadAwayFromAudioCore() {}
 #endif
 
-// ---- the audio client: the Engine, behind AudioHost's interface -------------------------------------
-// render() is today's renderAudioBlock, unchanged except that the buffer is the pull's: AudioHost sizes it, and the
-// engine renders planar into our own channel buffers which render() interleaves. prepare/release are the
-// reconfigure's quiescent half, called by AudioHost between stop and start.
-
 // ---- the control surface, as this product answers for it ------------------------------------------
 //
 // The three calls a provider makes of the product that owns the shared MIDI stream (rp_provider.h, design section 3).
@@ -75,12 +70,20 @@ void AppState::onRestored(void* ctx) { static_cast<AppState*>(ctx)->controlSurfa
 void waitForUiStartup(AppState& a) {
     const bool waitsForSurface = a.providers.startedNamed("launchpad");
     const Uint32 start = SDL_GetTicks();
+    // Two bounds. The control surface's restore keeps the 500 ms this rendezvous has always had: a claim that lands
+    // late would be a second, unquantised launch. The AUDIO apply gets longer, because the alternative is opening the
+    // device on the defaults at the 500 ms mark and reopening it when the late apply arrives - two opens, two
+    // re-rates, and on a slow handheld the second one is audible. A UI that never applies still starts on the
+    // defaults, at this bound, and says so.
+    constexpr Uint32 kSurfaceBoundMs = 500;
+    constexpr Uint32 kAudioBoundMs   = 2000;
     auto settled = [&] { return (!waitsForSurface || a.controlSurfaceRestored) && a.audioApplied; };
-    while (!settled() && SDL_GetTicks() - start < 500) {
+    while (!settled() && SDL_GetTicks() - start < (a.audioApplied ? kSurfaceBoundMs : kAudioBoundMs)) {
         a.ui.tick();
         // The services poll on the "frame" event, which main's loop emits once a frame - after this rendezvous. Emit one
         // here too, so their first polls (the `audio` section's apply and a project's MIDI selection) land while the
-        // host still holds everything, which is what lets the order be the claim, then the device, then the ports.
+        // host still holds everything. The order that buys is the claim, then MIDI (the virtual pair, then a project's
+        // hardware ports), then the AUDIO device last, which main opens once this returns.
         emitUiFrame(a);
         if (!settled()) SDL_Delay(1);
     }
@@ -97,11 +100,14 @@ bool audioDebugEnabled() {
     return on;
 }
 
-// ---- the audio client's body ------------------------------------------------------------------------
+// ---- the audio client: the Engine, behind AudioHost's interface -------------------------------------
+// render() is the same statement for statement as the app's first renderAudioBlock, except that the buffer is the
+// pull's: AudioHost sizes it, and the engine renders planar into this client's own channel buffers, which render()
+// interleaves. prepare/release are the reconfigure's quiescent half, called by AudioHost between stop and start.
 
 void ProductAudioClient::prepare(double sampleRateIn, int maxBlockFrames, int channels) {
     AppState& a = *app;
-    // AudioHost runs this between stop and start, so the engine is quiescent: the same three calls today's
+    // AudioHost runs this between stop and start, so the engine is quiescent: the same three calls the app's
     // reconfigureAudio made, in the order its own comment describes (re-rate live cores, shape the host, size the
     // render), except that the rate and width are the DEVICE's rather than the request's.
     a.sampleRate       = sampleRateIn;
@@ -113,7 +119,8 @@ void ProductAudioClient::prepare(double sampleRateIn, int maxBlockFrames, int ch
     a.audioPlanar.assign(static_cast<std::size_t>(a.numOutputs),
                          std::vector<float>(static_cast<std::size_t>(a.reqBlockSize), 0.0f));
     a.audioPtrs.assign(static_cast<std::size_t>(a.numOutputs), nullptr);
-    for (int c = 0; c < a.numOutputs; ++c) a.audioPtrs[static_cast<std::size_t>(c)] = a.audioPlanar[static_cast<std::size_t>(c)].data();
+    for (int c = 0; c < a.numOutputs; ++c)
+        a.audioPtrs[static_cast<std::size_t>(c)] = a.audioPlanar[static_cast<std::size_t>(c)].data();
     // Hand the engine back: AudioHost's next call is start(), and the first pull renders on the audio thread.
     a.svc.invoker.setAudioThreadOwns(true);
 }

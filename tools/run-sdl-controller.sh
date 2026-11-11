@@ -166,7 +166,8 @@ grep -q 'reserved MIDI input' "$TMP/idle.log" && fail "claimed a port with nothi
 grep -q 'did not report its restore' "$TMP/idle.log" && { cat "$TMP/idle.log" >&2; fail "the UI never reported its restore"; }
 # The rendezvous's other half: the audio service applied the `audio` section (the null pin, here). A UI that never
 # applies costs the bound and starts on the defaults, which is the line this asserts never prints.
-grep -qF 'audio: the UI did not apply its settings' "$TMP/idle.log" && { cat "$TMP/idle.log" >&2; fail "the audio service never applied its settings"; }
+grep -qF 'audio: the UI did not apply its settings' "$TMP/idle.log" \
+    && { cat "$TMP/idle.log" >&2; fail "the audio service never applied its settings"; }
 [ -z "$(heard_since "$m")" ] || { heard_since "$m" >&2; fail "wrote at the device with nothing selected"; }
 grep -qF "$NOTE" "$TMP/idle.log" || { cat "$TMP/idle.log" >&2; fail "the shared stream never heard the fake - leg 2's exclusion would prove nothing"; }
 grep -qF "$KEYS" "$TMP/idle.log" || { cat "$TMP/idle.log" >&2; fail "the shared stream never heard the second device"; }

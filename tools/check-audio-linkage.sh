@@ -5,8 +5,8 @@
 # PortAudio nor SDL audio: the backends are static libraries, so the proof is that the binary carries neither backend's
 # FACTORY symbol and no audio library dependency.
 #
-#   retroplug-cli, retroplug-host, build/node/retroplug.node   no rp_portaudio_backend / rp_sdl_backend symbol, no
-#                                                              portaudio/SDL-audio/pulse/jack/pipewire DT_NEEDED (or
+#   retroplug-cli, retroplug-host, build/node/retroplug.node,   no rp_portaudio_backend / rp_sdl_backend symbol, no
+#   retroplug-ui-test, retroplug-render-host-test              portaudio/SDL-audio/pulse/jack/pipewire DT_NEEDED (or
 #                                                              otool entry)
 #   retroplug-sdl                                              names `AUDIO_BACKENDS portaudio sdl`, so both factories and
 #                                                              the Pa_* symbols are expected; PortAudio must not be a
@@ -20,8 +20,9 @@
 # A binary with an EMPTY symbol table proves nothing (stripped, or a static archive that dropped what the script greps
 # for), so that fails rather than passing vacuously.
 #
-# Run by the verification kit (the `audiolink` leg). Linux reads DT_NEEDED with readelf and symbols with nm; macOS uses
-# otool -L and nm -gU. Anything else reports SKIPPED (CI builds these two platforms).
+# Run by `pnpm check:audio-linkage` and the verification kit (the `audiolink` leg). Linux reads DT_NEEDED with readelf
+# and symbols with nm; macOS uses otool -L and nm -gU (a framework's install name is ".../SDL2.framework/...", not
+# "libSDL2"). Anything else reports SKIPPED (CI builds these two platforms).
 #
 # Usage: tools/check-audio-linkage.sh [binary ...]     (defaults: the four above, under build/)
 set -uo pipefail
@@ -33,6 +34,8 @@ if [ "${#BINS[@]}" -eq 0 ]; then
         "$ROOT/build/bin/retroplug-cli"
         "$ROOT/build/bin/retroplug-host"
         "$ROOT/build/node/retroplug.node"
+        "$ROOT/build/bin/retroplug-ui-test"
+        "$ROOT/build/bin/retroplug-render-host-test"
         "$ROOT/build/bin/retroplug-sdl"
     )
 fi
@@ -59,14 +62,17 @@ for bin in "${BINS[@]}"; do
         echo "  FAIL: $name has an empty symbol table: nothing here is proved"; FAIL=1; continue
     fi
     pa_symbols=$(printf '%s\n' "$table" | grep -cE ' Pa_[A-Za-z]' || true)
-    factories=$(printf '%s\n' "$table" | grep -cE 'rp_(portaudio|sdl)_backend' || true)
+    # Each factory on its own: a build that named one backend must show zero for the OTHER, which a combined count hides.
+    pa_factory=$(printf '%s\n' "$table" | grep -c 'rp_portaudio_backend' || true)
+    sdl_factory=$(printf '%s\n' "$table" | grep -c 'rp_sdl_backend' || true)
+    factories=$((pa_factory + sdl_factory))
     audio_dep=$(printf '%s\n' "$needs" | grep -ciE 'portaudio|libpulse|libjack|libpipewire' || true)
     case "$name" in
         retroplug-sdl)
-            sdl_dep=$(printf '%s\n' "$needs" | grep -ci 'libSDL2' || true)
-            if [ "$audio_dep" -eq 0 ] && [ "$sdl_dep" -gt 0 ] && [ "$factories" -gt 0 ]; then
-                echo "  ok: $name keeps its backends static (SDL2 dependency only, $factories backend factory"
-                echo "      symbol(s) and $pa_symbols Pa_* symbol(s) linked in)"
+            sdl_dep=$(printf '%s\n' "$needs" | grep -ciE 'libSDL2|SDL2\.framework' || true)
+            if [ "$audio_dep" -eq 0 ] && [ "$sdl_dep" -gt 0 ] && [ "$pa_factory" -gt 0 ] && [ "$sdl_factory" -gt 0 ]; then
+                echo "  ok: $name keeps its backends static (SDL2 dependency only, $pa_factory portaudio and"
+                echo "      $sdl_factory sdl factory symbol(s), $pa_symbols Pa_* symbol(s) linked in)"
             else
                 echo "  FAIL: $name links an audio library dynamically, has no SDL2 dependency, or names no backend"
                 printf '%s\n' "$needs" | grep -iE 'portaudio|pulse|jack|pipewire' >&2

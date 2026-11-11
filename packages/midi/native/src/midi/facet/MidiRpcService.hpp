@@ -76,6 +76,7 @@ private:
     std::unique_ptr<MidiBackend> renamed_;     // ...and the instance a session's own client name made, when one did
     std::unique_ptr<MidiStream>  stream_;      // over base_, or over renamed_
     std::string                  clientName_;  // the name stream_ opens its ports under
+    std::string                  selectedOut_;  // the output a caller picked, re-applied when a rename builds a stream
     std::vector<MidiStream::Message> scratch_;  // reused poll buffer, reserved to the ring
 };
 
