@@ -13,17 +13,22 @@
 // Everything here is plain TypeScript: the contract a package's module is checked against, and the helpers that read a
 // row's stored value the way the shell renders it. The React kit is @retroplug/ui-react, a package of its own, so a
 // package that draws no React never meets it.
-import type { Host, SystemInfo } from "@retroplug/core/host";
+import type { AudioDeviceHost, Host, MidiDeviceHost, SystemInfo } from "@retroplug/core/host";
 import type { AssetCatalog, AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
 import type { SongCatalog } from "@retroplug/tracker/songCatalog";
 import { cycler, type MenuItem } from "./menu";
 
 /** The groups a UI surface's host has: what a package's UI code may reach. The shell builds this host once per UI
  *  (ui/host/uiHost.ts) and a contribution is handed it; core declares the groups, so this is a selection, not a new
- *  contract. */
+ *  contract. The audio device and the MIDI stream are OPTIONAL, because the same UI bundle runs in a DAW-hosted editor
+ *  and in the standalone: only the standalone binds the native hooks behind them, so a package's rows read them where
+ *  they are and vanish where they are not (docs/modular-graph-phase-f5b-design.md section 6.4). */
 export type UiHost = Host<
   "files" | "png" | "systems" | "songs" | "liveSongs" | "dialogs" | "devices" | "views" | "project" | "config"
->;
+> & {
+  readonly audioDevice?: AudioDeviceHost;
+  readonly midiDevice?: MidiDeviceHost;
+};
 
 /** A value a package owns and the shell watches: a view's `visible`, a debug flag. `get` is synchronous and cheap
  *  (the shell reads it during a render), and `subscribe` asks for a repaint when it moves. */
@@ -157,15 +162,19 @@ export type RoleRow = ConfigRow & {
 };
 
 /** Where a builder's rows land. Rows (RoleRow) take "system.settings" alone; a builder takes whichever placement it
- *  fills. "instance.footer" is the block after Remove Instance and before Exit (the Link Group). The list is data so
+ *  fills. "instance.footer" is the block after Remove Instance and before Exit (the Link Group); "instance.clock" is
+ *  the host-transport block between the instance's own groups (the MIDI Clock submenu); "settings.audio" and
+ *  "settings.midi" are the insides of Settings' two device containers, which the shell keeps. The list is data so
  *  the generated registry reads the same one the type is built from: a placement added here reaches its check without
  *  a second copy to update. */
 export const PLACEMENTS = [
   "instance.tracker",
   "instance.devices",
   "instance.footer",
+  "instance.clock",
   "system.settings",
   "start",
+  "settings.audio",
   "settings.midi",
 ] as const;
 export type Placement = (typeof PLACEMENTS)[number];
@@ -180,10 +189,13 @@ export interface MenuBuildContext {
 }
 
 /** A menu fragment a package builds itself, because its content is state the row data cannot hold. `[]` hides the
- *  entry (no device attached, no peers to link). */
+ *  entry (no device attached, no peers to link). `onOpen` runs when the shell's container for this placement is OPENED
+ *  (docs/modular-graph-phase-f5b-design.md section 6.5): a builder whose rows show a device's state has no other way to
+ *  hear that the user asked for them, and a render is the wrong moment to read one. */
 export interface MenuBuilder {
   readonly placement: Placement;
   build(host: UiHost, sys: SystemInfo | null, ctx: MenuBuildContext): MenuItem[];
+  onOpen?(host: UiHost): void;
 }
 
 /** A tracker's Songs submenu: the shared menu's structure over a SongCatalog, and the file-dialog actions its cart

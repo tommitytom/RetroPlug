@@ -13,7 +13,7 @@ import { setKeyboardGroup } from "lvgljs";
 import type { SystemInfo } from "@retroplug/core/host";
 import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent, useBindings } from "./stores/useStores";
 import { useSinkGroup } from "./lvgl/FocusProvider";
-import { Box, useNativeEvent, useRerenderOn } from "@retroplug/ui-react";
+import { Box, useNativeEvent } from "@retroplug/ui-react";
 import { useWindowSize, requestWindowSize, isWindowSizeControlled, setWindowTitle } from "./lvgl/useWindowSize";
 import { useCloseGuard } from "./app/useCloseGuard";
 import { useProjectModals } from "./app/useProjectModals";
@@ -31,9 +31,6 @@ import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
-import { subscribeAudioDraft } from "./screens/menu/audioDraft";
-import { subscribeMidi } from "./screens/menu/midiDevices";
-import { subscribeTransport, pollTransport } from "./screens/menu/transport";
 import type { MenuTree } from "@retroplug/ui/menu";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE } from "../src/keyCodes";
@@ -113,15 +110,9 @@ export function App() {
   // The product's UI services: the devices whose state lives in the native host (the N8 Pro's card job, a control
   // surface's scan and its startup restore) started, subscribed and polled at their own cadences.
   useUiServices(uiHost);
-  // The three standalone-only menu sources App still owns. Each owns state that lives in the NATIVE host rather than in
-  // a store, so a change there has no path back into React and must be pushed: the Audio submenu's staged rate/block
-  // draft, a MIDI device pick, and the transport toggle (which the audio thread publishes back). Without this the label
-  // would not repaint until some unrelated render happened to come along. The device state the N8 and the Launchpad
-  // show is the products' own UI services now (`useUiServices`), subscribed and polled the same way.
-  //
-  // A render is a render, so which source fired does not change what happens next. Inert in a DAW / the
-  // harness, where nothing ever emits.
-  useRerenderOn(subscribeAudioDraft, subscribeMidi, subscribeTransport);
+  // Everything that lives in the native host rather than a store is a package's UI service now (`useUiServices`):
+  // the audio device's settings, the MIDI stream's ports and the host transport, each subscribed or polled by the
+  // package that owns it, so this file names none of them.
   // The cartridge sound chip sits at ONE level, whether you are hearing the emulator or a real console: a system's
   // "Expansion Volume" knob drives Mesen's expansion channels, and the driven cart's node carries the same value as its
   // own `expansionVolume` param, which the node sends to the cart's master-volume register (and again on every
@@ -287,14 +278,6 @@ export function App() {
   // cold-boot replaces the tile under the cursor (falling back to the focused tile), or loads a bare .sav
   // into that tile. The native editor pushes the OS drop onto the "file-drop" channel (newline-joined
   // paths + window-space x/y); inert in the headless harness, which never emits it.
-  // The MIDI Clock submenu's values move without anyone touching the menu (an external master starts,
-  // stops, changes tempo), so poll them while the menu is on screen — the same poll-and-compare the render
-  // badge does. pollTransport only emits when a DISPLAYED value changes, and the seam is absent in a DAW /
-  // the harness, so this is a cheap no-op there.
-  useNativeEvent("frame", () => {
-    if (menuOpen) pollTransport();
-  });
-
   useNativeEvent("file-drop", (joined, x, y) => {
     const paths = String(joined ?? "").split("\n").filter((p) => p.length > 0);
     if (paths.length === 0) return;

@@ -34,13 +34,14 @@ export interface Embed {
   readonly platform: Platform;
 }
 
-/** A section of a project's settings that a package owns (docs/modular-graph-phase-f5a-design.md section 6.1): a
- *  top-level key under a .rplg's `settings` ("controller"), how it is parsed, and what a project that never set it
- *  reads. The shell keeps every non-core key it does not know verbatim, so a project written by a build that carries
- *  this package loses nothing in one that does not. */
+/** A block a package owns in one of the app's two saved documents (docs/modular-graph-phase-f5a-design.md section 6.1,
+ *  docs/modular-graph-phase-f5b-design.md section 6.1): a top-level key under a .rplg's `settings` ("controller") or a
+ *  root key of config.json ("audio", "controlSurface"), how it is parsed, and what a document that never set it reads.
+ *  The shell keeps every non-core key it does not know verbatim, so a document written by a build that carries this
+ *  package loses nothing in one that does not. */
 export interface ProjectSection<T = unknown> {
-  /** The key under `settings`. Never one of the shell's own (layout, midiRouting, audioRouting, zoom), and never a key
-   *  two packages declare: the generated registry refuses both. */
+  /** Where the block lives: the key under a project's `settings`, or the root key of config.json. Never one of the
+   *  shell's own keys, and never a key two packages declare: the generated registry refuses both. */
   readonly key: string;
   /** Raw, migrated value -> the section: defaults filled, values clamped, never throwing on junk. Anything with a
    *  `parse` will do, as a controller app's config schema does. */
@@ -62,12 +63,17 @@ export interface ProjectSection<T = unknown> {
 }
 
 /** A package's contributions as core knows them: the role contract's objects, the ROM providers, the embedded ROMs its
- *  bytes carry, and the project sections it owns. */
+ *  bytes carry, the project sections it owns and the config.json sections it owns. */
 export interface PackageContributions {
   readonly roles?: readonly RoleType[];
   readonly romProviders?: readonly RomProvider[];
   readonly embeds?: readonly Embed[];
   readonly projectSections?: readonly ProjectSection[];
+  /** The blocks this package owns in config.json, under their root keys: machine state (the audio device, the control
+   *  surface), stamped and refused-newer per section exactly as a project's are. `schema`, `defaults`, `version`,
+   *  `migrations` and `merge` mean what they mean for a project section; the shell writes a section's bytes back where
+   *  the file had them and keeps a key no package of this product contributes verbatim. */
+  readonly configSections?: readonly ProjectSection[];
 }
 
 /** The identity function with types: an app module's default export, checked against what a package may contribute. */

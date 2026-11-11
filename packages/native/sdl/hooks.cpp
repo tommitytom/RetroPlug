@@ -142,175 +142,211 @@ JSValue jsSetTransport(JSContext* ctx, JSValueConst, int argc, JSValueConst* arg
 }
 
 // __rp_setClockBpm(bpm): the local tempo, clamped to the same range the clock estimator will accept from an
-// external master (so the two sources can't disagree about what a legal tempo is). Persisted to audio.json.
+// external master (so the two sources can't disagree about what a legal tempo is). Nothing is persisted here: the tempo
+// is the project's `midi.clockBpm`, written by the row that changes it.
 JSValue jsSetClockBpm(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     double bpm = 0.0;
     if (g_app && argc >= 1 && JS_ToFloat64(ctx, &bpm, argv[0]) == 0) {
         bpm = std::clamp(bpm, MidiClockSync::kMinBpm, MidiClockSync::kMaxBpm);
         g_app->clockBpmRequest.store(static_cast<float>(bpm), std::memory_order_relaxed);
-        saveAudioConfig(*g_app);
     }
     return JS_UNDEFINED;
 }
 
-// __rp_getMidiConfig(): { inputs: string[], outputs: string[], selectedInput, selectedOutput } - the live hardware MIDI
-// ports + the current device selection, for the Settings > MIDI pickers. One name each, as midi.json still spells the
-// selection until the project carries it ("" = None, "*" = every device). Standalone-only; absent in the plugin (DAW
-// routes MIDI).
-JSValue jsGetMidiConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+// ---- the MIDI stream (docs/modular-graph-phase-f5b-design.md section 6.4) -------------------------
+//
+// Two hooks: what the machine lists and what actually OPENED (the rows read the second rather than inferring it from a
+// listing taken at another moment), and the selection a project's `midi` section resolved to. The selection is
+// EXACT port names: matching a stored name to a present one is TypeScript's (midi/ts/portMatch.ts), so native never
+// guesses. Both disappear in the plugin, which takes MIDI from its DAW.
+
+void setStringArray(JSContext* ctx, JSValueConst obj, const char* name, const std::vector<std::string>& values) {
+    JSValue a = JS_NewArray(ctx);
+    for (std::uint32_t i = 0; i < values.size(); ++i)
+        JS_SetPropertyUint32(ctx, a, i, JS_NewString(ctx, values[i].c_str()));
+    JS_SetPropertyStr(ctx, obj, name, a);
+}
+
+// __rp_midiDescribe(): { inputs, outputs, openedInputs, openedOutputs, supportsVirtual, reserved: { input, output } }.
+JSValue jsMidiDescribe(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     JSValue o = JS_NewObject(ctx);
-    if (g_app) {
-        auto toArray = [&](const std::vector<std::string>& names) {
-            JSValue a = JS_NewArray(ctx);
-            for (std::uint32_t i = 0; i < names.size(); ++i)
-                JS_SetPropertyUint32(ctx, a, i, JS_NewString(ctx, names[i].c_str()));
-            return a;
-        };
-        JS_SetPropertyStr(ctx, o, "inputs",  toArray(g_app->midi.listInputs()));
-        JS_SetPropertyStr(ctx, o, "outputs", toArray(g_app->midi.listOutputs()));
-        JS_SetPropertyStr(ctx, o, "selectedInput",  JS_NewString(ctx, g_app->midiInputJson.c_str()));
-        JS_SetPropertyStr(ctx, o, "selectedOutput", JS_NewString(ctx, g_app->midiOutputJson.c_str()));
-    }
+    if (!g_app) return o;
+    setStringArray(ctx, o, "inputs", g_app->midi.listInputs());
+    setStringArray(ctx, o, "outputs", g_app->midi.listOutputs());
+    setStringArray(ctx, o, "openedInputs", g_app->midi.openedInputs());
+    setStringArray(ctx, o, "openedOutputs", g_app->midi.openedOutputs());
+    JS_SetPropertyStr(ctx, o, "supportsVirtual", JS_NewBool(ctx, g_app->midi.supportsVirtual()));
+    JSValue reserved = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, reserved, "input", JS_NewString(ctx, g_app->midi.reservedInput().c_str()));
+    JS_SetPropertyStr(ctx, reserved, "output", JS_NewString(ctx, g_app->midi.reservedOutput().c_str()));
+    JS_SetPropertyStr(ctx, o, "reserved", reserved);
     return o;
 }
 
-// __rp_setMidiInput(name) / __rp_setMidiOutput(name): choose a hardware device by port name ("" = None, "*" = every
-// device on the input side). Applies immediately, without stopping audio, and persists to midi.json.
-JSValue jsSetMidiInput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_app && argc >= 1) {
-        const char* s = JS_ToCString(ctx, argv[0]);
-        applyMidiSelection(*g_app, true, s ? s : "");
+/** The selection object's `names` list, as the strings a row wrote. */
+std::vector<std::string> stringListOf(JSContext* ctx, JSValueConst value) {
+    std::vector<std::string> out;
+    if (!JS_IsArray(value)) return out;
+    JSValue lengthValue = JS_GetPropertyStr(ctx, value, "length");
+    std::int64_t n = 0;
+    JS_ToInt64(ctx, &n, lengthValue);
+    JS_FreeValue(ctx, lengthValue);
+    for (std::int64_t i = 0; i < n; ++i) {
+        JSValue entry = JS_GetPropertyUint32(ctx, value, static_cast<std::uint32_t>(i));
+        const char* s = JS_ToCString(ctx, entry);
+        if (s && *s) out.emplace_back(s);
         if (s) JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, entry);
     }
-    return JS_UNDEFINED;
+    return out;
 }
-JSValue jsSetMidiOutput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_app && argc >= 1) {
-        const char* s = JS_ToCString(ctx, argv[0]);
-        applyMidiSelection(*g_app, false, s ? s : "");
-        if (s) JS_FreeCString(ctx, s);
+
+// __rp_midiApply({ inputs, allInputs, outputs }, mode): apply a project's selection to the stream. `mode` is the
+// stream's (a project load DIFFS, so it costs no connection it already had; the Rescan row and a re-pick REOPEN, which
+// is the user's one remedy for a port that was unplugged). No audio stop: the stream closes and opens inputs, each port
+// cancelling its own callback, and replaces its output set through its epoch handshake.
+JSValue jsMidiApply(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (!g_app || argc < 1 || !JS_IsObject(argv[0])) return JS_UNDEFINED;
+    JSValue inputsValue = JS_GetPropertyStr(ctx, argv[0], "inputs");
+    JSValue outputsValue = JS_GetPropertyStr(ctx, argv[0], "outputs");
+    const std::vector<std::string> inputs = stringListOf(ctx, inputsValue);
+    const std::vector<std::string> outputs = stringListOf(ctx, outputsValue);
+    JS_FreeValue(ctx, inputsValue);
+    JS_FreeValue(ctx, outputsValue);
+    JSValue allValue = JS_GetPropertyStr(ctx, argv[0], "allInputs");
+    const bool allInputs = JS_ToBool(ctx, allValue) != 0;
+    JS_FreeValue(ctx, allValue);
+    rp::midi::Apply mode = rp::midi::Apply::Diff;
+    if (argc >= 2) {
+        const char* m = JS_ToCString(ctx, argv[1]);
+        if (m && std::strcmp(m, "reopen") == 0) mode = rp::midi::Apply::Reopen;
+        if (m) JS_FreeCString(ctx, m);
     }
+    g_app->midi.setInputs(inputs, allInputs, mode);
+    g_app->midi.setOutputs(outputs, mode);
     return JS_UNDEFINED;
 }
 
-// __rp_getAudioConfig(): the shape the Settings > Audio rows read while this is the shim (audioDraft.ts,
-// nativeHooks.ts): { sampleRate, blockSize, outChannels, driver, drivers, devicesByDriver, defaultByDriver, autoDriver,
-// device, muted, error }.
+// ---- the audio device (docs/modular-graph-phase-f5b-design.md section 6.4) -------------------------
 //
-//  - `drivers` is "Auto" plus one LABEL per driver of the backend IN FORCE ("PortAudio: PipeWire", "SDL: pipewire"):
-//    the backend names itself because two backends may call a driver alike, and only the backend in force is enumerated
-//    (asking another is its library's first use - the Zoom L6 rule).
-//  - `driver` is the SELECTED label: "Auto" when the choice is automatic, else the label of the chosen pair.
-//  - `devicesByDriver` / `defaultByDriver` are keyed by those labels (plus "Auto" for the automatic driver), and
-//    `defaultByDriver` is what an empty device selection resolves to, which the row shows beside "Default".
-//  - `autoDriver` is the driver label "Auto" currently resolves to, so the row can read "Auto (PipeWire)".
-//  - `device` is the CHOSEN name, "" for the driver's default: the RESOLVED device is the status's, and feeding it back
-//    as the choice would pin the concrete sink the session default happens to be today.
-JSValue jsGetAudioConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    JSValue o = JS_NewObject(ctx);
-    if (g_app) {
-        auto toArray = [&](const std::vector<std::string>& names) {
-            JSValue a = JS_NewArray(ctx);
-            for (std::uint32_t i = 0; i < names.size(); ++i)
-                JS_SetPropertyUint32(ctx, a, i, JS_NewString(ctx, names[i].c_str()));
-            return a;
-        };
-        JS_SetPropertyStr(ctx, o, "sampleRate",  JS_NewInt32(ctx, g_app->reqSampleRate));
-        JS_SetPropertyStr(ctx, o, "blockSize",   JS_NewInt32(ctx, g_app->reqBlockSize));
-        JS_SetPropertyStr(ctx, o, "outChannels", JS_NewInt32(ctx, g_app->reqOutChannels));
-        const rp::audio::AudioDescription described =
-            g_app->audio ? g_app->audio->describe() : rp::audio::AudioDescription{};
+// Four hooks: what the device can do, one sibling backend's drivers on demand, the whole reconfigure, and a cheap
+// status read. The first is also the Settings > Audio gate: a host that binds none draws no row.
 
-        JSValue     drivers   = JS_NewArray(ctx);
-        JSValue     byDriver  = JS_NewObject(ctx);
-        JSValue     defaults  = JS_NewObject(ctx);
-        std::string selected  = rp::audio::kAutoDriverLabel;
-        std::string autoLabel;
-        std::uint32_t at = 0;
-        JS_SetPropertyUint32(ctx, drivers, at++, JS_NewString(ctx, rp::audio::kAutoDriverLabel));
-        for (const auto& backend : described.backends) {
-            if (backend.id == "null") continue;
-            const std::string autoKey =
-                backend.autoDriver.empty()
-                    ? std::string()
-                    : rp::audio::driverChoiceLabel(backend.label,
-                                                   [&] {
-                                                       for (const auto& d : backend.drivers)
-                                                           if (d.id == backend.autoDriver) return d.label;
-                                                       return backend.autoDriver;
-                                                   }());
-            for (const auto& driver : backend.drivers) {
-                const std::string label = rp::audio::driverChoiceLabel(backend.label, driver.label);
-                JS_SetPropertyUint32(ctx, drivers, at++, JS_NewString(ctx, label.c_str()));
-                JS_SetPropertyStr(ctx, byDriver, label.c_str(), toArray(driver.devices.names));
-                JS_SetPropertyStr(ctx, defaults, label.c_str(), JS_NewString(ctx, driver.devices.defaultName.c_str()));
-                if (g_app->reqBackend == backend.id && g_app->reqDriver == driver.id) selected = label;
-                if (driver.id == backend.autoDriver) {
-                    // "Auto" resolves to this driver: the same devices and default, under the row the user picks.
-                    JS_SetPropertyStr(ctx, byDriver, rp::audio::kAutoDriverLabel, toArray(driver.devices.names));
-                    JS_SetPropertyStr(ctx, defaults, rp::audio::kAutoDriverLabel,
-                                      JS_NewString(ctx, driver.devices.defaultName.c_str()));
-                    autoLabel = driver.label;
-                }
-            }
-            if (!autoKey.empty()) autoLabel = autoLabel.empty() ? autoKey : autoLabel;
-        }
-        if (g_app->reqBackend == "auto") selected = rp::audio::kAutoDriverLabel;
-        JS_SetPropertyStr(ctx, o, "drivers", drivers);
-        JS_SetPropertyStr(ctx, o, "driver", JS_NewString(ctx, selected.c_str()));
-        JS_SetPropertyStr(ctx, o, "devicesByDriver", byDriver);
-        JS_SetPropertyStr(ctx, o, "defaultByDriver", defaults);
-        // The DRIVER's label, as the row shows it beside "Auto" ("Auto (PipeWire)"): what the row's bracket reads.
-        JS_SetPropertyStr(ctx, o, "autoDriver", JS_NewString(ctx, autoLabel.c_str()));
-        JS_SetPropertyStr(ctx, o, "device",  JS_NewString(ctx, g_app->reqOutputDevice.c_str()));
-        JS_SetPropertyStr(ctx, o, "muted",   JS_NewBool(ctx, !described.status.error.empty()));
-        JS_SetPropertyStr(ctx, o, "error",   JS_NewString(ctx, described.status.error.c_str()));
-    }
+JSValue audioStatusObject(JSContext* ctx, const rp::audio::AudioStatus& status, bool live) {
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "backend", JS_NewString(ctx, status.backend.c_str()));
+    JS_SetPropertyStr(ctx, o, "driver", JS_NewString(ctx, status.driver.c_str()));
+    JS_SetPropertyStr(ctx, o, "device", JS_NewString(ctx, status.device.c_str()));
+    JS_SetPropertyStr(ctx, o, "sampleRate", JS_NewInt32(ctx, status.sampleRate));
+    JS_SetPropertyStr(ctx, o, "blockFrames", JS_NewInt32(ctx, status.blockFrames));
+    JS_SetPropertyStr(ctx, o, "channels", JS_NewInt32(ctx, status.channels));
+    JS_SetPropertyStr(ctx, o, "error", JS_NewString(ctx, status.error.c_str()));
+    JS_SetPropertyStr(ctx, o, "live", JS_NewBool(ctx, live));
     return o;
 }
 
-// __rp_setAudioConfig(sampleRate, blockSize[, outChannels[, driverLabel[, device]]]): apply a live device change through
-// AudioHost, which stops the stream, takes the engine back, opens the new request, re-rates to what the DEVICE obtained
-// and starts it - one pass, never a partial reconfigure. The chosen values are persisted (audio.json is the shim until
-// the TypeScript half owns the section).
-//
-// `driverLabel` is a label from `drivers` above: "Auto"/"" is the automatic choice, and "<Backend>: <driver>" is that
-// pair (rp::audio::choiceForDriverLabel). An unknown label keeps the choice in force, so an Apply that changed only the
-// rate cannot mute the run by naming a backend that does not exist. outChannels is optional (an older bundle omits
-// it), and 2/4/6/8 - anything else keeps the current count.
-JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_app && argc >= 2) {
-        int sr = 0, bs = 0, ch = g_app->reqOutChannels;
-        JS_ToInt32(ctx, &sr, argv[0]);
-        JS_ToInt32(ctx, &bs, argv[1]);
-        if (argc >= 3) {
-            int c = 0;
-            JS_ToInt32(ctx, &c, argv[2]);
-            if (c >= 2 && c <= 8 && (c % 2) == 0) ch = c;
-        }
-        std::string device = g_app->reqOutputDevice;
-        if (argc >= 5) {
-            const char* s = JS_ToCString(ctx, argv[4]);
-            device        = s ? s : "";
-            if (s) JS_FreeCString(ctx, s);
-        }
-        if (argc >= 4) {
-            const char* s = JS_ToCString(ctx, argv[3]);
-            const std::string label = s ? s : "";
-            if (s) JS_FreeCString(ctx, s);
-            // The row's label, mapped to the (backend, driver) an apply takes. A backend's library comes up here, which
-            // is a real use: the row offered it because the user asked for it.
-            const rp::audio::AudioDescription described =
-                g_app->audio ? g_app->audio->describe() : rp::audio::AudioDescription{};
-            const rp::audio::AudioChoice current{g_app->reqBackend, g_app->reqDriver};
-            const rp::audio::AudioChoice choice = rp::audio::choiceForDriverLabel(label, described, current);
-            g_app->reqBackend                   = choice.backend;
-            g_app->reqDriver                    = choice.driver;
-            // The row's choice is the SAVED one; a run's --audio-backend still decides what this run opens.
-        }
-        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs, ch, device);
+JSValue driverObject(JSContext* ctx, const rp::audio::AudioDriverDescription& driver) {
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "id", JS_NewString(ctx, driver.id.c_str()));
+    JS_SetPropertyStr(ctx, o, "label", JS_NewString(ctx, driver.label.c_str()));
+    JSValue devices = JS_NewObject(ctx);
+    setStringArray(ctx, devices, "names", driver.devices.names);
+    JS_SetPropertyStr(ctx, devices, "defaultName", JS_NewString(ctx, driver.devices.defaultName.c_str()));
+    JS_SetPropertyStr(ctx, o, "devices", devices);
+    return o;
+}
+
+// __rp_audioDescribe(): { backends: [{ id, label, autoDriver, drivers: [{ id, label, devices }] }], status }. Only the
+// backend IN FORCE carries its drivers (enumerating another is its library's first use, the Zoom L6 rule); a row that
+// offers a sibling asks for it through __rp_audioBackendDrivers.
+JSValue jsAudioDescribe(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue o = JS_NewObject(ctx);
+    if (!g_app) return o;
+    const rp::audio::AudioDescription described =
+        g_app->audio ? g_app->audio->describe() : rp::audio::AudioDescription{};
+    JSValue backends = JS_NewArray(ctx);
+    std::uint32_t at = 0;
+    for (const auto& backend : described.backends) {
+        JSValue b = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, b, "id", JS_NewString(ctx, backend.id.c_str()));
+        JS_SetPropertyStr(ctx, b, "label", JS_NewString(ctx, backend.label.c_str()));
+        JS_SetPropertyStr(ctx, b, "autoDriver", JS_NewString(ctx, backend.autoDriver.c_str()));
+        JSValue drivers = JS_NewArray(ctx);
+        std::uint32_t d = 0;
+        for (const auto& driver : backend.drivers) JS_SetPropertyUint32(ctx, drivers, d++, driverObject(ctx, driver));
+        JS_SetPropertyStr(ctx, b, "drivers", drivers);
+        JS_SetPropertyUint32(ctx, backends, at++, b);
     }
-    return JS_UNDEFINED;
+    JS_SetPropertyStr(ctx, o, "backends", backends);
+    JS_SetPropertyStr(ctx, o, "status", audioStatusObject(ctx, described.status, g_app->audio && g_app->audio->live()));
+    // What this RUN's flags pin over the saved section (E12): the rows say so rather than showing a choice that is not
+    // the one running.
+    JSValue overrides = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, overrides, "backend", JS_NewString(ctx, g_app->backendOverride.c_str()));
+    JS_SetPropertyStr(ctx, overrides, "blockSize", JS_NewInt32(ctx, g_app->blockSizeOverride));
+    JS_SetPropertyStr(ctx, o, "overrides", overrides);
+    return o;
+}
+
+// __rp_audioBackendDrivers(id): that backend's drivers and devices, on demand. THIS call is the sibling library's first
+// use, which is why the Driver row asks for it when the user opens it and nothing asks at startup.
+JSValue jsAudioBackendDrivers(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    JSValue out = JS_NewArray(ctx);
+    // A run that pinned a backend has nothing to enumerate: asking would initialise a library the pin exists to keep
+    // closed (the Zoom L6 rule), and no choice of its could ever take effect this run.
+    if (!g_app || !g_app->audio || argc < 1 || !g_app->backendOverride.empty()) return out;
+    const char* id = JS_ToCString(ctx, argv[0]);
+    const std::string backend = id ? id : "";
+    if (id) JS_FreeCString(ctx, id);
+    std::uint32_t at = 0;
+    for (const auto& driver : g_app->audio->backendDrivers(backend))
+        JS_SetPropertyUint32(ctx, out, at++, driverObject(ctx, driver));
+    return out;
+}
+
+// __rp_audioApply({ backend, driver, device, sampleRate, blockSize, outChannels }): the `audio` section's fields, which
+// become AppState's request. While the startup rendezvous still holds the host (before main reaches its own point), this
+// RECORDS the request and tells the rendezvous its word arrived: the device opens there, after the MIDI stream and the
+// providers' restore, which is the order the app has always opened things in. A later call (the Apply row) is live.
+JSValue jsAudioApply(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (!g_app || !g_app->audio || argc < 1 || !JS_IsObject(argv[0])) return JS_NULL;
+    auto readString = [&](const char* key) {
+        JSValue v = JS_GetPropertyStr(ctx, argv[0], key);
+        // A missing key is not the string "undefined": JS_ToCString spells an undefined property that way, and a driver
+        // of that name would mute the run.
+        const char* s = (JS_IsUndefined(v) || JS_IsNull(v)) ? nullptr : JS_ToCString(ctx, v);
+        std::string out = s ? s : "";
+        if (s) JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, v);
+        return out;
+    };
+    // A missing key is NOT zero: JS_ToInt32 succeeds on undefined, so a section without a rate would otherwise request
+    // 0 Hz. The fallback stands for a missing, non-numeric or non-positive value (design 6.4's validation).
+    auto readInt = [&](const char* key, int fallback) {
+        JSValue v = JS_GetPropertyStr(ctx, argv[0], key);
+        std::int32_t n = 0;
+        const bool ok = JS_IsUndefined(v) || JS_IsNull(v) ? false : JS_ToInt32(ctx, &n, v) == 0;
+        JS_FreeValue(ctx, v);
+        return ok && n > 0 ? static_cast<int>(n) : fallback;
+    };
+    AppState& a = *g_app;
+    const std::string backend = readString("backend");
+    a.reqBackend             = backend.empty() ? "auto" : backend;
+    a.reqDriver              = readString("driver");
+    a.reqOutputDevice        = readString("device");
+    a.reqSampleRate          = readInt("sampleRate", a.reqSampleRate);
+    a.reqBlockSize           = readInt("blockSize", a.reqBlockSize);
+    const int channels       = readInt("outChannels", a.reqOutChannels);
+    if (channels >= 2 && channels <= 8 && (channels % 2) == 0) a.reqOutChannels = channels;
+    if (a.audioDeviceReady) applyAudioConfig(a); // a live change: the host is open, so it happens now
+    a.audioApplied = true;
+    return audioStatusObject(ctx, a.audio->status(), a.audio->live());
+}
+
+// __rp_audioStatus(): the status alone, for the UI frame and the muted row.
+JSValue jsAudioStatus(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    if (!g_app || !g_app->audio) return JS_NULL;
+    return audioStatusObject(ctx, g_app->audio->status(), g_app->audio->live());
 }
 
 }  // namespace
@@ -325,17 +361,18 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_setWindowSize", jsSetWindowSize, 2);
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);
     bind("__rp_openPath", jsOpenPath, 1);
-    bind("__rp_getAudioConfig", jsGetAudioConfig, 0);
-    bind("__rp_setAudioConfig", jsSetAudioConfig, 2);
+    bind("__rp_audioDescribe", jsAudioDescribe, 0);
+    bind("__rp_audioBackendDrivers", jsAudioBackendDrivers, 1);
+    bind("__rp_audioApply", jsAudioApply, 1);
+    bind("__rp_audioStatus", jsAudioStatus, 0);
     // Local transport (Instance menu > Transport) — standalone-only, like the audio/MIDI device seams.
     bind("__rp_getTransport", jsGetTransport, 0);
     bind("__rp_setTransport", jsSetTransport, 1);
     bind("__rp_setClockBpm", jsSetClockBpm, 1);
-    // MIDI device selection (Settings > MIDI). RtMidi is compiled into retroplug-sdl, so the seam always
-    // exists here; the plugin never binds these (hasMidiConfig() is false there → the submenu is hidden).
-    bind("__rp_getMidiConfig", jsGetMidiConfig, 0);
-    bind("__rp_setMidiInput", jsSetMidiInput, 1);
-    bind("__rp_setMidiOutput", jsSetMidiOutput, 1);
+    // The MIDI stream (Settings > MIDI and the control surface's claim). RtMidi is compiled into retroplug-sdl, so the
+    // seam always exists here; the plugin never binds these, so its rows and its transport are absent.
+    bind("__rp_midiDescribe", jsMidiDescribe, 0);
+    bind("__rp_midiApply", jsMidiApply, 2);
     // The OS-native file dialog — only where a desktop helper exists (zenity/kdialog/…). Where none does
     // (the muOS handheld, a bare container) we DON'T bind it: useFileBrowser sees no nativeHook and the
     // "File Dialogs: OS Native" toggle transparently stays in-app. The self-test forces the bind to prove it.

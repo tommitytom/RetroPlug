@@ -11,7 +11,8 @@ import { DEFAULT_USER_CONFIG } from "../../src/userConfig";
 import { gbRom } from "../systems/fixtures";
 
 const CONFIG = "/config/config.json";
-const withZoom = (z: number) => serializeUserConfig({ ...DEFAULT_USER_CONFIG, defaultZoom: z });
+const withZoom = (z: number) =>
+  serializeUserConfig({ core: { ...DEFAULT_USER_CONFIG, defaultZoom: z }, sections: {} });
 
 // --- UserConfigStore.reload() ---
 

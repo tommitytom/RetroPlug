@@ -33,10 +33,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 
-#include "audio/AudioChoice.hpp"             // the Settings > Audio row's label, mapped to the choice it names
 #include "audio/AudioHost.hpp"              // the host's audio: open/start/stop/reconfigure, the muted fallback
-
-#include <rfl/json.hpp>  // audio.json / midi.json (device settings), tolerant JSON like the role-config crossing
 
 extern "C" {
 #include "lvgl.h"
@@ -93,7 +90,7 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec
 // Derives the host transport (BPM + playing) from incoming MIDI real-time bytes, so an external clock
 // master drives LSDj sync-to-external (the rp.lsdj.sync node regenerates 0xF8 from Engine tempo/transport
 // with its own tick clock - it doesn't read the raw wire clock, so feeding setBpm/setTransport is all it takes).
-// Audio-thread-only: fed from audioCb, never touched elsewhere → plain members, no locking.
+// Audio-thread-only: fed from the audio callback's pull, never touched elsewhere → plain members, no locking.
 //
 // Clock timing: RtMidi timestamps are discarded and messages arrive block-quantized, so we measure the
 // pulse rate in audio frames accumulated across blocks (24 PPQN): BPM = 60·sr·pulses / (frames·24). Playing
@@ -205,10 +202,6 @@ struct AppState {
     rp::midi::MidiStream midi{rp::midi::systemMidi()};  // in/out; drained into the Engine on the audio thread each block
     std::vector<rp::midi::MidiStream::Message> midiScratch;  // reused per block; reserved to the ring size in main()
     std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
-    // midi.json's single `input` / `output` as the file spells them ("" = None, "*" = every device), because the shim
-    // that reads and writes that file has to answer the Settings > MIDI pickers with one name until the selection is the
-    // project's. The stream itself holds lists.
-    std::string midiInputJson, midiOutputJson;
     MidiClockSync clockSync;                              // MIDI-clock → BPM/transport (audio thread only)
 
     // The local transport (Instance menu > Transport), across the UI/audio thread boundary. clockSync itself
@@ -216,7 +209,7 @@ struct AppState {
     // clockSync each block and publishes back what the transport actually is (an external clock master
     // overrides the local flag, and the menu shows that rather than lying about who is in charge).
     std::atomic<bool>  transportRequest{false};   // UI -> audio: the local play/stop the user picked
-    std::atomic<float> clockBpmRequest{120.0f};   // UI -> audio: the local tempo (persisted in audio.json)
+    std::atomic<float> clockBpmRequest{120.0f};   // UI -> audio: the local tempo (the project's `midi.clockBpm`)
     std::atomic<bool>  transportPlaying{false};   // audio -> UI: what the Engine is actually being told
     std::atomic<bool>  transportExternal{false};  // audio -> UI: a MIDI clock master is driving it
     std::atomic<float> transportBpm{120.0f};      // audio -> UI: the tempo in force (theirs when external)
@@ -239,8 +232,9 @@ struct AppState {
     // engine (HostServices::reclaimOnIdle), which no in-process test can reach.
     retroplug::IdleReclaimProbe idleProbe;
     // Whether the control plane has reported its restored selection yet. main() holds MIDI and audio until it is true
-    // (restoreControlSurface), so a restored surface's claim lands before the shared stream ever opens its ports; a
-    // claim that arrives later is reserved through the stream's own handshake, which costs no audio stop either.
+    // (waitForUiStartup, which also waits for the audio service's first apply), so a restored surface's claim lands
+    // before the shared stream ever opens its ports; a claim that arrives later is reserved through the stream's own
+    // handshake, which costs no audio stop either.
     bool controlSurfaceRestored = false;
 
     // Out of line in main.cpp, the one unit that includes the generated provider table: a unit that only uses AppState
@@ -275,15 +269,22 @@ struct AppState {
 
     int    numOutputs = 2;         // what the device came up at (AudioHost prepared the engine for it)
     double sampleRate = 48000.0;   // obtained device rate (drives the Engine)
-    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.json
-    int    reqBlockSize  = 512;    // low-latency default; low-power devices (the handheld) pass a bigger buffer
-                                   // via --block-size (e.g. 4096) so the audio callback keeps its deadline
+    int    reqSampleRate = 48000;  // the `audio` section's request: rate, block and width, saved with config.json
+    int    reqBlockSize  = 512;    // low-latency default; a low-power device passes a bigger buffer, e.g. 4096, so the
+                                   // audio callback keeps its deadline (`audio`'s block, or --block-size for one run)
     int    reqOutChannels = 2;     // 2 = stereo mix (default); 4/6/8 = wide stems for a multichannel device
-    std::string backendOverride;   // --audio-backend / RETROPLUG_SDL_AUDIO_BACKEND: this RUN's backend, which no saved or
-                                   // UI choice may move (the Settings row's Apply sets reqBackend, not this)
+    std::string backendOverride;   // --audio-backend / RETROPLUG_SDL_AUDIO_BACKEND: this RUN's backend, which no saved
+                                   // or UI choice may move (the Settings row's Apply sets reqBackend, not this)
+    int blockSizeOverride = 0;     // --block-size: this RUN's block, which no saved choice may move (E12)
+    // Whether TypeScript has applied the `audio` section yet. The startup rendezvous waits for it (or its bound), so the
+    // device opens with what config.json saved rather than before the control plane can know it. The apply RECORDS the
+    // request; the host opens the device at its own point (main, after the MIDI stream and the providers' restore), and
+    // from then on a UI apply is live - which is what audioDeviceReady says.
+    bool audioApplied = false;
+    bool audioDeviceReady = false;
     std::string reqBackend;        // the backend the saved choice names ("" = auto): --audio-backend's
     std::string reqDriver;         // the driver's ID in that backend's vocabulary ("" = its auto driver)
-    std::string reqOutputDevice;   // the device's NAME ("" = the driver's default device). Persisted to audio.json.
+    std::string reqOutputDevice;   // the device's NAME ("" = the driver's default device), from the `audio` section.
     int    renderAhead = 0;        // frames the render thread keeps queued (--render-ahead / RETROPLUG_SDL_RENDER_AHEAD)
     // audio scratch: `numOutputs` planar channel buffers (sized by prepare, so a block never allocates). The Engine
     // renders planar and routes each system to its pair per audioRouting; render() interleaves into the device's
@@ -304,21 +305,12 @@ extern AppState* g_app;
 
 // The audio device's configuration, and MIDI's: declared here so a hook (hooks.cpp) and the frame loop (main.cpp) can
 // drive them, and defined beside the audio client (audioLoop.cpp).
-// Audio device (re)configuration - declared here so the __rp_setAudioConfig hook (bound earlier) can drive a live
-// sample-rate / block-size / backend change. AudioHost runs the sequence; these build its Config from the shim or the
-// hook's arguments.
+// Audio device (re)configuration - declared here so the __rp_audioApply hook can drive a live sample-rate / block-size
+// / backend change. AudioHost runs the sequence; these build its Config from the product's request and the run's flags.
 bool audioDebugEnabled();   // RETROPLUG_DEBUG_AUDIO
 rp::audio::AudioConfig audioConfigOf(const AppState& a);
 void applyAudioConfig(AppState& a);
 void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, const std::string& device);
-void loadAudioConfig(AppState& a);
-void saveAudioConfig(AppState& a);
-// MIDI device (re)selection - declared here so the __rp_setMidiInput/Output hooks (bound earlier) can apply a live
-// change; defined next to the audio configuration. Neither stops audio: a selection change publishes a new output set
-// and waits out one block (the stream's epoch handshake), and an input port cancels its own callback as it closes.
-void selectMidi(AppState& a, bool input, const std::string& name, rp::midi::Apply mode);
-void applyMidiSelection(AppState& a, bool input, const std::string& name);
-void loadMidiConfig(AppState& a);
 
 // Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
 // LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
@@ -346,8 +338,12 @@ struct ProductAudioClient final : rp::audio::AudioClient {
 };
 
 
-void        restoreControlSurface(AppState& a);
+void        waitForUiStartup(AppState& a);
 void        pinUiThreadAwayFromAudioCore();
+/** One UI frame event: the native "frame" the shell's services poll on. main's frame loop emits it once a frame, and
+ *  the startup rendezvous emits it too, so the services' first polls (the `audio` apply and a project's MIDI
+ *  selection) land before the host opens anything of its own. */
+void        emitUiFrame(AppState& a);
 bool        audioDebugEnabled();
 bool        bootControlPlane(AppState& a);
 bool        setupSdl(AppState& a);

@@ -84,19 +84,6 @@ export interface SystemInfo {
   readonly roles: readonly RoleInstance[];
 }
 
-/** The control surface this machine uses (Settings > MIDI's scan and the instance menu's controller submenu). HOST
- *  state rather than project state, because port names belong to the machine: a project opened elsewhere would carry
- *  names that do not exist there, and one process holds one device for every project it has open.
- *
- *  The port names are opaque - often an interface's, not the device's, since a Launchpad also speaks TRS/DIN - and
- *  `device` is what a scan read off the hardware ("" = never scanned), shown and never interpreted. */
-export interface ControlSurfaceSettings {
-  input: string; // "" = none chosen
-  output: string;
-  enabled: boolean; // the user's Connect: claim the pair now, and again at the next launch
-  device: string;
-}
-
 /** The file I/O every surface has, and the backend's own methods one for one. */
 export interface FilesHost {
   readFile(path: string): Uint8Array | null;
@@ -230,12 +217,141 @@ export interface ProjectHost {
   setSection(key: string, patch: Readonly<Record<string, unknown>>): void;
   /** What a project service published (the controller cart's polled SYNC), or undefined for no such service. */
   serviceState<T = unknown>(key: string): T | undefined;
+  /** How many whole projects have been adopted (a new one, a load). A service that resolved a section's names against
+   *  the machine re-resolves when this moves, even if the new project's section bytes are the same. */
+  revision(): number;
 }
 
-/** `config.json`'s control surface: the machine's port pair, which a scan fills and the user's choices edit. */
+/** `config.json`'s sections (docs/modular-graph-phase-f5b-design.md section 6.1): the machine state a package owns by
+ *  root key - the audio device, the control surface - with the shape, the defaults and the refusals kept by whoever
+ *  contributed it. Mirrors the `project` group, at the file's root rather than a project's `settings`.
+ *
+ *  The file is shared with builds of other ages (a release plugin beside a newer standalone), so the rules a writer
+ *  keeps are: a block THIS session did not set goes back exactly as the file carried it, additive fields and all; a key
+ *  that is ABSENT reads its contributor's defaults but is not written until something sets it; and every write is
+ *  computed over a re-read of the file rather than over the in-memory copy. */
 export interface ConfigHost {
-  controlSurface(): ControlSurfaceSettings;
-  setControlSurface(patch: Partial<ControlSurfaceSettings>): void;
+  /** The section as its contributor parses it (raw JSON for a root key no package contributes). A key the shell owns is
+   *  refused, not answered. */
+  section<T = Record<string, unknown>>(key: string): T;
+  /** Apply a patch through the contributor's `merge`, written through a re-read of the file (two processes may share
+   *  it). THROWS when it refuses the patch; does nothing for a section stamped newer than its contributor. */
+  setSection(key: string, patch: Readonly<Record<string, unknown>>): void;
+}
+
+/** One choice of the audio device: the `audio` config section, exactly as it is saved - the backend and driver by
+ *  their ids (never a library's number), the device by the name the driver knows, and the frames and width asked
+ *  for. `backend: "auto"` takes the first backend the product names that opens. */
+export interface AudioDeviceChoice {
+  backend: string;
+  driver: string;
+  device: string;
+  sampleRate: number;
+  blockSize: number;
+  outChannels: number;
+}
+
+/** What the device is actually running: the resolved backend, driver and device, the frames and width it OBTAINED
+ *  (a driver may round), and `error` - empty for a real device, else the reason the null fallback is playing. */
+export interface AudioDeviceStatus {
+  backend: string;
+  driver: string;
+  device: string;
+  sampleRate: number;
+  blockFrames: number;
+  channels: number;
+  error: string;
+  live: boolean;
+}
+
+/** One driver as the Settings > Audio rows read it: its id in its backend's vocabulary, the label a row shows, and the
+ *  output devices it offers (the first entry of `names` is the driver's default, named by `defaultName`). */
+export interface AudioDriverDescription {
+  id: string;
+  label: string;
+  devices: { names: string[]; defaultName: string };
+}
+
+/** One backend: what it is called, the driver its Auto resolves to right now, and its drivers. Both of the last two are
+ *  filled for the backend IN FORCE only: a backend initialises its library to answer them (the driver its Auto resolves
+ *  to is a probe), so every other backend in the list carries its id, its label, `autoDriver: ""` and no drivers.
+ *  Asking for another backend's drivers is `backendDrivers`, because that call is its library's first use. */
+export interface AudioBackendDescription {
+  id: string;
+  label: string;
+  autoDriver: string;
+  drivers: AudioDriverDescription[];
+}
+
+/** What a RUN'S flags pin regardless of the saved section (`--audio-backend`, `--block-size`): the rows name it, so a
+ *  user sees why the saved choice is not the one running. Empty/0 when no flag is set. */
+export interface AudioRunOverrides {
+  backend: string;
+  blockSize: number;
+}
+
+/** Everything the Settings > Audio rows show: each backend (the one in force with its drivers, the others by name), what
+ *  is running, and what this run's flags pinned. */
+export interface AudioDescription {
+  backends: AudioBackendDescription[];
+  status: AudioDeviceStatus;
+  overrides: AudioRunOverrides;
+}
+
+/** The audio device the standalone owns. A host that has no audio device of its own (the plugin, the DPF standalone,
+ *  the UI harness) does not offer the group at all, so the rows that read it disappear as they always did. */
+export interface AudioDeviceHost {
+  describe(): AudioDescription | null;
+  /** One backend's drivers and devices, on demand: the sibling of the backend in force, whose library this call is the
+   *  first use of (the Driver row asks when the user opens it). */
+  backendDrivers(backend: string): AudioDriverDescription[];
+  /** The whole reconfigure: the sequence opens the device, shapes the engine for what it obtained and starts it. The
+   *  answer is the status adopted (or why the null fallback is playing). */
+  apply(choice: AudioDeviceChoice): AudioDeviceStatus | null;
+  /** A cheap read for the status row and the UI frame. */
+  status(): AudioDeviceStatus | null;
+}
+
+/** What the Settings > MIDI rows and the control surface see: the hardware ports this machine lists (filtered: no
+ *  virtual port, no test-only hidden one), what the stream actually opened, whether the backend can create virtual
+ *  ports at all (false on Windows), and the pair a control surface holds out of this stream. */
+export interface MidiDescription {
+  inputs: string[];
+  outputs: string[];
+  openedInputs: string[];
+  openedOutputs: string[];
+  supportsVirtual: boolean;
+  reserved: { input: string; output: string };
+}
+
+/** The selection a project's `midi` section resolves to: EXACT port names (the package matched the saved names against
+ *  the list itself), whether every hardware input is wanted, and the outputs to mirror to. */
+export interface MidiSelection {
+  inputs: string[];
+  allInputs: boolean;
+  outputs: string[];
+}
+
+/** The standalone's transport, as the MIDI Clock submenu shows it: what the engine is being told, whether an external
+ *  clock master is driving it, the tempo in force and our own. */
+export interface TransportState {
+  playing: boolean;
+  external: boolean;
+  bpm: number;
+  localBpm: number;
+}
+
+/** The MIDI device the standalone owns: its stream and the transport the clock drives. A host with no MIDI device
+ *  (the plugin, whose DAW routes MIDI) does not offer the group. */
+export interface MidiDeviceHost {
+  describe(): MidiDescription | null;
+  /** Apply a selection to the stream. `mode` is the stream's: "diff" keeps the ports an unchanged selection already
+   *  holds open (a project load), "reopen" lets every port go before opening it again (the Rescan row and a re-pick,
+   *  the one remedy for a port that was unplugged). */
+  apply(selection: MidiSelection, mode?: "diff" | "reopen"): void;
+  transport(): TransportState | null;
+  setTransport(playing: boolean): void;
+  setClockBpm(bpm: number): void;
 }
 
 /** Every group a host can offer. A surface's host names the subset it has, and what it cannot do it does not offer. */
@@ -253,6 +369,10 @@ export interface HostGroups {
   views: ViewsHost;
   project: ProjectHost;
   config: ConfigHost;
+  /** The standalone's audio device and MIDI stream. A surface offers them only where the host provides one, so a
+   *  package's UI reads them optionally and a plugin (whose DAW owns both) draws no row for either. */
+  audioDevice: AudioDeviceHost;
+  midiDevice: MidiDeviceHost;
 }
 
 /** A surface's host, narrowed to the groups `G` names: `Host<"files" | "png">` is what a construct hook takes, and a

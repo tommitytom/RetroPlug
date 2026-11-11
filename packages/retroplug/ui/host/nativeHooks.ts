@@ -10,9 +10,10 @@
 // `native` is globalThis itself, not a snapshot - a hook bound (or a test fake installed) after import is seen.
 
 import type { AppStores, StoreChannel } from "../../src/appStores";
-import type { NativeAudioConfig } from "../screens/menu/audioDraft";
-import type { MidiConfig } from "../screens/menu/midiDevices";
-import type { TransportState } from "../screens/menu/transport";
+import type {
+  AudioDescription, AudioDeviceChoice, AudioDeviceStatus, AudioDriverDescription, MidiDescription, MidiSelection,
+  TransportState,
+} from "@retroplug/core/host";
 
 export interface RpHooks {
   // --- installed BY the UI (main.tsx, and launchpadDevices.ts for the scan hook), called by the native host --
@@ -49,12 +50,18 @@ export interface RpHooks {
   ) => void;
   __rp_onFileBrowserResult?: (path: string | null) => void;
 
-  // --- audio device / MIDI devices / transport (SDL standalone) -------------------------------------------
-  __rp_getAudioConfig?: () => NativeAudioConfig;
-  __rp_setAudioConfig?: (sampleRate: number, blockSize: number, outChannels: number, driver: string, device: string) => void;
-  __rp_getMidiConfig?: () => Partial<MidiConfig>;
-  __rp_setMidiInput?: (name: string) => void;
-  __rp_setMidiOutput?: (name: string) => void;
+  // --- audio device / MIDI stream / transport (SDL standalone) ---------------------------------------------
+  // The audio device's rows (Settings > Audio, docs/modular-graph-phase-f5b-design.md section 6.4): what the device
+  // can do, one sibling backend's drivers on demand (that call is the backend library's first use), the whole
+  // reconfigure, and a cheap status read. Only the standalone binds them, so a DAW-hosted editor draws no rows.
+  __rp_audioDescribe?: () => AudioDescription | null;
+  __rp_audioBackendDrivers?: (backend: string) => AudioDriverDescription[];
+  __rp_audioApply?: (choice: AudioDeviceChoice) => AudioDeviceStatus | null;
+  __rp_audioStatus?: () => AudioDeviceStatus | null;
+  // The MIDI stream: the ports this machine lists and what actually opened, the selection applied by exact name, and
+  // the transport the MIDI Clock submenu drives. The selection is the project's; the stream is the host's.
+  __rp_midiDescribe?: () => MidiDescription | null;
+  __rp_midiApply?: (selection: MidiSelection, mode: "diff" | "reopen") => void;
   __rp_getTransport?: () => Partial<TransportState>;
   __rp_setTransport?: (playing: boolean) => void;
   __rp_setClockBpm?: (bpm: number) => void;

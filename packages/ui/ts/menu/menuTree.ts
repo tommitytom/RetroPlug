@@ -49,6 +49,10 @@ export interface MenuItem {
   onSelect?: () => void; // action / cycler (Enter or click)
   onCycle?: (dir: 1 | -1) => void; // cycler (Left/Right — fine step)
   onCoarseStep?: (dir: 1 | -1) => void; // cycler (PageUp/PageDown — coarse step, e.g. the render duration jump)
+  // present iff kind === "submenu": run when the row OPENS (Enter or a click expands it), never on a render and never
+  // when it closes. A submenu whose rows a package fills has no other way to hear that the user asked to see them, so
+  // this is where a device read that only the open needs - a port listing, a driver enumeration - belongs.
+  onOpen?: () => void;
   keepOpen?: boolean; // stay open after onSelect (cyclers)
   disabled?: boolean; // greyed + inert: skipped by nav, no-op on click (an unavailable-for-this-cart action)
   // present iff kind === "capture" — Enter arms the row, the next input binds (Backspace clears). `source`

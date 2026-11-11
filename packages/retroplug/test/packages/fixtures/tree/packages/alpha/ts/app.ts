@@ -6,4 +6,7 @@ export default {
   // twice (one key is one block of a .rplg, and one model of the graph).
   projectSections: [{ key: "alpha", schema: { parse: (v: unknown) => v }, defaults: () => ({}) }],
   projectServices: [{ key: "alpha", create: () => ({}) }],
+  // A config.json section: a root key of the user config, which the generated registry collects and refuses to see
+  // twice exactly as a project's. The fixture's two sections sit in different documents, so their keys may repeat.
+  configSections: [{ key: "alpha-device", schema: { parse: (v: unknown) => v }, defaults: () => ({}) }],
 };

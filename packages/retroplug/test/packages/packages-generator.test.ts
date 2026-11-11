@@ -160,7 +160,8 @@ test("the generated menus module refuses a builder at a placement no placement h
   console.log(`# unknown placement: ${error}`);
   expect(error).toBe(
     'the package alpha declares a menu builder at the placement instance.elsewhere, which is no placement (the ' +
-      "placements are instance.tracker, instance.devices, instance.footer, system.settings, start, settings.midi)",
+      "placements are instance.tracker, instance.devices, instance.footer, instance.clock, system.settings, start, " +
+      "settings.audio, settings.midi)",
   );
 });
 
@@ -316,6 +317,36 @@ test("the generated registry collects the project sections and services in produ
   const report = await drive("generate");
   expect(report.projectSections).toEqual(["alpha:alpha", "beta:beta", "retroplug:shell"]);
   expect(report.projectServices).toEqual(["alpha", "beta", "shell"]);
+});
+
+test("the generated registry collects the config.json sections in product order", async () => {
+  // A root key of the user config, owned by a package (the audio device, the control surface). In a registry of its own:
+  // the two documents' sections are independent, so their keys may repeat.
+  const report = await drive("generate");
+  expect(report.configSections).toEqual(["alpha:alpha-device"]);
+});
+
+test("the generated registry refuses a config section two packages declare", async () => {
+  const { error } = await drive("duplicate-config-section");
+  console.log(`# duplicate config section: ${error}`);
+  expect(error).toBe("two packages declare the config section shared: alpha and beta");
+});
+
+test("the generated registry refuses a config section one package declares twice", async () => {
+  // The other half of the duplicate rule (design 6.8(1)): one app's own list names the key twice.
+  const { error } = await drive("duplicate-config-section-one-package");
+  console.log(`# duplicate config section in one package: ${error}`);
+  expect(error).toBe("the package alpha declares the config section shared twice");
+});
+
+test("the generated registry refuses a config section under one of the shell's own keys", async () => {
+  const { error } = await drive("shell-config-section");
+  console.log(`# shell-owned config section: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the config section sramAutoSave, which is one of the shell's own keys " +
+      "(schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom, sramAutoSave, render, " +
+      "useNativeFileDialogs)",
+  );
 });
 
 test("a contribution kind's duplicate item id is refused, naming the package that listed it twice", async () => {

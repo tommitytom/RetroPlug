@@ -112,7 +112,7 @@ test("the control-surface service claims the recorded pair at startup and says t
   const { stores, host } = rig();
   const facet = fakeLaunchpad(false);
   setLaunchpadClient(facet.client);
-  stores.userConfig.setControlSurface({
+  stores.userConfig.setSection("controlSurface", {
     enabled: true, input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", device: "Launchpad Pro [MK3]",
   });
   try {

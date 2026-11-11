@@ -17,6 +17,8 @@ import { buildConfig } from "../../src/projectConfig";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "@retroplug/ui/menu";
 import { resetN8CartJob, setN8LinkClient } from "@retroplug/n8/ui";
+import { FakeAudioDevice } from "@retroplug/audio/testSupport/fakeDevice";
+import { FakeMidiDevice } from "@retroplug/midi/testSupport/fakeDevice";
 import {
   resetLaunchpadScanForTest, setLaunchpadClient, setLaunchpadScanClock, startLaunchpadScan,
 } from "@retroplug/launchpad/ui";
@@ -185,7 +187,7 @@ const CONTROLLER_SECTION = "controller";
  *  way the shell's rows would leave it. `appConfig` is the project's stored config as written, which is what a
  *  hand-edited project (or an older build) leaves behind. */
 function launchpadProject(stores: AppStores, app: string, appConfig: Record<string, unknown> = {}): void {
-  stores.userConfig.setControlSurface({
+  stores.userConfig.setSection("controlSurface", {
     enabled: true,
     input: "LPProMK3 MIDI",
     output: "LPProMK3 MIDI",
@@ -485,25 +487,17 @@ export const CASES: readonly RecordedCase[] = [
   },
 ];
 
-/** The native seams a standalone host installs, and what they answer here: fixed lists, so the device rows and their
- *  cyclers are recorded without a real audio or MIDI device. */
-const AUDIO_SEAM = {
-  sampleRate: 48000,
-  blockSize: 512,
-  outChannels: 2,
-  driver: "Auto",
-  device: "",
-  drivers: ["Auto", "PipeWire"],
-  devicesByDriver: { Auto: ["", "Built-in Audio"], PipeWire: ["", "Built-in Audio"] },
-  defaultByDriver: { Auto: "Built-in Audio", PipeWire: "Built-in Audio" },
-  autoDriver: "PipeWire",
-};
-const MIDI_SEAM = {
-  inputs: ["Arturia KeyStep 32", "LPProMK3 MIDI"],
-  outputs: ["LPProMK3 MIDI"],
-  selectedInput: "",
-  selectedOutput: "",
-};
+/** The native seams a standalone host installs, and what they answer here: the audio package's fake device and the midi
+ *  package's fake stream, over fixed lists, so the device rows and their cyclers are recorded without a real audio or
+ *  MIDI device (and with no library initialised: the Zoom L6 rule). */
+function audioSeam(): FakeAudioDevice {
+  return new FakeAudioDevice({
+    status: { backend: "portaudio", driver: "pipewire", device: "", sampleRate: 48000, blockFrames: 512, channels: 2 },
+  });
+}
+function midiSeam(): FakeMidiDevice {
+  return new FakeMidiDevice({ inputs: ["Arturia KeyStep 32", "LPProMK3 MIDI"], outputs: ["LPProMK3 MIDI"] });
+}
 
 /** A tree with its children inline, which is what was recorded: every item's identity and gate, in order. */
 export function flat(items: readonly MenuItem[]): unknown[] {
@@ -581,10 +575,10 @@ function recordCase(c: RecordedCase): RecordedCaseResult {
   resetLaunchpadScanForTest();
   setLaunchpadScanClock(() => 0);
   const globals = globalThis as Record<string, unknown>;
-  const seams = { standalone: globals.__rp_isStandalone, midi: globals.__rp_getMidiConfig, audio: globals.__rp_getAudioConfig };
+  const standaloneSeam = globals.__rp_isStandalone;
   if (c.standalone === true) globals.__rp_isStandalone = true;
-  if (c.midi === true) globals.__rp_getMidiConfig = () => ({ ...MIDI_SEAM });
-  if (c.audio === true) globals.__rp_getAudioConfig = () => ({ ...AUDIO_SEAM });
+  const audio = c.audio === true ? audioSeam().install() : undefined;
+  const midi = c.midi === true ? midiSeam().install() : undefined;
   if (c.n8 === true)
     setN8LinkClient({
       linkConfig: () => ({ ...N8_CONFIG }),
@@ -655,9 +649,9 @@ function recordCase(c: RecordedCase): RecordedCaseResult {
     setLaunchpadClient(undefined);
     resetN8CartJob();
     resetLaunchpadScanForTest();
-    globals.__rp_isStandalone = seams.standalone;
-    globals.__rp_getMidiConfig = seams.midi;
-    globals.__rp_getAudioConfig = seams.audio;
+    audio?.uninstall();
+    midi?.uninstall();
+    globals.__rp_isStandalone = standaloneSeam;
   }
 }
 

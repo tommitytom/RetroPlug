@@ -73,9 +73,14 @@ bool bootControlPlane(AppState& a) {
 }
 
 
-}  // namespace retroplug::sdl
-
-using namespace retroplug::sdl;
+void emitUiFrame(AppState& a) {
+    JSContext* ctx = a.ui.getContext();
+    if (!ctx) return;
+    // arg0 = LVGL tick (ms): the UI's monotonic clock (menu gamepad hold-to-repeat timing).
+    JSValue tickMs = JS_NewUint32(ctx, lv_tick_get());
+    a.ui.emit("frame", 1, &tickMs); // drives the views and the shell's UI services
+    JS_FreeValue(ctx, tickMs);
+}
 
 // The teardown the product's providers owe (the N8 link, the Launchpad's port claim), in the unit that holds the
 // generated table. The graph is cleared first: a node may use its provider's handle in destroy.
@@ -84,12 +89,16 @@ AppState::~AppState() {
     rp_stop_providers(providers);
 }
 
+}  // namespace retroplug::sdl
+
+using namespace retroplug::sdl;
+
 int main(int argc, char** argv) {
     AppState app;
     g_app = &app;
 
     // The host's audio: the backends THIS product names (rp_product_audio_backends, from AUDIO_BACKENDS), in preference
-    // order, and the product's client behind them. Built before any hook can fire, so __rp_setAudioConfig and the
+    // order, and the product's client behind them. Built before any hook can fire, so __rp_audioApply and the
     // reconfig test hooks always have a host to talk to.
     ProductAudioClient audioClient;
     audioClient.app = &app;
@@ -107,13 +116,12 @@ int main(int argc, char** argv) {
     // --- args / env ---
     std::string autoloadPath;
     if (const char* env = std::getenv("RETROPLUG_AUTOLOAD_PROJECT")) autoloadPath = env;
-    int blockSizeOverride = 0;  // --block-size: applied after audio.json, so it wins for this run
     long exitAfterFrames = 0;
     if (const char* env = std::getenv("RETROPLUG_SDL_EXIT_AFTER_FRAMES")) exitAfterFrames = std::atol(env);
     std::string screenshotPath;
     if (const char* env = std::getenv("RETROPLUG_SDL_SCREENSHOT")) screenshotPath = env;
     // --audio-backend <id> / RETROPLUG_SDL_AUDIO_BACKEND: the backend a run uses, overriding the saved choice for that
-    // run (a saved choice may not be a library's numeric id, so an old audio.json's `hostApi` selects nothing).
+    // run (a saved choice carries backend and driver ids, never a library's numeric id).
     if (const char* env = std::getenv("RETROPLUG_SDL_AUDIO_BACKEND")) app.backendOverride = env;
     // --render-ahead <frames> / RETROPLUG_SDL_RENDER_AHEAD: render on a thread into a ring, and let the device callback
     // only copy out of it (for an audio server with a small fixed quantum, where one emulator block cannot fit a
@@ -139,20 +147,19 @@ int main(int argc, char** argv) {
         else if (arg == "--width" && i + 1 < argc) app.width = static_cast<std::uint32_t>(std::atoi(argv[++i]));
         else if (arg == "--height" && i + 1 < argc) app.height = static_cast<std::uint32_t>(std::atoi(argv[++i]));
         // Default audio block size (frames). The compiled-in default is 512 (low latency); a low-power device passes a
-        // bigger buffer here (the muOS launcher uses 4096) so the callback keeps its deadline. It overrides a saved
-        // audio.json's block for this run (design 5.2, report item 8), which is why it is recorded and re-applied after
-        // the shim is read.
-        else if (arg == "--block-size" && i + 1 < argc) { const int b = std::atoi(argv[++i]); if (b > 0) blockSizeOverride = b; }
+        // bigger buffer here (the muOS launcher uses 4096) so the callback keeps its deadline. It overrides the `audio`
+        // section's block for this run (design 6.2, report item 8), which is why it is kept beside the backend override
+        // and applied wherever the device is opened.
+        else if (arg == "--block-size" && i + 1 < argc) {
+            const int b = std::atoi(argv[++i]);
+            if (b > 0) app.blockSizeOverride = b;
+        }
         else if (arg == "--audio-backend" && i + 1 < argc) app.backendOverride = argv[++i];
         else if (arg == "--render-ahead" && i + 1 < argc) { const int f = std::atoi(argv[++i]); if (f > 0) app.renderAhead = f; }
         else if (arg == "--screenshot" && i + 1 < argc) screenshotPath = argv[++i];
     }
 
     if (!setupSdl(app)) return 1;
-    // The audio shim (audio.json, retired when the choice is config.json's `audio` section), then the flag's block size
-    // over it: the device itself opens after the control plane exists, so the engine is shaped by prepare().
-    loadAudioConfig(app);
-    if (blockSizeOverride > 0) app.reqBlockSize = blockSizeOverride;
     if (!bootControlPlane(app)) return 1;
 
     // Autoload a .rplg project before the audio thread takes the Engine (structural build runs direct).
@@ -164,16 +171,18 @@ int main(int argc, char** argv) {
     if (!setupUi(app)) return 1;
 
     // The startup rendezvous (docs/modular-graph-phase-f3-design.md section 3): the control plane restores the control
-    // surface it persisted (config.json) BEFORE MIDI opens and audio starts, so a claimed pair is reserved from the
-    // first frame - never heard as a second, unquantised launch - and never costs an audio restart. Bounded, so a
-    // missing or broken config.json (or a hung port) cannot keep the app silent.
-    restoreControlSurface(app);
+    // surface it persisted (config.json) before the shared stream opens a port of its own, and the project's MIDI
+    // selection and the `audio` section are applied by their services on the first poll, which the pumped frame runs -
+    // so a claimed pair is reserved from the first frame, never heard as a second, unquantised launch, and never costs
+    // an audio restart. Bounded, so a missing or broken config.json (or a hung port) cannot keep the app silent. The
+    // audio section's apply only RECORDS a device request (hooks.cpp's jsAudioApply); the device itself opens below,
+    // after the MIDI stream and the providers' restore.
+    waitForUiStartup(app);
 
-    // Open MIDI (virtual in/out ports). Non-fatal: the host runs without MIDI if none is available. The
-    // audio callback drains app.midi into the Engine per block (see audioCb); RETROPLUG_MIDI_LOG logs input.
-    // Apply any persisted device selection (Settings > MIDI) first, so open() connects the chosen device(s)
-    // rather than the auto-all-inputs / virtual-only-output default.
-    loadMidiConfig(app);
+    // Open MIDI (virtual in/out ports). Non-fatal: the host runs without MIDI if none is available. The audio callback
+    // drains app.midi into the Engine per block (see render); RETROPLUG_MIDI_LOG logs input. The hardware ports are a
+    // PROJECT's choice now, applied by the midi package's service once a project's section is known - so nothing is
+    // opened here beyond the virtual pair, and a fresh project opens none.
     app.midi.open();
 
     // Restore the providers' persisted state (the N8's n8.cfg: reconnect the physical cart if it was left enabled).
@@ -187,21 +196,33 @@ int main(int argc, char** argv) {
 
     // Hand the Engine to the audio thread (control-plane edits become push-only, drained per block) and open the
     // device. Mirrors PluginDSP::activate: AudioHost runs stop, release, open, prepare (which re-rates the engine to
-    // what the DEVICE came up at) and start, so the engine is shaped before the first pull renders.
+    // what the DEVICE came up at) and start, so the engine is shaped before the first pull renders. This is the app's
+    // one point of opening: the `audio` section the UI applied during the rendezvous is AppState's request by now, and a
+    // UI that never applied leaves the defaults in it (the rule the rendezvous states). It comes AFTER the MIDI stream
+    // and the providers' restore because that is the order the app has always opened things in - the control surface's
+    // claim, then MIDI, then audio last - and because a running audio thread would render into an engine the restore has
+    // not shaped yet.
     app.svc.invoker.setAudioThreadOwns(true);
 #if defined(__linux__)
     pinUiThreadAwayFromAudioCore(); // keep the 60 fps UI/emulator work off the audio thread's core
 #endif
     applyAudioConfig(app);
-    if (!app.audio->live())
-        std::fprintf(stderr, "[retroplug-sdl] audio: on the null device (%s)\n",
-                     app.audio->status().error.empty() ? "no device chose it" : app.audio->status().error.c_str());
+    app.audioDeviceReady = true; // from here a UI apply is live (hooks.cpp's jsAudioApply)
+    if (!app.audio->live()) {
+        // A run that pinned the null backend is not a fallback, and the line says which switch asked for it: the same
+        // field carries --audio-backend and RETROPLUG_SDL_AUDIO_BACKEND.
+        const std::string why = app.audio->status().error.empty()
+                                    ? (app.backendOverride == "null" ? "pinned by --audio-backend null"
+                                                                    : "no device chose it")
+                                    : app.audio->status().error;
+        std::fprintf(stderr, "[retroplug-sdl] audio: on the null device (%s)\n", why.c_str());
+    }
 
     app.idleProbe.armFromEnv(app.svc.engine);
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);
 
     // Test hook: inject a MIDI message into the input ring (no hardware needed) to prove the audio-thread
-    // drain path (ring -> audioCb poll -> engine.stageMidi). The staged count is printed on exit.
+    // drain path (ring -> the audio callback's poll -> engine.stageMidi). The staged count is printed on exit.
     if (std::getenv("RETROPLUG_SDL_MIDI_SELFTEST")) {
         const std::uint8_t noteOn[3] = { 0x90, 60, 100 };  // ch1 NoteOn C4
         app.midi.injectForTest(noteOn, 3);
@@ -210,20 +231,22 @@ int main(int argc, char** argv) {
     // Test hook: drive the transport seam the way the menu does — through the JS global, not the atomic —
     // so a missing or renamed bind shows up as playing=0 in the report below rather than as a row that
     // silently disappears from the menu. Any non-empty string is truthy to JS_ToBool.
-    if (std::getenv("RETROPLUG_SDL_TEST_TRANSPORT")) {
-        callGlobal(app.host, "__rp_setTransport", "1");
-        callGlobal(app.host, "__rp_setClockBpm", "140");  // JS_ToFloat64 parses the string
-    }
+    // Test hook: start the transport through the same global the MIDI Clock row uses. The TEMPO is deliberately not set
+    // here: it comes from the autoloaded project's `midi.clockBpm`, applied by the midi package's service, which is what
+    // E7 (the tempo is the project's) means - a hook that also set it would let E7 regress with this line still green.
+    if (std::getenv("RETROPLUG_SDL_TEST_TRANSPORT")) callGlobal(app.host, "__rp_setTransport", "1");
 
-    // Test hook: drive the Settings > Audio seam the way the menu's Apply row does (RETROPLUG_SDL_TEST_AUDIO_HOOK) - as
-    // JS, through the global itself, with the DRAFT's own arguments: a driver LABEL out of __rp_getAudioConfig's list
-    // and the chosen device. A hook whose mapping is wrong MUTES the run instead of quietly keeping the old device, and
-    // a bind that went missing reads back as the defaults, so the report below is what the rows would see.
+    // Test hook: drive the Settings > Audio seam the way the package's Apply row does (RETROPLUG_SDL_TEST_AUDIO_HOOK) -
+    // as JS, through the hooks themselves, with an `audio` section's fields. A hook whose mapping is wrong MUTES the run
+    // instead of quietly keeping the old device, and a bind that went missing reads back as the null fallback, so the
+    // report below is what the rows would see.
     if (std::getenv("RETROPLUG_SDL_TEST_AUDIO_HOOK")) {
         JSContext*  ctx = app.host.context();
-        const char* apply = "(__rp_setAudioConfig(44100, 256, 2, 'Auto', ''), 1)";
+        const char* apply =
+            "(__rp_audioApply({ backend: 'auto', driver: '', device: '', sampleRate: 44100, blockSize: 256, "
+            "outChannels: 2 }), 1)";
         JS_FreeValue(ctx, JS_Eval(ctx, apply, std::strlen(apply), "<audio-hook>", JS_EVAL_TYPE_GLOBAL));
-        const char* readCode = "JSON.stringify(__rp_getAudioConfig())";
+        const char* readCode = "JSON.stringify(__rp_audioDescribe())";
         JSValue     read = JS_Eval(ctx, readCode, std::strlen(readCode), "<audio-hook>", JS_EVAL_TYPE_GLOBAL);
         const char* json = JS_ToCString(ctx, read);
         std::fprintf(stderr, "[retroplug-sdl] post-audio-hook: %s\n", json ? json : "(none)");
@@ -313,6 +336,15 @@ int main(int argc, char** argv) {
     const char* wheelTest = std::getenv("RETROPLUG_SDL_TEST_WHEEL");
     app.logWheel = wheelTest != nullptr;
 
+    // Test hook: drive the real menu from the SDL queue to Settings > Audio, one key every second frame (the keypad
+    // needs a frame to rebuild between presses), and report the audio device's status with the rows open. A leg uses it
+    // to show a RUNNING stream survives a menu build - the one thing a device listing must never disturb.
+    const char* menuTestEnv = std::getenv("RETROPLUG_SDL_TEST_MENU");
+    const long  menuStart   = menuTestEnv ? std::atol(menuTestEnv) : -1;
+    const SDL_Keycode menuKeys[] = {SDLK_ESCAPE, SDLK_DOWN, SDLK_DOWN, SDLK_DOWN, SDLK_DOWN, SDLK_RETURN, SDLK_RETURN};
+    const long  menuKeyCount     = static_cast<long>(sizeof(menuKeys) / sizeof(menuKeys[0]));
+    bool        menuReported     = false;
+
     // --- the 60 fps loop: input → JS frame → LVGL render → present ---
     const bool requireNonBlank = std::getenv("RETROPLUG_SDL_REQUIRE_NONBLANK") != nullptr;
     bool nonBlankFail = false;
@@ -337,10 +369,7 @@ int main(int argc, char** argv) {
         // cart, a surface node, a core, the resources they pin) goes within a frame. Nothing to free costs nothing.
         app.idleProbe.tick(app.svc.reclaimOnIdle());
         if (JSContext* ctx = app.ui.getContext()) {
-            // arg0 = LVGL tick (ms): the UI's monotonic clock (menu gamepad hold-to-repeat timing).
-            JSValue tickMs = JS_NewUint32(ctx, lv_tick_get());
-            app.ui.emit("frame", 1, &tickMs); // drives EmulatorTile's getFrame
-            JS_FreeValue(ctx, tickMs);
+            emitUiFrame(app);
             pumpGamepad(app);
             (void)ctx;
         }
@@ -351,6 +380,27 @@ int main(int argc, char** argv) {
         if (scanTest && frame == 10) // the UI has mounted and run its startup restore by now
             std::fprintf(stderr, "[retroplug-sdl] scan test: started=%s\n",
                          callGlobal(app.host, "__rp_scanControlSurface", "").c_str());
+
+        if (menuStart >= 0 && frame >= menuStart) {
+            const long step = (frame - menuStart) / 2;
+            if ((frame - menuStart) % 2 == 0 && step < menuKeyCount) {
+                SDL_Event down{};
+                down.type            = SDL_KEYDOWN;
+                down.key.state       = SDL_PRESSED;
+                down.key.keysym.sym  = menuKeys[step];
+                SDL_PushEvent(&down);
+                SDL_Event up = down;
+                up.type       = SDL_KEYUP;
+                up.key.state  = SDL_RELEASED;
+                SDL_PushEvent(&up);
+            }
+            if (!menuReported && step >= menuKeyCount) {
+                menuReported = true;
+                const bool live = app.audio && app.audio->live();
+                std::fprintf(stderr, "[retroplug-sdl] menu test: settings open, audio live=%d backend=%s\n", (int)live,
+                             app.audio ? app.audio->status().backend.c_str() : "");
+            }
+        }
 
         if (wheelTest && frame == 45) { // the menu has mounted + laid out by now
             SDL_Event m{};
@@ -393,6 +443,18 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[retroplug-sdl] transport self-test: playing=%d bpm=%.0f\n",
                      (int)app.transportPlaying.load(std::memory_order_relaxed),
                      (double)app.transportBpm.load(std::memory_order_relaxed));
+    // Test hook: the status the audio service's apply adopted, as the Muted row and the file's section read it. Its use
+    // is a run whose `--block-size` overrides the section's block (E12): the status carries the flag's block, not the
+    // file's.
+    if (std::getenv("RETROPLUG_SDL_TEST_AUDIO_STATUS")) {
+        JSContext* ctx = app.host.context();
+        const char* code = "JSON.stringify(__rp_audioStatus())";
+        JSValue read = JS_Eval(ctx, code, std::strlen(code), "<audio-status>", JS_EVAL_TYPE_GLOBAL);
+        const char* json = JS_ToCString(ctx, read);
+        std::fprintf(stderr, "[retroplug-sdl] post-audio-status: %s\n", json ? json : "(none)");
+        if (json) JS_FreeCString(ctx, json);
+        JS_FreeValue(ctx, read);
+    }
     app.midi.close();
     // Reclaim the plans while every device link is still open, as the plugin's destructor does: a node may use its
     // handle in destroy, and a surface node reaching a port the next line has already closed reads disconnected and

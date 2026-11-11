@@ -11,6 +11,13 @@ import { DEFAULT_USER_CONFIG, type SramAutoSave } from "../../src/userConfig";
 
 const CONFIG = "/config/config.json";
 
+/** The shell's own fields of a config: what these cases (the core model) are about. */
+const coreOf = (cfg: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.keys(DEFAULT_USER_CONFIG).map((k) => [k, cfg[k]]));
+
+/** A config's bytes with no section blocks: what these cases (the shell's own fields) are about. */
+const serialized = (cfg: typeof DEFAULT_USER_CONFIG) => serializeUserConfig({ core: cfg, sections: {} });
+
 // --- serialization ---
 
 test("parse: an empty object yields the defaults", () => {
@@ -51,7 +58,7 @@ test("parse result: 'from the future' is a DIFFERENT refusal from 'corrupt'", ()
     expect(!r.ok && r.reason).toBe("malformed");
   }
 
-  const good = parseUserConfigResult(serializeUserConfig(DEFAULT_USER_CONFIG));
+  const good = parseUserConfigResult(serialized(DEFAULT_USER_CONFIG));
   expect(good.ok).toBeTruthy();
 });
 
@@ -60,7 +67,7 @@ test("store: a config.json from a NEWER build is never overwritten by this one",
   const fromTheFuture = JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA + 1, defaultZoom: 4, somethingNew: true });
   be.seed(CONFIG, fromTheFuture);
   store.load();
-  expect(store.config()).toEqual(DEFAULT_USER_CONFIG); // refused, so we run on defaults
+  expect(coreOf(store.config())).toEqual(DEFAULT_USER_CONFIG); // refused, so we run on defaults
 
   // The setter used to persist those defaults straight over the newer file.
   expect(store.setDefaultZoom(5)).toBeFalsy();
@@ -78,9 +85,9 @@ test("store: a MALFORMED config.json still heals on the next change", () => {
 });
 
 test("serialize: stamps the schema version and round-trips through parse", () => {
-  const doc = JSON.parse(serializeUserConfig(DEFAULT_USER_CONFIG));
+  const doc = JSON.parse(serialized(DEFAULT_USER_CONFIG));
   expect(doc.schemaVersion).toBe(USER_CONFIG_SCHEMA);
-  expect(parseUserConfig(serializeUserConfig(DEFAULT_USER_CONFIG))).toEqual(DEFAULT_USER_CONFIG);
+  expect(parseUserConfig(serialized(DEFAULT_USER_CONFIG))).toEqual(DEFAULT_USER_CONFIG);
 });
 
 test("render: defaults + a v1 render.lastDir migrates to outputDir (v1→v2)", () => {
@@ -105,7 +112,7 @@ function newStore() {
 
 test("load: reads an existing config.json into config()", () => {
   const { be, store } = newStore();
-  be.seed(CONFIG, serializeUserConfig({ ...DEFAULT_USER_CONFIG, defaultZoom: 5, sramAutoSave: "Continuous" }));
+  be.seed(CONFIG, serialized({ ...DEFAULT_USER_CONFIG, defaultZoom: 5, sramAutoSave: "Continuous" }));
   store.load();
   expect(store.config().defaultZoom).toBe(5);
   expect(store.sramAutoSave()).toBe("Continuous");
@@ -124,7 +131,7 @@ test("load: a malformed file keeps the in-memory defaults", () => {
   const { be, store } = newStore();
   be.seed(CONFIG, "garbage");
   store.load();
-  expect(store.config()).toEqual(DEFAULT_USER_CONFIG);
+  expect(coreOf(store.config())).toEqual(DEFAULT_USER_CONFIG);
 });
 
 test("setDefaultZoom: accepts 1..6 (persists + notifies); rejects out-of-range / non-integer", () => {
@@ -172,7 +179,7 @@ test("setUseNativeFileDialogs: toggles both ways, persists, and notifies (regres
 
 test("serialize includes useNativeFileDialogs (a non-default value survives a round-trip)", () => {
   const cfg = { ...DEFAULT_USER_CONFIG, useNativeFileDialogs: false };
-  expect(parseUserConfig(serializeUserConfig(cfg))).toEqual(cfg);
+  expect(parseUserConfig(serialized(cfg))).toEqual(cfg);
 });
 
 test("setActive*: persist the active profile names", () => {
@@ -194,33 +201,46 @@ test("no-op guard: setting the current value doesn't write or notify", () => {
   expect(be.log.filter((m) => m === "writeFileAtomic").length).toBe(writesBefore); // no extra writes
 });
 
-// --- the control surface (config.json's controlSurface) ---
+// --- the control surface, as the Launchpad pack's config section ---
+//
+// The shape was the shell's; it is the pack's now (packages/launchpad/ts/control/configSection.ts), read and written
+// through the store's generic section API. These are the same cases, re-pointed: the tolerance, the persistence, the
+// no-op guard and the two-writers rule are about the mechanism, so they hold the pad's block as their data.
+
+const CONTROL_SURFACE = "controlSurface";
 
 test("controlSurface: additive, tolerant, and the pair a fresh install carries", () => {
-  // Additive, so no migration step: a config.json from before the field parses with the defaults filled.
-  expect(parseUserConfig("{}")!.controlSurface).toEqual({ input: "", output: "", enabled: false, device: "" });
+  // Additive, so no migration step: a config.json from before the field parses with the contributor's defaults filled.
+  const fresh = new UserConfigStore(new MockBackend("/config"));
+  fresh.load();
+  expect(fresh.section(CONTROL_SURFACE)).toEqual({ input: "", output: "", enabled: false, device: "" });
   // Tolerant one level up like `render`: a malformed block becomes {} and takes the fields' own defaults, rather than
   // failing the whole file (which would reset the user's zoom, bindings and render picks too).
-  expect(parseUserConfig(JSON.stringify({ controlSurface: null }))!.controlSurface.enabled).toBe(false);
-  expect(parseUserConfig(JSON.stringify({ controlSurface: [1, 2] }))!.controlSurface.input).toBe("");
-  const held = parseUserConfig(JSON.stringify({
-    controlSurface: { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: "yes", device: 5 },
-  }))!.controlSurface;
-  expect(held).toEqual({ input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: false, device: "" });
-  // Persisted: commit() diffs two serializations, so a field the writer forgets can never be toggled.
-  const text = serializeUserConfig({ ...DEFAULT_USER_CONFIG, controlSurface: { input: "a", output: "b", enabled: true, device: "d" } });
-  expect(parseUserConfig(text)!.controlSurface).toEqual({ input: "a", output: "b", enabled: true, device: "d" });
+  const held = (block: unknown) => {
+    const be = new MockBackend("/config");
+    be.seed(CONFIG, JSON.stringify({ ...JSON.parse(serialized(DEFAULT_USER_CONFIG)), controlSurface: block }));
+    const store = new UserConfigStore(be);
+    store.load();
+    return store.section<{ input: string; enabled: boolean; device: string }>(CONTROL_SURFACE);
+  };
+  expect(held(null).enabled).toBe(false);
+  expect(held([1, 2]).input).toBe("");
+  expect(held({ input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: "yes", device: 5 })).toEqual({
+    input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: false, device: "",
+  });
 });
 
-test("setControlSurface: patches, persists, round-trips, and a repeat is a no-op", () => {
+test("setSection: patches, persists, round-trips, and a repeat is a no-op", () => {
   const { be, store, changed } = newStore();
   store.load();
-  expect(store.setControlSurface({ input: "LP in", output: "LP out", device: "Launchpad Pro [MK3]" })).toBeTruthy();
-  expect(store.setControlSurface({ enabled: true })).toBeTruthy(); // a patch of one field keeps the rest
-  expect(store.controlSurface()).toEqual({ input: "LP in", output: "LP out", enabled: true, device: "Launchpad Pro [MK3]" });
-  expect(parseUserConfig(be.readText(CONFIG)!)!.controlSurface.input).toBe("LP in");
+  expect(store.setSection(CONTROL_SURFACE, { input: "LP in", output: "LP out", device: "Launchpad Pro [MK3]" })).toBeTruthy();
+  expect(store.setSection(CONTROL_SURFACE, { enabled: true })).toBeTruthy(); // a patch of one field keeps the rest
+  expect(store.section(CONTROL_SURFACE)).toEqual({
+    input: "LP in", output: "LP out", enabled: true, device: "Launchpad Pro [MK3]",
+  });
+  expect(JSON.parse(be.readText(CONFIG)!).controlSurface.input).toBe("LP in");
   expect(changed()).toBe(2);
-  expect(store.setControlSurface({ input: "LP in" })).toBeFalsy();
+  expect(store.setSection(CONTROL_SURFACE, { input: "LP in" })).toBeFalsy();
   expect(changed()).toBe(2);
 });
 
@@ -235,14 +255,14 @@ test("two writers sharing config.json: a change here keeps what the other wrote 
   expect(plugin.setDefaultZoom(5)).toBeTruthy();
   expect(plugin.setActiveKeyboardBindings("wasd")).toBeTruthy();
   // The standalone, still holding its launch-time copy, records a control-surface pick.
-  expect(standalone.setControlSurface({ input: "LP in", output: "LP out", enabled: true })).toBeTruthy();
+  expect(standalone.setSection(CONTROL_SURFACE, { input: "LP in", output: "LP out", enabled: true })).toBeTruthy();
   const onDisk = parseUserConfig(be.readText(CONFIG)!)!;
   expect(onDisk.defaultZoom).toBe(5);
   expect(onDisk.activeKeyboardBindings).toBe("wasd");
-  expect(onDisk.controlSurface.input).toBe("LP in");
+  expect(JSON.parse(be.readText(CONFIG)!).controlSurface.input).toBe("LP in");
   // ...and the other way round: the plugin's next write keeps the standalone's pick.
   expect(plugin.setDefaultZoom(4)).toBeTruthy();
-  expect(parseUserConfig(be.readText(CONFIG)!)!.controlSurface.input).toBe("LP in");
+  expect(JSON.parse(be.readText(CONFIG)!).controlSurface.input).toBe("LP in");
 });
 
 test("a write that fails is not reported as saved, and is not adopted", () => {
@@ -251,8 +271,8 @@ test("a write that fails is not reported as saved, and is not adopted", () => {
   store.load();
   const realWrite = be.writeFileAtomic.bind(be);
   be.writeFileAtomic = () => false; // e.g. Windows: another process holds config.json open
-  expect(store.setControlSurface({ input: "LP in" })).toBeFalsy();
-  expect(store.controlSurface().input).toBe(""); // not shown as saved for the session, then lost at launch
+  expect(store.setSection(CONTROL_SURFACE, { input: "LP in" })).toBeFalsy();
+  expect(store.section<{ input: string }>(CONTROL_SURFACE).input).toBe(""); // not shown as saved, then lost at launch
   be.writeFileAtomic = realWrite;
-  expect(store.setControlSurface({ input: "LP in" })).toBeTruthy();
+  expect(store.setSection(CONTROL_SURFACE, { input: "LP in" })).toBeTruthy();
 });

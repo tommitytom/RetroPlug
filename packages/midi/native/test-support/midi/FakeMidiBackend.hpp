@@ -113,8 +113,10 @@ public:
 
     std::string              id() const override { return "fake"; }
     std::string              clientName() const override { return clientNameValue; }
-    /** A second fake listing the same machine under another client name. Its records, ports and hooks are its own (a
-     *  renamed stream opens its own ports), so a case that drives a device model keeps driving the instance it made. */
+    /** A second fake listing the same machine under another client name. Its records and ports are its own (a renamed
+     *  stream opens its own ports), and its HOOKS are its own too: `onSend` is not carried over, so a session that
+     *  renamed its backend talks to no scripted device - a case that drives a device model (the Launchpad's Pro MK3)
+     *  keeps driving the instance it made, and a renamed one answers nothing. */
     std::unique_ptr<MidiBackend> withClientName(std::string clientName) override {
         auto next           = std::make_unique<FakeMidiBackend>();
         next->inputs        = inputs;

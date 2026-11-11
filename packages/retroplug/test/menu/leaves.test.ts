@@ -12,6 +12,8 @@ import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery, smsggdjRom } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
 import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
+import { FakeAudioDevice } from "@retroplug/audio/testSupport/fakeDevice";
+import { FakeMidiDevice } from "@retroplug/midi/testSupport/fakeDevice";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -512,7 +514,7 @@ test("Link Group stays hidden for a NES peer (SameBoy serial link only); Replace
   expect(findItem(items, "inst-link")).toBe(undefined);       // NES has no link cable → row gated out
 });
 
-test("instance menu MIDI Clock (standalone): starts Stopped, play/stop + tempo drive the native seam, absent without it", () => {
+test("instance menu MIDI Clock (standalone): starts Stopped, play/stop + tempo drive the seam, absent without it", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be, notify: () => {} });
   be.seed("/roms/a.nes", nesRom());
@@ -520,24 +522,13 @@ test("instance menu MIDI Clock (standalone): starts Stopped, play/stop + tempo d
   const anchored = stores.project.systems.view().find((s) => s.id === id)!;
   const items = () => buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items;
   const clock = () => submenuChildren(items(), "inst-clock");
+  const tempo = () => stores.project.section<{ clockBpm: number }>("midi").clockBpm;
 
   // No seam - a DAW-hosted plugin or the DPF standalone, where the host owns the transport. No submenu.
   expect(findItem(items(), "inst-clock")).toBe(undefined);
 
-  const live = { playing: false, external: false, bpm: 120, localBpm: 120 };
-  const g = globalThis as {
-    __rp_getTransport?: () => typeof live;
-    __rp_setTransport?: (playing: boolean) => void;
-    __rp_setClockBpm?: (bpm: number) => void;
-  };
-  g.__rp_getTransport = () => ({ ...live });
-  g.__rp_setTransport = (playing) => {
-    live.playing = playing;
-  };
-  g.__rp_setClockBpm = (bpm) => {
-    live.localBpm = bpm;
-    live.bpm = bpm;
-  };
+  // The fake stream supplies the transport AND the port description the group exists by.
+  const fake = new FakeMidiDevice({ transport: { playing: false, external: false, bpm: 120, localBpm: 120 } }).install();
 
   // Stopped by default - the thing that keeps a SYNC=MIDI cart from being clocked by a standalone nobody
   // pressed play on. The parent row summarises without opening it.
@@ -546,36 +537,32 @@ test("instance menu MIDI Clock (standalone): starts Stopped, play/stop + tempo d
   expect(findItem(clock(), "inst-clock-tempo")!.label).toBe("Tempo: 120 BPM");
 
   findItem(clock(), "inst-clock-transport")!.onCycle!(1);
-  expect(live.playing).toBe(true);
+  expect(fake.transports).toEqual([true]);
   expect(findItem(items(), "inst-clock")!.label).toBe("MIDI Clock: 120 BPM"); // running → the parent shows tempo
 
-  // Tempo: fine step on Left/Right, coarse on PageUp/PageDown.
+  // Tempo: fine step on Left/Right, coarse on PageUp/PageDown. The tempo is the PROJECT's now: a step writes the
+  // section, and the service drives the host tempo from it (a menu test has no service, so the section is what moves).
   findItem(clock(), "inst-clock-tempo")!.onCycle!(1);
-  expect(live.localBpm).toBe(121);
+  expect(tempo()).toBe(121);
   findItem(clock(), "inst-clock-tempo")!.onCoarseStep!(1);
-  expect(live.localBpm).toBe(131);
+  expect(tempo()).toBe(131);
   findItem(clock(), "inst-clock-tempo")!.onCoarseStep!(-1);
-  expect(live.localBpm).toBe(121);
-  expect(findItem(clock(), "inst-clock-tempo")!.label).toBe("Tempo: 121 BPM");
+  expect(tempo()).toBe(121);
 
   // Clamped at the ends (the same window an external clock's estimate is trusted in).
-  g.__rp_setClockBpm(20);
+  stores.project.setSection("midi", { clockBpm: 20 });
   findItem(clock(), "inst-clock-tempo")!.onCoarseStep!(-1);
-  expect(live.localBpm).toBe(20);
+  expect(tempo()).toBe(20);
 
   // An external master owns both values: the rows report ITS state and go inert.
-  live.playing = true;
-  live.external = true;
-  live.bpm = 139.7;
+  fake.setExternal(true, 139.7);
   expect(findItem(items(), "inst-clock")!.label).toBe("MIDI Clock: 140 BPM");
   expect(findItem(clock(), "inst-clock-source")!.label).toBe("Source: External MIDI clock");
   expect(findItem(clock(), "inst-clock-tempo")!.label).toBe("Tempo: 140 BPM");
   expect(findItem(clock(), "inst-clock-tempo")!.disabled).toBe(true);
   expect(findItem(clock(), "inst-clock-transport")!.disabled).toBe(true);
 
-  delete g.__rp_getTransport;
-  delete g.__rp_setTransport;
-  delete g.__rp_setClockBpm;
+  fake.uninstall();
 });
 
 test("a cancelled browse mutates nothing", async () => {
@@ -1221,8 +1208,8 @@ test("Settings menu order (off-standalone): Keyboard/Gamepad bindings lead + a s
 test("Settings menu order (standalone): Audio + MIDI lead, separator, then the bindings editors + separator", () => {
   const g = globalThis as Record<string, unknown>;
   g.__rp_isStandalone = true;
-  g.__rp_getAudioConfig = () => ({ sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", drivers: ["Auto"], device: "", devicesByDriver: {} });
-  g.__rp_getMidiConfig = () => ({ inputs: [], outputs: [], selectedInput: "", selectedOutput: "" });
+  const audio = new FakeAudioDevice().install();
+  const midi = new FakeMidiDevice({ inputs: [], outputs: [] }).install();
   try {
     const stores = composeAppStores({ backend: new MockBackend("/cfg") });
     const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
@@ -1236,9 +1223,9 @@ test("Settings menu order (standalone): Audio + MIDI lead, separator, then the b
       "set-sep-bindings",
     ]);
   } finally {
+    audio.uninstall();
+    midi.uninstall();
     delete g.__rp_isStandalone;
-    delete g.__rp_getAudioConfig;
-    delete g.__rp_getMidiConfig;
   }
 });
 
@@ -1253,179 +1240,136 @@ test("appStores: a userConfig change also invalidates the bindings channel", () 
   expect(fired.includes("bindings")).toBeTruthy(); // resolved bindings depend on the active pointer
 });
 
-test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; label repaints, no live change until Apply", async () => {
-  // Fake the SDL host's audio seam: a mutable live cfg, __rp_setAudioConfig commits into it.
-  const live = { sampleRate: 48000, blockSize: 2048 };
-  const g = globalThis as {
-    __rp_isStandalone?: boolean;
-    __rp_getAudioConfig?: () => { sampleRate: number; blockSize: number };
-    __rp_setAudioConfig?: (r: number, b: number) => void;
-  };
+test("Settings -> Audio: cyclers stage a draft; Apply commits the section and the device", async () => {
+  // The rows are the audio package's now, over the standalone's hooks and the `audio` config section. The fake device
+  // owns the description (two backends, a same-named driver each) and records every Apply.
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
-  g.__rp_getAudioConfig = () => ({ ...live });
-  g.__rp_setAudioConfig = (r, b) => {
-    live.sampleRate = r;
-    live.blockSize = b;
-  };
-  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
   resetAudioDraft(); // drop any draft leaked from a prior test in this file
 
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be, notify: () => {} });
   const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+  const section = () => stores.userConfig.section<{ blockSize: number }>("audio");
 
-  // Fresh: labels mirror the live device; Apply is inert (no pending change).
+  // Fresh: labels mirror the saved section (the defaults); Apply is inert (no pending change).
   let items = audioItems();
   expect(findItem(items, "audio-rate")!.label).toBe("Sample Rate: 48000 Hz");
-  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 2048 (42.7 ms)");
-  // The Driver row defaults to "Auto" when the host exposes no driver list (this fake omits `drivers`).
-  expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto");
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 512 (10.7 ms)");
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto (PortAudio: PipeWire)");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
   // Apply keeps the menu open (you often tweak several audio settings in a row).
   expect(findItem(items, "audio-apply")!.keepOpen).toBe(true);
 
-  // Stage a block-size change (a Left step, 2048 -> 1024): the DRAFT label moves, the live device does NOT,
-  // and Apply becomes live.
+  // Stage a block-size change (a Left step, 512 -> 256): the DRAFT label moves, the device does NOT, and Apply becomes
+  // live.
   findItem(items, "audio-block")!.onCycle!(-1);
   items = audioItems(); // App re-renders on the draft bump; the test rebuilds to observe it
-  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024 (21.3 ms)");
-  expect(live.blockSize).toBe(2048); // not applied yet
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
+  expect(fake.applied.length).toBe(0); // not applied yet
+  expect(section().blockSize).toBe(512); // and not saved yet
   expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
 
-  // Apply commits to the device; the draft re-seeds and Apply goes inert again.
+  // Apply commits to the device AND to the section; the draft re-seeds and Apply goes inert again.
   findItem(items, "audio-apply")!.onSelect!();
-  expect(live.blockSize).toBe(1024);
+  expect(fake.applied.at(-1)!.blockSize).toBe(256);
+  expect(section().blockSize).toBe(256);
   items = audioItems();
-  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024 (21.3 ms)");
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
 
   resetAudioDraft();
+  fake.uninstall();
   delete g.__rp_isStandalone;
-  delete g.__rp_getAudioConfig;
-  delete g.__rp_setAudioConfig;
 });
 
-test("Settings -> Audio > Driver (standalone): cycler stages the host API; Apply commits it as __rp_setAudioConfig's 4th arg", async () => {
-  // Fake the SDL host's audio seam WITH a driver list. The setter records all four args so we can prove the
-  // chosen driver rides Apply alongside rate/block/channels.
-  const applied: Array<[number, number, number, string]> = [];
-  const live = { sampleRate: 48000, blockSize: 2048, outChannels: 2, driver: "Auto", drivers: ["Auto", "PipeWire", "ALSA"] };
-  const g = globalThis as {
-    __rp_isStandalone?: boolean;
-    __rp_getAudioConfig?: () => typeof live;
-    __rp_setAudioConfig?: (r: number, b: number, ch: number, d: string) => void;
-  };
+test("Settings -> Audio > Driver: the row names every backend, and Apply commits the choice by id", async () => {
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
-  g.__rp_getAudioConfig = () => ({ ...live });
-  g.__rp_setAudioConfig = (r, b, ch, d) => {
-    live.sampleRate = r;
-    live.blockSize = b;
-    live.outChannels = ch;
-    live.driver = d;
-    applied.push([r, b, ch, d]);
-  };
-  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
-  resetAudioDraft(); // drop any draft leaked from a prior test in this file
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
+  resetAudioDraft();
 
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be, notify: () => {} });
   const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
 
-  // Fresh: the driver reads the live host API (Auto); Apply is inert.
+  // One entry per backend driver, the backend named: the same driver name in two backends must read differently, and
+  // "Auto" says what it resolves to.
   let items = audioItems();
-  expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto");
-  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+  const driver = findItem(items, "audio-driver")!;
+  expect(driver.label).toBe("Driver: Auto (PortAudio: PipeWire)");
+  expect(driver.kind).toBe("cycler");
 
-  // Step the driver cycler forward (Auto -> PipeWire): the DRAFT label moves, the device is NOT reconfigured,
-  // and Apply becomes live.
+  // Step forward (Auto -> PortAudio: PipeWire): staged only, and the device is untouched.
+  driver.onCycle!(1);
+  items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PortAudio: PipeWire");
+  expect(fake.applied.length).toBe(0);
+
+  // Step again (PortAudio: ALSA) and Apply: the section keeps the backend and driver IDs, which is what a launch
+  // opens.
   findItem(items, "audio-driver")!.onCycle!(1);
   items = audioItems();
-  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
-  expect(applied.length).toBe(0); // staged only
-  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
-
-  // Apply commits the staged driver as the 4th arg (rate/block/channels unchanged).
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PortAudio: ALSA");
   findItem(items, "audio-apply")!.onSelect!();
-  expect(applied[applied.length - 1]).toEqual([48000, 2048, 2, "PipeWire"]);
-  expect(live.driver).toBe("PipeWire");
-  items = audioItems();
-  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
-  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+  expect(fake.applied.at(-1)).toEqual({
+    backend: "portaudio", driver: "alsa", device: "", sampleRate: 48000, blockSize: 512, outChannels: 2,
+  });
+  expect(stores.userConfig.section("audio")).toEqual({
+    backend: "portaudio", driver: "alsa", device: "", sampleRate: 48000, blockSize: 512, outChannels: 2,
+  });
 
   resetAudioDraft();
+  fake.uninstall();
   delete g.__rp_isStandalone;
-  delete g.__rp_getAudioConfig;
-  delete g.__rp_setAudioConfig;
 });
 
-test("Settings -> Audio > Output Device (standalone): lists the driver's devices, resets on driver change, Apply commits it as the 5th arg", async () => {
-  const applied: Array<[number, number, number, string, string]> = [];
-  const live = {
-    sampleRate: 48000,
-    blockSize: 2048,
-    outChannels: 2,
-    driver: "Auto",
-    device: "",
-    drivers: ["Auto", "PipeWire", "ALSA"],
-    devicesByDriver: { Auto: ["Speakers", "HDMI"], PipeWire: ["Speakers", "HDMI"], ALSA: ["default"] } as Record<string, string[]>,
-  };
-  const g = globalThis as {
-    __rp_isStandalone?: boolean;
-    __rp_getAudioConfig?: () => typeof live;
-    __rp_setAudioConfig?: (r: number, b: number, ch: number, d: string, dev: string) => void;
-  };
+test("Settings -> Audio > Output Device: lists the driver's devices, resets on a driver change, Apply commits", async () => {
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
-  g.__rp_getAudioConfig = () => ({ ...live });
-  g.__rp_setAudioConfig = (r, b, ch, d, dev) => {
-    live.sampleRate = r;
-    live.blockSize = b;
-    live.outChannels = ch;
-    live.driver = d;
-    live.device = dev;
-    applied.push([r, b, ch, d, dev]);
-  };
-  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
   resetAudioDraft();
 
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be, notify: () => {} });
   const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
 
-  // Fresh: Default (the host API default).
+  // Fresh: Default (the auto driver's default sink is named).
   let items = audioItems();
-  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default");
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default (Speakers)");
 
-  // Step the device cycler → the first device in the Auto driver's list. Staged, device NOT reconfigured.
+  // Step the device cycler -> the first device of the Auto driver. Staged, device NOT reconfigured.
   findItem(items, "audio-device")!.onCycle!(1);
   items = audioItems();
   expect(findItem(items, "audio-device")!.label).toBe("Output Device: Speakers");
-  expect(applied.length).toBe(0);
-  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+  expect(fake.applied.length).toBe(0);
 
-  // Changing the Driver resets the device to Default (a device isn't valid across host APIs).
+  // Changing the Driver resets the device to Default (a device name is not valid across drivers).
   findItem(items, "audio-driver")!.onCycle!(1);
   items = audioItems();
-  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
-  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default");
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default (Speakers)");
 
-  // Pick a device under the new driver, Apply → device rides the 5th arg.
+  // Pick a device under the new driver and Apply -> the whole choice lands, device included.
   findItem(items, "audio-device")!.onCycle!(1);
   findItem(audioItems(), "audio-apply")!.onSelect!();
-  expect(applied[applied.length - 1]).toEqual([48000, 2048, 2, "PipeWire", "Speakers"]);
-  expect(live.device).toBe("Speakers");
+  expect(fake.applied.at(-1)).toEqual({
+    backend: "portaudio", driver: "pipewire", device: "Speakers", sampleRate: 48000, blockSize: 512, outChannels: 2,
+  });
 
   resetAudioDraft();
+  fake.uninstall();
   delete g.__rp_isStandalone;
-  delete g.__rp_getAudioConfig;
-  delete g.__rp_setAudioConfig;
 });
 
-test("Settings -> Audio > Block Size (standalone): labels carry the block's latency, which follows the draft rate", async () => {
-  const live = { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", device: "" };
-  const g = globalThis as { __rp_isStandalone?: boolean; __rp_getAudioConfig?: () => typeof live };
+test("Settings -> Audio > Block Size: labels carry the block's latency, which follows the draft rate", async () => {
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
-  g.__rp_getAudioConfig = () => ({ ...live });
-  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
   resetAudioDraft();
 
   const stores = composeAppStores({ backend: new MockBackend("/cfg"), notify: () => {} });
@@ -1440,57 +1384,62 @@ test("Settings -> Audio > Block Size (standalone): labels carry the block's late
   items = audioItems();
   expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
 
-  // The figure tracks the DRAFT sample rate, so the same block reads longer once the rate drops - the
-  // point of showing it at all is that the two settings decide the latency together.
+  // The figure tracks the DRAFT sample rate, so the same block reads longer once the rate drops.
   findItem(items, "audio-rate")!.onCycle!(-1); // 48000 -> 44100
   items = audioItems();
   expect(findItem(items, "audio-rate")!.label).toBe("Sample Rate: 44100 Hz");
   expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.8 ms)");
 
   resetAudioDraft();
+  fake.uninstall();
   delete g.__rp_isStandalone;
-  delete g.__rp_getAudioConfig;
 });
 
-test("Settings -> Audio > Output Device (standalone): 'Default' names the device it resolves to, per driver", async () => {
-  const live = {
-    sampleRate: 48000,
-    blockSize: 512,
-    outChannels: 2,
-    driver: "Auto",
-    device: "",
-    drivers: ["Auto", "PipeWire", "ALSA"],
-    devicesByDriver: { Auto: ["Headphones", "HDMI"], PipeWire: ["Headphones", "HDMI"], ALSA: ["default"] } as Record<string, string[]>,
-    // What "" resolves to on each host API — the PipeWire session default sink here, `default` on ALSA.
-    defaultByDriver: { Auto: "Headphones", PipeWire: "Headphones", ALSA: "default" } as Record<string, string>,
-  };
-  const g = globalThis as { __rp_isStandalone?: boolean; __rp_getAudioConfig?: () => typeof live };
+test("Settings -> Audio > Output Device: 'Default' names the device it resolves to, per driver", async () => {
+  // The ALSA driver's default is a different name, so the label has to follow the DRAFT driver rather than the auto
+  // one.
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
-  g.__rp_getAudioConfig = () => ({ ...live });
-  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
   resetAudioDraft();
 
   const stores = composeAppStores({ backend: new MockBackend("/cfg"), notify: () => {} });
   const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
 
-  // No explicit pick: the row still names the device the sound goes to.
-  let items = audioItems();
-  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default (Headphones)");
-
-  // The label follows the DRAFT driver, so it tracks the host API whose default would be used.
-  findItem(items, "audio-driver")!.onCycle!(1); // Auto -> PipeWire
-  findItem(audioItems(), "audio-driver")!.onCycle!(1); // PipeWire -> ALSA
-  items = audioItems();
-  expect(findItem(items, "audio-driver")!.label).toBe("Driver: ALSA");
+  expect(findItem(audioItems(), "audio-device")!.label).toBe("Output Device: Default (Speakers)");
+  // Auto -> PortAudio: PipeWire -> PortAudio: ALSA.
+  findItem(audioItems(), "audio-driver")!.onCycle!(1);
+  findItem(audioItems(), "audio-driver")!.onCycle!(1);
+  const items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PortAudio: ALSA");
   expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default (default)");
 
-  // A host that can't name its default (an older build, or a host API with no output) keeps the bare label.
-  delete (live as Partial<typeof live>).defaultByDriver;
-  expect(findItem(audioItems(), "audio-device")!.label).toBe("Output Device: Default");
+  resetAudioDraft();
+  fake.uninstall();
+  delete g.__rp_isStandalone;
+});
+
+test("Settings -> Audio: a muted device says why, and a host with no audio device draws no container", async () => {
+  const fake = new FakeAudioDevice().install();
+  fake.mute("the device went away");
+  const g = globalThis as { __rp_isStandalone?: boolean };
+  g.__rp_isStandalone = true;
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
+  resetAudioDraft();
+
+  const stores = composeAppStores({ backend: new MockBackend("/cfg"), notify: () => {} });
+  const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+  expect(findItem(audioItems(), "audio-status")!.label).toBe("Muted: the device went away");
+
+  // A host with no device (a DAW-hosted editor): the containment is the shell's, and it has nothing to hold, so the
+  // submenu is absent rather than empty.
+  fake.uninstall();
+  const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  expect(findItem(settings, "set-audio")).toBe(undefined);
 
   resetAudioDraft();
   delete g.__rp_isStandalone;
-  delete g.__rp_getAudioConfig;
 });
 
 test("Settings Default Render Dir: unset by default, Set persists to config, Clear resets (disabled when unset)", async () => {
@@ -1668,5 +1617,81 @@ test("the SameBoy display rows cycle their role config, gated by model and GB-on
   const nesItems = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: nesSys }).items, "inst-system");
   for (const rid of ["sys-color-correction", "sys-dmg-palette", "sys-light-temp"]) {
     expect(findItem(nesItems, rid)).toBe(undefined);
+  }
+});
+
+test("building the menus never enumerates a sibling audio backend", async () => {
+  // C1 of the F5b S3 review: a builder that asks every backend for its drivers initialises PortAudio and SDL audio at
+  // launch (and on every menu render) whatever the run pinned. The fake describes only the backend IN FORCE and counts
+  // every backendDrivers call, so this is the same path the native hook takes.
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
+  g.__rp_isStandalone = true;
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
+  resetAudioDraft();
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be, notify: () => {} });
+    const startItems = buildStartMenu(ctxOf(stores)).items;
+    // The Settings children are built EAGERLY as part of the menu (that was the leak's path), and so is the instance
+    // menu's copy.
+    const settings = submenuChildren(startItems, "start-settings");
+    expect(settings.length).toBeGreaterThan(0);
+    be.seed("/roms/a.gb", gbRom());
+    const id = stores.project.systems.addSystem("/roms/a.gb")!;
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    buildInstanceMenu({ ...ctxOf(stores), system: sys });
+    // Opening Settings > Audio is a menu build too, and asks for nothing by itself.
+    const audioItems = submenuChildren(settings, "set-audio");
+    expect(audioItems.length).toBeGreaterThan(0);
+    expect(fake.backendDriversCalls).toEqual([]);
+
+    // Only the explicit step on the Driver row enumerates a sibling, once, and its drivers then read.
+    expect(findItem(audioItems, "audio-drivers-more")).toBeTruthy();
+    findItem(audioItems, "audio-drivers-more")!.onSelect!();
+    expect(fake.backendDriversCalls).toEqual(["sdl"]);
+    const audioRows = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+    // The fetched backend's drivers are in the row now: Auto -> PortAudio's two -> SDL's one.
+    findItem(audioRows(), "audio-driver")!.onCycle!(1);
+    findItem(audioRows(), "audio-driver")!.onCycle!(1);
+    findItem(audioRows(), "audio-driver")!.onCycle!(1);
+    const last = audioRows();
+    expect(findItem(last, "audio-driver")!.label).toBe("Driver: SDL: pipewire");
+    // The second backend is the only sibling, so the row is gone once it has been asked for.
+    expect(findItem(last, "audio-drivers-more")).toBe(undefined);
+  } finally {
+    resetAudioDraft();
+    fake.uninstall();
+    delete g.__rp_isStandalone;
+  }
+});
+
+test("a muted device keeps Apply live, and the audio service repaints when the status moves", async () => {
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
+  g.__rp_isStandalone = true;
+  const { resetAudioDraft, default: audioUi } = await import("@retroplug/audio/ui");
+  const { createUiHost } = await import("../../ui/host/uiHost");
+  resetAudioDraft();
+  try {
+    const stores = composeAppStores({ backend: new MockBackend("/cfg"), notify: () => {} });
+    const host = createUiHost(stores, { views: { open: () => {} }, beginImport: () => {} });
+    fake.mute("the device went away");
+    const items = submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+    // The status row says why, and Apply - though the draft is clean - is the retry.
+    expect(findItem(items, "audio-status")!.label).toBe("Muted: the device went away");
+    expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+
+    // The service's first poll applies the saved section (clearing the mute), and a later move repaints once.
+    const svc = audioUi.services!.find((s) => s.id === "audio-device")!;
+    svc.start!(host);
+    expect(svc.poll!.run(host)).toBe(true);
+    expect(svc.poll!.run(host)).toBe(false);
+    fake.mute("lost again");
+    expect(svc.poll!.run(host)).toBe(true);
+  } finally {
+    resetAudioDraft();
+    fake.uninstall();
+    delete g.__rp_isStandalone;
   }
 });

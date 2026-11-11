@@ -10,7 +10,9 @@
   "exports": {
     ".": "./ts/app.ts",
     "./app": "./ts/app.ts",
-    "./ui": "./ts/ui/index.ts"
+    "./ui": "./ts/ui/index.ts",
+    "./portMatch": "./ts/portMatch.ts",
+    "./testSupport/fakeDevice": "./ts/testSupport/fakeDevice.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
@@ -18,6 +20,7 @@
     "@retroplug/ui": "workspace:*"
   },
   "devDependencies": {
+    "@retroplug/testing": "workspace:*",
     "typescript": "^7.0.2"
   },
   "retroplug": {

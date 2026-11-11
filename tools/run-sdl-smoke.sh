@@ -62,11 +62,15 @@ run() {
     fi
 }
 want() { grep -qE "$2" "$1" || { cat "$1" >&2; fail "$3"; }; }
+# A line the run MUST NOT print: the rendezvous's own failure report. It means the audio service never applied the
+# `audio` section, so the app started on the defaults after the half-second bound.
+refuse() { ! grep -qF "audio: the UI did not apply its settings" "$1" || { cat "$1" >&2; fail "$2"; }; }
 
 # 1) Boot + render: the UI must actually draw (RETROPLUG_SDL_REQUIRE_NONBLANK exits non-zero on a flat frame),
 #    not merely boot. This is the standalone analogue of the jack `screenshot` check, minus Xvfb.
 run boot 90 RETROPLUG_SDL_REQUIRE_NONBLANK=1 RETROPLUG_SDL_SCREENSHOT="$TMP/frame.png"
 want "$LOG" "running " "boot: no 'running' banner"
+refuse "$LOG" "boot: the audio service never applied its settings"
 [ -s "$TMP/frame.png" ] || fail "boot: no screenshot written"
 echo "  ok: boot + non-blank render"
 
@@ -77,11 +81,13 @@ want "$LOG" "afterStop=0" "clock: 0xFC stop did not clear transport"
 # ...and with no clock master, the host's own transport is STOPPED at boot. That default is what keeps a
 # SYNC=MIDI cart from being clocked by a standalone nobody has pressed play on (Instance menu > MIDI Clock).
 want "$LOG" "live=0" "clock: the host transport is running at boot (should start stopped)"
-# ...and the MIDI Clock submenu's controls actually reach it: this drives __rp_setTransport/__rp_setClockBpm
-# through the JS globals those rows call, so a missing bind reads back the default instead of quietly
-# dropping the submenu from the menu.
-run transport 30 RETROPLUG_SDL_TEST_TRANSPORT=1
+# ...and the MIDI Clock submenu's controls actually reach it: this starts the transport through the JS global the row
+# calls and loads a project whose `midi.clockBpm` is 140 (the tempo is the PROJECT's now, applied by the midi package's
+# service), so a missing bind reads back the default instead of quietly dropping the submenu from the menu.
+printf '{"schemaVersion":"4","settings":{"midi":{"clockBpm":140}},"systems":[]}\n' >"$TMP/tempo.rplg"
+run transport 30 RETROPLUG_SDL_TEST_TRANSPORT=1 RETROPLUG_AUTOLOAD_PROJECT="$TMP/tempo.rplg"
 want "$LOG" "transport self-test: playing=1 bpm=140" "transport: the MIDI Clock seam did not start/retempo the clock"
+refuse "$LOG" "transport: the audio service never applied its settings"
 echo "  ok: MIDI-clock transport + stopped at boot + menu play/stop"
 
 # 3) Multi-output audio (P5): an 8-channel device opens with 8 planar buffers.
@@ -112,18 +118,32 @@ want "$LOG" "wheel: notches=\(0\.00,-3\.00\) at \([1-9][0-9]*,[1-9][0-9]*\)" \
      "wheel: SDL_MOUSEWHEEL did not reach the handler at the tracked cursor"
 echo "  ok: mouse wheel"
 
-# 5b) Settings > Audio through the JS seam: the Apply row's own call, with the arguments audioDraft.ts builds - a driver
-#     LABEL from the getter's list, and the chosen device. The hook behind it read that label as a BACKEND id once, so
-#     every Apply resolved to a backend that does not exist and muted the run; this reads the getter back and holds the
-#     old shape (drivers, driver, devicesByDriver, defaultByDriver, autoDriver, device) and an unmuted status.
+# 5b) Settings > Audio through the JS seam: the Apply row's own call, with an `audio` section's fields, then the
+#     description read back. The hooks answer what the rows read: the backends, and the status the device adopted (the
+#     rate and block an Apply asked for), with the null fallback this run is pinned to and no mute.
 run audio-hook 20 RETROPLUG_SDL_TEST_AUDIO_HOOK=1
-want "$LOG" 'post-audio-hook: .*"drivers":\["Auto"' "audio hooks: the getter lost the drivers list"
-want "$LOG" 'post-audio-hook: .*"driver":"Auto"' "audio hooks: the selected driver is not the Auto label"
-want "$LOG" 'post-audio-hook: .*"devicesByDriver":{' "audio hooks: the getter lost devicesByDriver"
-want "$LOG" 'post-audio-hook: .*"defaultByDriver":{' "audio hooks: the getter lost defaultByDriver"
-want "$LOG" 'post-audio-hook: .*"autoDriver":' "audio hooks: the getter lost autoDriver"
-want "$LOG" 'post-audio-hook: .*"muted":false' "audio hooks: an Apply muted the run"
+want "$LOG" 'post-audio-hook: .*"backends":\[\{"id":"portaudio"' "audio hooks: the description lost the backends"
+want "$LOG" 'post-audio-hook: .*"backend":"null"' "audio hooks: the null backend pin did not hold"
+want "$LOG" 'post-audio-hook: .*"sampleRate":44100' "audio hooks: an Apply did not adopt the rate"
+want "$LOG" 'post-audio-hook: .*"blockFrames":256' "audio hooks: an Apply did not adopt the block"
+want "$LOG" 'post-audio-hook: .*"error":""' "audio hooks: an Apply muted the run"
 echo "  ok: Settings > Audio through the JS seam"
+
+# 5c) `--block-size` over the section (E12): the file asks for 512, the flag for 256, and the device the service
+#     applied runs at the flag's block. A launch script's quantum must win over the saved choice without being saved.
+SAVED_CFG="$RETROPLUG_USER_CONFIG_DIR/config.json"
+printf '{"schemaVersion":3,"audio":{"backend":"null","driver":"","device":"","sampleRate":48000,"blockSize":512,"outChannels":2}}\n' >"$SAVED_CFG"
+run block-saved 30 RETROPLUG_SDL_TEST_AUDIO_STATUS=1
+want "$LOG" 'post-audio-status: .*"blockFrames":512' "block override: the saved section did not open at its block"
+LOG="$TMP/block-flag.log"
+if ! env RETROPLUG_SDL_TEST_AUDIO_STATUS=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=30 "$BIN" --block-size 256 >"$LOG" 2>&1; then
+    cat "$LOG" >&2; fail "block override: binary exited non-zero"
+fi
+want "$LOG" 'post-audio-status: .*"blockFrames":256' "block override: --block-size did not win over the section"
+rm -f "$SAVED_CFG"
+echo "  ok: --block-size overrides the audio section"
+printf '{"schemaVersion":3,"audio":{"backend":"null","driver":"","device":"","sampleRate":48000,"blockSize":512,"outChannels":2}}\n' \
+    >"$RETROPLUG_USER_CONFIG_DIR/config.json"
 
 # 6) Close guard (P6): an OS close on a clean project isn't vetoed → exits well before the 120-frame budget.
 run quit 120 RETROPLUG_SDL_TEST_QUIT=1

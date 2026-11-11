@@ -50822,12 +50822,12 @@
        {
         "id": "audio-driver",
         "kind": "cycler",
-        "label": "Driver: Auto (PipeWire)"
+        "label": "Driver: Auto (PortAudio: PipeWire)"
        },
        {
         "id": "audio-device",
         "kind": "cycler",
-        "label": "Output Device: Default (Built-in Audio)"
+        "label": "Output Device: Default (Speakers)"
        },
        {
         "id": "audio-rate",
@@ -50854,6 +50854,11 @@
         "kind": "action",
         "label": "Apply",
         "disabled": true
+       },
+       {
+        "id": "audio-drivers-more",
+        "kind": "action",
+        "label": "More drivers..."
        }
       ]
      },
@@ -50863,14 +50868,45 @@
       "label": "MIDI",
       "children": [
        {
-        "id": "midi-input",
-        "kind": "cycler",
-        "label": "Input Device: None"
+        "id": "midi-project",
+        "kind": "action",
+        "label": "Saved with this project",
+        "disabled": true
        },
        {
-        "id": "midi-output",
-        "kind": "cycler",
-        "label": "Output Device: None"
+        "id": "midi-all-inputs",
+        "kind": "action",
+        "label": "[ ] All devices"
+       },
+       {
+        "id": "midi-input-0",
+        "kind": "action",
+        "label": "[ ] Arturia KeyStep 32"
+       },
+       {
+        "id": "midi-input-1",
+        "kind": "action",
+        "label": "[ ] LPProMK3 MIDI"
+       },
+       {
+        "id": "midi-sep-outputs",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "midi-output-0",
+        "kind": "action",
+        "label": "[ ] LPProMK3 MIDI"
+       },
+       {
+        "id": "midi-sep-rescan",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "midi-rescan",
+        "kind": "action",
+        "label": "Rescan"
        }
       ]
      },
@@ -51372,25 +51408,40 @@
     ]
    },
    "audio-driver": {
-    "default": "Driver: Auto (PipeWire)",
+    "default": "Driver: Auto (PortAudio: PipeWire)",
     "steps": [
      {
-      "label": "Driver: PipeWire",
+      "label": "Driver: PortAudio: PipeWire",
       "stored": {},
       "staged": []
      },
      {
-      "label": "Driver: Auto (PipeWire)",
+      "label": "Driver: PortAudio: ALSA",
+      "stored": {},
+      "staged": []
+     },
+     {
+      "label": "Driver: Auto (PortAudio: PipeWire)",
       "stored": {},
       "staged": []
      }
     ]
    },
    "audio-device": {
-    "default": "Output Device: Default (Built-in Audio)",
+    "default": "Output Device: Default (Speakers)",
     "steps": [
      {
-      "label": "Output Device: Default (Built-in Audio)",
+      "label": "Output Device: Speakers",
+      "stored": {},
+      "staged": []
+     },
+     {
+      "label": "Output Device: HDMI",
+      "stored": {},
+      "staged": []
+     },
+     {
+      "label": "Output Device: Default (Speakers)",
       "stored": {},
       "staged": []
      }
@@ -51496,26 +51547,6 @@
      },
      {
       "label": "Out Channels: Stereo",
-      "stored": {},
-      "staged": []
-     }
-    ]
-   },
-   "midi-input": {
-    "default": "Input Device: None",
-    "steps": [
-     {
-      "label": "Input Device: None",
-      "stored": {},
-      "staged": []
-     }
-    ]
-   },
-   "midi-output": {
-    "default": "Output Device: None",
-    "steps": [
-     {
-      "label": "Output Device: None",
       "stored": {},
       "staged": []
      }
@@ -51976,14 +52007,45 @@
       "label": "MIDI",
       "children": [
        {
-        "id": "midi-input",
-        "kind": "cycler",
-        "label": "Input Device: None"
+        "id": "midi-project",
+        "kind": "action",
+        "label": "Saved with this project",
+        "disabled": true
        },
        {
-        "id": "midi-output",
-        "kind": "cycler",
-        "label": "Output Device: None"
+        "id": "midi-all-inputs",
+        "kind": "action",
+        "label": "[ ] All devices"
+       },
+       {
+        "id": "midi-input-0",
+        "kind": "action",
+        "label": "[ ] Arturia KeyStep 32"
+       },
+       {
+        "id": "midi-input-1",
+        "kind": "action",
+        "label": "[ ] LPProMK3 MIDI"
+       },
+       {
+        "id": "midi-sep-outputs",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "midi-output-0",
+        "kind": "action",
+        "label": "[ ] LPProMK3 MIDI"
+       },
+       {
+        "id": "midi-sep-rescan",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "midi-rescan",
+        "kind": "action",
+        "label": "Rescan"
        },
        {
         "id": "midi-sep-surface",
@@ -52305,6 +52367,28 @@
       "id": "set-open-folder",
       "kind": "action",
       "label": "Open Settings Folder"
+     }
+    ]
+   },
+   {
+    "id": "inst-sep-transport",
+    "kind": "separator",
+    "label": ""
+   },
+   {
+    "id": "inst-clock",
+    "kind": "submenu",
+    "label": "MIDI Clock: Stopped",
+    "children": [
+     {
+      "id": "inst-clock-transport",
+      "kind": "cycler",
+      "label": "Transport: Stopped"
+     },
+     {
+      "id": "inst-clock-tempo",
+      "kind": "cycler",
+      "label": "Tempo: 120 BPM"
      }
     ]
    },
@@ -53358,26 +53442,6 @@
      }
     ]
    },
-   "midi-input": {
-    "default": "Input Device: None",
-    "steps": [
-     {
-      "label": "Input Device: None",
-      "stored": {},
-      "staged": []
-     }
-    ]
-   },
-   "midi-output": {
-    "default": "Output Device: None",
-    "steps": [
-     {
-      "label": "Output Device: None",
-      "stored": {},
-      "staged": []
-     }
-    ]
-   },
    "bind-profile": {
     "default": "Profile: default",
     "steps": [
@@ -53478,6 +53542,33 @@
       "label": "File Dialogs: OS Native",
       "stored": {
        "user.useNativeFileDialogs": true
+      },
+      "staged": []
+     }
+    ]
+   },
+   "inst-clock-transport": {
+    "default": "Transport: Stopped",
+    "steps": [
+     {
+      "label": "Transport: Playing",
+      "stored": {},
+      "staged": []
+     },
+     {
+      "label": "Transport: Stopped",
+      "stored": {},
+      "staged": []
+     }
+    ]
+   },
+   "inst-clock-tempo": {
+    "default": "Tempo: 120 BPM",
+    "steps": [
+     {
+      "label": "Tempo: 120 BPM",
+      "stored": {
+       "project.midi.clockBpm": 121
       },
       "staged": []
      }
@@ -53806,14 +53897,45 @@
       "label": "MIDI",
       "children": [
        {
-        "id": "midi-input",
-        "kind": "cycler",
-        "label": "Input Device: None"
+        "id": "midi-project",
+        "kind": "action",
+        "label": "Saved with this project",
+        "disabled": true
        },
        {
-        "id": "midi-output",
-        "kind": "cycler",
-        "label": "Output Device: None"
+        "id": "midi-all-inputs",
+        "kind": "action",
+        "label": "[ ] All devices"
+       },
+       {
+        "id": "midi-input-0",
+        "kind": "action",
+        "label": "[ ] Arturia KeyStep 32"
+       },
+       {
+        "id": "midi-input-1",
+        "kind": "action",
+        "label": "[ ] LPProMK3 MIDI"
+       },
+       {
+        "id": "midi-sep-outputs",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "midi-output-0",
+        "kind": "action",
+        "label": "[ ] LPProMK3 MIDI"
+       },
+       {
+        "id": "midi-sep-rescan",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "midi-rescan",
+        "kind": "action",
+        "label": "Rescan"
        },
        {
         "id": "midi-sep-surface",
@@ -54134,6 +54256,28 @@
       "id": "set-open-folder",
       "kind": "action",
       "label": "Open Settings Folder"
+     }
+    ]
+   },
+   {
+    "id": "inst-sep-transport",
+    "kind": "separator",
+    "label": ""
+   },
+   {
+    "id": "inst-clock",
+    "kind": "submenu",
+    "label": "MIDI Clock: Stopped",
+    "children": [
+     {
+      "id": "inst-clock-transport",
+      "kind": "cycler",
+      "label": "Transport: Stopped"
+     },
+     {
+      "id": "inst-clock-tempo",
+      "kind": "cycler",
+      "label": "Tempo: 120 BPM"
      }
     ]
    },
@@ -55162,26 +55306,6 @@
      }
     ]
    },
-   "midi-input": {
-    "default": "Input Device: None",
-    "steps": [
-     {
-      "label": "Input Device: None",
-      "stored": {},
-      "staged": []
-     }
-    ]
-   },
-   "midi-output": {
-    "default": "Output Device: None",
-    "steps": [
-     {
-      "label": "Output Device: None",
-      "stored": {},
-      "staged": []
-     }
-    ]
-   },
    "bind-profile": {
     "default": "Profile: default",
     "steps": [
@@ -55282,6 +55406,33 @@
       "label": "File Dialogs: OS Native",
       "stored": {
        "user.useNativeFileDialogs": true
+      },
+      "staged": []
+     }
+    ]
+   },
+   "inst-clock-transport": {
+    "default": "Transport: Stopped",
+    "steps": [
+     {
+      "label": "Transport: Playing",
+      "stored": {},
+      "staged": []
+     },
+     {
+      "label": "Transport: Stopped",
+      "stored": {},
+      "staged": []
+     }
+    ]
+   },
+   "inst-clock-tempo": {
+    "default": "Tempo: 120 BPM",
+    "steps": [
+     {
+      "label": "Tempo: 120 BPM",
+      "stored": {
+       "project.midi.clockBpm": 121
       },
       "staged": []
      }

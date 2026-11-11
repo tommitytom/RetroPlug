@@ -293,8 +293,10 @@ const launchpadService: UiService = {
 };
 
 // Everything the module offers the shell and the tests: the port/scan seam (`./launchpadDevices`) is the contract a menu
-// row, a service and a test all read, so it stays published from the package's one UI entry.
+// row, a service and a test all read, so it stays published from the package's one UI entry. The config section's key
+// and shape are published here too, because the pack's rows read them by name and a test writes them.
 export * from "./launchpadDevices";
+export { CONTROL_SURFACE_SECTION_KEY, type ControlSurfaceSettings } from "../control/configSection";
 
 export default defineUi({
   menus: [launchpadInstanceMenu, launchpadScanRows],

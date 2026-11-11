@@ -8,8 +8,8 @@
 #
 #   1. nothing selected      - nothing claimed, nothing written at the device; and with the shared stream on
 #                              "All Devices" the fake's notes DO reach it, so leg 2's "they don't" is seeable
-#   2. restore + exclusion   - a pair saved as connected is claimed before MIDI opens and audio starts, and
-#                              the fake's notes then do NOT reach the shared stream
+#   2. restore + exclusion   - a pair saved as connected is claimed before the stream opens any hardware port
+#                              (and before the audio device opens), and the fake's notes then do NOT reach it
 #   3. the device lifecycle  - with a controller-only project loaded, the device hears Programmer mode FIRST,
 #                              then LED traffic, then the release LAST (a Pro MK3 in Programmer mode has its
 #                              front panel locked until it is let go)
@@ -137,44 +137,61 @@ printf '%s\n' "$LISTED" | grep -q -F -x -e "$FAKE_PORT" \
     || { cat "$TMP/list.log" >&2; fail "the standalone does not list the fake device"; }
 PORT="$FAKE_PORT"
 
-# The shared stream listens to EVERY hardware input, so the only thing keeping the fake's notes out of it is
-# the claim. RETROPLUG_MIDI_LOG makes the stream log each message it receives.
-echo '{"input":"*","output":""}' >"$RETROPLUG_USER_CONFIG_DIR/midi.json"
+# The MIDI selection is the PROJECT's now (a `midi` section), so a leg that wants hardware inputs to reach the shared
+# stream autoloads a project that asks for them. The section is the shell-free form (packages/midi/ts/configSection.ts):
+# an explicit "every input" choice, or the named ports a rig saved.
+writeproject() {  # writeproject <path> <midi-json>
+    printf '{"schemaVersion":"4","settings":{"midi":%s},"systems":[]}\n' "$2" >"$1"
+}
+ALL_INPUTS='{"inputs":[],"allInputs":true,"outputs":[],"clockBpm":120}'
+writeproject "$TMP/all-inputs.rplg" "$ALL_INPUTS"
+
+# The shared stream listens to every hardware input when the PROJECT asks for it, so the only thing keeping the fake's
+# notes out of it is the claim. RETROPLUG_MIDI_LOG makes the stream log each message it receives.
 export RETROPLUG_MIDI_LOG=1
 NOTE='MIDI in: 90 51 7F'
 KEYS='MIDI in: 90 3C 7F'
 
 # 1) Nothing selected: nothing claimed, nothing written - and the fake's notes reach the shared stream.
 m="$(mark)"
-RETROPLUG_SDL_EXIT_AFTER_FRAMES=60 "$BIN" >"$TMP/idle.log" 2>&1 || { cat "$TMP/idle.log" >&2; fail "idle run exited non-zero"; }
+RETROPLUG_SDL_EXIT_AFTER_FRAMES=90 "$BIN" --autoload "$TMP/all-inputs.rplg" >"$TMP/idle.log" 2>&1 \
+    || { cat "$TMP/idle.log" >&2; fail "idle run exited non-zero"; }
 grep -q 'reserved MIDI input' "$TMP/idle.log" && fail "claimed a port with nothing selected"
 # Nothing to claim is still a restore: the host waits for that word before opening MIDI.
 grep -q 'did not report its restore' "$TMP/idle.log" && { cat "$TMP/idle.log" >&2; fail "the UI never reported its restore"; }
+# The rendezvous's other half: the audio service applied the `audio` section (the null pin, here). A UI that never
+# applies costs the bound and starts on the defaults, which is the line this asserts never prints.
+grep -qF 'audio: the UI did not apply its settings' "$TMP/idle.log" && { cat "$TMP/idle.log" >&2; fail "the audio service never applied its settings"; }
 [ -z "$(heard_since "$m")" ] || { heard_since "$m" >&2; fail "wrote at the device with nothing selected"; }
 grep -qF "$NOTE" "$TMP/idle.log" || { cat "$TMP/idle.log" >&2; fail "the shared stream never heard the fake - leg 2's exclusion would prove nothing"; }
 grep -qF "$KEYS" "$TMP/idle.log" || { cat "$TMP/idle.log" >&2; fail "the shared stream never heard the second device"; }
 echo "  ok: nothing selected, nothing claimed; unclaimed, the device's notes reach the shared stream"
 
-# 2) Left connected last session: reclaimed before MIDI opens and audio starts, and excluded from the stream.
+# 2) Left connected last session: reclaimed before the audio device opens and before the stream opens a hardware port,
+#    and excluded from the stream. The virtual ports open at once now (the stream is up before any project is applied),
+#    so the claim cannot precede MIDI opening - what it still precedes is the first hardware open, which must never
+#    happen for the claimed port at all.
 setcfg "cfg['controlSurface'] = {'input': '$PORT', 'output': '$PORT', 'enabled': True, 'device': 'Launchpad Pro [MK3]'}"
 m="$(mark)"
-RETROPLUG_SDL_EXIT_AFTER_FRAMES=60 "$BIN" >"$TMP/restore.log" 2>&1 || { cat "$TMP/restore.log" >&2; fail "restore run exited non-zero"; }
+RETROPLUG_SDL_EXIT_AFTER_FRAMES=90 "$BIN" --autoload "$TMP/all-inputs.rplg" >"$TMP/restore.log" 2>&1 \
+    || { cat "$TMP/restore.log" >&2; fail "restore run exited non-zero"; }
 grep -qF "reserved MIDI input '$PORT'" "$TMP/restore.log" || { cat "$TMP/restore.log" >&2; fail "the persisted pair was not reclaimed"; }
-# WHEN matters as much as whether: claimed after audio is up, the reservation costs an audio stop/start (which
-# drops PipeWire links) and leaves the pad in the shared stream for the first frames. MIDI must open (the
-# "virtual ports" line) after the claim; the "audio:" line is the device being OPENED earlier, not started.
+# WHEN matters as much as whether: claimed after audio is up, a pad press reaches the stream for the first frames (the
+# reservation still closes the port without an audio stop, but the first frames are audible). The claim must land
+# before the app starts running, and the claimed port must never be opened by the stream - not even for one frame.
 reserved_at="$(grep -nF "reserved MIDI input '$PORT'" "$TMP/restore.log" | head -1 | cut -d: -f1)"
-midi_at="$(grep -n '\] MIDI: virtual ports' "$TMP/restore.log" | head -1 | cut -d: -f1)"
 running_at="$(grep -n '\] running ' "$TMP/restore.log" | head -1 | cut -d: -f1)"
-[ -n "$midi_at" ] && [ -n "$running_at" ] || { cat "$TMP/restore.log" >&2; fail "no MIDI-open / running line in the restore run"; }
-[ "$reserved_at" -lt "$midi_at" ] && [ "$reserved_at" -lt "$running_at" ] \
-    || { cat "$TMP/restore.log" >&2; fail "the pair was reclaimed too late (line $reserved_at; MIDI open $midi_at, running $running_at)"; }
+[ -n "$reserved_at" ] && [ -n "$running_at" ] || { cat "$TMP/restore.log" >&2; fail "no running line in the restore run"; }
+[ "$reserved_at" -lt "$running_at" ] \
+    || { cat "$TMP/restore.log" >&2; fail "the pair was reclaimed too late (line $reserved_at; running $running_at)"; }
+grep -qF "MIDI in: connected hardware port '$PORT'" "$TMP/restore.log" \
+    && { cat "$TMP/restore.log" >&2; fail "the claimed port was opened by the shared stream"; }
 grep -qF "$NOTE" "$TMP/restore.log" && { cat "$TMP/restore.log" >&2; fail "the claimed device's notes still reached the shared stream"; }
 # ...while everything ELSE still does: a claim that took the whole stream down would pass the line above.
 grep -qF "$KEYS" "$TMP/restore.log" || { cat "$TMP/restore.log" >&2; fail "claiming the device cut the shared stream off from other devices"; }
 heard="$(heard_since "$m")"
 [ "$heard" = "f0 00 20 29 02 0e 0e 00 f7" ] || { echo "$heard" >&2; fail "with no project, the device should hear exactly the release at quit"; }
-echo "  ok: reclaimed before MIDI opens and audio starts; its notes kept out of the shared stream; released at quit"
+echo "  ok: reclaimed before the app starts running, its port never opened by the stream; released at quit"
 
 # 3) A project with the controller on: Programmer mode first, LEDs, the release last.
 cat >"$TMP/controller.rplg" <<'JSON'
@@ -193,12 +210,14 @@ echo "  ok: Programmer mode first, LED traffic, the release last"
 # pointed at the device. The scan finds it, persists it, and claims it with audio running - the live path:
 # The stream reopens around a running audio callback, and its output is held back.
 setcfg "cfg['controlSurface'] = {'input': '', 'output': '', 'enabled': True, 'device': ''}"
-echo "{\"input\":\"*\",\"output\":\"$PORT\"}" >"$RETROPLUG_USER_CONFIG_DIR/midi.json"
+# The Settings output is the project's: a `midi` section that names the device the control surface will claim.
+writeproject "$TMP/scan-project.rplg" "{\"inputs\":[],\"allInputs\":true,\"outputs\":[{\"name\":\"$PORT\"}],\"clockBpm\":120}"
 m="$(mark)"
 # Long enough for the whole scan at this host's frame rate: SCAN_WINDOW_MS (300) per probed output, plus the same window
 # again for the model follow-up on the pair that answered - about 900 ms, or 54 frames of this loop - with the rest of the
 # budget for the UI's mount and restore. The scan is stepped by the UI's frame poll, so its windows land a frame apart.
-RETROPLUG_SDL_TEST_SCAN=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=420 "$BIN" >"$TMP/scan.log" 2>&1 || { cat "$TMP/scan.log" >&2; fail "scan run exited non-zero"; }
+RETROPLUG_SDL_TEST_SCAN=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=480 "$BIN" --autoload "$TMP/scan-project.rplg" \
+    >"$TMP/scan.log" 2>&1 || { cat "$TMP/scan.log" >&2; fail "scan run exited non-zero"; }
 grep -q 'scan test: started=true' "$TMP/scan.log" || { cat "$TMP/scan.log" >&2; fail "the scan did not start"; }
 heard="$(heard_since "$m")"
 echo "$heard" | grep -qx 'f0 7e 7f 06 01 f7' || { echo "$heard" >&2; fail "the device was never asked the Device Inquiry"; }
@@ -224,15 +243,15 @@ grep -qF "MIDI out: '$PORT' is held by the control surface" "$TMP/scan.log" \
 # for the scan's seconds. A "suspended" line here means that regression is back.
 grep -q 'hardware inputs suspended' "$TMP/scan.log" \
     && { cat "$TMP/scan.log" >&2; fail "the scan closed the shared stream's hardware inputs off Windows"; }
-echo '{"input":"*","output":""}' >"$RETROPLUG_USER_CONFIG_DIR/midi.json"
 echo "  ok: a real scan found and confirmed the device, saved it, and claimed it mid-session - its notes stop, others' do not, the shared output steps aside"
 
 # 5) Two standalones, one Launchpad: the second must not claim what the first holds.
-RETROPLUG_SDL_EXIT_AFTER_FRAMES=240 "$BIN" >"$TMP/first.log" 2>&1 &
+RETROPLUG_SDL_EXIT_AFTER_FRAMES=240 "$BIN" --autoload "$TMP/all-inputs.rplg" >"$TMP/first.log" 2>&1 &
 OTHER_PID=$!
 for _ in $(seq 1 50); do grep -qF "reserved MIDI input '$PORT'" "$TMP/first.log" && break; sleep 0.1; done
 grep -qF "reserved MIDI input '$PORT'" "$TMP/first.log" || { cat "$TMP/first.log" >&2; fail "the first standalone did not claim the device"; }
-RETROPLUG_SDL_EXIT_AFTER_FRAMES=30 "$BIN" >"$TMP/second.log" 2>&1 || { cat "$TMP/second.log" >&2; fail "second run exited non-zero"; }
+RETROPLUG_SDL_EXIT_AFTER_FRAMES=60 "$BIN" --autoload "$TMP/all-inputs.rplg" >"$TMP/second.log" 2>&1 \
+    || { cat "$TMP/second.log" >&2; fail "second run exited non-zero"; }
 wait "$OTHER_PID" || { cat "$TMP/first.log" >&2; fail "first run exited non-zero"; }
 OTHER_PID=""
 # The refusal is SAID (a silent second process - one that never even tried - must not pass), and the pair is

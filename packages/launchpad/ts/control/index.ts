@@ -1,5 +1,5 @@
 // The launchpad pack's app module (docs/modular-graph-phase-f5a-design.md sections 6.1 and 6.2): what it contributes to
-// the app itself rather than to a surface. Two things, both the controller's:
+// the app itself rather than to a surface. Three things, all the controller's:
 //
 //   projectSections  the project's `controller` block: the schema it is parsed with, its defaults and how a patch lands
 //                    on it. A project that carries a controller block keeps it where it was, and a product without this
@@ -17,10 +17,15 @@
 // index the same way.
 import { definePackage } from "@retroplug/core/definePackage";
 import type {} from "@retroplug/tracker/packageContributions";
+import { controlSurfaceSection } from "./configSection";
 import { controllerSection } from "./projectSection";
 import { controllerService } from "./projectService";
 
 export default definePackage({
   projectSections: [controllerSection],
   projectServices: [controllerService],
+  // The machine's control surface (docs/modular-graph-phase-f5b-design.md section 6.1): a root key of config.json
+  // whose shape the pack owns, so the shell names no port, field or default. The key and its fields are the ones the
+  // file always carried, so an existing file's bytes do not move.
+  configSections: [controlSurfaceSection],
 });

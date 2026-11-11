@@ -1,17 +1,21 @@
-// Per-user, machine-global preferences — config.json. The four fields of native's
-// UserConfigJson (config/UserConfigSerialization.hpp): which keyboard/gamepad binding
-// profiles are active, the default zoom for fresh projects, and the loose-.sav auto-save
-// preference. This is the model + its zod validator; parse/serialize live in
-// userConfigSerialization.ts and the Backend-backed store in userConfigStore.ts
-// (mirroring the recentList / recentSerialization / recentStore triad).
+// Per-user, machine-global preferences: config.json. The fields the SHELL owns: which keyboard/gamepad binding
+// profiles are active, the default zoom for fresh projects, the loose-.sav auto-save preference, the render menu's
+// picks and the file-dialog choice. This is the model + its zod validator; parse/serialize live in
+// userConfigSerialization.ts and the Backend-backed store in userConfigStore.ts (mirroring the recentList /
+// recentSerialization / recentStore triad).
+//
+// Every OTHER root key is a package's config section (configSections.ts): the audio device, the control surface. The
+// shell keeps one it has no contributor for verbatim, so a plugin (which lists none of those packages) writes a
+// standalone's blocks back instead of erasing them.
 //
 // The bindings PROFILE files (bindings/<name>.json) are a separate concern — this owns
 // only config.json, holding the active-profile names as plain strings.
 
 import { z } from "zod";
 import { clampedInt, stringField, enumField } from "@retroplug/core/configFields";
-import type { ControlSurfaceSettings } from "@retroplug/core/host";
 import type { SplitMode } from "./render";
+import { defaultConfigSections, serializeConfigSectionValue, type ConfigSectionEntry } from "./configSections";
+import { CONFIG_SECTIONS } from "./generated/packages";
 
 /** The persisted render-menu selections (System > Render): what to split into, the output sample rate, and
  *  the max render length. Global (not per-system) so the single "Render..." action reads the current picks. */
@@ -48,21 +52,6 @@ const renderSchema = z.preprocess(
   }),
 );
 
-// The control surface's shape is core's (@retroplug/core/host): HOST state rather than project state, because port
-// names belong to the machine, and the host contract's config group names it. What the surface DOES (which app, its
-// knobs, which cart) is per project, in the .rplg. Re-exported here so this schema and every reader keep one import.
-export type { ControlSurfaceSettings };
-
-const controlSurfaceSchema = z.preprocess(
-  (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}),
-  z.object({
-    input: stringField(""),
-    output: stringField(""),
-    enabled: z.boolean().catch(false).default(false),
-    device: stringField(""),
-  }),
-);
-
 /** When the loose sibling <rom>.sav is auto-saved. `OnProjectSave` (the default) writes it at the
  *  moments the user acts — saving the project, and closing a cart — and `Continuous` adds a throttled
  *  idle mirror on top.
@@ -88,7 +77,6 @@ export interface UserConfig {
   sramAutoSave: SramAutoSave;
   render: RenderSettings; // System > Render menu selections
   useNativeFileDialogs: boolean; // true = the host's OS file dialog (default); false = the in-app browser
-  controlSurface: ControlSurfaceSettings; // the machine's control surface (Settings > MIDI's scan + the Launchpad submenu)
 }
 
 /** Validates + defaults + clamps a (possibly partial/stale) config.json object. Strict:
@@ -105,7 +93,62 @@ export const userConfigSchema = z.object({
   // the hook unbound so this transparently falls back to the in-app browser (NativeFileDialog::available()).
   // A config.json predating the field therefore adopts the OS dialog; one written since carries its own value.
   useNativeFileDialogs: z.boolean().catch(true).default(true), // additive → no migration
-  controlSurface: controlSurfaceSchema, // additive → no migration
 });
 
 export const DEFAULT_USER_CONFIG: UserConfig = userConfigSchema.parse({}) as UserConfig;
+
+/** The root keys the SHELL owns, which no package may contribute a section under. Derived from the schema's own shape
+ *  (so a field added above is covered without a second list to forget) plus `schemaVersion`, which is the file's stamp
+ *  and belongs to no section. The generated registry refuses a contributor of one of these
+ *  (`packages.mjs`'s `SHELL_CONFIG_KEYS`, which a test holds to this list). */
+export const CORE_CONFIG_KEYS: readonly string[] = ["schemaVersion", ...Object.keys(userConfigSchema.shape)];
+
+/** config.json as the app holds it: the shell's own fields, and each package's section under its root key. A section
+ *  key the product has no contributor for is the raw JSON the file carried. */
+export interface ConfigModel {
+  readonly core: UserConfig;
+  readonly sections: Readonly<Record<string, unknown>>;
+  /** Each section's block exactly as the file carried it, by key. A block this session did not set is written back
+   *  from here, so an additive field a newer build wrote survives this one (the verbatim-keep rule). */
+  readonly raw?: Readonly<Record<string, unknown>>;
+  /** The section keys THIS session has set: only their parsed value is written, because only they have a value this
+   *  build authored. */
+  readonly written?: readonly string[];
+}
+
+/** A fresh config: the shell's defaults and each contributor's defaults. */
+export function defaultConfig(): ConfigModel {
+  return { core: { ...DEFAULT_USER_CONFIG }, sections: defaultConfigSections(), raw: {}, written: [] };
+}
+
+/** A config as config.json writes it: the shell's fields in the order the file has always had them, then each section
+ *  under its key (a contributor's stamping, or the raw block). The core fields go first so a section can never shadow a
+ *  shell key: the schema strips one, and `assertConfigSectionKey` refuses the write that would have made it.
+ *
+ *  The explicit order is byte-stability: `render` follows `useNativeFileDialogs` here because that is where the shell
+ *  always wrote it, and a config.json this build reads and writes back must not move a key. */
+export function configFileShape(
+  model: ConfigModel,
+  contributors: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+): Record<string, unknown> {
+  const core = model.core;
+  const out: Record<string, unknown> = {
+    activeKeyboardBindings: core.activeKeyboardBindings,
+    activeGamepadBindings: core.activeGamepadBindings,
+    defaultZoom: core.defaultZoom,
+    sramAutoSave: core.sramAutoSave,
+    useNativeFileDialogs: core.useNativeFileDialogs,
+    render: core.render,
+  };
+  const raw = model.raw ?? {};
+  const written = model.written ?? [];
+  for (const [key, value] of Object.entries(model.sections)) {
+    // A block this session did not set goes back as the file carried it: a contributor's parse drops the fields this
+    // build does not know, and config.json is shared by builds of different ages (a release plugin beside a newer
+    // standalone). Only a key whose value this session authored is written from its parsed form.
+    out[key] = Object.prototype.hasOwnProperty.call(raw, key) && !written.includes(key)
+      ? raw[key]
+      : serializeConfigSectionValue(key, value, contributors);
+  }
+  return out;
+}

@@ -23,6 +23,7 @@ bool MidiRpcService::midiOpen(std::string clientName, std::string input) {
         std::unique_ptr<MidiBackend> renamed = base_.withClientName(clientName);
         if (renamed) {
             stream_->close();  // the old name's ports are given back before the new instance opens its own
+            stream_.reset();   // and the stream is gone BEFORE the backend it points at is freed
             renamed_    = std::move(renamed);
             stream_     = std::make_unique<MidiStream>(*renamed_);
             clientName_ = clientName;

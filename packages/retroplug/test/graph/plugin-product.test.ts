@@ -149,6 +149,9 @@ test("a fresh plugin project writes no controller block, and one already carryin
         appConfig: { quantise: "beat" },
       },
       futureSetting: { knob: 3 },
+      // The standalone's MIDI ports, saved with the project (docs/modular-graph-phase-f5b-design.md E9): the plugin
+      // lists no `midi` package, so this is a key it has no contributor for and keeps as it came.
+      midi: { inputs: [{ name: "Arturia KeyStep 32" }], allInputs: false, outputs: [{ name: "Deluge" }], clockBpm: 133 },
     },
     systems: [],
   };
@@ -190,6 +193,8 @@ test("a fresh plugin project writes no controller block, and one already carryin
   // the comparison is against the INPUT block, not against another build's re-serialisation.
   const written = JSON.parse(project.written) as { settings: Record<string, unknown> };
   expect(written.settings.controller).toEqual(raw.settings.controller);
+  // E9: the `midi` block a standalone wrote goes through the plugin verbatim, like the controller's.
+  expect(written.settings.midi).toEqual(raw.settings.midi);
   expect(written.settings).toEqual(raw.settings);
   // And the desktop reads the same block to the same thing, so "kept" is not the plugin's own idea of it.
   expect(desktop.settings.sections.controller).toEqual(raw.settings.controller);

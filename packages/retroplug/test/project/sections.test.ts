@@ -101,6 +101,9 @@ test("the controller's bytes are what they always were: a saved project round-tr
   expect(json).toBe(
     JSON.stringify({
       layout: "auto", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0,
+      // The midi package's section is a fresh project's (docs/modular-graph-phase-f5b-design.md E2: a project that
+      // never set ports has none, and the block says so where it sits), and the controller's bytes are unchanged.
+      midi: { inputs: [], allInputs: false, outputs: [], clockBpm: 120 },
       controller: { enabled: true, app: "lsdj-midimap", target: "midiOut", systemId: 0, appConfig: { quantise: "beat" } },
     }),
   );

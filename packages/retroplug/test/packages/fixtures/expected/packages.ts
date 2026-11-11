@@ -166,6 +166,34 @@ for (const { pkg, placer } of PLACERS) {
   }
 }
 
+/** The config.json sections the product's packages contribute, in product order: a root key of the user config
+ *  which its package parses, defaults and migrates (docs/modular-graph-phase-f5b-design.md section 6.1). The
+ *  shell keeps every non-core root key verbatim, so the same two refusals hold: a key the shell owns, and a
+ *  key two packages declare. */
+export const CONFIG_SECTIONS: readonly { pkg: string; section: ProjectSection }[] = [
+  ...(app_alpha.configSections ?? []).map((section) => ({ pkg: "alpha", section })),
+  ...(app_beta.configSections ?? []).map((section) => ({ pkg: "beta", section })),
+  ...(app_retroplug.configSections ?? []).map((section) => ({ pkg: "retroplug", section })),
+];
+// The shell's own config.json keys (packages/retroplug/src/userConfig.ts's CORE_CONFIG_KEYS, which a test holds
+// this list to): the root keys a package may not contribute a section under.
+export const SHELL_CONFIG_KEYS = ["schemaVersion", "activeKeyboardBindings", "activeGamepadBindings",
+  "defaultZoom", "sramAutoSave", "render", "useNativeFileDialogs"];
+const configOwners = new Map<string, string>();
+for (const { pkg, section } of CONFIG_SECTIONS) {
+  if (SHELL_CONFIG_KEYS.includes(section.key)) {
+    throw new Error(`the package ${pkg} declares the config section ${section.key}, which is one of the ` +
+      `shell's own keys (${SHELL_CONFIG_KEYS.join(", ")})`);
+  }
+  const owner = configOwners.get(section.key);
+  if (owner !== undefined) {
+    throw new Error(owner === pkg
+      ? `the package ${pkg} declares the config section ${section.key} twice`
+      : `two packages declare the config section ${section.key}: ${owner} and ${pkg}`);
+  }
+  configOwners.set(section.key, pkg);
+}
+
 /** The widgets items the product's packages contribute, in product order: each app module's
  *  `widgets` list, which the declaring package accepts (its `accept`). */
 type KindItem_widgets = Parameters<typeof kind_widgets_alpha.accept>[0][number];

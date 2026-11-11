@@ -27,7 +27,8 @@ import {
   looksLikeLaunchpad, pollControllerRole, pollLaunchpadScan, resetLaunchpadScanForTest, restoreLaunchpad,
   setLaunchpadClient, setLaunchpadPorts, setLaunchpadScanClock,
 } from "@retroplug/launchpad/ui";
-import type { ControlSurfaceSettings } from "../../src/userConfig";
+import type { ControlSurfaceSettings } from "@retroplug/launchpad/ui";
+import { FakeMidiDevice } from "@retroplug/midi/testSupport/fakeDevice";
 import { controllerApps } from "@retroplug/launchpad/registry";
 import { type ControllerSection } from "@retroplug/launchpad/projectSection";
 import { boolField, clampedInt } from "@retroplug/core/configFields";
@@ -247,7 +248,7 @@ function withHost(
   try {
     const be = new MockBackend();
     const stores = composeAppStores({ backend: be });
-    stores.userConfig.setControlSurface(selection);
+    stores.userConfig.setSection("controlSurface", selection);
     body(facet, stores, be, clock);
   } finally {
     setLaunchpadClient(undefined);
@@ -278,9 +279,10 @@ function submenu(stores: AppStores, be: MockBackend): MenuItem[] {
  *  since the whole MIDI submenu is standalone-only. */
 function midiSettingsRows(stores: AppStores, be: MockBackend): MenuItem[] {
   const g = globalThis as Record<string, unknown>;
-  const saved = { standalone: g.__rp_isStandalone, midi: g.__rp_getMidiConfig };
+  const saved = { standalone: g.__rp_isStandalone };
   g.__rp_isStandalone = true;
-  g.__rp_getMidiConfig = () => ({ inputs: [], outputs: [], selectedInput: "", selectedOutput: "" });
+  // The midi package's stream is what the container's own rows come from; the scan rows below it are the pack's.
+  const midi = new FakeMidiDevice({ inputs: [], outputs: [] }).install();
   try {
     if (stores.project.systems.view().length === 0) {
       be.seed("/roms/a.nes", nesRom());
@@ -290,8 +292,8 @@ function midiSettingsRows(stores: AppStores, be: MockBackend): MenuItem[] {
     const items = buildInstanceMenu({ ...ctxOf(stores), system: sys }).items;
     return submenuChildren(submenuChildren(items, "inst-settings"), "set-midi");
   } finally {
+    midi.uninstall();
     g.__rp_isStandalone = saved.standalone;
-    g.__rp_getMidiConfig = saved.midi;
   }
 }
 
@@ -369,7 +371,7 @@ test("the port cycler offers EVERY hardware port, not just ones named like a Lau
     // list would have skipped it - and would have skipped the interface port a TRS-attached Launchpad actually
     // arrives on.
     input?.onCycle?.(1);
-    expect(stores.userConfig.controlSurface().input).toBe("Arturia KeyStep 32");
+    expect(stores.userConfig.section("controlSurface").input).toBe("Arturia KeyStep 32");
   });
 });
 
@@ -388,7 +390,7 @@ test("picking a port stores the port's name, with the display tag stripped back 
   // stored has to be the port's, not the label's, or it would name a port that does not exist.
   withHost(() => {}, (h, stores, be) => {
     findItem(submenu(stores, be), "lp-input")?.onCycle?.(1);
-    expect(stores.userConfig.controlSurface().input).toBe("LPProMK3 MIDI");
+    expect(stores.userConfig.section("controlSurface").input).toBe("LPProMK3 MIDI");
     expect(h.claims).toEqual([]); // not connected, so a pick is only a pick
   }, { input: "Arturia KeyStep 32", output: "LPProMK3 MIDI" });
 });
@@ -396,7 +398,7 @@ test("picking a port stores the port's name, with the display tag stripped back 
 test("Connect with nothing chosen resolves the hinted default first, and claims it", () => {
   withHost(() => {}, (h, stores, be) => {
     findItem(submenu(stores, be), "lp-connect")?.onSelect?.();
-    expect(stores.userConfig.controlSurface()).toEqual({
+    expect(stores.userConfig.section("controlSurface")).toEqual({
       input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true, device: "",
     });
     expect(h.held?.input).toBe("LPProMK3 MIDI");
@@ -410,8 +412,8 @@ test("Connect with no hinted port at all does not invent one", () => {
   // somebody's keyboard and calling it a Launchpad.
   withHost((h) => { h.inputs = ["Arturia KeyStep 32"]; h.outputs = ["Arturia KeyStep 32"]; }, (h, stores) => {
     connectLaunchpad(stores.userConfig, true, getLaunchpadConfig(stores.userConfig));
-    expect(stores.userConfig.controlSurface().input).toBe("");
-    expect(stores.userConfig.controlSurface().enabled).toBe(true);
+    expect(stores.userConfig.section("controlSurface").input).toBe("");
+    expect(stores.userConfig.section("controlSurface").enabled).toBe(true);
     expect(h.claims).toEqual([]);
   });
 });
@@ -433,7 +435,7 @@ test("Disconnect releases the device and persists the choice", () => {
     findItem(submenu(stores, be), "lp-connect")?.onSelect?.(); // reads "Disconnect"
     expect(h.held).toBe(null);
     expect(h.released).toEqual([exitToLiveMode(PRO_MK3)]);
-    expect(stores.userConfig.controlSurface().enabled).toBe(false);
+    expect(stores.userConfig.section("controlSurface").enabled).toBe(false);
   }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
 });
 
@@ -460,7 +462,7 @@ test("the selection lives in config.json, so a fresh launch reclaims what was le
     // Same backend, fresh stores: the next launch. The link is down until the UI restores it.
     h.held = null;
     const next = composeAppStores({ backend: be });
-    expect(next.userConfig.controlSurface().input).toBe("LPProMK3 MIDI");
+    expect(next.userConfig.section("controlSurface").input).toBe("LPProMK3 MIDI");
     restoreLaunchpad(next.userConfig);
     expect(h.current()?.input).toBe("LPProMK3 MIDI");
     expect(h.current()?.closeBytes).toEqual(exitToLiveMode(PRO_MK3));
@@ -569,7 +571,7 @@ test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", (
     // audio thread running the previous settings.
     expect(pushes).toBe(4);
     // ...and none of it is machine state: config.json's selection is untouched.
-    expect(stores.userConfig.controlSurface().enabled).toBe(false);
+    expect(stores.userConfig.section("controlSurface").enabled).toBe(false);
   });
 });
 
@@ -682,7 +684,7 @@ test("a Novation answer records the PAIR it came back on, and names the model", 
     findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
     const found = applyLaunchpadScan(stores.userConfig, runScan(clock)!);
     expect(found).toEqual({ input: "MIDISPORT 2x2 Port A", output: "MIDISPORT 2x2 Port B", name: PRO_MK3.name });
-    expect(stores.userConfig.controlSurface()).toEqual({
+    expect(stores.userConfig.section("controlSurface")).toEqual({
       input: TRS_PICK.input, output: TRS_PICK.output, enabled: false, device: TRS_PICK.device,
     });
     expect(submenu(stores, be).length > 0).toBe(true); // which is what makes the submenu appear
@@ -701,7 +703,7 @@ test("anything that is not a Novation answer is left exactly where it was", () =
     withHost((h) => h.answers.set("MIDISPORT 2x2 Port A", { input: "Arturia KeyStep 32", bytes }), (_h, stores, be, clock) => {
       findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
       expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)).toBe(null);
-      expect(stores.userConfig.controlSurface().input).toBe(""); // somebody's keyboard was not claimed
+      expect(stores.userConfig.section("controlSurface").input).toBe(""); // somebody's keyboard was not claimed
     });
   }
 });
@@ -774,7 +776,7 @@ test("a device talking BEFORE it is asked is not taken as an answer", () => {
 test("Forget clears the pair AND the name, so the submenu goes away again", () => {
   withHost((h) => Object.assign(h, TRS), (_h, stores, be) => {
     findItem(midiSettingsRows(stores, be), "midi-scan-forget")?.onSelect?.();
-    expect(stores.userConfig.controlSurface()).toEqual({ input: "", output: "", enabled: false, device: "" });
+    expect(stores.userConfig.section("controlSurface")).toEqual({ input: "", output: "", enabled: false, device: "" });
     expect(submenu(stores, be).length).toBe(0); // a name left behind would keep claiming a device that is gone
   }, TRS_PICK);
 });
@@ -817,7 +819,7 @@ test("while a scan runs, the selection is the scan's: manual edits are greyed an
   // so the Forget row would be ENABLED without the scan guard: it is the scan, not an empty pair, that greys it.
   withHost((h) => h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY }),
     (h, stores, be, clock) => {
-      stores.userConfig.setControlSurface({
+      stores.userConfig.setSection("controlSurface", {
         input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", device: "Launchpad Pro [MK3]", enabled: true,
       });
       findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
@@ -829,12 +831,12 @@ test("while a scan runs, the selection is the scan's: manual edits are greyed an
       setLaunchpadPorts(stores.userConfig, "Arturia KeyStep 32", "LPProMK3 MIDI");
       connectLaunchpad(stores.userConfig, true, getLaunchpadConfig(stores.userConfig));
       forgetLaunchpad(stores.userConfig);
-      expect(stores.userConfig.controlSurface()).toEqual({
+      expect(stores.userConfig.section("controlSurface")).toEqual({
         input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true, device: "Launchpad Pro [MK3]",
       });
       expect(h.claims).toEqual([]);
       applyLaunchpadScan(stores.userConfig, runScan(clock)!);
-      expect(stores.userConfig.controlSurface().input).toBe("MIDISPORT 2x2 Port A");
+      expect(stores.userConfig.section("controlSurface").input).toBe("MIDISPORT 2x2 Port A");
       // Once it is over, the rows are live again.
       expect(findItem(submenu(stores, be), "lp-connect")?.disabled).toBe(undefined);
     });
@@ -856,7 +858,7 @@ test("other Novation gear answering the inquiry is not taken for a Launchpad", (
     (_h, stores, be, clock) => {
       findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
       expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)).toBe(null);
-      expect(stores.userConfig.controlSurface().input).toBe("");
+      expect(stores.userConfig.section("controlSurface").input).toBe("");
       // Said, rather than "Nothing answered" - something did answer.
       expect(findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label)
         .toBe("Control Surface: Novation device (family 37 01) - not supported");
@@ -870,9 +872,9 @@ test("a finished scan is applied once, even if the UI remounts and the poll sees
       const done = runScan(clock)!;
       expect(applyLaunchpadScan(stores.userConfig, done)?.input).toBe("MIDISPORT 2x2 Port A");
       findItem(submenu(stores, be), "lp-input")?.onCycle?.(-1); // the user picks something else afterwards
-      const picked = stores.userConfig.controlSurface().input;
+      const picked = stores.userConfig.section("controlSurface").input;
       expect(applyLaunchpadScan(stores.userConfig, pollLaunchpadScan()!)).toBe(null); // the remounted poll
-      expect(stores.userConfig.controlSurface().input).toBe(picked);
+      expect(stores.userConfig.section("controlSurface").input).toBe(picked);
     });
 });
 
@@ -894,7 +896,7 @@ test("a Mini MK3 answers with the Pro's own family bytes - and is still not take
       findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
       const s = runScan(clock)!;
       expect(applyLaunchpadScan(stores.userConfig, s)).toBe(null);
-      expect(stores.userConfig.controlSurface().input).toBe("");
+      expect(stores.userConfig.section("controlSurface").input).toBe("");
       // It WAS asked: the candidate got the Pro's model query on the pair it answered on.
       expect(h.written.some((w) => w.port === "LPProMK3 MIDI" && w.bytes.length === 8 && w.bytes[5] === 0x0e)).toBe(true);
       expect(findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label)
@@ -936,7 +938,7 @@ test("Cancel ends a scan, closes its ports, and records nothing it found", () =>
     const s = pollLaunchpadScan()!;
     expect(s.busy).toBe(false);
     expect(applyLaunchpadScan(stores.userConfig, s)).toBe(null);
-    expect(stores.userConfig.controlSurface().input).toBe("");
+    expect(stores.userConfig.section("controlSurface").input).toBe("");
     expect(findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label).toBe("Control Surface: Cancelled");
   });
 });
@@ -968,7 +970,7 @@ test("a saved pair whose device was away offers Connect again, and a way to stop
     h.away.add("LPProMK3 MIDI");
     rows = submenu(stores, be);
     findItem(rows, "lp-stop")?.onSelect?.();
-    expect(stores.userConfig.controlSurface().enabled).toBe(false); // no longer reclaimed at launch
+    expect(stores.userConfig.section("controlSurface").enabled).toBe(false); // no longer reclaimed at launch
   }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
 });
 
@@ -1038,7 +1040,7 @@ test("a saved port renamed by the backend is found again by its stem", () => {
   }, (h, stores) => {
     restoreLaunchpad(stores.userConfig);
     expect(h.current()?.input).toBe("LPProMK3 MIDI:LPProMK3 MIDI 131:0");
-    expect(stores.userConfig.controlSurface().input).toBe("LPProMK3 MIDI:LPProMK3 MIDI 131:0"); // and re-saved
+    expect(stores.userConfig.section("controlSurface").input).toBe("LPProMK3 MIDI:LPProMK3 MIDI 131:0"); // and re-saved
   }, { input: "LPProMK3 MIDI:LPProMK3 MIDI 128:0", output: "LPProMK3 MIDI:LPProMK3 MIDI 128:0", enabled: true });
   // Two candidates with one stem (two identical interfaces): not guessed between.
   withHost((h) => {
@@ -1046,7 +1048,7 @@ test("a saved port renamed by the backend is found again by its stem", () => {
     h.outputs = ["IF 1", "IF 2"];
   }, (h, stores) => {
     restoreLaunchpad(stores.userConfig);
-    expect(stores.userConfig.controlSurface().input).toBe("IF 0"); // left as saved (the facet refuses it: not here)
+    expect(stores.userConfig.section("controlSurface").input).toBe("IF 0"); // left as saved (the facet refuses it: not here)
     expect(h.claims.some((c) => c.input === "IF 1" || c.input === "IF 2")).toBe(false);
   }, { input: "IF 0", output: "IF 0", enabled: true });
 });

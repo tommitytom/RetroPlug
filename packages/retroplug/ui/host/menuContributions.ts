@@ -40,6 +40,22 @@ export function menuPlacement(
   );
 }
 
+/** The open hook for the shell's container of one placement: `onOpen` on the container row runs every builder's, in
+ *  product order, when the user expands it. Undefined when no builder at this placement declares one, so the container
+ *  row is the same row it always was. */
+export function menuPlacementOpen(
+  placement: MenuBuilder["placement"],
+  host: UiHost,
+): (() => void) | undefined {
+  const builders = UI_CONTRIBUTIONS.flatMap((entry) =>
+    (entry.ui.menus ?? []).filter((menu) => menu.placement === placement && menu.onOpen),
+  );
+  if (builders.length === 0) return undefined;
+  return () => {
+    for (const menu of builders) menu.onOpen?.(host);
+  };
+}
+
 /** Every app action a package contributes, in product order, with the package it came from: the bindings menus' rows,
  *  the key and gamepad maps' "known" ids, and the dispatch's lookups. The generated list itself, so the export the
  *  generator's checks run over is the one the product reads. A module constant, so a hook's dependency (and a memo

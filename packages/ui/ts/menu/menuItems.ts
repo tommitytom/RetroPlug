@@ -29,8 +29,10 @@ export function infoRow(id: string, label: string): MenuItem {
   return action(id, label, () => {}, true);
 }
 
-export function submenu(id: string, label: string, children: MenuItem[]): MenuItem {
-  return { id, label, kind: "submenu", children };
+/** A row that expands in place. `onOpen` (optional) runs when it OPENS: attached only when given, so every submenu
+ *  without one stays byte-identical to the row it always was. */
+export function submenu(id: string, label: string, children: MenuItem[], onOpen?: () => void): MenuItem {
+  return onOpen ? { id, label, kind: "submenu", children, onOpen } : { id, label, kind: "submenu", children };
 }
 
 export function separator(id: string): MenuItem {

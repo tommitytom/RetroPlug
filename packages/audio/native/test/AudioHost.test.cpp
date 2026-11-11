@@ -21,7 +21,6 @@
 #include <thread>
 #include <vector>
 
-#include "audio/AudioChoice.hpp"
 #include "audio/AudioHost.hpp"
 #include "audio/FakeAudioBackend.hpp"
 
@@ -519,44 +518,6 @@ TEST_CASE("the stats are one thread's accumulator, and say so: the renderer's bl
         CHECK(line.find("(total ") != std::string::npos);
     }
     CHECK(stats > 0);
-}
-
-TEST_CASE("the Driver row's label maps to the choice an apply takes, and an unknown label keeps the current one") {
-    // rp::audio::choiceForDriverLabel is what the Settings > Audio hook leans on: "Auto" is the automatic choice, a
-    // "<Backend>: <driver>" label is that pair (the backend named because two backends may call a driver alike), and a
-    // label the description does not carry is a stale row that must not move the choice.
-    AudioDescription described;
-    AudioBackendDescription backend;
-    backend.id   = "portaudio";
-    backend.label = "PortAudio";
-    AudioDriverDescription pipe;
-    pipe.id    = "pipewire";
-    pipe.label = "PipeWire";
-    backend.drivers.push_back(pipe);
-    described.backends.push_back(backend);
-    AudioBackendDescription other;
-    other.id    = "sdl";
-    other.label = "SDL";
-    AudioDriverDescription sdlPipe;
-    sdlPipe.id    = "pipewire";  // the same driver id, a different backend
-    sdlPipe.label = "pipewire";
-    other.drivers.push_back(sdlPipe);
-    described.backends.push_back(other);
-
-    const AudioChoice current{"sdl", "pipewire"};
-    CHECK(choiceForDriverLabel("Auto", described, current).backend == "auto");
-    CHECK(choiceForDriverLabel("Auto", described, current).driver.empty());
-    CHECK(choiceForDriverLabel("", described, current).backend == "auto");  // an older bundle's spelling
-    const AudioChoice pa = choiceForDriverLabel("PortAudio: PipeWire", described, current);
-    CHECK(pa.backend == "portaudio");
-    CHECK(pa.driver == "pipewire");
-    const AudioChoice sd = choiceForDriverLabel("SDL: pipewire", described, current);
-    CHECK(sd.backend == "sdl");
-    CHECK(sd.driver == "pipewire");
-    const AudioChoice stale = choiceForDriverLabel("PortAudio: Gone", described, current);
-    CHECK(stale.backend == "sdl");
-    CHECK(stale.driver == "pipewire");
-    CHECK(driverChoiceLabel("PortAudio", "PipeWire") == "PortAudio: PipeWire");
 }
 
 TEST_CASE("a backend that runs one driver at a time lists only the driver in force") {

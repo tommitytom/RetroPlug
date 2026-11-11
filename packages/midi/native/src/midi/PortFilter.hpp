@@ -105,7 +105,7 @@ inline std::optional<std::size_t> matchPortIndex(const std::vector<std::string>&
  *  turns out to be a surprising thing to do by default, because a device plugged in for one purpose is then also a MIDI
  * source - a control surface's free-running clock ends up driving the host tempo, a controller's mixer ports send notes
  * at the cart. The stream's own selection is a list plus an `all` flag; this is the spelling a saved or persisted
- * single selection uses for it (the CLI facet's "*", the SDL app's midi.json shim's "*"). */
+ * single selection uses for it (the CLI facet's "*"; a project's section carries the list and its flag instead). */
 inline constexpr const char* kAllInputs = "*";
 
 /** Indices of the input ports to open for a selection of `names`: none when the selection is empty and `all` is false

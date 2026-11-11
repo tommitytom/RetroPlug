@@ -6,17 +6,19 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "The host's audio: one interface a backend fills (AudioBackend / AudioStream), the null device, and AudioHost - the open / start / stop / reconfigure sequence, the muted fallback with a status, render-ahead and the stats. PortAudio and SDL2 fill the interface in packages of their own.",
+  "description": "The host's audio: one interface a backend fills (AudioBackend / AudioStream), the null device, and AudioHost - the open / start / stop / reconfigure sequence, the muted fallback with a status, render-ahead and the stats. PortAudio and SDL2 fill the interface in packages of their own. Its TS half is config.json's `audio` section (the saved backend, driver, device, rate, block and width) and the Settings > Audio rows over it.",
   "exports": {
     ".": "./ts/app.ts",
     "./app": "./ts/app.ts",
-    "./ui": "./ts/ui/index.ts"
+    "./ui": "./ts/ui/index.ts",
+    "./testSupport/fakeDevice": "./ts/testSupport/fakeDevice.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/ui": "workspace:*"
   },
   "devDependencies": {
+    "@retroplug/testing": "workspace:*",
     "typescript": "^7.0.2"
   },
   "retroplug": {

@@ -37,6 +37,9 @@ importers:
         specifier: workspace:*
         version: link:../ui
     devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -275,6 +278,9 @@ importers:
         specifier: workspace:*
         version: link:../ui
     devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

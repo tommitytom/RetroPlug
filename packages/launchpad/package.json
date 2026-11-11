@@ -6,7 +6,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "Novation Launchpad support: the protocol (encode, decode, diff), the controller session and its app runtime registry, the controllerApps contribution kind, the port scan and the profiles (both over the midi package's interface), the rp.controller.session script node, and the project's `controller` section with its control-plane service and the graph placer that places them.",
+  "description": "Novation Launchpad support: the protocol (encode, decode, diff), the controller session and its app runtime registry, the controllerApps contribution kind, the port scan and the profiles (both over the midi package's interface), the rp.controller.session script node, the project's `controller` section with its control-plane service and the graph placer that places them, and the machine's `controlSurface` config section.",
   "exports": {
     ".": "./ts/index.ts",
     "./apps": "./ts/apps/index.ts",
@@ -31,6 +31,7 @@
     "./app": "./ts/control/index.ts",
     "./kind": "./ts/control/kind.ts",
     "./placer": "./ts/control/placer.ts",
+    "./configSection": "./ts/control/configSection.ts",
     "./projectSection": "./ts/control/projectSection.ts",
     "./projectService": "./ts/control/projectService.ts"
   },

@@ -19,6 +19,10 @@
 //
 // So a second controller model - or a different kind of device altogether - is a TS change, never a native one.
 import type { Call, ConfigHost } from "@retroplug/core/host";
+import { resolvePort } from "@retroplug/midi/portMatch";
+import {
+  CONTROL_SURFACE_SECTION_KEY, type ControlSurfaceSettings,
+} from "../control/configSection";
 import { createSubscribable } from "@retroplug/ui/menu";
 import {
   PRO_MK3, PRO_MK3_PORT_HINT, deviceInquiry, deviceName, exitToLiveMode, familyHex, isModelReply, modelQuery,
@@ -61,6 +65,17 @@ export interface LaunchpadScanStatus extends ScanStatus {
 /** How long to wait for an answer after probing each output. A Device Inquiry reply comes back in milliseconds; this is
  *  generous enough for a DIN chain and short enough that a rig full of ports still scans in about a second. */
 export const SCAN_WINDOW_MS = 300;
+
+/** The stored pair, as its contributor parses it. The section's key and shape are this pack's (control/configSection.ts),
+ *  so the shell names no field of it and a second controller keeps its own state the same way. */
+function saved(store: ConfigHost): ControlSurfaceSettings {
+  return store.section<ControlSurfaceSettings>(CONTROL_SURFACE_SECTION_KEY);
+}
+
+/** Write a patch through the contributor's `merge` (config.json's one write path, with its re-read). */
+function save(store: ConfigHost, patch: Partial<ControlSurfaceSettings>): void {
+  store.setSection(CONTROL_SURFACE_SECTION_KEY, patch);
+}
 
 const notify = createSubscribable();
 const emit = notify.emit;
@@ -161,7 +176,7 @@ export function getLaunchpadConfig(store: ConfigHost, rpc?: Call): LaunchpadConf
   if (!client) return null;
   const ports = client.ports();
   const status = client.status();
-  const sel = store.controlSurface();
+  const sel = saved(store);
   return {
     inputs: names(ports.inputs),
     outputs: names(ports.outputs),
@@ -188,7 +203,7 @@ function applyLink(store: ConfigHost, rpc?: Call): void {
   const client = resolveClient(rpc);
   if (!client) return;
   rematchPorts(store, rpc);
-  const sel = store.controlSurface();
+  const sel = saved(store);
   const status = client.status();
   const want = sel.enabled && sel.input !== "" && sel.output !== "";
   if (want) {
@@ -204,22 +219,20 @@ function applyLink(store: ConfigHost, rpc?: Call): void {
   }
 }
 
-/** A saved port that is not here by its exact name, but is by its stem (portStem) - the same device, renamed because
- *  something else was plugged in - is re-pointed at its new name before the claim. Only on a UNIQUE stem match: two
- *  ports with one stem (two identical interfaces) are left for the user to pick. */
+/** A saved port that is not here by its exact name, but is by its volatile parts stripped (the midi package's
+ *  portMatch, the ONE matcher the project's MIDI rows use too) - the same device, renamed because something else was
+ *  plugged in - is re-pointed at its new name before the claim. Only on a UNIQUE match: two ports with one stem (two
+ *  identical interfaces) are left for the user to pick. */
 function rematchPorts(store: ConfigHost, rpc?: Call): void {
-  const sel = store.controlSurface();
+  const sel = saved(store);
   if (sel.input === "" && sel.output === "") return;
   const ports = resolveClient(rpc)?.ports();
   if (!ports) return;
-  const rematch = (saved: string, list: string[]): string => {
-    if (saved === "" || list.includes(saved)) return saved;
-    const same = list.filter((p) => portStem(p) === portStem(saved));
-    return same.length === 1 ? same[0] : saved;
-  };
+  const rematch = (savedName: string, list: string[]): string =>
+    savedName === "" ? "" : (resolvePort(savedName, list) ?? savedName);
   const input = rematch(sel.input, names(ports.inputs));
   const output = rematch(sel.output, names(ports.outputs));
-  if (input !== sel.input || output !== sel.output) store.setControlSurface({ input, output });
+  if (input !== sel.input || output !== sel.output) save(store, { input, output });
 }
 
 /** Reclaim the persisted pair, if it was left connected. Call once when the UI comes up. A port that is not here right
@@ -250,7 +263,7 @@ export function restoreLaunchpad(store: ConfigHost, rpc?: Call): void {
  *  by the claim that replaces it). */
 export function setLaunchpadPorts(store: ConfigHost, input: string, output: string, rpc?: Call): void {
   if (launchpadScanBusy()) return; // the scan's answer is about to land here - see launchpadScanBusy
-  store.setControlSurface({ input, output });
+  save(store, { input, output });
   applyLink(store, rpc);
   emit();
 }
@@ -268,9 +281,9 @@ export function connectLaunchpad(
   if (enabled && cfg && (!cfg.selectedInput || !cfg.selectedOutput)) {
     const input = cfg.selectedInput || defaultPort(cfg.inputs);
     const output = cfg.selectedOutput || defaultPort(cfg.outputs);
-    if (input && output) store.setControlSurface({ input, output });
+    if (input && output) save(store, { input, output });
   }
-  store.setControlSurface({ enabled });
+  save(store, { enabled });
   applyLink(store, rpc);
   emit();
 }
@@ -279,7 +292,7 @@ export function connectLaunchpad(
  *  goes away again. */
 export function forgetLaunchpad(store: ConfigHost, rpc?: Call): void {
   if (launchpadScanBusy()) return;
-  store.setControlSurface({ input: "", output: "", device: "" });
+  save(store, { input: "", output: "", device: "" });
   applyLink(store, rpc);
   emit();
 }
@@ -431,7 +444,7 @@ export function applyLaunchpadScan(
   appliedScan = s;
   const hit = s.found;
   if (!hit) return null;
-  store.setControlSurface({ input: hit.input, output: hit.output, device: hit.name });
+  save(store, { input: hit.input, output: hit.output, device: hit.name });
   applyLink(store, rpc);
   emit();
   return hit;

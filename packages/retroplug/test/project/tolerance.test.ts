@@ -22,7 +22,11 @@ test("additive tolerance: a config missing newer fields gets their defaults", ()
   // loads with it defaulted off, needing no migration step at all.
   expect(cfg.settings).toEqual({
     layout: "column", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0,
-    sections: { controller: { enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} } },
+    sections: {
+      // A project that never set the MIDI ports reads the contributor's defaults.
+      midi: { inputs: [], allInputs: false, outputs: [], clockBpm: 120 },
+      controller: { enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} },
+    },
   });
   expect(cfg.systems[0]).toEqual({ platform: "gb", core: "sameboy", romPath: "/a.gb" }); // core backfilled (v1→v2)
 });

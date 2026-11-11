@@ -13,7 +13,7 @@ import {
   RENDER_SAMPLE_RATES,
   RENDER_SPLITS,
   SRAM_AUTO_SAVES,
-  type ControlSurfaceSettings,
+  type ConfigModel,
   type RenderOnExists,
   type RenderSettings,
   type SramAutoSave,
@@ -22,13 +22,37 @@ import {
 import type { SplitMode } from "./render";
 import { parseUserConfigResult, serializeUserConfig, USER_CONFIG_SCHEMA } from "./userConfigSerialization";
 import { warnStampedNewer } from "./migrate";
+import {
+  assertConfigSectionKey, configSectionDefaults, configSectionEntryOf, defaultConfigSections, putConfigSection,
+  readableConfigSection, type ConfigSectionEntry,
+} from "./configSections";
+import { readSectionVersion } from "./projectConfig";
+import { CONFIG_SECTIONS } from "./generated/packages";
 
 const CONFIG_FILE = "config.json";
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
+/** A JSON object, which is what a section's value always is. */
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 export class UserConfigStore {
   private current: UserConfig = { ...DEFAULT_USER_CONFIG };
+  /** Each package's block of the file, by root key: its contributor's parsed value, or the raw JSON of a key this
+   *  product contributes no section for. Kept BESIDE the core fields so a section can never shadow one, and written
+   *  back in this order (contributors in product order, then unknown keys in the order they were read). */
+  private sections: Record<string, unknown>;
+  /** Each section's block exactly as the file carried it: what a section this session did not set is written back as. */
+  private raw: Record<string, unknown>;
+  /** The sections this session has set: the only blocks written from their parsed value. */
+  private written = new Set<string>();
+  /** The product's config sections, or a test's: what `section` and `setSection` consult. */
+  private readonly configSections: readonly ConfigSectionEntry[];
+  /** Section keys whose stamped-newer refusal this session already warned about: one warning per key, not one per
+   *  write attempt. */
+  private refusedSections = new Set<string>();
   // Latched when config.json turns out to be stamped ahead of this build. Refusing to READ such a
   // file is not enough: `current` is then the defaults, and the next setter would persist those over
   // the newer file, so one Settings press on an older build destroys it. Only "newer" latches —
@@ -43,7 +67,16 @@ export class UserConfigStore {
   // (else the .sav / ROM folder) but a per-session change never disturbs that saved default.
   private renderDirs = new Map<number, string>();
 
-  constructor(private readonly backend: HostBackend, private readonly onChange: () => void = () => {}) {}
+  /** `configSections` is the product's registry, or a test's: the sections this store parses, reads and writes. */
+  constructor(
+    private readonly backend: HostBackend,
+    private readonly onChange: () => void = () => {},
+    configSections: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  ) {
+    this.configSections = configSections;
+    this.sections = defaultConfigSections(configSections);
+    this.raw = {};
+  }
 
   /** Read config.json into memory. A parsed value replaces the current config; a missing
    *  file writes the defaults out (first run, so the user has a file to edit); a malformed
@@ -51,11 +84,11 @@ export class UserConfigStore {
   load(): void {
     const bytes = this.backend.readFile(this.filePath());
     if (!bytes) {
-      this.backend.writeFileAtomic(this.filePath(), enc.encode(serializeUserConfig(this.current)));
+      this.backend.writeFileAtomic(this.filePath(), enc.encode(this.serialize()));
       return;
     }
-    const parsed = parseUserConfigResult(dec.decode(bytes));
-    if (parsed.ok) this.current = parsed.value;
+    const parsed = parseUserConfigResult(dec.decode(bytes), this.configSections);
+    if (parsed.ok) this.adopt(parsed.model);
     else if (parsed.reason === "newer") {
       this.readOnly = true;
       warnStampedNewer(CONFIG_FILE, parsed.stamped, USER_CONFIG_SCHEMA);
@@ -69,7 +102,7 @@ export class UserConfigStore {
   reload(): boolean {
     const bytes = this.backend.readFile(this.filePath());
     if (!bytes) return false; // deleted → keep current
-    const parsed = parseUserConfigResult(dec.decode(bytes));
+    const parsed = parseUserConfigResult(dec.decode(bytes), this.configSections);
     if (!parsed.ok) {
       // An external edit can introduce a newer stamp mid-session (a second machine syncing the
       // folder), so the latch is set here too — not only at load.
@@ -80,15 +113,59 @@ export class UserConfigStore {
       return false; // malformed / newer → keep current
     }
     this.readOnly = false; // a readable stamp is back on disk (replaced/downgraded), so the hazard is gone
-    if (serializeUserConfig(parsed.value) === serializeUserConfig(this.current)) return false; // no change
-    this.current = parsed.value;
+    const after = this.serialize(parsed.model);
+    if (after === this.serialize()) return false; // no change
+    this.adopt(parsed.model);
     this.onChange();
     return true;
   }
 
-  /** A copy of the current config. */
-  config(): UserConfig {
-    return { ...this.current };
+  /** The config as config.json carries it: the shell's fields, then each section under its key. A section write's
+   *  callers read the file shape through here, so a package's block and the shell's fields cannot disagree about what
+   *  is on disk. */
+  config(): UserConfig & Readonly<Record<string, unknown>> {
+    return { ...this.current, ...this.sections };
+  }
+
+  /** A section as its contributor parses it (raw JSON for a root key no package of this product contributes). A key
+   *  that is not a section - one of the shell's own keys, or `__proto__` - is refused, not answered with a shell field;
+   *  a block stamped newer than its contributor reads comes back as the contributor's defaults. */
+  section<T = Record<string, unknown>>(key: string): T {
+    assertConfigSectionKey(key);
+    return readableConfigSection<T>(this.sections, key, this.configSections);
+  }
+
+  /** Apply a patch to a section through its contributor's `merge`, written through a re-read of the file (two
+   *  processes may share it). THROWS when the package has no such section or the contributor refuses the patch, and
+   *  does nothing for a block stamped newer than its contributor (one warning, and the block stays byte-identical).
+   *  The stamp check and the merge run over the RE-READ block, inside the store's apply callback: the block's truth is
+   *  the file, and another process may have moved it since this one read it. */
+  setSection(key: string, patch: Readonly<Record<string, unknown>>): boolean {
+    assertConfigSectionKey(key);
+    const entry = configSectionEntryOf(key, this.configSections);
+    if (!entry) throw new Error(`${key} is not a config section this product's packages contribute`);
+    return this.apply((model) => {
+      const stored = model.sections[key];
+      const version = entry.section.version;
+      const stamped = version !== undefined && isObject(stored) ? readSectionVersion(stored) : 0;
+      if (version !== undefined && stamped > version) {
+        if (!this.refusedSections.has(key)) {
+          this.refusedSections.add(key);
+          console.warn(
+            `[config] the section ${key} is stamped schemaVersion ${stamped}, this build reads ${version}: leaving it ` +
+              "untouched. A newer build wrote it.",
+          );
+        }
+        return model; // unchanged, so the commit writes nothing and the newer block stays byte-identical
+      }
+      const current = stored === undefined ? configSectionDefaults(entry) : stored;
+      const next = entry.section.merge
+        ? entry.section.merge(current, patch)
+        : entry.section.schema.parse({ ...(isObject(current) ? current : {}), ...patch });
+      const sections: Record<string, unknown> = { ...model.sections };
+      putConfigSection(sections, key, next);
+      return { ...model, sections, written: [...(model.written ?? []), key] };
+    });
   }
   defaultZoom(): number {
     return this.current.defaultZoom;
@@ -99,16 +176,6 @@ export class UserConfigStore {
   render(): RenderSettings {
     return { ...this.current.render };
   }
-  controlSurface(): ControlSurfaceSettings {
-    return { ...this.current.controlSurface };
-  }
-
-  /** Change the control-surface selection (any subset of its fields). Only records the choice: claiming the ports is
-   *  launchpadDevices.ts's job, so a store with no host under it (the plugin, a test) is fine. */
-  setControlSurface(patch: Partial<ControlSurfaceSettings>): boolean {
-    return this.update((c) => ({ ...c, controlSurface: { ...c.controlSurface, ...patch } }));
-  }
-
   /** Set the active keyboard binding profile (a plain name; profile-name format
    *  validation lands with the profiles increment). Returns whether it changed. */
   setActiveKeyboardBindings(name: string): boolean {
@@ -204,13 +271,26 @@ export class UserConfigStore {
     return this.update((c) => ({ ...c, render: { ...c.render, ...patch } }));
   }
 
+  /** Apply a change to the SHELL's fields. The package blocks ride along untouched - their raw bytes and the keys this
+   *  session wrote - because serialising a contributed block from its parsed value drops every field this build does not
+   *  know, and config.json is shared with builds of other ages (the verbatim-keep rule). */
+  private update(fn: (cfg: UserConfig) => UserConfig): boolean {
+    return this.apply((model) => ({ ...model, core: fn(model.core) }));
+  }
+
   /** Apply `fn` to the config AS IT IS ON DISK, then commit. The file is shared - the DAW plugin, another standalone -
    *  and this process only reads it at launch (only the plugin watches it), so a change computed from the in-memory
    *  copy wrote that whole stale copy back: one Connect here reverted every setting the plugin had changed since, and
-   *  the plugin's own watcher then adopted the reverts live. */
-  private update(fn: (cfg: UserConfig) => UserConfig): boolean {
+   *  the plugin's own watcher then adopted the reverts live. This is why a section is patched over the re-read copy
+   *  too: a package's block and the shell's fields come from the one file. */
+  private apply(fn: (model: ConfigModel) => ConfigModel): boolean {
     this.syncFromDisk();
-    return this.commit(fn(this.current));
+    return this.commit(fn(this.model()));
+  }
+
+  /** The config as the store holds it, with the file's raw blocks and the keys this session set. */
+  private model(): ConfigModel {
+    return { core: this.current, sections: this.sections, raw: this.raw, written: [...this.written] };
   }
 
   /** Adopt what is on disk now, as reload() does: a valid, different file replaces the in-memory copy (and notifies); a
@@ -218,7 +298,7 @@ export class UserConfigStore {
   private syncFromDisk(): void {
     const bytes = this.backend.readFile(this.filePath());
     if (!bytes) return;
-    const parsed = parseUserConfigResult(dec.decode(bytes));
+    const parsed = parseUserConfigResult(dec.decode(bytes), this.configSections);
     if (!parsed.ok) {
       if (parsed.reason === "newer" && !this.readOnly) {
         this.readOnly = true;
@@ -227,9 +307,22 @@ export class UserConfigStore {
       return;
     }
     this.readOnly = false;
-    if (serializeUserConfig(parsed.value) === serializeUserConfig(this.current)) return;
-    this.current = parsed.value;
+    if (this.serialize(parsed.model) === this.serialize()) return;
+    this.adopt(parsed.model);
     this.onChange();
+  }
+
+  /** The file's bytes for a model, this one when none is given. */
+  private serialize(model: ConfigModel = this.model()): string {
+    return serializeUserConfig(model, this.configSections);
+  }
+
+  /** Take a parsed model as the current one. */
+  private adopt(model: ConfigModel): void {
+    this.current = model.core;
+    this.sections = { ...model.sections };
+    this.raw = { ...(model.raw ?? {}) };
+    this.written = new Set(model.written ?? []);
   }
 
   private filePath(): string {
@@ -237,14 +330,14 @@ export class UserConfigStore {
   }
 
   // Adopt `next` if it differs from the current config: persist atomically + notify.
-  private commit(next: UserConfig): boolean {
+  private commit(next: ConfigModel): boolean {
     if (this.readOnly) return false; // a newer build wrote this file; ours is not the version that gets to edit it
-    const after = serializeUserConfig(next);
-    if (after === serializeUserConfig(this.current)) return false; // genuine no-op
+    const after = this.serialize(next);
+    if (after === this.serialize()) return false; // genuine no-op
     // Adopted only once it is on disk. A failed write (on Windows, another process holding the file open without
     // FILE_SHARE_DELETE fails the rename) must not show the change all session and lose it at the next launch.
     if (!this.backend.writeFileAtomic(this.filePath(), enc.encode(after))) return false;
-    this.current = next;
+    this.adopt(next);
     this.onChange();
     return true;
   }

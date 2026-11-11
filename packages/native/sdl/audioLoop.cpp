@@ -4,8 +4,9 @@ namespace retroplug::sdl {
 
 
 // The audio loop: the product's AudioClient (the engine behind AudioHost's interface), the control-surface calls this
-// product answers for, and the audio.json / midi.json shim until TypeScript owns the settings (docs/modular-graph-phase-
-// f5b-design.md 5.5).
+// product answers for, the startup rendezvous, and the `audio` section's apply (docs/modular-graph-phase-f5b-design.md
+// 5.5 and 6.6). The device settings are config.json's own section, written and read by the audio package's TS; no
+// native audio or MIDI settings file is read or written (E1).
 
 // ---- the audio-thread scheduling this product still owns -------------------------------------------
 #if defined(__linux__)
@@ -60,27 +61,33 @@ void AppState::onSuspendInputs(void* ctx, bool suspended) {
 
 void AppState::onRestored(void* ctx) { static_cast<AppState*>(ctx)->controlSurfaceRestored = true; }
 
-// Let the control plane apply the control surface it persisted (config.json, launchpadDevices.ts restoreLaunchpad)
-// before MIDI opens and audio starts. A claim made from here lands with audio not yet started, so it is reserved
-// before the shared stream ever opens the port and costs no restart; a claim that arrives after the bound below is a
-// MIDI-SESSION reserve, which onReserveMidi handles the same way a later Connect does.
-//
-// What it waits on is the facet's restored() reaching this product (rp_device_host::restored), because the selection
-// is TS's and the claim is asynchronous with respect to the mount: React runs the restore in an effect, on a later
-// pump of the JS loop. So pump the loop until it lands. Bounded in TIME, not pumps: a pump does not block, so a count
-// would be over in a millisecond. A UI that never reports (a broken bundle, no facet at all) costs half a second at
-// startup and then starts anyway, so a missing or unreadable config.json can never keep the app silent. A product that
-// started no control-surface provider has nothing to wait FOR - no facet is mounted, so TS never calls restored() - and
-// waits not at all.
-void restoreControlSurface(AppState& a) {
-    if (!a.providers.startedNamed("launchpad")) return;
+// Let the control plane report the two things the host waits on before it opens anything of its own: the control
+// surface it persisted (config.json, launchpadDevices.ts restoreLaunchpad) and the `audio` section (the audio package's
+// service, audioDevice.apply on its first poll). Both are TS's, and both run asynchronously with respect to the mount -
+// React runs the services' starts in an effect, and their first polls (the audio apply and the project's MIDI selection)
+// on a later pump of the JS loop - so pump the loop until they land. The order the host then opens in is the app's
+// always: the claim (during this rendezvous), then the MIDI stream and the providers' restore, then the audio device
+// (main, after this returns); the audio apply recorded here is what that device opens with. Bounded in TIME, not pumps:
+// a pump does not block, so a count would be over in a millisecond. A UI that never reports (a broken bundle, no facet,
+// no audio package) costs half a second at startup and then starts anyway with the defaults, so a missing or unreadable
+// config.json can never keep the app silent. A product that started no control-surface provider has nothing to wait FOR
+// in that half - no facet is mounted, so TS never calls restored() - and the audio apply is the only word it waits on.
+void waitForUiStartup(AppState& a) {
+    const bool waitsForSurface = a.providers.startedNamed("launchpad");
     const Uint32 start = SDL_GetTicks();
-    while (!a.controlSurfaceRestored && SDL_GetTicks() - start < 500) {
+    auto settled = [&] { return (!waitsForSurface || a.controlSurfaceRestored) && a.audioApplied; };
+    while (!settled() && SDL_GetTicks() - start < 500) {
         a.ui.tick();
-        if (!a.controlSurfaceRestored) SDL_Delay(1);
+        // The services poll on the "frame" event, which main's loop emits once a frame - after this rendezvous. Emit one
+        // here too, so their first polls (the `audio` section's apply and a project's MIDI selection) land while the
+        // host still holds everything, which is what lets the order be the claim, then the device, then the ports.
+        emitUiFrame(a);
+        if (!settled()) SDL_Delay(1);
     }
-    if (!a.controlSurfaceRestored)
+    if (waitsForSurface && !a.controlSurfaceRestored)
         std::fprintf(stderr, "[retroplug-sdl] control surface: the UI did not report its restore; continuing\n");
+    if (!a.audioApplied)
+        std::fprintf(stderr, "[retroplug-sdl] audio: the UI did not apply its settings; starting on the defaults\n");
 }
 
 // RETROPLUG_DEBUG_AUDIO: the audio backends' own chatter and the host API / device enumeration. Read once (it cannot
@@ -189,7 +196,7 @@ void ProductAudioClient::render(float* out, int frames) {
                 a.audioPlanar[static_cast<std::size_t>(c)][static_cast<std::size_t>(i)];
 }
 
-// ---- the audio configuration: the shim, the flags and the hook ----------------------------------------
+// ---- the audio configuration: the request, the flags and the hook --------------------------------------
 
 rp::audio::AudioConfig audioConfigOf(const AppState& a) {
     rp::audio::AudioConfig c;
@@ -202,169 +209,33 @@ rp::audio::AudioConfig audioConfigOf(const AppState& a) {
     return c;
 }
 
-// The whole sequence, once, through AudioHost: stop, release, open, prepare(info()), start (section 5.2). `--backend`
-// is the flag's / RETROPLUG_SDL_AUDIO_BACKEND's override, applied where the shim is read so it wins over audio.json
-// (design 5.2, report item 8).
+// The whole sequence, once, through AudioHost: stop, release, open, prepare(info()), start (section 5.2). The run's
+// --audio-backend / RETROPLUG_SDL_AUDIO_BACKEND and --block-size overrides are applied here, so they win over the section
+// a row or a file saved (design 5.2, E12).
 void applyAudioConfig(AppState& a) {
     if (!a.audio) return;
     rp::audio::AudioConfig c = audioConfigOf(a);
     c.backend                = a.reqBackend;
-    if (!a.backendOverride.empty()) {
-        // The run's flag wins over every saved or UI choice for its duration (design 5.2, E12): a harness pins `null`
-        // so nothing else can come up, whatever a row or a click says.
-        c.backend = a.backendOverride;
-        c.driver.clear();
-        c.device.clear();
-    }
-    a.audio->apply(c);
+    // The run's flags over the saved choice (design 5.2, E12): a harness pins `null` so nothing else can come up
+    // whatever a row or a click says, and a pinned portaudio run still opens the device its section picks.
+    a.audio->apply(rp::audio::applyRunOverrides(c, a.backendOverride, a.blockSizeOverride));
 }
 
-// audio.json / midi.json are NATIVE-owned device settings, read here at startup (setupSdl) before
-// bootControlPlane brings up the JS runtime that owns config.json — so they can't live in the TS config, and
-// they're standalone-only anyway (the plugin gets audio/MIDI from its DAW). They're small reflect-cpp JSON
-// blobs, decoded tolerantly (DefaultIfMissing) exactly like the per-system role config that crosses to native
-// (a missing/garbage field takes the struct default). Whole file into a string (empty if unreadable).
-std::string slurpTextFile(const std::string& path) {
-    std::string out;
-    if (FILE* f = std::fopen(path.c_str(), "rb")) {
-        char buf[4096];
-        size_t n;
-        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
-        std::fclose(f);
-    }
-    return out;
-}
-void writeTextFile(const std::string& path, const std::string& text) {
-    if (FILE* f = std::fopen(path.c_str(), "wb")) {
-        std::fwrite(text.data(), 1, text.size(), f);
-        std::fclose(f);
-    }
-}
-
-// The standalone audio device settings: a SHIM, until the choice is config.json's `audio` section (the TypeScript
-// half). The fields a saved file carries are the ones the device opens with. `hostApi` is neither read nor resolved: a
-// PaHostApiTypeId is a library's numeric id, which a saved choice may not be (section 5.1), and the backend and driver
-// come from --audio-backend / the backend's auto choice / the Settings row. The field is still WRITTEN (as -1) so a file
-// this build writes keeps the shape an older one had, and reading it ignores it. The rate, block and channel count
-// apply. Defaults mirror AppState's so a partial file lands on them.
-struct AudioCfgJson {
-    int sampleRate = 48000;
-    int blockSize = 512;
-    int outChannels = 2;
-    int hostApi = -1; // written for an old file's shape, never read: a numeric library id selects nothing
-    std::string outputDevice; // the device's name in the driver's vocabulary; "" = the driver's default
-    // The MIDI Clock submenu's tempo. Not an audio-device setting, but it belongs to the same
-    // native-owned, standalone-only settings file rather than earning one of its own. The transport's
-    // play/stop is deliberately NOT here: a tempo is a preference, a running clock is not — that starts
-    // stopped every launch.
-    double clockBpm = 120.0;
-};
-
-std::string audioCfgPath(AppState& a) { return a.svc.host.configDir() + "/audio.json"; }
-
-void loadAudioConfig(AppState& a) {
-    const std::string json = slurpTextFile(audioCfgPath(a));
-    if (json.empty()) return; // absent/unreadable → keep the compiled-in / --block-size-seeded defaults
-    const auto r = rfl::json::read<AudioCfgJson, rfl::DefaultIfMissing>(json);
-    if (!r) return; // unparseable → keep defaults
-    const AudioCfgJson c = r.value();
-    if (c.sampleRate > 0) a.reqSampleRate = c.sampleRate;
-    if (c.blockSize > 0) a.reqBlockSize = c.blockSize;
-    if (c.outChannels >= 2 && c.outChannels <= 8 && (c.outChannels % 2) == 0) a.reqOutChannels = c.outChannels;
-    a.reqOutputDevice = c.outputDevice; // resolved by name in the backend; falls back to its default if absent
-    if (c.clockBpm >= MidiClockSync::kMinBpm && c.clockBpm <= MidiClockSync::kMaxBpm)
-        a.clockBpmRequest.store(static_cast<float>(c.clockBpm), std::memory_order_relaxed);
-}
-
-void saveAudioConfig(AppState& a) {
-    const AudioCfgJson c{ a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, -1, a.reqOutputDevice,
-                          a.clockBpmRequest.load(std::memory_order_relaxed) };
-    writeTextFile(audioCfgPath(a), rfl::json::write(c) + "\n");
-}
-
-// The chosen MIDI input/output device names (Settings > MIDI). "" = None in both directions (the virtual ports only),
-// the default; the input also takes rp::midi::kAllInputs ("*") as an explicit "every device".
-//
-// A SHIM, kept until the selection is the project's (a `midi` project section, its ports by name): this file holds one
-// name each, and the mapping onto the stream's lists lives in applyMidiSelection. Then it is ignored outright, like
-// audio.json, and the SDL app never shipped.
-//
-// NOTE for anyone reading an old midi.json: "" used to mean All Devices on the input side, and there is no way to tell
-// that apart from "never chose" - both wrote the same empty string. So an existing file simply lands on the current
-// default, which is the behaviour a default change should have.
-struct MidiCfgJson {
-    std::string input;
-    std::string output;
-};
-
-std::string midiCfgPath(AppState& a) { return a.svc.host.configDir() + "/midi.json"; }
-
-// The one-name mapping onto the stream's lists, shared by the startup load and the picker's hooks. It neither persists
-// nor logs: reading the stored file back over itself would rewrite it at every launch, and the log line belongs to the
-// user's change, not to a value the file already held.
-//
-// `mode` is the stream's: the load DIFFS, so reopening a project costs no connection it already had, while the picker's
-// change REOPENS, which is the user's one remedy for a port that was unplugged and plugged back in (there is no hotplug
-// watch).
-void selectMidi(AppState& a, bool input, const std::string& name, rp::midi::Apply mode) {
-    if (input) {
-        a.midiInputJson = name;
-        if (name.empty()) a.midi.setInputs({}, false, mode);
-        else if (name == rp::midi::kAllInputs) a.midi.setInputs({}, true, mode);
-        else a.midi.setInputs({name}, false, mode);
-    } else {
-        a.midiOutputJson = name;
-        if (name.empty()) a.midi.setOutputs({}, mode);
-        else a.midi.setOutputs({name}, mode);
-    }
-}
-
-void loadMidiConfig(AppState& a) {
-    const std::string json = slurpTextFile(midiCfgPath(a));
-    if (json.empty()) return;
-    const auto r = rfl::json::read<MidiCfgJson, rfl::DefaultIfMissing>(json);
-    if (!r) return;
-    const MidiCfgJson c = r.value();
-    // Applied when midi.open() publishes the ports: the same one-name mapping the picker's hooks use, in its diffing
-    // mode (nothing the file names is reopened here, because nothing is open yet).
-    selectMidi(a, true, c.input, rp::midi::Apply::Diff);
-    selectMidi(a, false, c.output, rp::midi::Apply::Diff);
-}
-
-void saveMidiConfig(AppState& a) {
-    const MidiCfgJson c{ a.midiInputJson, a.midiOutputJson };
-    writeTextFile(midiCfgPath(a), rfl::json::write(c) + "\n");
-}
-
-// Live audio reconfigure (the Audio settings submenu): AudioHost runs the whole sequence once (stop, release, open,
-// prepare with what the DEVICE obtained, start), and the chosen values are persisted so the next launch opens the same
-// device. Called on the UI thread. A no-change request costs nothing: AudioHost returns at once for a config it is
-// already running.
+// Live audio reconfigure (the harness's and the tests' path - the Settings > Audio Apply goes through the audio
+// package's hook): AudioHost runs the whole sequence once (stop, release, open, prepare with what the DEVICE obtained,
+// start). The chosen values are AppState's request; the section the file keeps is written by the UI that owns it, so
+// this persists nothing. Called on the UI thread. A no-change request costs nothing: AudioHost returns at once for a
+// config it is already running.
 void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, const std::string& device) {
     a.reqSampleRate   = sampleRate;
     a.reqBlockSize    = blockSize;
     a.reqOutChannels  = channels;
     a.reqOutputDevice = device;
     applyAudioConfig(a);
-    saveAudioConfig(a);
     std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames, %d ch (backend '%s', device '%s')\n",
                  a.reqSampleRate, a.reqBlockSize, a.reqOutChannels,
                  a.reqBackend.empty() ? "auto" : a.reqBackend.c_str(),
                  a.reqOutputDevice.empty() ? "default" : a.reqOutputDevice.c_str());
-}
-
-// Live MIDI device reselection (Settings > MIDI), while audio may be running. It does not stop audio: the stream closes
-// and opens inputs, each port cancelling its own callback as it goes, and replaces its output set through the epoch
-// handshake, which waits out at most the send in flight. A brief audio gap on a device change belongs to
-// reconfigureAudio alone, where the device itself changes.
-//
-// The picker offers one name each while midi.json is the selection's home (the shim): "" is None, "*" is every device
-// on the input side, and anything else is that port. The stream itself takes lists.
-void applyMidiSelection(AppState& a, bool input, const std::string& name) {
-    selectMidi(a, input, name, rp::midi::Apply::Reopen);
-    saveMidiConfig(a);  // the picker's change is the one that persists it (loadMidiConfig does not)
-    std::fprintf(stderr, "[retroplug-sdl] MIDI %s device -> '%s'\n", input ? "input" : "output",
-                 name.empty() ? "None" : (name == rp::midi::kAllInputs ? "All Devices" : name.c_str()));
 }
 
 }  // namespace retroplug::sdl

@@ -25,6 +25,7 @@
 //   duplicate-role-kind |
 //   duplicate-kit-format | duplicate-marker-role | duplicate-app | duplicate-app-control | app-unknown-key |
 //   duplicate-section | duplicate-service | duplicate-placer | shell-section | placer-missing |
+//   duplicate-config-section | duplicate-config-section-one-package | shell-config-section |
 //   kind-duplicate-item | kind-one-half | kind-check-unknown-node | kind-app-member |
 //   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty |
 //   duplicate-app-one-package | identifier-collision | apps-only | capture-unwired | capture-no-decoder |
@@ -168,6 +169,16 @@ async function loadPlacers() {
 
 /** A fixture app contributing one project section and one service, each under its own key: the generated registry
  *  collects them (packages.ts's PROJECT_SECTIONS and PROJECT_SERVICES) and refuses a key two packages share. */
+function configSectionApp(sectionKey) {
+  return (
+    "export default {\n" +
+    '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n' +
+    `  configSections: [{ key: ${JSON.stringify(sectionKey)}, schema: { parse: (v) => v }, ` +
+    `defaults: () => ({}) }],\n` +
+    "};\n"
+  );
+}
+
 function sectionApp(sectionKey, serviceKey = sectionKey) {
   return (
     "export default {\n" +
@@ -213,6 +224,7 @@ async function loadPackages() {
     kitFormats: loaded.KIT_FORMATS.map((format) => format.id),
     projectSections: loaded.PROJECT_SECTIONS.map((entry) => `${entry.pkg}:${entry.section.key}`),
     projectServices: loaded.PROJECT_SERVICES.map((entry) => entry.service.key),
+    configSections: loaded.CONFIG_SECTIONS.map((entry) => `${entry.pkg}:${entry.section.key}`),
     embeds: loaded.EMBEDS.map((embed) => ({ id: embed.id, label: embed.label, platform: embed.platform })),
     consoles: consoles.CONSOLES.map((descriptor) => ({
       id: descriptor.id,
@@ -427,6 +439,7 @@ try {
         packages: ran.packages,
         projectSections: loaded.projectSections,
         projectServices: loaded.projectServices,
+        configSections: loaded.configSections,
       };
       break;
     }
@@ -1305,6 +1318,47 @@ try {
       // package's bytes would replace the other's in every project.
       writeTree("packages/alpha/ts/app.ts", sectionApp("shared", "alpha"));
       writeTree("packages/beta/ts/app.ts", sectionApp("shared", "beta"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-config-section":
+      // Two packages own one root key of config.json: the shell writes a section back under its key, so one package's
+      // bytes would replace the other's in every machine's file.
+      writeTree("packages/alpha/ts/app.ts", configSectionApp("shared"));
+      writeTree("packages/beta/ts/app.ts", configSectionApp("shared"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-config-section-one-package":
+      // One package declares one root key of config.json twice: the second block would replace the first in every
+      // machine's file, and the contributor the shell calls is whichever the registry happened to keep.
+      writeTree("packages/alpha/ts/app.ts",
+        "export default {\n" +
+        '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n' +
+        '  configSections: [\n' +
+        '    { key: "shared", schema: { parse: (v) => v }, defaults: () => ({}) },\n' +
+        '    { key: "shared", schema: { parse: (v) => v }, defaults: () => ({}) },\n' +
+        "  ],\n" +
+        "};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "shell-config-section":
+      // A section under a root key the shell owns: `sramAutoSave` is the shell's own field, so its schema would be read
+      // as the section's and its bytes written back as one.
+      writeTree("packages/alpha/ts/app.ts", configSectionApp("sramAutoSave"));
       generate({ root });
       try {
         result = await loadPackages();

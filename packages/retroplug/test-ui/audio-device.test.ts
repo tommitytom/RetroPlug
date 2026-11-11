@@ -1,34 +1,19 @@
-// Settings > Audio > Output Device picker, driven on the real headless menu. Guards the device seam: the
-// cycler reads the selected driver's device list (devicesByDriver), cycling it repaints + stages (no commit),
-// and Apply commits the device as __rp_setAudioConfig's 5th arg. (The driver-change-resets-device behaviour is
-// covered at the unit level in test/menu/leaves.test.ts, since navTo here only walks downward.) Mirrors
-// audio-driver.test.ts; the native host is faked.
-
+// Settings > Audio > Output Device picker, driven on the real headless menu. Guards the device seam end to end: the
+// cycler reads the driver's device list from the audio package's hook (the fake device's description), cycling it
+// repaints + stages (no commit), and Apply commits the whole choice to the section and the device. Mirrors
+// audio-driver.test.ts; the native host is faked, so no backend library is initialised (the Zoom L6 rule).
 import { test, expect, ui, navTo, Key } from "ui-harness";
+import { FakeAudioDevice } from "@retroplug/audio/testSupport/fakeDevice";
 
-const calls: Array<[number, number, number, string, string]> = [];
-const live = { sampleRate: 48000, blockSize: 1024, outChannels: 2, driver: "Auto", device: "" };
-const drivers = ["Auto", "PipeWire", "ALSA"];
-const devicesByDriver: Record<string, string[]> = {
-  Auto: ["Speakers", "HDMI"],
-  PipeWire: ["Speakers", "HDMI"],
-  ALSA: ["default", "sysdefault"],
-};
+const fake = new FakeAudioDevice({
+  status: { backend: "portaudio", driver: "pipewire", device: "", sampleRate: 48000, blockFrames: 512, channels: 2 },
+}).install();
 const g = globalThis as Record<string, unknown>;
 g.__rp_isStandalone = true;
-g.__rp_getAudioConfig = () => ({ ...live, drivers: [...drivers], devicesByDriver });
-g.__rp_setAudioConfig = (r: number, b: number, ch: number, d: string, dev: string) => {
-  calls.push([r, b, ch, d, dev]);
-  live.sampleRate = r;
-  live.blockSize = b;
-  live.outChannels = ch;
-  live.driver = d;
-  live.device = dev;
-};
 
 const labelOf = (prefix: string) => ui.findByTextContaining(prefix)?.text ?? "(missing)";
 
-test("Settings > Audio > Output Device: cycles the driver's devices, stages, and Apply commits it as the 5th arg", () => {
+test("Settings > Audio > Output Device: cycles the driver's devices, stages, and Apply commits the choice", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
   expect(navTo("Settings")).toBeTruthy();
@@ -38,14 +23,17 @@ test("Settings > Audio > Output Device: cycles the driver's devices, stages, and
   ui.tapKey(Key.Enter);
   ui.pump(8);
 
-  // Default: the host API default output.
-  expect(labelOf("Output Device")).toBe("Output Device: Default");
+  // Default: the driver's default output, named.
+  expect(labelOf("Output Device")).toBe("Output Device: Default (Speakers)");
 
-  // The Block Size row carries the block's latency at the current rate (1024 @ 48 kHz), on-screen and not
-  // just in the menu model — it's a composed label, so this proves what actually renders.
-  expect(labelOf("Block Size")).toBe("Block Size: 1024 (21.3 ms)");
+  // The Block Size row carries the block's latency at the current rate (512 @ 48 kHz), on-screen and not just in the
+  // menu model: it's a composed label, so this proves what actually renders.
+  expect(labelOf("Block Size")).toBe("Block Size: 512 (10.7 ms)");
 
-  // Cycle through the (Auto) driver's devices → Speakers → HDMI. Staged only (no device setter call yet).
+  // The mount applied the saved section once (the startup rendezvous), which is the baseline: a cycler step must not
+  // add to it.
+  const appliedAtBoot = fake.applied.length;
+  // Cycle through the (Auto) driver's devices -> Speakers -> HDMI. Staged only (no device setter call yet).
   expect(navTo("Output Device")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(8);
@@ -53,12 +41,14 @@ test("Settings > Audio > Output Device: cycles the driver's devices, stages, and
   ui.tapKey(Key.Enter);
   ui.pump(8);
   expect(labelOf("Output Device")).toBe("Output Device: HDMI");
-  expect(calls.length).toBe(0);
+  expect(fake.applied.length).toBe(appliedAtBoot);
 
-  // Apply → the device rides the 5th __rp_setAudioConfig arg (driver unchanged = Auto).
+  // Apply -> the whole choice lands (driver unchanged = the auto choice's PortAudio/PipeWire).
   expect(navTo("Apply")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(calls.at(-1)).toEqual([48000, 1024, 2, "Auto", "HDMI"]);
+  expect(fake.applied.at(-1)).toEqual({
+    backend: "auto", driver: "", device: "HDMI", sampleRate: 48000, blockSize: 512, outChannels: 2,
+  });
   expect(labelOf("Output Device")).toBe("Output Device: HDMI");
 });

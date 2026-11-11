@@ -28,12 +28,14 @@ function needsEmulator(host: Host<"emulator">): unknown {
   return host.emulator;
 }
 
-test("a UI host is its ten groups and no others", () => {
+test("a UI host is its ten groups and no others, plus the two optional device groups", () => {
   const stores = composeAppStores({ backend: new MockBackend("/cfg") });
   const ui: UiHost = createUiHost(stores, {
     views: { open: () => {} },
     beginImport: () => {},
   });
+  // The audio device and MIDI stream are the standalone's, and this host (a mock backend, no native hooks) has
+  // neither: a UI bundle in a DAW-hosted editor offers the same ten groups.
   expect(Object.keys(ui).sort()).toEqual(
     ["config", "devices", "dialogs", "files", "liveSongs", "png", "project", "songs", "systems", "views"].sort(),
   );
@@ -44,7 +46,7 @@ test("a UI host is its ten groups and no others", () => {
   // as types: a mock-tier test has no native session and no render context to build one over.
   const typeCases = (cli: CliHost, render: RenderHostGroups): void => {
     // Each surface's exact group list: a group added to or dropped from a host fails one of these.
-    const uiGroups: Record<keyof UiHost, true> = {
+    const uiGroups: Record<keyof Omit<UiHost, "audioDevice" | "midiDevice">, true> = {
       files: true, png: true, systems: true, songs: true, liveSongs: true, dialogs: true, devices: true, views: true,
       project: true, config: true,
     };

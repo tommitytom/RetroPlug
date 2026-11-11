@@ -1,36 +1,21 @@
-// Settings > MIDI device pickers, driven on the real headless menu. Guards the whole seam end-to-end: the
-// submenu appears only when the host exposes the MIDI hooks (standalone), the cyclers read the live device
-// list + current selection, and stepping a cycler calls the native setter with the right device name AND
-// repaints the label (the App subscribeMidi wiring). Mirrors settings-cyclers.test.ts. The native host is
-// faked via globalThis so this runs with no MIDI hardware.
-
+// Settings > MIDI, driven on the real headless menu. Guards the whole seam end to end: the submenu appears only when
+// the host offers the MIDI stream (standalone), the rows are the PROJECT's (a checklist over the saved `midi` section),
+// a pick writes the section at once and repaints, a saved name whose port is not present shows as "(missing)", and the
+// Rescan row re-applies the resolved list in the reopening mode. The native host is faked, so no MIDI port is listed or
+// opened.
 import { test, expect, ui, navTo, Key } from "ui-harness";
+import { FakeMidiDevice } from "@retroplug/midi/testSupport/fakeDevice";
 
-// A fake SDL host: two input devices, one output. selected* start at the defaults ("" = None either way). The
-// setters record their calls and mutate the fake state, so a re-render reflects the pick (as the real host
-// would after reconnecting the port). Installed at module scope so it's present before the UI boots.
-const calls: Array<[string, string]> = [];
-const midi = {
+const fake = new FakeMidiDevice({
   inputs: ["Launchpad MK2", "Arturia KeyStep 32"],
   outputs: ["Deluge"],
-  selectedInput: "",
-  selectedOutput: "",
-};
+}).install();
 const g = globalThis as Record<string, unknown>;
 g.__rp_isStandalone = true;
-g.__rp_getMidiConfig = () => ({ ...midi });
-g.__rp_setMidiInput = (name: string) => {
-  calls.push(["in", name]);
-  midi.selectedInput = name;
-};
-g.__rp_setMidiOutput = (name: string) => {
-  calls.push(["out", name]);
-  midi.selectedOutput = name;
-};
 
 const labelOf = (prefix: string) => ui.findByTextContaining(prefix)?.text ?? "(missing)";
 
-test("Settings > MIDI: input/output device cyclers pick a device, call the host, and repaint", () => {
+test("Settings > MIDI: the checklist picks ports into the project, 'All devices' is a choice, Rescan reopens", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
@@ -38,50 +23,51 @@ test("Settings > MIDI: input/output device cyclers pick a device, call the host,
   ui.tapKey(Key.Enter);
   ui.pump(8);
 
-  // The MIDI submenu is present (standalone + the seam) — open it.
+  // The MIDI submenu is present (standalone + the stream) - open it.
   expect(navTo("MIDI")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(8);
 
-  // Defaults: NOTHING open in either direction. Input used to default to every device, which is a
-  // surprising amount of behaviour to get without asking - anything plugged in becomes a MIDI source, so a
-  // control surface's free-running clock drives the host tempo. The virtual "RetroPlug In" port is open
-  // regardless, so "None" still receives from a DAW; only physical devices are opt-in.
-  expect(labelOf("Input Device")).toBe("Input Device: None");
-  expect(labelOf("Output Device")).toBe("Output Device: None");
+  // The rows are saved with the project: nothing is open in either direction, which is a fresh project's state. The
+  // virtual "RetroPlug In" port is open regardless, so "nothing" still receives from a DAW; only physical devices are
+  // opt-in.
+  expect(ui.findByTextContaining("Saved with this project") != null).toBeTruthy();
+  expect(labelOf("All devices")).toBe("[ ] All devices");
+  expect(labelOf("Launchpad MK2")).toBe("[ ] Launchpad MK2");
+  expect(labelOf("Arturia KeyStep 32")).toBe("[ ] Arturia KeyStep 32");
 
-  // Step forward → "All Devices", which is now a CHOICE rather than the default, stored as its sentinel.
-  expect(navTo("Input Device")).toBeTruthy();
+  // A pick writes the section at once and the row checks itself (the service applies it on the same frame).
+  expect(navTo("Arturia KeyStep 32")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(calls.at(-1)).toEqual(["in", "*"]);
-  expect(labelOf("Input Device")).toBe("Input Device: All Devices");
+  expect(labelOf("Arturia KeyStep 32")).toBe("[x] Arturia KeyStep 32");
+  expect(fake.applied.at(-1)!.selection.inputs).toEqual(["Arturia KeyStep 32"]);
 
-  // Then the devices themselves, in the order the live list gives them.
+  // The output side mirrors to a chosen port; Left/Right do nothing on a checklist row, Enter toggles it.
+  expect(navTo("Deluge")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(calls.at(-1)).toEqual(["in", "Launchpad MK2"]);
-  expect(labelOf("Input Device")).toBe("Input Device: Launchpad MK2");
+  expect(labelOf("Deluge")).toBe("[x] Deluge");
+  expect(fake.applied.at(-1)!.selection.outputs).toEqual(["Deluge"]);
 
+  // Picking the same row again takes the name out again.
   ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(calls.at(-1)).toEqual(["in", "Arturia KeyStep 32"]);
-  expect(labelOf("Input Device")).toBe("Input Device: Arturia KeyStep 32");
+  expect(labelOf("Deluge")).toBe("[ ] Deluge");
 
-  // Once more wraps back to None (empty selection).
+  // "All devices" is the explicit everything, not the default.
+  expect(navTo("All devices")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(calls.at(-1)).toEqual(["in", ""]);
-  expect(labelOf("Input Device")).toBe("Input Device: None");
+  expect(labelOf("All devices")).toBe("[x] All devices");
+  expect(fake.applied.at(-1)!.selection.allInputs).toBe(true);
 
-  // The output cycler picks the hardware output; Left steps back to None.
-  expect(navTo("Output Device")).toBeTruthy();
-  ui.tapKey(Key.Right);
+  // Rescan re-resolves the saved names against a fresh listing and reopens every port. A later poll may re-apply the
+  // section as a diff (opening the submenu and writing a row both ask for one), so the assertion is that a REOPEN
+  // happened, not that it is the last call.
+  expect(navTo("Rescan")).toBeTruthy();
+  ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(calls.at(-1)).toEqual(["out", "Deluge"]);
-  expect(labelOf("Output Device")).toBe("Output Device: Deluge");
-  ui.tapKey(Key.Left);
-  ui.pump(8);
-  expect(calls.at(-1)).toEqual(["out", ""]);
-  expect(labelOf("Output Device")).toBe("Output Device: None");
+  expect(fake.applied.some((a) => a.mode === "reopen")).toBe(true);
 });
+

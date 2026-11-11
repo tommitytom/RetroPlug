@@ -101,7 +101,7 @@ test("a second PROCESS cannot claim the port this one holds, and says so in the 
   __rp_keepAlive(); // the child outlasts the host's bounded spin
   const cfg = store();
   const client = createLaunchpadClient(makeCall());
-  cfg.setControlSurface({ input: PRO, output: PRO, device: PRO_NAME, enabled: true });
+  cfg.setSection("controlSurface", { input: PRO, output: PRO, device: PRO_NAME, enabled: true });
   restoreLaunchpad(cfg, CALL);
   expect(client.status().connected).toBe(true);
   try {
@@ -125,14 +125,14 @@ test("a second PROCESS cannot claim the port this one holds, and says so in the 
     expect(client.status().input).toBe(PRO);
   } finally {
     client.release();
-    cfg.setControlSurface({ input: "", output: "", device: "", enabled: false });
+    cfg.setSection("controlSurface", { input: "", output: "", device: "", enabled: false });
   }
 });
 
 test("the restore claims the pair config.json remembers, then tells the host it is done", () => {
   const audio = createAudioDriver();
   const cfg = store();
-  cfg.setControlSurface({ input: PRO, output: PRO, device: PRO_NAME, enabled: true });
+  cfg.setSection("controlSurface", { input: PRO, output: PRO, device: PRO_NAME, enabled: true });
   audio.drainProductCalls(); // whatever earlier cases did, this case reads from here
   restoreLaunchpad(cfg, CALL);
   const status = createLaunchpadClient(makeCall()).status();
@@ -154,7 +154,7 @@ test("a scan stepped to its end finds the device, persists the pair and claims i
   try {
     // Wanted, but nothing known yet: what a user who has just enabled the feature, or one upgrading from the legacy
     // host, has in config.json.
-    cfg.setControlSurface({ input: "", output: "", device: "", enabled: true });
+    cfg.setSection("controlSurface", { input: "", output: "", device: "", enabled: true });
     if (client.status().connected) client.release();
     restoreLaunchpad(cfg, CALL); // nothing to claim, and the word still goes out
     audio.drainProductCalls();
@@ -171,7 +171,7 @@ test("a scan stepped to its end finds the device, persists the pair and claims i
     expect(found?.input).toBe(PRO);
     expect(found?.name).toBe(PRO_NAME);
     // Persisted (a fresh store reads config.json back) and claimed: the answer the instance submenu gates on.
-    const saved = store().controlSurface();
+    const saved = store().section("controlSurface");
     expect(saved.input).toBe(PRO);
     expect(saved.output).toBe(PRO);
     expect(saved.device).toBe(PRO_NAME);
@@ -196,13 +196,13 @@ test("Forget clears the pair AND the name, and gives the device back", () => {
   const audio = createAudioDriver();
   const cfg = store();
   const client = createLaunchpadClient(makeCall());
-  cfg.setControlSurface({ input: PRO, output: PRO, device: PRO_NAME, enabled: true });
+  cfg.setSection("controlSurface", { input: PRO, output: PRO, device: PRO_NAME, enabled: true });
   restoreLaunchpad(cfg, CALL);
   expect(client.status().connected).toBe(true);
   audio.drainProductCalls();
   forgetLaunchpad(cfg, CALL);
   // The pair and the NAME go; "Use in Project" is the project's switch, not the device's, and stays as the user left it.
-  expect(cfg.controlSurface()).toEqual({ input: "", output: "", enabled: true, device: "" });
+  expect(cfg.section("controlSurface")).toEqual({ input: "", output: "", enabled: true, device: "" });
   expect(client.status().connected).toBe(false);
   // The pair rejoins the shared stream: an empty reservation for the product, which is what opens the ports again.
   expect(audio.drainProductCalls()).toEqual(["reserve_midi:|"]);
@@ -212,16 +212,16 @@ test("Connect resolves the hinted default, and a pair whose device is away is re
   const cfg = store();
   const client = createLaunchpadClient(makeCall());
   if (client.status().connected) client.release();
-  cfg.setControlSurface({ input: "", output: "", device: "", enabled: false });
+  cfg.setSection("controlSurface", { input: "", output: "", device: "", enabled: false });
   const before = getLaunchpadConfig(cfg, CALL)!;
   connectLaunchpad(cfg, true, before, CALL);
   expect(getLaunchpadConfig(cfg, CALL)!.connected).toBe(true);
-  expect(cfg.controlSurface().input).toBe(PRO); // the Pro's own port, found by its hint, not picked by the user
+  expect(cfg.section("controlSurface").input).toBe(PRO); // the Pro's own port, found by its hint, not picked by the user
 
   // Now a saved pick whose device is not on the machine: the claim fails, the row says why in the FACET's words
   // (LaunchpadRpc's presence check), and nothing is left held.
   client.release();
-  cfg.setControlSurface({ input: "Some Synth", output: "Some Synth", device: "", enabled: true });
+  cfg.setSection("controlSurface", { input: "Some Synth", output: "Some Synth", device: "", enabled: true });
   const warn = console.warn;
   const warned: string[] = [];
   console.warn = (...parts: unknown[]) => void warned.push(parts.map(String).join(" "));
@@ -235,6 +235,6 @@ test("Connect resolves the hinted default, and a pair whose device is away is re
   expect(client.status().connected).toBe(false);
   expect(getLaunchpadConfig(cfg, CALL)!.error).toBe("not connected: Some Synth");
   // The pick is kept: the device may be plugged back in, and forgetting it would make the user scan again.
-  expect(cfg.controlSurface().input).toBe("Some Synth");
-  cfg.setControlSurface({ input: "", output: "", device: "", enabled: false });
+  expect(cfg.section("controlSurface").input).toBe("Some Synth");
+  cfg.setSection("controlSurface", { input: "", output: "", device: "", enabled: false });
 });

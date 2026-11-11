@@ -6,7 +6,10 @@ import type { UiHost } from "@retroplug/ui/contribution";
 import type { AppStores } from "../../src/appStores";
 import type { ControlPlaneBackend } from "../../src/backend";
 import type { SystemsStore } from "../../src/systemsStore";
-import type { Call, DevicesHost, Host, ProjectHost, SystemInfo, SystemsHost, ViewsHost } from "@retroplug/core/host";
+import type {
+  AudioDeviceHost, Call, ConfigHost, DevicesHost, Host, MidiDeviceHost, ProjectHost, SystemInfo, SystemsHost,
+  ViewsHost,
+} from "@retroplug/core/host";
 import { roleConfig } from "@retroplug/core/systemRoles";
 import { filesPngHost } from "../../src/hostGroups";
 import { resolveSavPath } from "../../src/savPaths";
@@ -15,6 +18,7 @@ import { mutateLiveSav } from "../../src/tracker/liveSav";
 import { makeCall } from "../../src/rpcClient";
 import { createMidiClient } from "../../src/realBackend";
 import { batteryListing } from "../../src/batteryListing";
+import { native } from "./nativeHooks";
 
 /** The UI surface's host, and the one definition of it: the ui package declares it (`@retroplug/ui/contribution`), so a
  *  contribution's builder is typed against the host the shell builds and a package, which may never import the shell,
@@ -43,6 +47,8 @@ export function createUiHost(stores: AppStores, peers: UiHostPeers): UiHost {
   // The RPC caller and a MIDI client are built on first use: a UI that never builds an N8 client (every mock-tier test,
   // a DAW host with no device) must not need the native RPC channel to exist to have a host at all. A function rather
   // than a getter, so copying the group (`{ ...host.devices }`) does not resolve it.
+  const audio = audioDeviceHost();
+  const midi = midiDeviceHost();
   let rpc: Call | undefined;
   const devices: DevicesHost = {
     rpc: (method, ...params) => (rpc ??= makeCall())(method, ...params),
@@ -65,11 +71,53 @@ export function createUiHost(stores: AppStores, peers: UiHostPeers): UiHost {
       section: (key) => stores.project.section(key),
       setSection: (key, patch) => stores.project.setSection(key, patch),
       serviceState: (key) => stores.project.serviceState(key),
+      revision: () => stores.project.revision(),
     } satisfies ProjectHost,
     config: {
-      controlSurface: () => stores.userConfig.controlSurface(),
-      setControlSurface: (patch) => void stores.userConfig.setControlSurface(patch),
+      section: (key) => stores.userConfig.section(key),
+      setSection: (key, patch) => void stores.userConfig.setSection(key, patch),
+    } satisfies ConfigHost,
+    // The two device groups exist only where the host binds their hooks (the SDL standalone): a DAW-hosted editor and
+    // the UI harness have no audio device or MIDI stream of their own, so their rows are not drawn at all rather than
+    // drawn and inert.
+    ...(audio ? { audioDevice: audio } : {}),
+    ...(midi ? { midiDevice: midi } : {}),
+  };
+}
+
+/** The audio device, over the standalone's hooks. Each call reads the global as it is NOW (a test installs a fake after
+ *  import), and a host with none offers no group. */
+function audioDeviceHost(): AudioDeviceHost | undefined {
+  if (typeof native.__rp_audioDescribe !== "function") return undefined;
+  return {
+    describe: () => native.__rp_audioDescribe?.() ?? null,
+    backendDrivers: (backend) => native.__rp_audioBackendDrivers?.(backend) ?? [],
+    apply: (choice) => native.__rp_audioApply?.(choice) ?? null,
+    status: () => native.__rp_audioStatus?.() ?? null,
+  };
+}
+
+/** The MIDI stream, over the standalone's hooks. A host with no describe hook offers no group. */
+function midiDeviceHost(): MidiDeviceHost | undefined {
+  if (typeof native.__rp_midiDescribe !== "function") return undefined;
+  return {
+    describe: () => native.__rp_midiDescribe?.() ?? null,
+    apply: (selection, mode = "diff") => native.__rp_midiApply?.(selection, mode),
+    transport: () => {
+      const t = native.__rp_getTransport?.();
+      if (!t) return null;
+      // The tempo a clock master is driving is the one the row shows; our own comes back when it leaves. A host that
+      // cannot say reads the free-run defaults, as the menu always did.
+      const bpm = typeof t.bpm === "number" && t.bpm > 0 ? t.bpm : 120;
+      return {
+        playing: t.playing === true,
+        external: t.external === true,
+        bpm,
+        localBpm: typeof t.localBpm === "number" && t.localBpm > 0 ? t.localBpm : bpm,
+      };
     },
+    setTransport: (playing) => native.__rp_setTransport?.(playing),
+    setClockBpm: (bpm) => native.__rp_setClockBpm?.(bpm),
   };
 }
 

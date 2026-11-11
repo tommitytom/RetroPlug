@@ -89,7 +89,11 @@ for (const file of files) {
             const where = `${file}:${i + 1}`;
             const target = resolve(dirname(file), decodeURI(relPath));
             if (!existsSync(target)) {
-                errors.push(`${where}  dead link  ${href}`);
+                // A plan record (`docs/*-plan.md`) is the snapshot of a plan as it was written, kept so a later reader
+                // can see what was proposed; it is never edited, so a file it cites may since have moved. Reported, not
+                // failed: the record is right and the tree moved, and the fix belongs to whoever reads the plan.
+                if (/-plan\.md$/.test(file)) warnings.push(`${where}  dead link in a plan record  ${href}`);
+                else errors.push(`${where}  dead link  ${href}`);
                 continue;
             }
 
@@ -137,7 +141,7 @@ for (const e of errors) console.error(`ERROR ${e}`);
 
 const scanned = files.length;
 if (errors.length === 0) {
-    console.log(`\ncheck-doc-links: ${scanned} file(s) clean` + (warnings.length ? `, ${warnings.length} anchor warning(s)` : ""));
+    console.log(`\ncheck-doc-links: ${scanned} file(s) clean` + (warnings.length ? `, ${warnings.length} warning(s)` : ""));
     process.exit(0);
 }
 console.error(`\ncheck-doc-links: ${errors.length} error(s) across ${scanned} file(s)`);

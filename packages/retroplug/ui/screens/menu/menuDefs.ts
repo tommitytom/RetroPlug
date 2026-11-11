@@ -15,6 +15,7 @@ import {
   contributedTrackerUi,
   firstWinsMenuIds,
   menuPlacement,
+  menuPlacementOpen,
   roleRows,
 } from "../../host/menuContributions";
 import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
@@ -49,9 +50,6 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../app/saveProjectInteractive";
 import { hasUnsavedChanges, unsavedChanges } from "../../../src/unsavedChanges";
 import { SONG_BLOCKED } from "../../app/unsavedRows";
-import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
-import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
-import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COARSE_STEP } from "./transport";
 import type { AssetMenuSpec, MenuBuildContext, SongMenuSpec } from "@retroplug/ui/contribution";
 import type { MenuAction, MenuItem, MenuTree } from "@retroplug/ui/menu";
 import { roleConfig } from "@retroplug/core/systemRoles";
@@ -59,7 +57,6 @@ import {
   action,
   actionCycler,
   browseThen,
-  button,
   cycleInt,
   cycler,
   infoRow,
@@ -130,160 +127,6 @@ function hostOf(ctx: MenuContext): UiHost {
  *  row — a DAW owns the plugin window, so it must not offer to quit. */
 function isStandalone(): boolean {
   return native.__rp_isStandalone === true;
-}
-
-// Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The
-// cyclers edit a DRAFT (audioDraft.ts) — nothing is applied until the "Apply" row commits it via
-// __rp_setAudioConfig (re-open device + persist). Absent in a DAW / the harness (hasAudioConfig() false).
-// Both families, up to what a modern interface actually offers: the 44.1 line (44100/88200/176400) and the
-// 48 line (32000/48000/96000/192000). Nothing in the path caps at 48k - the cores take whatever rate they
-// are handed (GB_set_sample_rate / Mesen's AudioConfig), and the render feature has offered 96k for a while
-// (RENDER_SAMPLE_RATES) - this list was just the starter set the SDL host shipped with. Higher rates cost
-// proportionally more emulation per second, so a low-power device (the handheld) should stay at 48k or below.
-const AUDIO_RATES = [22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000];
-const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
-// Output device channels: 2 = stereo mix; 4/6/8 open that many device channels so the project's Audio
-// Routing (2-Ch/Inst, 1-Ch/Inst, Channels) fans real stems out to a multichannel interface. Labelled by
-// pair count since routing works in stereo pairs.
-const AUDIO_CHANNELS = [2, 4, 6, 8];
-const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
-
-/** How long one block of `frames` lasts at `rate`, for the Block Size row — the number that setting is
- *  really about (a block is a buffer's worth of audio, so it's the delay the size buys you). It is the
- *  device's buffer period, not end-to-end output latency: the driver and the device add their own
- *  buffering on top, so the figure heard is at least this and usually more. Computed against the DRAFT
- *  sample rate, so cycling Sample Rate re-labels every block size. */
-function blockLatencyMs(frames: number, sampleRate: number): string {
-  if (sampleRate <= 0) return "?";
-  return `${((frames / sampleRate) * 1000).toFixed(1)} ms`;
-}
-/** The standalone's MIDI Clock submenu (empty in a DAW / the DPF standalone / the harness, where the host owns
- *  the transport and never binds the seam). This is a clock control, not a cosmetic one: while the transport
- *  runs, the LSDj / risa sync roles are turning it into link-port clock for the cart. Transport starts
- *  Stopped; the tempo persists.
- *
- *  While an external clock master is running it owns both values, so the rows show ITS state and go inert -
- *  editing them would look like it did something it can't. They come back when the master stops. */
-function midiClockChildren(t: NonNullable<ReturnType<typeof getTransport>>): MenuItem[] {
-  if (t.external) {
-    return [
-      infoRow("inst-clock-source", "Source: External MIDI clock"),
-      infoRow("inst-clock-transport", `Transport: ${t.playing ? "Playing" : "Stopped"}`),
-      infoRow("inst-clock-tempo", `Tempo: ${Math.round(t.bpm)} BPM`),
-    ];
-  }
-  const step = (delta: number) => setClockBpm(t.localBpm + delta);
-  return [
-    cycler("inst-clock-transport", "Transport", ["Stopped", "Playing"], t.playing ? 1 : 0, (n) => setTransport(n === 1)),
-    {
-      // Not a `cycler`: the tempo is a range, not a list of options. Same keys though - Left/Right step by
-      // one, PageUp/PageDown by ten (onCoarseStep, as the render-duration row uses), Enter nudges up.
-      id: "inst-clock-tempo",
-      label: `Tempo: ${Math.round(t.localBpm)} BPM`,
-      kind: "cycler",
-      keepOpen: true,
-      onSelect: () => step(CLOCK_BPM_STEP),
-      onCycle: (dir) => step(dir * CLOCK_BPM_STEP),
-      onCoarseStep: (dir) => step(dir * CLOCK_BPM_COARSE_STEP),
-    },
-  ];
-}
-
-function midiClockRow(): MenuItem[] {
-  const t = getTransport();
-  if (!t) return [];
-  const state = t.playing ? `${Math.round(t.bpm)} BPM` : "Stopped";
-  return [
-    separator("inst-sep-transport"),
-    submenu("inst-clock", `MIDI Clock: ${state}`, midiClockChildren(t)),
-  ];
-}
-
-function audioSettingsChildren(): MenuItem[] {
-  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", device: "" };
-  const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
-  const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
-  const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
-  // The driver list ("Auto" + each compiled-in/available host API) is enumerated natively, so the picker shows
-  // exactly what the build/runtime offers (PipeWire+ALSA on the handheld, which has no jack dev to compile against;
-  // +JACK on a desktop build, and only when libjack.so.0 is actually there to dlopen).
-  const drivers = getAudioDrivers();
-  const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
-  // "Auto" alone does not say which driver you ended up on, which is the one thing you want to know when
-  // something sounds wrong - so name it, the way the Output Device row names what "Default" resolved to. The
-  // VALUE list stays `drivers` (the cycler hands back drivers[n]); only the labels differ.
-  const autoDriver = getAutoAudioDriver();
-  const driverNames = drivers.map((d) => (d === "Auto" && autoDriver ? `Auto (${autoDriver})` : d));
-  // Output devices of the SELECTED driver (host API), with "Default" (= the host API default) at index 0. The
-  // list tracks the DRAFT driver; changing the driver resets the device (a device isn't valid across host APIs).
-  // "Default" names the device it resolves to when the host can tell us (e.g. the PipeWire session default sink),
-  // so the row says where the sound is actually going rather than just "Default".
-  const defaultName = getAudioDefaultDevice(cfg.driver);
-  const dev = deviceCyclerNames(getAudioDevices(cfg.driver), cfg.device, defaultName ? `Default (${defaultName})` : "Default");
-  const devName = (n: number) => (n === 0 ? "" : getAudioDevices(cfg.driver)[n - 1] ?? cfg.device);
-  const dirty = audioDraftDirty();
-  return [
-    // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
-    cycler("audio-driver", "Driver", driverNames, driverIdx, (n) => setAudioDraft({ driver: drivers[n], device: "" })),
-    cycler("audio-device", "Output Device", dev.names, dev.index, (n) => setAudioDraft({ device: devName(n) })),
-    cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
-    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b} (${blockLatencyMs(b, cfg.sampleRate)})`), blockIdx,
-           (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
-    cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
-    separator("audio-sep-apply"),
-    // Commit the staged rate/block/channels/driver/device to the device. Greyed (inert) until a pending change.
-    // keepOpen: stay in the Audio submenu after applying (it re-seeds the draft, so Apply just greys out) rather
-    // than closing the whole menu — you often tweak several settings in a row.
-    button("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
-  ];
-}
-
-// Standalone-only MIDI device pickers (Settings > MIDI), gated on hasMidiConfig(). Unlike Audio, a pick
-// applies immediately (setMidiInput/Output → the native host reconnects the port + persists). Input defaults
-// to "All Devices" (every hardware input, the historical behavior); output to "None" (virtual port only). A
-// saved device that isn't currently present is still shown, marked "(not connected)", and stays selected.
-function deviceCyclerNames(devices: string[], selected: string, allLabel: string): { names: string[]; index: number } {
-  const names = [allLabel, ...devices];
-  if (selected === "") return { names, index: 0 };
-  const i = devices.indexOf(selected);
-  if (i >= 0) return { names, index: i + 1 };
-  // Selected device not present: append it so the label still reflects the choice (re-applied on reconnect).
-  names.push(`${selected} (not connected)`);
-  return { names, index: names.length - 1 };
-}
-
-/** Cycler entries for the INPUT device: "None" (the default), then "All Devices", then each port.
- *
- *  Two sentinels rather than the output side's one, because opening every device is a real choice somebody
- *  might want and a poor thing to get without asking - anything plugged in becomes a MIDI source, so a
- *  control surface's free-running clock drives the host tempo and a controller's mixer ports send notes at
- *  the cart. The virtual "RetroPlug In" port is open either way, so "None" still receives from a DAW. */
-function inputCyclerNames(devices: string[], selected: string): { names: string[]; index: number } {
-  const names = ["None", "All Devices", ...devices];
-  if (selected === "") return { names, index: 0 };
-  if (selected === ALL_INPUTS) return { names, index: 1 };
-  const i = devices.indexOf(selected);
-  if (i >= 0) return { names, index: i + 2 };
-  names.push(`${selected} (not connected)`); // a saved pick whose device is away still shows
-  return { names, index: names.length - 1 };
-}
-
-// Settings > MIDI. The device pickers, plus whatever a package contributes at the `settings.midi` placement - the
-// control-surface scan today, because Settings is where you describe your rig and the instance menu's Launchpad submenu
-// only exists once a device is known.
-function midiSettingsChildren(ctx: MenuContext): MenuItem[] {
-  const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
-  const inp = inputCyclerNames(cfg.inputs, cfg.selectedInput);
-  const out = deviceCyclerNames(cfg.outputs, cfg.selectedOutput, "None");
-  // Input index 0/1 are the two sentinels; anything above maps back to a device name. Output keeps its
-  // single sentinel at 0.
-  const inName = (n: number) => (n === 0 ? "" : n === 1 ? ALL_INPUTS : cfg.inputs[n - 2] ?? cfg.selectedInput);
-  const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
-  return [
-    cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
-    cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
-    ...menuPlacement("settings.midi", hostOf(ctx), ctx.system ?? null, buildContext(ctx)),
-  ];
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -1342,12 +1185,28 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ),
     action("set-render-dir-clear", "Clear", () => userConfig.setRenderOutputDir(""), !defaultDir),
   ]);
-  // Device pickers (Audio + MIDI) lead the menu: standalone-only, where the SDL host exposes the audio /
-  // RtMidi seams (a DAW-hosted editor / the headless harness has neither). The separator under them is
-  // emitted only when at least one is present, so a DAW build doesn't open on a stray leading rule.
+  // The device pickers (Audio + MIDI) lead the menu: standalone-only, and their rows are the packages' - the shell owns
+  // the two containers and the placements, nothing about a backend, a driver or a port name (docs/modular-graph-phase-
+  // f5b-design.md section 6.5). A package that has no device to show (the plugin, whose rows are not drawn at all)
+  // contributes none, and the container goes with them; the separator under them is emitted only when at least one is
+  // present, so a DAW build doesn't open on a stray leading rule.
+  const host = hostOf(ctx);
+  // A device container: the package's rows inside the row the shell keeps, with the placement's open hook - opening it
+  // is when a package re-reads what its rows show (the MIDI checklist's port listing), and the shell names neither the
+  // package nor the device to carry it there.
+  const container = (
+    id: string,
+    label: string,
+    placement: "settings.audio" | "settings.midi",
+  ): MenuItem[] => {
+    if (!isStandalone()) return [];
+    const rows = menuPlacement(placement, host, ctx.system ?? null, buildContext(ctx));
+    if (rows.length === 0) return [];
+    return [submenu(id, label, rows, menuPlacementOpen(placement, host))];
+  };
   const deviceRows: MenuItem[] = [
-    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
-    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren(ctx))] : []),
+    ...container("set-audio", "Audio", "settings.audio"),
+    ...container("set-midi", "MIDI", "settings.midi"),
   ];
   return [
     ...deviceRows,
@@ -1486,8 +1345,10 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
-      // The host-transport readout fences itself and sits BETWEEN the two groups, belonging to neither.
-      ...midiClockRow(),
+      // The host-transport readout (the MIDI Clock submenu) fences itself and sits BETWEEN the two groups, belonging to
+      // neither: the midi package builds it at the `instance.clock` placement, and a host with no transport contributes
+      // nothing.
+      ...menuPlacement("instance.clock", hostOf(ctx), sys, buildContext(ctx)),
       separator("inst-sep1"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
       action("inst-dup", "Duplicate Instance", () => {

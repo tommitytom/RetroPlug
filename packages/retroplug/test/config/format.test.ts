@@ -33,7 +33,7 @@ test("stringifyConfig: a short primitive array stays inline; objects and long ar
 
 test("every written root is pretty-printed and newline-terminated", () => {
   const written = [
-    serializeUserConfig(DEFAULT_USER_CONFIG),
+    serializeUserConfig({ core: DEFAULT_USER_CONFIG, sections: {} }),
     serializeBindingMap(defaultBindingMap()),
     serializeRecent([{ path: "/proj/a.rplg", name: "A" }]),
     projectJson(),
@@ -49,7 +49,7 @@ test("only whitespace changed: each root re-parses to the same values, compact o
   // A file written by an older compact build (the pretty text minus its whitespace) still loads.
   const compact = (json: string) => JSON.stringify(JSON.parse(json));
 
-  const cfg = serializeUserConfig(DEFAULT_USER_CONFIG);
+  const cfg = serializeUserConfig({ core: DEFAULT_USER_CONFIG, sections: {} });
   expect(parseUserConfig(cfg)).toEqual(DEFAULT_USER_CONFIG);
   expect(parseUserConfig(compact(cfg))).toEqual(parseUserConfig(cfg));
 

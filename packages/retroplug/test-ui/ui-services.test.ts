@@ -7,12 +7,16 @@
 import { test, expect, ui, navTo, Key } from "ui-harness";
 import type { LaunchpadClient } from "@retroplug/launchpad/client";
 import type { N8LinkClient } from "@retroplug/n8";
+import { FakeAudioDevice } from "@retroplug/audio/testSupport/fakeDevice";
+import { FakeMidiDevice } from "@retroplug/midi/testSupport/fakeDevice";
 
 // Settings > MIDI (where a control surface is found) and Settings > Audio are standalone-only, so the host says it is
 // one; the MIDI lists are fixed so both submenus render with no device.
 const g = globalThis as Record<string, unknown>;
 g.__rp_isStandalone = true;
-g.__rp_getMidiConfig = () => ({ inputs: [], outputs: [], selectedInput: "", selectedOutput: "" });
+// The audio device and the MIDI stream are the packages' hooks now; both submenus need them to render at all.
+new FakeAudioDevice().install();
+new FakeMidiDevice({ inputs: [], outputs: [] }).install();
 
 const labelOf = (prefix: string) => ui.findByTextContaining(prefix)?.text ?? "(missing)";
 

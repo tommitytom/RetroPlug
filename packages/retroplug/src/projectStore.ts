@@ -148,6 +148,9 @@ export class ProjectStore {
   private path = "";
   private projectName = ""; // the USER-set name (Project > Name); blank unless typed, persisted in the .rplg
   private dirty = false;
+  /** Bumped whenever a whole project is adopted (a new one, a load): a UI service that resolved something against the
+   *  previous project re-resolves on a change, even when the new project's bytes are equal (another machine's ports). */
+  private projectRevision = 0;
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
   private songRequest: (SongRequest & { ticks: number; asked: boolean }) | null = null; // see requestSong / settleSong
   private recentPending = false; // the open project's Recent row is owed, once its cart can say what it holds (see syncRecent)
@@ -372,6 +375,10 @@ export class ProjectStore {
   }
   currentPath(): string {
     return this.path;
+  }
+  /** How many whole projects this store has adopted (new, load): a signal for a service that must re-resolve. */
+  revision(): number {
+    return this.projectRevision;
   }
   /** The project's own name - what the user typed under Project > Name, "" when they haven't. The only
    *  name persisted in the .rplg; a derived one never is (see `displayName`). */
@@ -614,6 +621,7 @@ export class ProjectStore {
 
   /** Empty project: tear down systems, reset settings/path, mark clean. */
   newProject(): void {
+    this.projectRevision++;
     this.systems.clear();
     this.projectSettings = { ...DEFAULT_SETTINGS, sections: defaultSections(this.sections) };
     this.publishRouting(); // place nothing, at the default routing
@@ -792,6 +800,7 @@ export class ProjectStore {
   // Rebuild the systems from a resolved config + adopt the settings; mark clean. Each
   // system's SRAM/savestate blobs (export only) seed its emulator via adopt.
   private commit(cfg: ProjectConfig, path: string, blobs: Map<string, Uint8Array>): LoadOutcome {
+    this.projectRevision++;
     try {
       // The clear publishes the emptied graph itself, which can throw too, so it is inside the try as well.
       this.systems.clear();

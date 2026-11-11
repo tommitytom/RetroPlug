@@ -48,7 +48,9 @@ const nodePrefixes = option("--node-prefixes");
 // The node types the shell MAY spell (its own vocabulary: the strings it builds a node document with, and a node type it
 // names as a constant). Exempt from the family guard as well as the exact one, because a package's name can claim the
 // family a shell-owned type already sits in: the midi package's prefix is rp.midi. and core's routing node, which
-// buildGraph builds itself, is rp.midi.route. A value not listed here is guarded as before, so every OTHER type in that
+// buildGraph builds itself, is rp.midi.route. The family has two owners and the split is by type: core owns
+// rp.midi.route (and nothing else in the family), and the midi package owns every OTHER rp.midi.* type - so this list
+// holds core's one type, never the package's. A value not listed here is guarded as before, so every other type in that
 // family is still the package's.
 const nodeExempt = option("--node-exempt");
 // `--carts` may be EMPTY and the other four may not: a fixture tree whose generated package list declares no cart is

@@ -244,12 +244,16 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       // captured/confirming Enter, so LVGL's CLICKED on those rows is a no-op.
       if (item.kind === "capture" || item.kind === "prompt") return;
       if (item.kind === "submenu") {
+        const opening = !openItems.has(item.id);
         setOpenItems((prev) => {
           const next = new Set(prev);
           if (next.has(item.id)) next.delete(item.id);
           else next.add(item.id);
           return next;
         });
+        // Opening is the one moment a package hears that its rows are about to be looked at (the MIDI checklist's port
+        // listing, the Driver row's drivers), so the hook runs here and never on a render.
+        if (opening) item.onOpen?.();
         return;
       }
       // An actionCycler runs the verb it is currently showing; every other leaf runs its own onSelect. The
@@ -262,7 +266,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       } else item.onSelect?.();
       if (!keepOpen) onClose();
     },
-    [onClose, actionIndexOf],
+    [onClose, actionIndexOf, openItems],
   );
 
   // Move the cursor onto a row without acting on it — the mouse path for an action-cycler's row body, where

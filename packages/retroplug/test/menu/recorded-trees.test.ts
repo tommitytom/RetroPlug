@@ -43,11 +43,33 @@ import { test, expect } from "@retroplug/testing";
 import recorded from "./recorded-matrix.json";
 import { CASES, collect, type RecordedMatrix } from "./recorded-cases";
 
+// txiki's file write, declared as the runner's other tests do.
+declare const tjs: { env: Record<string, string | undefined>; writeFile(path: string, data: string): Promise<void> };
+
 // One record for the whole file: rebuilding the matrix is the expensive part, and every case's own expectations are
 // independent of the others (a case builds its own stores and stubs its own facets).
 let recordedNow: RecordedMatrix | undefined;
 function matrix(): RecordedMatrix {
   return (recordedNow ??= collect());
+}
+
+// A re-record is taken ONE NAMED CASE AT A TIME: `RP_MENU_MATRIX_UPDATE=<case>[,<case>...] pnpm test menu/recorded-trees`
+// rewrites exactly the cases the variable names (and refuses a name the file does not have), leaving every other case
+// the old tree's record. The F5b seam cases' record (docs/modular-graph-phase-f5b-design.md section 6.8) was taken this
+// way, and it also carries the MIDI Clock submenu's rows in standalone-instance and standalone-scan: the fixtures now
+// install the midi package's fake transport, which is a fixture change rather than a behaviour one.
+const updateCases = (tjs.env.RP_MENU_MATRIX_UPDATE ?? "").split(",").map((s) => s.trim()).filter((s) => s !== "");
+
+if (updateCases.length > 0) {
+  test("re-record the cases the run names", async () => {
+    const known = new Set(CASES.map((c) => c.name));
+    for (const name of updateCases)
+      if (!known.has(name)) throw new Error(`no recorded case is called ${name}`);
+    const fresh = matrix();
+    const merged = { ...(recorded as unknown as Record<string, unknown>) };
+    for (const name of updateCases) merged[name] = fresh[name];
+    await tjs.writeFile("test/menu/recorded-matrix.json", JSON.stringify(merged, null, 1) + "\n");
+  });
 }
 
 for (const c of CASES) {
