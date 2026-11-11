@@ -738,7 +738,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     (the native tests, parity's MIDI-out hashes), never as a DAW records the plugin's `writeMidiEvent`: the Reaper
     legs (`reaper:lsdj-*`) drive LSDj from the DAW and analyse the audio. A leg that records the plugin's MIDI out
     would close it.
-  - **The SDL standalone sends host MIDI at block time.** Its RtMidi out takes no timestamp, so `audioCb` sends
+  - **The SDL standalone sends host MIDI at block time.** Its RtMidi out takes no timestamp, so the audio callback sends
     each block's `Engine::midiOut` at once as the block is rendered, its frames dropped, where the plugin hands the
     DAW each message at its frame (`writeMidiEvent`). Scheduling it is the standalone's own work.
 - **Found while building B3b, left as they are:**
@@ -1020,6 +1020,34 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `-Wformat-truncation` at `packages/native/plugin/PluginDSP.cpp:177` a cold build shows (found by F5a's acceptance,
   not F5a's), and no `/W4 /WX` build has seen it; fix it as its own change.
 
+- **F5b built: the SDL standalone's audio and MIDI as packages** ([modular-graph-phase-f5b-design.md](../docs/modular-graph-phase-f5b-design.md),
+  on `feature/modularize`; five stages). A merge of `feature/sdl-standalone` (the `MidiIo` ring fix); `packages/midi`
+  (`MidiBackend` / `MidiPort`, RtMidi under one `systemMidi()`, `FakeMidiBackend`, the one copy of the port filters,
+  `MidiStream` - the branch's ring, the output set swapped with NO audio stop, the reservation and the scan's held edge
+  - and the facet as a provider, which the CLI and the headless host start by naming `midi`; the Launchpad pack depends
+  on it and dropped its own port seam and filter copy); `packages/audio` + `audio-portaudio` + `audio-sdl` (the backend
+  contract, the null device, `AudioHost` with the muted fallback and status, render-ahead and the no-pull watchdog;
+  `AUDIO_BACKENDS` names the backends a product links, so the CLI, the headless host and the Node addon link neither);
+  config.json's package-owned sections (the `audio` ROOT section, the Launchpad's `controlSurface` moved byte for byte,
+  a block no product contributes kept verbatim, a block this session did not set written back verbatim, refuse-newer at
+  section scope) and a project's `midi` section (ports by name, entries as objects, the clock tempo); Settings > Audio
+  and Settings > MIDI's rows, the MIDI Clock submenu and the startup rendezvous moved into the two packages; and
+  `main.cpp` split into `app.hpp` + `window`/`input`/`hooks`/`audioLoop`/`main` (one namespace). `audio.json` and
+  `midi.json` are no longer read (E1), MIDI selection is per project (E2), a MIDI change no longer stops audio (E5), a
+  failed or lost device shows "Muted: why" (E6), the tempo is the project's (E7), and `--audio-backend` /
+  `--block-size` / `--render-ahead` override the saved choice for a run while keeping a same-backend driver and device
+  (E12). The one re-record is the recorded menu matrix's three audio/MIDI cases; every other oracle held.
+  **The per-device MIDI routing follow-up is the user's next want**, and this phase's schema is built for it: each
+  entry is an object with room for a routing field (no version bump then), and `MidiStream` merges every input into one
+  ring today, so a staged message would need to carry its port. It is: each port its own source and destination,
+  `rp.host.midi-in` / `-out` per port, `buildGraph` routing, and the menus. Also owed: **the `feature/handheld-perf`
+  rebase** onto F5b (`4b9e39ea8`'s render-ahead is `AudioHost`'s now, so its `main.cpp` hunk reduces to the muOS
+  launcher flags; then the muOS device run that proves render-ahead at the quantum the server locks); the real
+  Launchpad (both the claim and the scan, manual); the n8-bridge sessions through the CLI's facet on a REAL N8 (the
+  fake-backed tests pass); Windows (WinMM's port names for `portMatch`'s table, WASAPI Auto for PortAudio, the send
+  wait the output-set swap bounds); macOS (CoreMIDI, CoreAudio, the framework build); MIDI-in frame offsets; device
+  hotplug; the `rp.midi` family's split (core owns `rp.midi.route` alone, the midi package every other `rp.midi.*`
+  type); and MIDI clock phase lock. The `rp.midi.*` node family and `MidiStream` are the layer that follow-up extends.
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the
   follow-up that closed it): `packages/system` (the contract every console implements and the engine drives, the

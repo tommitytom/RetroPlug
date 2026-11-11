@@ -46,8 +46,9 @@ export RETROPLUG_SDL_FULLSCREEN=1
 
 # The compiled-in default audio block size is 512 frames (low latency, for desktops). The Cortex-A53 handheld
 # can't sustain emulation + resampling + LVGL inside that deadline, so the audio callback underruns (choppy
-# sound). Pass a big buffer here; it only seeds the default, so a user's own Settings > Audio pick (persisted to
-# audio.json) still overrides it.
+# sound). Pass a big buffer here. This flag WINS over the `audio` section's block for the run: a user's own
+# Settings > Audio block pick is saved, and the Settings row says "This run: block 4096 (a flag overrides the
+# saved choice)", so the saved choice takes effect only when the app is started without this flag.
 BLOCK_SIZE=4096
 
 # Log to the app folder (writable, on the SD card) so a launch can be diagnosed over SSH.

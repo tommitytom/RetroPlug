@@ -20,25 +20,26 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
   producers: torn slots, lost messages, possible heap corruption from two threads assigning one slot's
   vector. Fix: serialize the producer side (spinlock / mutex in `pushRing`; consumer stays lock-free), or
   one ring per port. Add a TSan run that drives two producers.
-- [ ] **Pa_StopStream / Pa_StartStream used as a lock.** `reconfigureMidi`, the Launchpad
-  `setOnLinkChanged` and `setOnScanBusy` callbacks in `sdl/main.cpp` stop and restart the stream to
-  quiesce the audio thread. On PipeWire `StopStream` calls `pw_stream_disconnect`, so hand-patched routing
-  (wide outs in qpwgraph) is lost and a new node appears; every case is an audible gap. Fix: a pause
-  handshake with the callback (request flag + ack) instead of a stream restart.
-- [ ] **Dead audio device = frozen app.** The emulator only advances inside the audio callback. A device
-  that disappears (USB unplug, PipeWire node removed, suspend) freezes everything; nothing watches stream
-  health (`Pa_SetStreamFinishedCallback` / `Pa_IsStreamActive`). *audit:* `Pa_StartStream` /
-  `Pa_StopStream` return values are ignored, so a failed restart leaves a live-looking app with a dead
-  emulator and an undrained command ring. Fall back to the headless pump (or reopen) on failure.
-- [ ] **Bad persisted audio config = muted forever.** If `audio.json` holds params the device rejects,
-  `openAudio` mutes on every launch with no fallback to defaults, and `__rp_getAudioConfig` has no
-  status field, so the UI can't say the device failed to open. Retry with defaults; expose
-  open/muted/error to Settings > Audio.
-- [ ] **RT tuning applies once per process** (*audit*). `paCallback`'s `static std::atomic<bool> tuned`
-  latches on the first stream. On ALSA (the handheld) each `StartStream` spawns a new thread, and because
-  of the stop/start lock above that now happens in ordinary use, so the audio thread loses SCHED_FIFO +
-  core pinning. On PipeWire the same call sets SCHED_FIFO 80 and pins PipeWire's shared data-loop thread,
-  overriding rtkit. Re-tune per callback thread (compare `pthread_self()`), and only on ALSA.
+- [x] **Pa_StopStream / Pa_StartStream used as a lock.** *Fixed in F5b: a MIDI change no longer stops audio at
+  all. `MidiStream`'s outputs are an immutable set swapped through an epoch handshake (the audio thread brackets
+  its sends with a counter the control thread waits out), an input's port cancels its own callback as it closes,
+  and `reconfigureMidi` / the Launchpad callbacks are gone. Only a real device change (`AudioHost::apply`) stops
+  and restarts the stream, once. See [modular-graph-phase-f5b-design.md](modular-graph-phase-f5b-design.md) 4.3
+  and edge E5.*
+- [x] **Dead audio device = frozen app.** *Fixed in F5b: `AudioHost` owns a backend-neutral no-pull watchdog (a
+  started device that runs no pull for a few block durations, never under 250 ms, falls to the `null` device with
+  a status Settings shows), each backend reports its own `lost()`, and a stream that opens but will not start is
+  an open failure that falls back. The false-trip hazard a permanent mute once had is gone too: while the status
+  carries an error, Settings > Audio's Apply stays live as the retry.*
+- [x] **Bad persisted audio config = muted forever.** *Fixed in F5b: the `audio` section is a stamped
+  config.json section whose parse clamps junk to defaults per field; a failed open falls to the `null` device with
+  `AudioHost`'s status carrying the reason, which Settings > Audio renders as "Muted: why"; and Apply is the
+  live retry while it does.*
+- [x] **RT tuning applies once per process** (*audit*). *Fixed in F5b: `AudioHost` tunes PER THREAD (a
+  `thread_local` latch, so a re-opened stream's callback asks once for itself), on the callback thread only (the
+  null pump and a test's hand-cranked pull are left alone), with the renderer at 80 and the callback at 85 under
+  render-ahead. The "only on ALSA" suggestion is not taken: the pin is best effort and a failure is ignored, as it
+  always was; PipeWire's data-loop thread is still the one tuned, which the muOS run is to watch.*
 
 ## 2. Parity gaps vs the DPF standalone
 
@@ -87,10 +88,9 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 
 ## 4. Config / persistence
 
-- [ ] **`audio.json` / `midi.json` are unversioned.** Native-owned reflect-cpp JSON with no version stamp,
-  against the AGENTS.md config-migration rule. `midi.json` already changed meaning silently (`""` was All
-  Devices, now None). Stamp them (or move them into the TS-owned versioned config) and write atomically
-  (temp file + rename; `writeTextFile` truncates in place).
+- [x] **`audio.json` / `midi.json` are unversioned.** *Fixed in F5b: both files are gone. The audio choice is
+  config.json's stamped `audio` section (written atomically through the TS store's re-read) and the ports/tempo are
+  the project's `midi` section; the old files are neither read nor deleted (edge E1).*
 
 ## 5. Code quality / duplication
 
@@ -101,7 +101,9 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 - [ ] **Test scaffolding in the shipping `main()`** (*audit*). 23 `getenv("RETROPLUG_...")` call sites (18 distinct variables),
   including a complete `MidiClockSync` unit test. Move `MidiClockSync` to `src/host` with a Catch2 test;
   gate the rest behind one self-test entry point.
-- [ ] **Split `sdl/main.cpp`** (~1900 lines) into audio / input / window / hooks units.
+- [x] **Split `sdl/main.cpp`** (~1900 lines) into audio / input / window / hooks units. *F5b: `app.hpp` and
+  `window.cpp` / `input.cpp` / `hooks.cpp` / `audioLoop.cpp` / `main.cpp`, one namespace, a pure move (every line
+  that is not a declaration appears verbatim).*
 - [ ] **Stale comments, here and in `sdl-standalone.md`:** "SDL2 audio callback" (it's PortAudio), "SDL
   drives Mali GLES2 internally" (`SDL_RENDERER_SOFTWARE` forces the software renderer), header says the
   gamepad feeds the keypad indev (`pumpGamepad`'s comment says it must not), `see audioCb` (gone),
@@ -115,5 +117,7 @@ Background: [sdl-standalone.md](sdl-standalone.md) (feature history; its parity 
 - [ ] `pnpm sdl:smoke` as a CI step (today CI proves it compiles and links, not that it runs).
 - [ ] `retroplug-sdl` under `tools/run-sanitizer.sh`. (The MidiIo ring is covered on its own now: build
   `retroplug-midi-test` in `build-tsan/` and run it with `TSAN_OPTIONS=halt_on_error=1`.)
-- [ ] Run the `sdl:pipewire` wide-output leg somewhere wireplumber starts.
+- [x] Run the `sdl:pipewire` wide-output leg somewhere wireplumber starts. *F5b: the harness starts its own
+  wireplumber on a private dbus and runs the PortAudio and SDL-audio wide legs plus a live-menu leg; it runs under
+  the `/dev/snd` guard in the verification kit.*
 - [ ] Smoke checks for each parity fix above (render job, watcher, right-click `"mouse"` bus).

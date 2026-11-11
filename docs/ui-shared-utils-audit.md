@@ -40,8 +40,8 @@ Fix: a pure [menuItems.ts](../packages/ui/ts/menu/menuItems.ts) with the builder
 
 ## 3. `__rp_*` native hooks: 52 `globalThis as {...}` casts in 16 files (DONE)
 
-Every native seam re-declares its own structural type at each call site; `audioDraft.ts` re-casts
-`__rp_getAudioConfig` five times. `Symbol.for("plugin")` is resolved separately in `main.tsx` and
+Every native seam re-declares its own structural type at each call site; `audioDraft.ts` re-cast the audio
+config hook five times (now the audio package's `__rp_audioDescribe` / `__rp_audioApply`). `Symbol.for("plugin")` is resolved separately in `main.tsx` and
 `StoreProvider.tsx`.
 
 Proposal: one `host/nativeHooks.ts` with an `RpHooks` interface and a single `native` handle, plus a

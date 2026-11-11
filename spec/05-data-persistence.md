@@ -130,7 +130,7 @@ still loads (migrated up if needed — see the version-stamp policy below).
 
 | File | Model | Stamp const | Shape |
 |---|---|---|---|
-| `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 3` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
+| `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) plus each package's section | `USER_CONFIG_SCHEMA = 3` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave, render, useNativeFileDialogs }`, then each package's ROOT-keyed section (`audio`, `controlSurface`, ...) |
 | `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
 | `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name, song? }] }`, most-recent-first, capped at 10. Keyed by path + `song`, so one project holds a row per song it has had loaded. A songless row is the placeholder for a project that has had no song loaded: a song row supersedes it, and a songless add changes nothing once song rows exist, so the two never coexist for one path. `song` is printable ASCII; a persisted row whose song is anything else is skipped on read (the residue of a name read from a cart that had not finished booting). `name` is the project's name as of the last record: its own name when set, else its primary cart's `"<sav.ext> [<rom>]"` identity |
 
@@ -211,6 +211,27 @@ JSON**, backed by two mechanisms:
    exact-match map over `systems[].roles[].kind`, leaving each role's `config` untouched (the
    assets role's `overrides` list is the user's kit/font/theme replacements).
 
+**Config sections are the same policy at config.json's root.** A non-core ROOT key of `config.json` is a package's
+`ProjectSection` (`definePackage({ configSections })`, [configSections.ts](../packages/retroplug/src/configSections.ts),
+the same shape and the same stamp rules as a project section), reached through the generic `config` host group
+(`section` / `setSection`). Three rules are config-file-specific and a pack author copying a project section must know
+them. (1) **The shell's keys are the shell's**: `CORE_CONFIG_KEYS` is derived from `userConfigSchema`'s shape plus
+`schemaVersion`, and the generated registry refuses a contributor of one. (2) **An absent key is not invented**: a
+section this product contributes but the file has never carried reads its contributor's defaults, and a write of the
+file leaves it absent until `setSection` writes it - which is what lets a pre-section file round-trip byte for byte and
+the plugin (which lists no audio package) write a standalone's `audio` block back instead of erasing it. (3) **A block
+this session did not set is written back VERBATIM**: the store keeps each block as the file carried it beside its parsed
+value, and only a key `setSection` set this session is serialized from its parsed form, so an additive field a newer
+build wrote survives this one. A section write is computed inside the store's apply callback over the file AS IT IS ON
+DISK (`syncFromDisk` first), so two processes sharing it cannot revert each other, and a block stamped newer than its
+contributor is refused with one warning and written back byte-identical.
+
+**The files this phase stopped reading** (E1): `audio.json` (the standalone's device choice and clock tempo) and
+`midi.json` (its one input and one output). They are neither imported nor deleted: the audio choice is `config.json`'s
+`audio` section (backend, driver and device by names, rate, block, width), the clock tempo is the project's
+`midi.clockBpm`, and a project's ports are its `midi` section. Settings therefore reset once for a user of the pre-F5b
+standalone, which never shipped.
+
 **Project sections have the same policy at their own scope.** A non-core key under `settings` is a package's
 `ProjectSection` (or, with no contributor, a block the shell keeps verbatim: E5): its contributor may declare an
 optional `version` and `migrations` (raw `(obj) => obj` steps keyed by FROM-version, applied to the block before its
@@ -221,7 +242,9 @@ naming the key and both versions, and the writer keeps the raw block and writes 
 `schema.parse`/`defaults()`, a project service's `poll`/`graphModel`/`state` and a placer's `place` that throw are
 isolated with one warning per package and key and read as no section (its defaults), no model, no state or no
 placement, so the rest of the project loads and publishes. No product's section declares a version today (the
-controller's block is additive and unstamped).
+controller's block is additive and unstamped; nor does the MIDI package's `midi` section, whose entries are objects -
+`{ name }` with room for the per-device routing field a later change adds - so the parse keeps every field an entry
+carries beside its name and a toggle keeps the entry objects).
 
 An `*-assets` role config is not limited to `overrides`. BlipToaster's also carries `settings`,
 the fields of the cart's baked 16-byte rig-settings block the project pins (default theme / font /

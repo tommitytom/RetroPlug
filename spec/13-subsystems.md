@@ -95,8 +95,8 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   `packages/n8/ts` (`createN8Client`, the sniffer and the other decoders, the load helpers). The emulated twin is
   `src/system/mesen/NesEverdriveFifo.hpp`, which every NES ROM gets at `$40F0`/`$40F1`.
 - Every product that lists the pack and includes its generated provider header starts it (the plugin, the SDL
-  standalone and the CLI, whose sessions use the facet's session half; `RETROPLUG_N8_BRIDGE` gates only the CLI's
-  live-MIDI facet and rtmidi). The Pico box (`pico/n8-host`) is the same Edio on TinyUSB.
+  standalone, the headless host and the CLI, whose sessions use the facet's session half; a product's `PROVIDERS` list
+  says which packs it starts). The Pico box (`pico/n8-host`) is the same Edio on TinyUSB.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session`; for the box, `pnpm device:box` and the rig's
   `loop.sh`, `stress.sh` and `faults.sh`. `retroplug-n8-hwtest` needs the physical console.

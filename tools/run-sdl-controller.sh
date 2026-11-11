@@ -55,6 +55,11 @@ fi
 # would either play to whatever this machine's default card is or fail on a runner with none. No audio driver is named.
 export SDL_VIDEODRIVER=dummy RETROPLUG_SDL_AUDIO_BACKEND=null
 TMP="$(mktemp -d)"
+
+# The /dev/snd guard (tools/sdl-audio-guard), on top of the port filter above: two independent locks, one for MIDI and one
+# for audio. The run is pinned to the null backend and must never reach a card even so.
+. "$REPO_DIR/tools/sdl-audio-guard/guard-env.sh" "$TMP/guard"
+export NOSND_LOG="${NOSND_LOG:-$TMP/nosnd.log}"
 FAKE_PID=""
 KEYS_PID=""
 OTHER_PID=""
@@ -140,7 +145,7 @@ PORT="$FAKE_PORT"
 # The MIDI selection is the PROJECT's now (a `midi` section), so a leg that wants hardware inputs to reach the shared
 # stream autoloads a project that asks for them. The section is the shell-free form (packages/midi/ts/configSection.ts):
 # an explicit "every input" choice, or the named ports a rig saved.
-writeproject() {  # writeproject <path> <midi-json>
+writeproject() {  # writeproject <path> <midi-section-json>
     printf '{"schemaVersion":"4","settings":{"midi":%s},"systems":[]}\n' "$2" >"$1"
 }
 ALL_INPUTS='{"inputs":[],"allInputs":true,"outputs":[],"clockBpm":120}'

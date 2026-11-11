@@ -10,7 +10,10 @@ Start with these — all short:
   implements in `packages/system/`, the consoles' native halves beside their TS in `packages/sameboy/` and
   `packages/mesen/`, the host's own I/O nodes in `packages/host-io/`, the carts in `packages/lsdj/`, `packages/mgb/`,
   `packages/risa/` and `packages/smsggdj/`, the tracker layer they share in
-  `packages/tracker/`, BlipToaster's app half and its MicroQuickJS MIDI policy in `packages/bliptoaster/`, the control
+  `packages/tracker/`, BlipToaster's app half and its MicroQuickJS MIDI policy in `packages/bliptoaster/`, the SDL
+  standalone's audio in `packages/audio/` with its PortAudio and SDL2 backends in `packages/audio-portaudio/` and
+  `packages/audio-sdl/` (the products name them in `AUDIO_BACKENDS`), the MIDI stream and its RtMidi backend, in-process
+  fake and CLI facet in `packages/midi/`, the control
   surface in `packages/launchpad/` with the LSDj MI.MAP app that drives it in `packages/lsdj-launchpad/`, the plain-TS
   UI contract (the menu model, the contribution and view types) in `packages/ui/` with the React kit in
   `packages/ui-react/` (and its component-view fixture, listed by no product, in `packages/ui-fixture/`), the test
@@ -51,9 +54,10 @@ The rules below are the parts that don't fit those.
   its callback touches goes). `deps/catch2` is
   the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
-  thirteen `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
+  fourteen `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
   `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` /
-  `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
+  `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test` / `-audio-host-test`) as
+  `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
   driven directly, bit for bit, its inputs, settings and params included (C2,
   [docs/modular-graph-phase-c2-design.md](docs/modular-graph-phase-c2-design.md): every setting reaches its core at
@@ -310,11 +314,12 @@ The rules below are the parts that don't fit those.
   **`PROVIDERS` is the product's half: a product starts only the providers it names.** The list has no default (a
   provider opens ports and runs threads), the order it names them in is the start order, a duplicate is refused, and a
   manifest item may not be both an `entry` and a `provider`. The SDL standalone, the headless host and the CLI name
-  `n8 launchpad`; the plugin names `n8` alone and carries the `plugin` product list, which `launchpad` and
-  `lsdj-launchpad` are not in, so a DAW host is handed no control surface and the plugin's bundles carry neither
-  package. **The provider ABI is 2:** `reserve_midi` keeps a claimed pair out of
-  `MidiIo`'s shared stream (`MidiIo` reopens only what actually moves, with audio stopped and restarted),
-  `suspend_hardware_inputs` is the scan's held edge (a real lever on Windows alone, where a MIDI input is exclusive),
+  `n8 launchpad midi` (the CLI and the headless host mount the stream's facet as a provider; the SDL app uses
+  `MidiStream` itself); the plugin names `n8` alone and carries the `plugin` product list, which `launchpad`,
+  `lsdj-launchpad` and `midi` are not in, so a DAW host is handed no control surface and the plugin's bundles carry
+  none of those packages. **The provider ABI is 2:** `reserve_midi` keeps a claimed pair out of the shared
+  `MidiStream` (a reserved pair is refused at every door and never opened), `suspend_hardware_inputs` is the scan's
+  held edge (a real lever on Windows alone, where a MIDI input is exclusive),
   `restored` ends the startup rendezvous, and `rp_provider`'s `wake` is the per-frame pump (`rp_wake_providers`) that
   writes what the audio thread queued. Surface-in reports the claim's `generation` (0 = nothing attached, so a pair
   swapped inside one block still reads as a new device) and a `drops` count, both wrapped at 2^24 (the generation into
@@ -335,14 +340,32 @@ The rules below are the parts that don't fit those.
   byte-identical transcripts in `--heap-bytes`; both scenarios run in `pnpm test` (the core's budget 76800, the
   bridge's 184320, measured, not claimed to fit the box's 64 KiB arena). The pack declares NO `script` member in F3,
   so the scenarios are the proof and no box image carries it. The pack's tests are `retroplug-launchpad-test` (one of
-  the thirteen `test:plugin` binaries: the link, the claim, the pool, the provider, the facet, the port filter) and the
+  the fourteen `test:plugin` binaries: the link, the claim, the pool, the provider, the facet, the port filter) and the
   facet's cases in `test:native` (`launchpad-facet`, `launchpad-devices`, over the headless host's scripted device);
   `pnpm sdl:controller` is the real standalone against an ALSA fake (Linux only, not in CI), and it runs under
   `RP_MIDI_PORT_ALLOW`, the test-only allow list of port-name substrings that hides and refuses every other port in
-  the pack and in `MidiIo`. The harness writes its two fakes' WHOLE port names, whose client name (`RPFakeLPProMK3`) no
+  the pack and in `MidiStream`. The harness writes its two fakes' WHOLE port names, whose client name (`RPFakeLPProMK3`) no
   real device has, and its listing guard fails the run before anything is probed if any other port appears or if one
   named like a Launchpad does. Details:
   [docs/modular-graph-phase-f3-design.md](docs/modular-graph-phase-f3-design.md).
+- **The SDL standalone's audio and MIDI are packages, and their settings are config sections.** `packages/audio` holds
+  the backend contract (`AudioBackend` / `AudioStream`), the null device and `AudioHost` (the open/start/stop/reconfigure
+  sequence, the muted fallback with a status the Settings row shows, render-ahead, the no-pull watchdog); PortAudio and
+  SDL2 fill it in `packages/audio-portaudio` and `packages/audio-sdl`, and a product names its backends in preference
+  order with `AUDIO_BACKENDS` (`retroplug-sdl` names `portaudio sdl`; the CLI, the headless host and the Node addon name
+  none and link neither). `packages/midi` holds `MidiBackend` / `MidiPort`, RtMidi (`systemMidi()`, one client),
+  `FakeMidiBackend`, the one copy of the port filters, `MidiStream` (the ring, the output set swapped with no audio stop,
+  the reservation and the scan's held edge) and `MidiRpcService` as the provider a product starts by naming `midi`
+  (`PROVIDERS`): the CLI and the headless host name it, the SDL app uses `MidiStream` itself and does not, and the plugin
+  names neither package. A saved audio choice is `config.json`'s `audio` ROOT section (backend, driver and device by
+  name, rate, block, width; render-ahead is a flag, `--audio-backend` / `--block-size` / `--render-ahead` override it for
+  the run), and a project's ports and clock tempo are its `midi` PROJECT section. Config sections are
+  `definePackage({ configSections })`, the same shape a project's sections use, with F5a's stamp rules: a root key no
+  package of the product contributes is kept VERBATIM, a block this session did not set is written back as the file
+  carried it (so an additive field a newer build wrote survives), an absent key reads its contributor's defaults but is
+  not written until set, and a block stamped newer than its contributor is refused at section scope. The generic
+  `config` host group (`section` / `setSection`) is how a pack reads and writes its block, through a re-read of the file.
+  Details: [docs/modular-graph-phase-f5b-design.md](docs/modular-graph-phase-f5b-design.md).
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
@@ -440,25 +463,38 @@ The rules below are the parts that don't fit those.
   already REQUIRED at root scope for every plugin variant, and rtmidi is an in-tree
   submodule. `pnpm sdl:smoke` builds it by name then runs the headless smoke; that smoke
   is still NOT a CI step, so CI proves it compiles + links, not that it runs.
-  `pnpm sdl:pipewire` is the audio-device half the smoke can't cover (it runs with no
-  audio server at all): it stands up a PRIVATE PipeWire server + three null sinks in its own
-  `XDG_RUNTIME_DIR` and asserts WHICH output device the PortAudio PipeWire backend opens —
-  the session default sink (`default.audio.sink`) wins, an explicit Settings pick beats it,
-  a stale pick warns and falls back, and a libpipewire-less run degrades to ALSA. That server
-  runs with NO session manager: the sinks AND the `default` metadata object are declared as
-  `context.objects` in a daemon-only config, because wireplumber needs logind/dbus and exits
-  without them here — which silently collapsed every expectation onto the priority fallback
-  when the check depended on it. The third sink (`rp-decoy`) always outranks the others on
-  `priority.session` and is never the default, so "followed the default" can't pass by
-  accident. It also covers WIDE output (`Out Channels` 4/6/8): 8 channels against a stereo
-  sink must open, be 8 PORTS wide, and still have pair 1 linked — the port count is the
-  assertion that matters, since a stream with no declared layout silently comes out 2 wide
-  while the log still says 8. That leg runs LAST and is the one part needing a session
-  manager (ports only materialise once something links the stream); it starts wireplumber
-  with its bluetooth context dropped, because that context's logind module has no
-  `/run/systemd` in a container and takes the daemon down with it, and on a private
-  `dbus-daemon`, without which it quits at startup whenever the shell has no session bus.
-  Not in CI (the runners have no PipeWire); the devcontainer ships one for it.
+  `pnpm sdl:pipewire` is the audio-device half the smoke can't cover (it runs on the null device): it stands up a
+  PRIVATE PipeWire server + three null sinks in its own `XDG_RUNTIME_DIR` and asserts WHICH output device the host
+  opens, in BOTH audio modes. PortAudio's legs: the session default sink (`default.audio.sink`) wins, an explicit
+  Settings pick beats it, a stale pick warns and falls back, an explicit driver resolves the same way, a libpipewire-less
+  run degrades to ALSA (whose `default` the script points at a private `ALSA_CONFIG_PATH` config whose default is the
+  null PCM, so no card is touched), and 8 channels against a stereo sink open 8 PORTS wide with pair 1 linked. SDL2's
+  legs run the same selection cases, then 8 channels (SDL reports 8 at the API, but the PipeWire node it registers has
+  2 output ports, so only pair 1 reaches the sink - the one place the backends differ audibly; the SDL backend warns)
+  and a LIVE menu: the hook drives the real menu to
+  Settings > Audio from the SDL queue while a stream runs, and the leg holds it open across the build (same node, one
+  open line). The configuration is a STAMPED `config.json` `audio` block, not the old `audio.json`; a run pins its
+  backend with `--audio-backend`, which replaces only the backend so the saved driver and device survive. The server is
+  session-manager-free (the sinks AND the `default` metadata object are declared as `context.objects` in a daemon-only
+  config, because wireplumber needs logind/dbus and exits without them here, which silently collapsed earlier
+  expectations onto the priority fallback); the third sink (`rp-decoy`) always outranks the others on
+  `priority.session` and is never the default, so "followed the default" can't pass by accident. The SDL selection legs,
+  the wide-output legs and the menu leg need wireplumber and dbus-daemon (SDL's PipeWire driver connects through the
+  session graph, and ports only materialise once something links the stream); that part starts wireplumber with its
+  bluetooth context dropped, because that context's logind module has no `/run/systemd` in a container and takes the
+  daemon down with it, and on a private `dbus-daemon`, without which it quits at startup whenever the shell has no
+  session bus. SDL legs skipped for a missing wireplumber are counted and reported as SKIP. **Every run goes under the
+  `/dev/snd` guard, whose source is tracked (`tools/sdl-audio-guard/nosnd.c`, built by
+  `tools/sdl-audio-guard/build-guard.sh` into the harness's own scratch directory): via `LD_PRELOAD`, every `/dev/snd`
+  node but `seq`/`timer` is refused before the syscall, and `NOSND_LOG` records each refusal and each dlopen of an audio
+  client library that was not already loaded, so the run PROVES no real sound card was opened (an strace cannot see a
+  refusal). The three SDL harnesses (`sdl:smoke`, `sdl:controller`, `sdl:pipewire`) put it in front of `LD_PRELOAD`
+  themselves through `tools/sdl-audio-guard/guard-env.sh`, so a bare `pnpm sdl:controller` is guarded; the kit prepends
+  its own copy of the same source for the whole run. Its counts are reported; the PortAudio legs' ALSA probe
+  legitimately logs refused card control nodes, and the ALSA-fallback leg holds only that no card's PLAYBACK node is
+  opened (it falls back to `null` with a status here, since a container's PortAudio cannot enumerate a private null
+  PCM). An Auto leg runs with no backend pinned, which is the state a user's config is in. Not in CI (the runners have
+  no PipeWire); the devcontainer ships one for it. The kit runs it as the guarded `pipewire` leg.
   **It ships in the `build.yml` artifact for every platform but is deliberately kept OUT
   of releases** — `release.yml`'s four packaging steps are explicit allowlists, and
   `retroplug-sdl` is not on any of them (each carries a comment saying so). Don't add it

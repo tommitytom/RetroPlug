@@ -16,8 +16,8 @@ SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the pr
   CP/UI bytecode bundles, the `__rp_mountUI` / `__rp_ready` boot.
 - SDL2 window; software blit of the LVGL buffer with dirty-region present; SDL drives GLES2 internally.
 - SDL audio callback → the multi-out `engine.processBlock` (2/4/6/8 device channels per the Out Channels
-  knob); MIDI-clock-derived transport; live sample-rate/block-size/channels reconfigure (Settings → Audio);
-  `audio.json` persistence.
+  knob); MIDI-clock-derived transport; live sample-rate/block-size/channels reconfigure (Settings → Audio,
+  saved in `config.json`'s `audio` section).
 - Input: keyboard + mouse (incl. wheel → scroll the hit-tested container) → LVGL indevs + the `key` bus;
   gamepad (`GamepadManager`) → menu nav + game input.
 - On-screen LVGL **file browser** (no dependence on OS dialogs), **Exit** menu row, `openPath`, window title.
@@ -40,9 +40,9 @@ No MIDI source at all (SDL2 has no MIDI). Blocks **mGB** (the GB MIDI synth is u
 MIDI-driven ROMs, and every LSDj MIDI-sync/map/passthrough mode. Plugin reference: `PluginDSP::run` stages
 host MIDI via `engine_.stageMidi(frame, bytes)` ([PluginDSP.cpp:163](../packages/native/plugin/PluginDSP.cpp#L163)).
 
-**Decision: RtMidi** (vendored), behind a thin `MidiIo` seam — cross-platform (ALSA seq / JACK on Linux,
-CoreMIDI on mac, WinMM/WinRT on Windows), small, permissively licensed, still maintained, and it supports
-**virtual ports** on ALSA/CoreMIDI. (PortMidi is older/C/polling and less maintained; a DIY per-OS
+**Decision: RtMidi** (vendored), behind `packages/midi`'s `MidiBackend`/`MidiStream` seam (formerly the shell's
+`MidiIo`): cross-platform (ALSA seq / JACK on Linux, CoreMIDI on mac, WinMM/WinRT on Windows), small, permissively
+licensed, still maintained, and it supports **virtual ports** on ALSA/CoreMIDI. (PortMidi is older/C/polling and less maintained; a DIY per-OS
 implementation isn't worth it when RtMidi is exactly that abstraction.)
 
 Design:
@@ -57,7 +57,8 @@ Design:
 - Where there's genuinely no MIDI source, an on-screen keyboard is a later nicety.
 
 ### P2 — MIDI output — ✅ DONE
-`audioCb` drains `engine.midiOut()` to the `RtMidiOut` virtual port each block (as the plugin's `run` drains
+The audio callback (`ProductAudioClient::pull`) drains `engine.midiOut()` to the `RtMidiOut` virtual port each block
+(as the plugin's `run` drains
 it to the DAW after `processBlock`, [PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp)) and mirrors it
 to the selected hardware output port, if any. It sends each message at once, its frame in the block dropped
 (RtMidi's out takes no timestamp), where the plugin hands the DAW each at its frame; scheduling it is the
@@ -65,17 +66,21 @@ standalone's own work ([07-remaining-work.md](../spec/07-remaining-work.md)). Ha
 Master-Sync clock (`0xF8`) reaches `aseqdump`.
 `RETROPLUG_MIDI_LOG` dumps in + out bytes.
 
-### MIDI device selection — ✅ DONE
-`Settings > MIDI` picks which hardware **Input Device** the host listens to (default *All Devices* = every
-hardware input, the historical behavior) and which hardware **Output Device** it sends to (default *None* =
-the virtual port only; a pick sends to that port **in addition** to the always-open virtual `RetroPlug Out`).
-`MidiIo` enumerates ports without opening them (`listInputs`/`listOutputs`, skipping our own virtual port +
-ALSA `Through`); the pure `hardwarePortIndices`/`matchPortIndex` helpers decide which port(s) to open (guarded
-by `retroplug-midi-test`). Selection is a UI-driven native runtime setting, exactly like the Audio submenu: the
-`__rp_getMidiConfig` / `__rp_setMidiInput` / `__rp_setMidiOutput` hooks (bound only in the SDL host, so the
-plugin — which gets MIDI from the DAW — hides the submenu), reconnected live behind an audio-device lock and
-persisted by device name to `midi.json`. A saved device that isn't currently present is shown `(not connected)`
-and re-applied on reconnect. `RETROPLUG_SDL_MIDI_LIST` dumps the enumerated device names.
+### MIDI device selection: ✅ DONE (per project, since F5b)
+`Settings > MIDI` edits a PROJECT's `midi` section, not a machine-wide setting: an inputs checklist plus "All
+devices", an outputs checklist, and the entries that are no longer here as `"<name> (missing)"`. The stream
+(`MidiStream`, [packages/midi](../packages/midi)) merges every selected input into the one host MIDI in and
+mirrors to every selected output, on top of the always-present virtual `RetroPlug In`/`Out`; a change applies at
+once (a section write marks the project dirty) and never stops audio - the outputs are an immutable set swapped
+through an epoch handshake, and an input's port cancels its own callback as it closes. Port names are matched
+across machines by [portMatch.ts](../packages/midi/ts/portMatch.ts) (exact first, then ALSA's `client:port`
+numbers, RtMidi's WinMM trailing index, CoreMIDI's repeated name, spacing - and only on a UNIQUE match), so a
+project saved on one rig finds its ports on another; a name that resolves to nothing stays saved, opens nothing
+and shows `(missing)`. The control surface's claimed pair shows as `(control surface)` and is never opened by the
+stream. The two hooks are `__rp_midiDescribe` / `__rp_midiApply` (bound only in the SDL host, so the plugin -
+which gets MIDI from the DAW - hides the submenu); Rescan re-resolves against a fresh listing, and opening the
+submenu does the same, as does a project load. `RETROPLUG_SDL_MIDI_LIST` dumps the enumerated device names, and
+`RETROPLUG_MIDI_LOG` the bytes.
 
 ### P3 — File drag-and-drop — ✅ DONE
 `handleEvents` translates SDL's drag-and-drop onto the App's `file-drop` channel (load / cold-boot-replace a
@@ -88,7 +93,7 @@ Desktop-only — the muOS handheld has no file manager. The JS routing (`resolve
 unchanged and already covered by `test-ui/file-drop.test.ts`.
 
 ### P4 — Host transport / tempo — ✅ DONE
-`audioCb` now derives the host transport from incoming MIDI real-time bytes instead of the old hardcoded
+The audio callback derives the host transport from incoming MIDI real-time bytes; before this it was the hardcoded
 `setBpm(120)`/`setTransport(true)`. A small audio-thread-only estimator (`MidiClockSync`) reads the drained
 MIDI: `0xF8` clock pulses feed a windowed 24-PPQN tempo estimate (BPM = 60·sr·pulses / (frames·24), measured
 in audio frames since RtMidi timestamps are discarded), and `0xFA`/`0xFB`/`0xFC` (start/continue/stop) plus a
@@ -106,11 +111,11 @@ job. Verified headlessly via `RETROPLUG_SDL_TEST_CLOCK=<bpm>` (synthetic clock �
 stop + timeout-revert). Follow-up: MIDI clock has no sub-block frame offset (block-quantized, like MIDI-in).
 
 ### P5 — Multi-output audio routing — ✅ DONE
-`audioCb` now renders through the multi-out `Engine::processBlock(frames, float* const* outputs, N)` (the same
+The audio callback renders through the multi-out `Engine::processBlock(frames, float* const* outputs, N)` (the same
 overload + planar convention the plugin uses with its 8 outputs) into `N` planar buffers, then interleaves
 frame-major (`stream[i·N + c]`) into the SDL stream. `N` is the device's output-channel count, a new **Out
-Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), persisted in `audio.json` and
-re-opened live via the `__rp_setAudioConfig` seam (`sr, bs, ch, driver` — see the Driver picker below).
+Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), saved in the `audio` config section and
+re-opened live through `AudioHost` (the audio package's `__rp_audioApply` hook - see the Driver picker below).
 Default **2** is
 byte-identical to the old 2-arg stereo path (zero regression); 4/6/8 opens that many device channels so the
 project's **Audio Routing** modes (`2-Ch/Inst`, `1-Ch/Inst`, `Channels`, and NES-only `Pins` / `Stereo Pins`) fan real stems
@@ -123,7 +128,7 @@ checked against the device's ACTUAL channel count, so a 4-channel pick still car
 lanes and falls back to stereo for its 5 `Channels` ones (and for `Stereo Pins`, which wants 6). Low priority — matters only on
 desktop with a multichannel interface (a stereo device just has SDL fold the extra channels back down).
 Verified headlessly with `RETROPLUG_SDL_TEST_MULTIOUT=<N>` (opens N channels, N planar buffers, runs the
-interleave) + the `audio.json` round-trip.
+interleave) + the section round-trip.
 
 ### P6 — Window resize / zoom-to-grid + close guard — ✅ DONE
 **Resize:** `__rp_setWindowSize` resizes the window to the grid (multi-instance growth / zoom / layout
@@ -196,12 +201,23 @@ concerns the standalone doesn't need.
 
 ## Planned architecture decisions
 
-### Audio backend: PortAudio (PipeWire) — ✅ DONE
+### Audio backends: PortAudio, SDL2 audio and null: ✅ DONE (three backends, one host, since F5b)
+The device is opened by `AudioHost` ([packages/audio](../packages/audio)), never by `main.cpp`, and a product's
+backends are the ones its `AUDIO_BACKENDS` names (`retroplug-sdl` names `portaudio sdl`; the CLI, the headless
+host and the Node addon name none and link neither). The saved choice is config.json's `audio` ROOT section -
+`{ backend, driver, device, sampleRate, blockSize, outChannels }`, the backend and driver by id ("portaudio" /
+"pipewire", "sdl" / "pipewire") and the device by name - and `--audio-backend` / `--block-size` /
+`--render-ahead` override it for one run (a backend pin keeps a same-backend driver and device). A failed or lost
+device falls to the `null` backend with a status the Settings row shows as "Muted: why"; render-ahead is
+`AudioHost`'s (a render thread fills a ring in blocks, the stream opens with block 0, the pull only copies). The
+PortAudio half below is unchanged in substance; the SDL2 backend is SDL's own audio (one driver at a time; its
+device list is real only for the driver in force, and a stale pick warns and uses the driver's default).
+
 Audio is driven by a **PortAudio fork with a native PipeWire host API**
 (<https://github.com/tommitytom/portaudio/tree/pipewire>, vendored as the `deps/portaudio` submodule on the
 `pipewire` branch) — better latency + device handling than SDL's ALSA-compat path, especially on the handheld.
-PortAudio is `add_subdirectory`'d next to rtmidi in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)
-(static) and links only into `retroplug-sdl`; its CMake compiles the **ALSA**, **PipeWire**, and **JACK** host
+PortAudio is `add_subdirectory`'d at root scope by [cmake/portaudio.cmake](../cmake/portaudio.cmake) (static) and
+linked only by `retroplug-audio-portaudio`, which `retroplug-sdl` names; its CMake compiles the **ALSA**, **PipeWire**, and **JACK** host
 APIs (wherever each one's dev headers are found — PipeWire from `libpipewire-0.3`, added to the host + the arm64
 sysroot via [tools/arm-sysroot.sh](../tools/arm-sysroot.sh)). SDL still owns the window/video/gamepad; only
 `SDL_INIT_AUDIO` + the SDL device/callback are gone.
@@ -218,36 +234,39 @@ to start. The dynamic loading lives in the fork (`src/hostapi/{alsa,jack,pipewir
 `PA_ALSA_DYNAMIC` pattern); `PA_*_SONAME` env vars override the soname (used to test absence). `libSDL2` stays
 hard-linked — it's the window/input shell.
 
-**Driver picker (`Settings > Audio > Driver`).** The Audio submenu's first row is a driver cycler that
-enumerates the host APIs PortAudio actually registered — **Auto** (the default: prefer PipeWire, else the
-platform default = raw ALSA) plus each host API with a usable output device. Because the list is enumerated
-natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker shows exactly what's present at
-runtime: **JACK** only when a JACK server is up, **PipeWire** only when the daemon is running, and so on. A pick
-stages into the Audio draft and commits with the same **Apply** as rate/block/channels (one stream reopen),
-persisted in `audio.json` as `hostApi` (the `PaHostApiTypeId`, `-1` = Auto). A selected-but-unavailable host API
-falls back to Auto at open time (never silence). **JACK is on by default** now that it's dlopen'd (no launch
-penalty); **Pulse/sndio/OSS stay force-off** (`libsdl2-dev` drags in their dev libs and they'd bloat the driver
+**Driver picker (`Settings > Audio > Driver`).** The Audio submenu's first row is a driver cycler naming the
+BACKEND and its driver: **Auto (PortAudio: PipeWire)**, "PortAudio: ALSA", "SDL: pipewire", ... Auto takes the
+first backend the product names whose auto driver opens. Only the backend IN FORCE carries its drivers in the
+host's description; a sibling's list is its library's first use, so it is fetched only by the explicit "More
+drivers..." step (a builder never enumerates one: that would initialise every backend a product names, on the render
+that draws the row), and a run that pins a backend offers no such step. A pick stages into the Audio draft and commits
+with the same **Apply** as rate/block/channels (one stream reopen), saved in the `audio` section's
+`backend`/`driver` ids. An explicit backend or driver that will not open falls back to the NULL device with a status
+row ("Muted: <why>") - the Apply row stays live while muted, and that is the retry. Auto tries the product's backends
+in order, which is what makes a failed PickAudio fall to SDL. **JACK is on by default** now that it's dlopen'd (no
+launch penalty); **Pulse/sndio/OSS stay force-off** (`libsdl2-dev` drags in their dev libs and they'd bloat the driver
 list).
 
 **Output Device picker (`Settings > Audio > Output Device`).** Below Driver, a second cycler picks a specific
-output within the selected driver — **Default** (the host API's default output, = the prior behaviour) plus each
-output-capable device of that host API (a PipeWire sink, an HDMI out, a USB DAC, …). The list is enumerated
-natively per host API (`__rp_getAudioConfig` also returns `device` + `devicesByDriver`), so it tracks the
-*draft* Driver, and changing the Driver resets the device to Default (a device isn't valid across host APIs).
-Selected/persisted **by name** (`audio.json` `outputDevice`; PortAudio indices aren't stable across runs) and
-resolved within the chosen host API at open time — a name that's gone falls back to the host API default (never
-silence). `openAudio` picks it via `findOutputDeviceByName` over `effectiveHostApiIndex`; `RETROPLUG_DEBUG_AUDIO`
-lists every output device.
+output within the selected driver - **Default** (the host API's default output, = the prior behaviour) plus each
+output-capable device of that host API (a PipeWire sink, an HDMI out, a USB DAC, ...). The list comes from the host's
+own description (`__rp_audioDescribe`, the backend in force's devices per driver), so it tracks the *draft* Driver,
+and changing the Driver resets the device to Default (a device isn't valid across host APIs). Selected/persisted
+**by name** (the `audio` section's `device`; a driver's indices aren't stable across runs) and resolved within the
+chosen driver at open time by the backend itself: a name that is gone warns ("not found in the chosen driver, using
+its default") and opens the default, in both backends. `RETROPLUG_DEBUG_AUDIO` lists every output device.
 
-The seam mirrors the old SDL one: `renderAudioBlock` (the shared body — drain the command ring, MIDI in +
-`MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, planar→interleaved) is called by the
-PortAudio stream callback (`paCallback`) or, when no device opens, by a **fallback pump thread** at the block
-cadence — the one-for-one replacement for SDL's `dummy` driver, so the emulator still advances headlessly and
-`pnpm sdl:smoke`'s transport/multi-out checks pass. `openAudio`→`Pa_OpenStream`, `reconfigureAudio`→
-`Pa_Stop/Close/Open/Start`, and `reconfigureMidi`→`Pa_Stop/Start` (PortAudio has no `SDL_LockAudioDevice`), all
-keeping the exact `invoker.setAudioThreadOwns` handoff. Nothing in the MIDI design (P1/P2) changed. The muOS
-launcher's `SDL_AUDIODRIVER=alsa` is now moot for audio. Verified: host build links `libpipewire-0.3` +
-`libasound`, the smoke is green, and it runs on the Anbernic.
+The render body is `ProductAudioClient::render` ([audioLoop.cpp](../packages/native/sdl/audioLoop.cpp)) - drain
+the command ring, MIDI in + `MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, then
+interleave into the pull's buffer. `AudioHost` calls it from the backend's callback, or from the `null` backend's
+pump thread at the block cadence when no device opens (so the emulator still advances headlessly and
+`pnpm sdl:smoke`'s transport/multi-out checks pass). A reconfigure is `AudioHost`'s one sequence - stop, release,
+open, prepare with what the device OBTAINED, start - keeping the `invoker.setAudioThreadOwns` handoff; a MIDI
+change stops no audio. The muOS launcher passes `--block-size 4096`, which WINS over the saved `audio` block for that
+run (E12): a Settings > Audio block pick on the handheld is saved but not used while the launcher passes the flag, and
+the Settings row says so ("This run: block 4096"). Its `SDL_AUDIODRIVER=alsa` is moot for audio. Verified: the smoke
+and the controller harness are green under the `/dev/snd` guard, and `pnpm sdl:pipewire` drives both real backends (an
+Auto leg included) on a private PipeWire server.
 
 ### File browser: the OS dialog is the default; the in-app browser is a toggle — ✅ DONE
 An **in-app React/LVGL file browser** ([fileBrowserMenu.ts](../packages/retroplug/ui/screens/menu/fileBrowserMenu.ts),

@@ -32,11 +32,17 @@ export SDL_VIDEODRIVER=dummy RETROPLUG_SDL_AUDIO_BACKEND=null
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# The /dev/snd guard (tools/sdl-audio-guard): the backend is pinned to null, and this is the second lock - a stray library
+# initialisation or a driver fallback still cannot open a real card (PortAudio probes every ALSA device at
+# Pa_Initialize). The kit may already have put the same guard in front; this does not add a second copy then.
+. "$REPO_DIR/tools/sdl-audio-guard/guard-env.sh" "$TMP/guard"
+export NOSND_LOG="${NOSND_LOG:-$TMP/nosnd.log}"
+
 # This is the standalone a developer runs, so it reads their own config: a saved, enabled controlSurface is CLAIMED at
-# startup and its close bytes go out at quit, and a saved midi.json opens real inputs. A smoke that touched the desk's
-# hardware would be a hardware test in disguise, so it gets a scratch config dir of its own (nothing saved means nothing
-# claimed) and the test-only port filter set to a name no port has (see midi/PortFilter.hpp's midiPortAllowedBy: an EMPTY list
-# means every port, so it has to name something).
+# startup and its close bytes go out at quit, and a project's saved `midi` selection opens real inputs. A smoke that
+# touched the desk's hardware would be a hardware test in disguise, so it gets a scratch config dir of its own (nothing
+# saved means nothing claimed) and the test-only port filter set to a name no port has (see midi/PortFilter.hpp's
+# midiPortAllowedBy: an EMPTY list means every port, so it has to name something).
 export RETROPLUG_USER_CONFIG_DIR="$TMP/cfg"
 export RP_MIDI_PORT_ALLOW="RP_NO_PORT"
 mkdir -p "$RETROPLUG_USER_CONFIG_DIR"
@@ -73,6 +79,18 @@ want "$LOG" "running " "boot: no 'running' banner"
 refuse "$LOG" "boot: the audio service never applied its settings"
 [ -s "$TMP/frame.png" ] || fail "boot: no screenshot written"
 echo "  ok: boot + non-blank render"
+
+# 1b) The order the host opens things in (docs/modular-graph-phase-f5b-design.md section 6.6): the MIDI stream, then the
+#     providers' restore, then the audio device LAST. A device that came up first would start pulling blocks into an
+#     engine the restore has not shaped yet, and the order is the one the app always had (the control surface's claim,
+#     then MIDI, then audio). Read off the host's own lines, which is what a user's log shows.
+run order 20
+midi_at=$(grep -n -F "MIDI: virtual ports" "$LOG" | head -1 | cut -d: -f1)
+audio_at=$(grep -n -F "audio: on the null device" "$LOG" | head -1 | cut -d: -f1)
+[ -n "$midi_at" ] && [ -n "$audio_at" ] || fail "startup order: the MIDI stream or the audio device never reported"
+[ "$midi_at" -lt "$audio_at" ] \
+    || fail "startup order: the audio device opened before the MIDI stream (line $audio_at, MIDI at $midi_at)"
+echo "  ok: the MIDI stream opens before the audio device"
 
 # 2) Transport from MIDI clock (P4): a 140 BPM synthetic clock derives ~140 and reverts to free-run after stop.
 run clock 2 RETROPLUG_SDL_TEST_CLOCK=140

@@ -340,11 +340,21 @@ identical. Persists atomically to `<configDir>/recent.json`.
 ### UserConfigStore - [`src/userConfigStore.ts`](../packages/retroplug/src/userConfigStore.ts)
 
 `UserConfig` =
-`{ activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave: "Off"|"OnProjectSave"|"Continuous" }`
-([userConfig.ts:23](../packages/retroplug/src/userConfig.ts#L23)), persisted to `config.json`. `load()` writes defaults
-on first run; `reload()` ([userConfigStore.ts:37](../packages/retroplug/src/userConfigStore.ts#L37)) is the file-watch
-reaction and keeps the current value on a missing / malformed / newer-stamped file. Setters validate and reject bad
-input.
+`{ activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave: "Off"|"OnProjectSave"|"Continuous",
+render, useNativeFileDialogs }` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)), persisted to `config.json`.
+`load()` writes defaults on first run; `reload()` ([userConfigStore.ts](../packages/retroplug/src/userConfigStore.ts))
+is the file-watch reaction and keeps the current value on a missing / malformed / newer-stamped file. Setters validate
+and reject bad input.
+
+The store ALSO carries every non-core ROOT key of the file as a package's section
+([configSections.ts](../packages/retroplug/src/configSections.ts), `definePackage({ configSections })`, the same
+`ProjectSection` shape a project's `settings` blocks use): the `audio` device choice and the Launchpad pack's
+`controlSurface` today. A package reads and writes its block through the `config` host group (`section` /
+`setSection`); a key no package of the product contributes is kept verbatim, a block this session did not set is
+written back as the file carried it, and a section write is computed over the file ON DISK (the store re-reads
+first), so two processes sharing `config.json` cannot revert each other. The UI's device groups (`audioDevice`,
+`midiDevice`, both optional - the plugin and the DPF standalone bind neither hook, so their rows are not drawn) are
+what the audio and midi packages' Settings rows read; `[spec/05](05-data-persistence.md)` has the on-disk rules.
 
 ### BindingsStore - [`src/bindingsStore.ts`](../packages/retroplug/src/bindingsStore.ts)
 
