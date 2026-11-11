@@ -2,8 +2,9 @@
 
 **Date:** 2026-11-11 · **Branch:** `feature/modularize` **Status:** designed `793c655fd`; prototyped as six stages on the
 unpushed `proto/f5b-audio-midi` (each reviewed and fixed; the as-built record is section 13); executed on
-`feature/modularize` as the plan `3c860286e` and six task commits `605c8b6a3`..`27f99be3d`, then the final review and its
-follow-up fix pass (section 14). The design was written over `f0f56c3ff` (the F5a tip). The
+`feature/modularize` as the plan `3c860286e` and six task commits `605c8b6a3`..`27f99be3d`, then the final review's
+follow-up (`15f65bfa8`, `61462c6ed`, `374998d56`, `bc97b50ac` and the section-14 commit). F5b is built (section 14). The
+design was written over `f0f56c3ff` (the F5a tip). The
 user's decisions are the `### F5` entries of `.superpowers/f-split/decisions.md` (the 2026-11-11 ones); the user approved
 the design section by section as presented (packages and product wiring; the audio interface and `AudioHost`; the MIDI
 interface, `MidiStream` and its users; config sections, settings and startup; build, proof, edges and process), which
@@ -1923,3 +1924,120 @@ Owed, manual and not provable here: the real Launchpad on both the claim and the
 the CLI's facet; Windows (SDL and PortAudio streams, WASAPI Auto and its AutoConvert fix, MME, WinMM names against
 `portMatch`, `/W4 /WX`, the 170 ms audio-thread send); macOS (CoreMIDI, CoreAudio, the framework build); `lost()` on a
 really removed device (R10); and the muOS render-ahead run, after `feature/handheld-perf` rebases onto this phase.
+
+## 14. Execution
+
+F5b was executed on `feature/modularize` over the design commit `793c655fd`, as the plan commit `3c860286e`
+([modular-graph-phase-f5b-plan.md](modular-graph-phase-f5b-plan.md), a record; 29,667 lines, regenerated once so that
+every Reaper leg is guarded and the guard is built and `test -s`-checked before each preload) and the six task commits
+after it, one per stage, each a replay of its prototype commit rather than a rewrite:
+
+1. `fix(f5b)`-free stage 0: `feat(sdl)`'s merge, `605c8b6a3` (the merge of `feature/sdl-standalone`, second parent
+   `d51c4a4ef`; the MidiIo ring fix, its test and the release-readiness list).
+2. `feat(midi): the midi package ... and the Launchpad onto it`, `f4a6198d2`.
+3. `feat(audio): the audio packages, AudioHost and AUDIO_BACKENDS`, `f98e6e8b7`.
+4. `refactor(sdl): split main.cpp into the window, input, hooks and audio loop`, `ede472ed7`.
+5. `feat(settings): config sections, and the audio and MIDI settings as packages`, `eac8b9674`.
+6. `feat(sdl): the SDL-audio leg, the linkage check and the docs`, `27f99be3d`.
+
+Each task recorded SPEC OK and a clean tree (the controller's log, `/tmp/f5bexec/results.md`, and each task's report,
+`/tmp/f5bexec/t<N>-report.md`). **The implementers' findings** were all record-level, and every one is the follow-up's
+to fix or the plan's to stop saying:
+
+- **Task 1**: `check:docs` before staging fails on the untracked target (as F5a's did); the first parent and the tree
+  differ only by the plan file.
+- **Task 2**: stale post-fix-pass counts in the plan's text (`retroplug-midi-test` is 47 there, right); one step's
+  `check:boundaries` warning was stale (0 is the fixed state); `check:docs` before `git add` is an ordering (an untracked
+  file is not scanned); a `git grep` matched history documents where it was expected to match none; `PluginDSP.cpp:177`'s
+  format-truncation warning and a moodycamel `-Wtsan` note are pre-existing.
+- **Task 3**: a step order that leaves the tree between two steps unconfigurable (configured after the later one); stale
+  counts (`audio-host` 21, not 20); the plan's "guard: 0 bytes" line is unprintable as written, because the log file is
+  created only by a refusal.
+- **Task 4**: the "1680 of 1683 verbatim" move count is not what the tree shows (1676 verbatim plus 7 named reshaped
+  lines - fixed in 5.5 and 13.3); `test:ui` prints no skip summary, so the plan's "seven skips" was unbacked; no Task 4
+  step runs `pnpm sdl:smoke` (the split binary was proved by `sdl:controller` instead).
+- **Task 5**: three step orderings and two stale quotes; `audio-host` is 20 there (21 minus the case that was removed);
+  `pnpm test` 237 files and 2,484 cases is the tip's count; assertion totals are not reproducible even where case counts
+  are exact.
+- **Task 6**: `sdl:pipewire` 25 passed (the Auto leg, the SDL stereo node, the ALSA leg muted with a status),
+  `sdl:smoke` and `sdl:controller` guarded with empty logs, the linkage check clean, `reaper:params` 2725 / 644,
+  BlipToaster 57/57, NESVJ 19/19, the device images and pack bytes identical; `guard-env.sh`'s Expected line was
+  unprintable as written (the log exists only on a refusal), and its step 1 RED greps an empty log.
+
+**The acceptance run was STOPPED**, at the end of the serial kit's third stage and before any PipeWire leg, when the
+final review found what `sdl:pipewire`'s private wireplumber was doing (I7): its copied config dropped only the bluetooth
+context, so the daemon also ran its ALSA, v4l2 and libcamera device monitors - opening the NES capture card on
+`/dev/video0` and `/dev/video1`, and mirroring the MIDI interfaces' sequencer ports - and a bare `pnpm reaper:*` was
+unguarded. Acceptance re-runs over this section's follow-up, and its summary belongs here (the controller completes this
+paragraph).
+
+**The hardware incident, stated plainly.** The prototype's manual `sdl:pipewire` run left an orphaned private
+`pipewire` / `wireplumber` / `dbus-daemon` behind (scratch directory `/tmp/f5bpro/pwman2`), and it kept running for about
+5.5 hours: its own log shows the libcamera monitor loading. Nothing on this desk plays to it, and no card was opened
+through it, but the harness's session manager was able to open the capture card - which is exactly what the guard, the
+monitor disablement and the self-test in the follow-up exist to prevent. The controller killed it while stopping
+acceptance.
+
+**The final review** (`/tmp/f5bexec/final-review.md`, read-only over `793c655fd..27f99be3d`, five parallel sub-reviews)
+found no Critical and eleven Important, its verdict "ready to call F5b complete with fixes". Its shape finding was that
+the architecture holds: the two contracts, `MidiStream`'s handshake, `AudioHost`'s one sequence with the null fallback,
+product-named backends, config sections on F5a's rules, the edge-triggered MIDI re-resolve, the startup order, the
+menu matrix's three cases, `config.json`'s byte-identical round trip in both products, and `reaper:params`' 2725 / 644.
+Its Important items were behaviour holes at edges the tests did not reach (a renamed CLI session's "all", the retry tap,
+a long pull, a core MIDI name, a saved driver gone), two proofs that held less than they said (the re-rate case's NES;
+the guard's load and its two unguarded harness families), a build break on the handheld's cross-build path, and a record
+that carried the prototype's numbers.
+
+**The follow-up** is five commits on top of the six, each with its RED in `/tmp/f5bexec/fuA-report.md`:
+
+- `fix(f5b): the hardware guard covers every device, proves it is loaded, and guards Reaper` (`15f65bfa8`) is I7:
+  `nosnd.c` refuses every `/dev/video*`, `/dev/media*`, `/dev/v4l-subdev*`, `/dev/ttyACM*`, `/dev/ttyUSB*`,
+  `/dev/ttyDbgProbe*`, `/dev/serial/*`, `/dev/hidraw*` and `/dev/bus/usb/*` node beside every `/dev/snd` one but `seq`
+  and `timer`; `guard-env.sh` self-tests after preloading (a probe open of `/dev/snd/nosnd-selftest` must be refused and
+  logged, else the harness exits non-zero, which is what catches an unloadable or stale preload); `tools/reaper-env.sh`
+  sources the guard, so every bare `pnpm reaper:*` is guarded too, and its teardown reports the log's counts and fails
+  on a refused card playback, video or serial node; `sdl:pipewire`'s wireplumber config disables the ALSA, v4l2 and
+  libcamera monitors and the script checks both the copied config and the daemon's log. RED: nine of ten hardware-shaped
+  paths reached the syscall under the old guard.
+- `fix(f5b): the final review's important findings` (`61462c6ed`) is I1-I6 and I8-I10: the port filter judges by the
+  backend's FAMILY, so a renamed session's "all devices" no longer opens RetroPlug's own ports; the retry tap and Rescan
+  read the machine again after the apply; the watchdog tracks a pull in flight, restamps the UI's own absence, and mutes
+  in bounded time instead of freezing on a callback that will not stop; a saved driver this PortAudio lacks falls back to
+  Auto with a warning and the status names the device's own host API; every WASAPI stream carries
+  `paWinWasapiAutoConvert`; the re-rate equality case renders per system and holds the NES's own lanes; `SDL_GetDefaultAudioInfo`
+  is behind `SDL_VERSION_ATLEAST(2, 24, 0)`; the WinMM index tier needs a WinMM-shaped listing; and the `audio` section
+  keeps any non-empty backend id, with spec/06's rules for a backend author and a MIDI-using pack.
+- `docs(f5b): the record says what is` (`374998d56`) is I11 and the implementers' record-level findings: the S2b count,
+  the removed `-fsyntax-only` claim, 4.7's cases, the status line, section 13's two columns (the prototype's shas live
+  only on the unpushed `proto/f5b-audio-midi`), AGENTS.md's provider list, the fourteen binary counts, spec/07's dropped
+  section-12 items, and two proofs moved out of the untracked kit and into tracked scripts (`pnpm check:audio-linkage`
+  and `tools/run-sanitizer.sh`'s audio leg).
+- `fix(f5b): the final review's minors` (`bc97b50ac`) closes the minors the review listed, among them the output diff's
+  exclusive-device retry, the fake backends' races, a rename carrying a selected output, the obtained device quantum, the
+  ALSA quietening in the midi package, `__proto__` written as an own property, the transport repaint gated on
+  `menuOpen`, the guard's non-canonical paths and `O_DIRECTORY` mode read, `sdl:smoke` off Linux, the null-pin gate CI
+  can hold, the linkage check's gaps, and the stale comments and counts.
+- `docs(f5b): record the acceptance run, the review and the follow-up` is this section, the status line and spec/07's
+  F5b entry.
+
+**What F5b leaves**, the final review's "what the next phase should know first":
+
+- **Per-device MIDI routing** (the user's next want, and the reason a section's entries are objects): each port its own
+  source and destination, `rp.host.midi-in` / `-out` per port (so `rp.engine.host-io` needs a new version), `buildGraph`
+  routing keyed by SAVED name rather than resolved port to stay machine-independent, the menus, and a decision on the
+  `rp.midi.*` family's owner before the first new type (`core` owns `rp.midi.route` behind `--node-exempt`, the `midi`
+  package every other one). A per-port node needs a node target in the midi package, whose only manifest item is a
+  provider today, which cannot also be an entry.
+- **The `feature/handheld-perf` rebase**: `d64424b95` applies clean; `39136feea` conflicts in earlier phases' files
+  (`Engine.hpp`, `SnapshotRegistry.cpp`, `EngineRpcService.hpp`, `backend.ts`, `realBackend.ts`); `4b9e39ea8` conflicts
+  in `sdl/main.cpp`, whose hunk should be dropped entirely (`AudioHost` has the ring, the stats, the 85/80 tuning and
+  both switches) and in `mux_launch.sh`, of which only the flags are kept. The device run must confirm the
+  `PortAudio [PipeWire]` line, because Auto now falls to SDL rather than to the pump (I5's flag is what keeps WASAPI
+  rather than MME), and the cross-build needs the SDL 2.24 guard (I8) before it compiles at all.
+- **Downloadable packs** can reach none of this: `AUDIO_BACKENDS`, the generated backend table, `CONFIG_SECTIONS` and the
+  TS backend list are build-time data, `setSection` throws for an uncontributed key, and there is no MIDI backend list.
+- **The Windows and macOS hand-off**: WinMM's exclusive ports and its `portMatch` names, the ~170 ms send inline on the
+  audio thread (a writer thread per hardware output is the fix), a `MidiPort` destructor that cannot wait for an
+  in-flight WinMM callback; WASAPI's AutoConvert (set now) and Auto's landing; `/W4 /WX` on the new targets; CoreMIDI
+  names, CoreAudio, the framework build and `sdl:smoke`'s legs; `lost()` on a really removed device; and the muOS
+  render-ahead run.

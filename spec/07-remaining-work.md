@@ -1021,7 +1021,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   not F5a's), and no `/W4 /WX` build has seen it; fix it as its own change.
 
 - **F5b built: the SDL standalone's audio and MIDI as packages** ([modular-graph-phase-f5b-design.md](../docs/modular-graph-phase-f5b-design.md),
-  on `feature/modularize`; six stages). A merge of `feature/sdl-standalone` (the `MidiIo` ring fix); `packages/midi`
+  on `feature/modularize`; six task commits and the final review's five-commit follow-up, the design's section 14 the
+  record). A merge of `feature/sdl-standalone` (the `MidiIo` ring fix); `packages/midi`
   (`MidiBackend` / `MidiPort`, RtMidi under one `systemMidi()`, `FakeMidiBackend`, the one copy of the port filters,
   `MidiStream` - the branch's ring, the output set swapped with NO audio stop, the reservation and the scan's held edge
   - and the facet as a provider, which the CLI and the headless host start by naming `midi`; the Launchpad pack depends
