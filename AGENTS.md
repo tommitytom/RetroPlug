@@ -483,14 +483,23 @@ The rules below are the parts that don't fit those.
   session graph, and ports only materialise once something links the stream); that part starts wireplumber with its
   bluetooth context dropped, because that context's logind module has no `/run/systemd` in a container and takes the
   daemon down with it, and on a private `dbus-daemon`, without which it quits at startup whenever the shell has no
-  session bus. SDL legs skipped for a missing wireplumber are counted and reported as SKIP. **Every run goes under the
-  `/dev/snd` guard, whose source is tracked (`tools/sdl-audio-guard/nosnd.c`, built by
-  `tools/sdl-audio-guard/build-guard.sh` into the harness's own scratch directory): via `LD_PRELOAD`, every `/dev/snd`
-  node but `seq`/`timer` is refused before the syscall, and `NOSND_LOG` records each refusal and each dlopen of an audio
-  client library that was not already loaded, so the run PROVES no real sound card was opened (an strace cannot see a
-  refusal). The three SDL harnesses (`sdl:smoke`, `sdl:controller`, `sdl:pipewire`) put it in front of `LD_PRELOAD`
-  themselves through `tools/sdl-audio-guard/guard-env.sh`, so a bare `pnpm sdl:controller` is guarded; the kit prepends
-  its own copy of the same source for the whole run. Its counts are reported; the PortAudio legs' ALSA probe
+  session bus. SDL legs skipped for a missing wireplumber are counted and reported as SKIP, and the config it starts
+  from has its ALSA, v4l2 and libcamera device monitors disabled (they are `90-enable-all.lua`'s, and the script checks the
+  copied file and the daemon's own log, since those monitors are what would open the capture card and mirror the MIDI
+  interfaces). **Every run goes under the device guard, whose source is tracked
+  (`tools/sdl-audio-guard/nosnd.c`, built by `tools/sdl-audio-guard/build-guard.sh` into the harness's own scratch
+  directory): via `LD_PRELOAD`, every `/dev/snd` node but `seq`/`timer`, every `/dev/video*` / `/dev/media*` /
+  `/dev/v4l-subdev*`, every `/dev/ttyACM*` / `/dev/ttyUSB*` / `/dev/ttyDbgProbe*` / `/dev/serial/*`, `/dev/hidraw*` and
+  `/dev/bus/usb/*` is refused before the syscall, and `NOSND_LOG` records each refusal and each dlopen of an audio client
+  library that was not already loaded, so the run PROVES no real sound card, capture card or serial device was opened (an
+  strace cannot see a refusal). `guard-env.sh` self-tests after preloading it: a probe open of `/dev/snd/nosnd-selftest`
+  must be refused AND logged, else the harness exits non-zero (ld.so silently ignores an unloadable preload, so a guard
+  built in a noexec directory or for the wrong ELF class would otherwise leave the run unguarded with nothing said). The
+  three SDL harnesses (`sdl:smoke`, `sdl:controller`, `sdl:pipewire`) and `tools/reaper-env.sh` put it in front of
+  `LD_PRELOAD` themselves through `guard-env.sh`, so a bare `pnpm sdl:controller` AND a bare `pnpm reaper:*` are guarded;
+  the kit prepends its own copy of the same source for the whole run. A reaper leg's teardown prints the log's counts and
+  fails on any refused card playback, video or serial node (the card CONTROL nodes jackd's ALSA probe opens are expected
+  and only reported). Its counts are reported; the PortAudio legs' ALSA probe
   legitimately logs refused card control nodes, and the ALSA-fallback leg holds only that no card's PLAYBACK node is
   opened (it falls back to `null` with a status here, since a container's PortAudio cannot enumerate a private null
   PCM). An Auto leg runs with no backend pinned, which is the state a user's config is in. Not in CI (the runners have

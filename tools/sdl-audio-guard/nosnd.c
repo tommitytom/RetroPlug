@@ -1,8 +1,19 @@
-// The LD_PRELOAD guard every audio-capable harness runs under (docs/modular-graph-phase-f5b-design.md section 7):
-// refuse every ALSA device node but the sequencer and the timer, so a run on a machine whose default card is a real one
-// can never open it - PortAudio's ALSA backend probes every card at Pa_Initialize, and SDL's PipeWire driver reaches the
-// card through its ALSA monitor. Built by tools/sdl-audio-guard/build-guard.sh and prepended to LD_PRELOAD by
-// tools/run-sdl-smoke.sh, tools/run-sdl-controller.sh and tools/run-sdl-pipewire.sh.
+// The LD_PRELOAD guard every hardware-capable harness runs under (docs/modular-graph-phase-f5b-design.md section 7):
+// refuse the device nodes a test has no business opening, before the syscall, so a run on a desk full of gear can never
+// reach it. What it covers:
+//
+//   - every ALSA node (/dev/snd/*) but the sequencer and the timer: PortAudio's ALSA backend probes every card at
+//     Pa_Initialize, SDL's PipeWire driver reaches a card through its ALSA monitor, and a default stream plays to
+//     whatever the machine's default card is;
+//   - a video capture card (/dev/video*, /dev/media*, /dev/v4l-subdev*), which a session manager's v4l2 or libcamera
+//     monitor enumerates and opens;
+//   - a serial device (/dev/ttyACM*, /dev/ttyUSB*, /dev/ttyDbgProbe*, /dev/serial/*): a Pico box, or a debug probe;
+//   - a HID device (/dev/hidraw*) and raw USB (/dev/bus/usb/*).
+//
+// Built by tools/sdl-audio-guard/build-guard.sh and prepended to LD_PRELOAD by guard-env.sh, which every harness that
+// could reach one of them sources: tools/run-sdl-smoke.sh, tools/run-sdl-controller.sh, tools/run-sdl-pipewire.sh and
+// tools/reaper-env.sh (so every reaper:* leg is guarded, not only a kit's). The `nosnd` name is the shim's first, ALSA
+// only, scope; the kit's legs and variables keep it so a rename moves nothing.
 //
 // A refusal happens HERE, before the syscall, which is why the log is the proof: strace cannot see a call that was never
 // made. Both the refusal and a look at the subsystems being touched are therefore the same compile, and this header is
@@ -37,11 +48,27 @@ static void note(const char* what, const char* p) {
     fclose(f);
 }
 
+// Every other node the guard refuses, by prefix. The guard denies rather than allows, so a prefix that also matches a
+// name the kernel invents later (a second capture card, another ttyACM) is the safe direction.
+static const char* const kRefusedPrefixes[] = {
+    "/dev/video", "/dev/media", "/dev/v4l-subdev", "/dev/ttyACM", "/dev/ttyUSB", "/dev/ttyDbgProbe",
+    "/dev/hidraw", "/dev/bus/usb/", "/dev/serial/",
+};
+
 static int refused(const char* p) {
-    if (!p || strncmp(p, "/dev/snd/", 9) != 0) return 0;
-    if (strcmp(p + 9, "seq") == 0 || strcmp(p + 9, "timer") == 0) return 0;
-    note("refused", p);
-    return 1;
+    if (!p) return 0;
+    if (strncmp(p, "/dev/snd/", 9) == 0) {
+        if (strcmp(p + 9, "seq") == 0 || strcmp(p + 9, "timer") == 0) return 0;
+        note("refused", p);
+        return 1;
+    }
+    for (size_t i = 0; i < sizeof(kRefusedPrefixes) / sizeof(kRefusedPrefixes[0]); i++) {
+        if (strncmp(p, kRefusedPrefixes[i], strlen(kRefusedPrefixes[i])) == 0) {
+            note("refused", p);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 // Whether a library is ALREADY loaded when the dlopen runs (DT_NEEDED, or an earlier dlopen of it): then this is not a

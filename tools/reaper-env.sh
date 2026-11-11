@@ -98,10 +98,41 @@ reaper_wait_snapshot() {
 # caller's REAPER_PID (a global the scenario sets after launching reaper) plus everything we own.
 reaper_env_down() {
     local p
+    reaper_guard_summary
     for p in "${REAPER_PID:-}" "${RP_DISMISS_PID:-}" "${RP_JACK_PID:-}" "${RP_WM_PID:-}" "${RP_XVFB_PID:-}"; do
         [ -n "$p" ] && kill "$p" 2>/dev/null || true
     done
     wait 2>/dev/null || true
+    # A refused card PLAYBACK node, video node or serial device is a harness that reached for hardware: its verdict is
+    # no verdict at all, so the run fails even if every check it printed passed. (The card CONTROL nodes jackd's ALSA
+    # backend opens at startup are expected and reported, not failed.)
+    [ "${RP_GUARD_BAD:-0}" = "1" ] && exit 1
+    return 0
+}
+
+# Report what the device guard refused in this job (guard-env.sh says what it refuses, nosnd.c the list). Called from
+# reaper_env_down, so the counts are in every reaper:* leg's output and a run that touched hardware cannot pass.
+reaper_guard_summary() {
+    [ "${RP_GUARD_REPORTED:-0}" = "1" ] && return 0
+    RP_GUARD_REPORTED=1
+    local log="${NOSND_LOG:-}"
+    [ -n "$log" ] && [ -f "$log" ] || { echo "reaper-env[$RP_JOB_TAG]: guard: no log (the guard never loaded)"; return 0; }
+    local all control pcm video tty disks dlopens
+    all=$(grep -c ' refused ' "$log" 2>/dev/null || true)
+    control=$(grep -c ' refused /dev/snd/control' "$log" 2>/dev/null || true)
+    pcm=$(grep -c ' refused /dev/snd/pcm' "$log" 2>/dev/null || true)
+    video=$(grep -cE ' refused /dev/(video|media|v4l-subdev)' "$log" 2>/dev/null || true)
+    tty=$(grep -cE ' refused /dev/(ttyACM|ttyUSB|ttyDbgProbe|serial/|hidraw|bus/usb/)' "$log" 2>/dev/null || true)
+    dlopens=$(grep -c ' dlopen ' "$log" 2>/dev/null || true)
+    echo "reaper-env[$RP_JOB_TAG]: guard: ${all:-0} refused device path(s) (${control:-0} card control, ${pcm:-0} card pcm," \
+         "${video:-0} video, ${tty:-0} serial/hid/usb), ${dlopens:-0} audio-library dlopen(s) (see $log)"
+    if [ "${pcm:-0}" -ne 0 ] || [ "${video:-0}" -ne 0 ] || [ "${tty:-0}" -ne 0 ]; then
+        echo "reaper-env[$RP_JOB_TAG]: FAIL: the guard refused a card playback, video or serial node - this run reached" \
+             "for hardware it must never touch" >&2
+        grep -E ' refused /dev/' "$log" >&2 || true
+        RP_GUARD_BAD=1
+    fi
+    return 0
 }
 
 # Reap orphaned JACK shared-memory state. jackd registers each server in /dev/shm/jack-shm-registry
@@ -138,6 +169,15 @@ reaper_env_up() {
     REAPER_CFG="$RP_REPO_DIR/build/reaper-cfg-$RP_JOB_TAG"
     RP_LOG_DIR="$REAPER_CFG/logs"
     mkdir -p "$REAPER_CFG/.vst3" "$RP_LOG_DIR"
+
+    # The device guard every SDL harness sources, here so a BARE `pnpm reaper:params` is guarded and not only a kit's
+    # copy: jackd's ALSA backend opens every card's control node at startup (32 of them on this desk), Reaper probes the
+    # audio devices itself, and this machine's ALSA default is a real mixer. The guard refuses those nodes before the
+    # syscall, its log is this job's alone (a fresh file per tag), and reaper_guard_summary() reads it at teardown.
+    REPO_DIR="$RP_REPO_DIR" . "$RP_REPO_DIR/tools/sdl-audio-guard/guard-env.sh" "$RP_REPO_DIR/build/reaper-guard-$RP_JOB_TAG" \
+        || return 1
+    export NOSND_LOG="$RP_LOG_DIR/nosnd.log"
+    : >"$NOSND_LOG"
     export HOME="$REAPER_CFG"
     ln -sfn "$vst3_bundle" "$HOME/.vst3/${vst3_name}.vst3"
 

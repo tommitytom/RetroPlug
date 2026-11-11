@@ -260,13 +260,33 @@ start_session_manager() {
     command -v wireplumber >/dev/null 2>&1 || return 1
     # Its bluetooth context loads the logind module, which finds no /run/systemd in a container and takes
     # the whole daemon down (exit 70). Drop that one context; main + policy are what do the linking.
+    #
+    # Its DEVICE MONITORS go too. Out of the box wireplumber enables alsa_monitor, v4l2_monitor and libcamera_monitor:
+    # the first opens every ALSA card (this machine's default is the Zoom L6) and mirrors the sequencer's MIDI ports, and
+    # the other two open the video capture card on /dev/video0 and /dev/video1. This harness needs none of them: the
+    # private server's sinks are `context.objects` already, and what a stream needs from a session manager is its
+    # linking, which is the policy context. (The guard refuses those nodes anyway; a monitor that still ran would show
+    # up as a refusal here.)
     cp -r /usr/share/wireplumber "$TMP/wpconf" 2>/dev/null || return 1
-    python3 - "$TMP/wpconf/wireplumber.conf" <<'PY' || return 1
+    python3 - "$TMP/wpconf/wireplumber.conf" "$TMP/wpconf/main.lua.d/90-enable-all.lua" <<'PY' || return 1
 import sys
 p = sys.argv[1]
 s = open(p).read().replace("{ name = bluetooth.lua, type = config/lua }", "# bluetooth.lua dropped (logind)")
 open(p, "w").write(s)
+# 90-enable-all.lua is the only place the three monitors are turned on, and they are off by DEFAULT unless it calls
+# them: commenting those calls leaves the daemon with the policy, the metadata and the stream/device defaults.
+p = sys.argv[2]
+s = open(p).read()
+for m in ("alsa_monitor", "v4l2_monitor", "libcamera_monitor"):
+    s = s.replace("%s.enable()" % m, "-- %s.enable() disabled by run-sdl-pipewire.sh" % m)
+open(p, "w").write(s)
 PY
+    # The config edit is what turns them off, so a copy that silently did not take is a run that opens the card: check
+    # the generated files, not the intent.
+    if grep -qE '^[[:space:]]*(alsa|v4l2|libcamera)_monitor\.enable\(\)' "$TMP/wpconf/main.lua.d/90-enable-all.lua"; then
+        echo "  FAIL: the private wireplumber's device monitors are still enabled in the copied config" >&2
+        exit 1
+    fi
     # It also needs a D-Bus session bus, and quits at startup ("Cannot autolaunch D-Bus without X11
     # $DISPLAY") when there is none. Give it a private one: that also keeps its device reservations off any real
     # session.
@@ -279,7 +299,21 @@ PY
         wireplumber >"$TMP/wireplumber.log" 2>&1 &
     WP_PID=$!
     sleep 3
-    kill -0 "$WP_PID" 2>/dev/null
+    kill -0 "$WP_PID" 2>/dev/null || return 1
+    # ...and prove the daemon that came up loaded none of them. A monitor announces its subsystem in the log - the v4l2
+    # one opens each camera and warns through `spa_v4l2_open`, the libcamera one through `script/libcamera`, the ALSA one
+    # names its cards - so the absence of all three names IS the record that none ran (and the config check above is what
+    # turned them off). A daemon that wrote nothing would pass vacuously, so the log must also have its own startup in it.
+    if [ ! -s "$TMP/wireplumber.log" ]; then
+        echo "  FAIL: the private wireplumber wrote no log (see $TMP/wireplumber.log); the monitor check proved nothing" >&2
+        exit 1
+    fi
+    if grep -qiE '(alsa|v4l2|libcamera)' "$TMP/wireplumber.log"; then
+        echo "  FAIL: the private wireplumber loaded a device monitor (see $TMP/wireplumber.log)" >&2
+        grep -iE '(alsa|v4l2|libcamera)' "$TMP/wireplumber.log" >&2 || true
+        exit 1
+    fi
+    return 0
 }
 
 port_count() { pw-link -o 2>/dev/null | grep -c "^$1:" || true; }
@@ -413,6 +447,17 @@ fi
 
 REFUSED=$(refused_count)
 DLOPENS=$(dlopen_count)
-echo "  guard: $REFUSED refused /dev/snd path(s), $DLOPENS audio-library dlopen(s) (see $NOSND_LOG)"
+# A refusal of anything but a card CONTROL node is a run that reached for hardware: a card PLAYBACK node, the capture
+# card's video nodes (the wireplumber monitors, which the config above disables), or a serial device. The control-node
+# refusals are PortAudio's ALSA enumeration, which every run performs.
+PCM=$(pcm_refused_count)
+OTHER=$(grep -cE ' refused /dev/(video|media|v4l-subdev|ttyACM|ttyUSB|ttyDbgProbe|serial/|hidraw|bus/usb/)' "$NOSND_LOG" 2>/dev/null || true)
+echo "  guard: $REFUSED refused /dev/snd path(s) (${PCM:-0} card pcm), ${OTHER:-0} video/serial path(s)," \
+     "$DLOPENS audio-library dlopen(s) (see $NOSND_LOG)"
+if [ "${PCM:-0}" -ne 0 ] || [ "${OTHER:-0}" -ne 0 ]; then
+    echo "  FAIL: the guard refused a card playback, video or serial node - this run reached for hardware" >&2
+    grep ' refused /dev/' "$NOSND_LOG" >&2 || true
+    FAIL=$((FAIL+1))
+fi
 echo "SDL PipeWire check: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -1301,15 +1301,27 @@ machine where PortAudio's ALSA can list that PCM the leg passes on the open inst
 checks pass and 0 are skipped, the guard having refused 2788 card paths (PortAudio's ALSA control-node probe, no PCM node)
 and logged 299 audio-library dlopens.
 
-**The guard** is `tools/sdl-audio-guard/` (`nosnd.c`, `build-guard.sh`, `guard-env.sh`): an `LD_PRELOAD` shim refusing
-every `/dev/snd` node but `seq` and `timer` before the syscall. It is tracked source built by each harness into its own
-scratch directory and put in front of `LD_PRELOAD` (unless the same guard is already there, as the kit's copy is, so
-audio-library dlopens are not counted twice); `sdl:smoke`, `sdl:controller` and `sdl:pipewire` all source it, so a bare
-`pnpm sdl:controller` is guarded. `NOSND_LOG` records each refusal and each audio-library dlopen that was not already
-loaded, and a null-pinned run's log is EMPTY, which the kit's `nosnd` leg gates. (An `strace` of the first run proved
-nothing: the guard refuses in the libc wrapper, so a refused open never reaches the syscall.) The first version of the
-harness required an untracked `.superpowers/verify/nosnd.so`, loaded the guard only when `LD_PRELOAD` was empty, and was
-documented as the repo's: that is what the last fix pass removed. The shim is Linux-only.
+**The guard** is `tools/sdl-audio-guard/` (`nosnd.c`, `build-guard.sh`, `guard-env.sh`): an `LD_PRELOAD` shim refusing,
+before the syscall, every `/dev/snd` node but `seq` and `timer`, every video node (`/dev/video*`, `/dev/media*`,
+`/dev/v4l-subdev*`, which a session manager's v4l2 and libcamera monitors open), every serial node (`/dev/ttyACM*`,
+`/dev/ttyUSB*`, `/dev/ttyDbgProbe*`, `/dev/serial/*`: a Pico box or a probe), `/dev/hidraw*` and `/dev/bus/usb/*`. It is
+tracked source built by each harness into its own scratch directory and put in front of `LD_PRELOAD` (unless the same
+guard is already there, as the kit's copy is, so audio-library dlopens are not counted twice); `sdl:smoke`,
+`sdl:controller`, `sdl:pipewire` and `tools/reaper-env.sh` all source it, so a bare `pnpm sdl:controller` and a bare
+`pnpm reaper:*` are guarded. `guard-env.sh` then SELF-TESTS it: a probe open of `/dev/snd/nosnd-selftest` must be
+refused and logged, else the harness exits non-zero, because ld.so silently ignores a preload it cannot load and a guard
+that never ran is the failure that looks like safety. `NOSND_LOG` records each refusal and each audio-library dlopen that
+was not already loaded, and a null-pinned run's log is EMPTY, which the kit's `nosnd` leg gates. (An `strace` of the
+first run proved nothing: the guard refuses in the libc wrapper, so a refused open never reaches the syscall.) The first
+version of the harness required an untracked `.superpowers/verify/nosnd.so`, loaded the guard only when `LD_PRELOAD` was
+empty, and was documented as the repo's: that is what the last fix pass removed. The shim is Linux-only, and
+`guard-env.sh` skips it with a notice elsewhere.
+
+`sdl:pipewire`'s private wireplumber starts from a copy of `/usr/share/wireplumber` with its bluetooth context dropped
+and `main.lua.d/90-enable-all.lua`'s `alsa_monitor`, `v4l2_monitor` and `libcamera_monitor` disabled: unmodified, its
+monitors open the capture card on `/dev/video0` and `/dev/video1` and mirror the MIDI interfaces' sequencer ports. The
+script checks the copied file for an active `enable()` and the daemon's log for a loaded monitor, and the guard would
+refuse the open anyway (it shows up as a refusal in the run's log, which fails the summary).
 
 **`tools/check-audio-linkage.sh`** is the 5.7(4) check, a kit leg (`audiolink`): `readelf -d` or `otool -L` and `nm -g`
 show no `Pa_*` symbol, no backend factory and no audio-library dependency in `retroplug-cli`, `retroplug-host` and the

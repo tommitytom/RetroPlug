@@ -265,8 +265,10 @@ open, prepare with what the device OBTAINED, start - keeping the `invoker.setAud
 change stops no audio. The muOS launcher passes `--block-size 4096`, which WINS over the saved `audio` block for that
 run (E12): a Settings > Audio block pick on the handheld is saved but not used while the launcher passes the flag, and
 the Settings row says so ("This run: block 4096"). Its `SDL_AUDIODRIVER=alsa` is moot for audio. Verified: the smoke
-and the controller harness are green under the `/dev/snd` guard, and `pnpm sdl:pipewire` drives both real backends (an
-Auto leg included) on a private PipeWire server.
+and the controller harness are green under the device guard (which refuses every card node but the sequencer and the
+timer, and every video, serial, HID and raw-USB node, and proves after preloading that it is live), and
+`pnpm sdl:pipewire` drives both real backends (an Auto leg included) on a private PipeWire server whose wireplumber has
+its ALSA, v4l2 and libcamera device monitors disabled.
 
 ### File browser: the OS dialog is the default; the in-app browser is a toggle — ✅ DONE
 An **in-app React/LVGL file browser** ([fileBrowserMenu.ts](../packages/retroplug/ui/screens/menu/fileBrowserMenu.ts),
