@@ -36,11 +36,14 @@ const out = productName ? { product: productName, generated: {} } : {};
 let productDir;
 let work;
 if (productName) {
-    const { mkdtempSync } = await import("node:fs");
+    const { mkdtempSync, realpathSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { generate } = await import("../../../../packages/retroplug/scripts/lib/packages.mjs");
-    work = mkdtempSync(join(tmpdir(), "rp-bundles-"));
+    // The real path: macOS's tmpdir() is /var/folders, a symlink to /private/var/folders, and the generated tree's
+    // relative paths back to the repository are counted from the path given, while esbuild resolves them from the real
+    // one, one `..` deeper.
+    work = realpathSync(mkdtempSync(join(tmpdir(), "rp-bundles-")));
     generate({ root: REPO, product: productName, buildDir: work });
     productDir = join(work, "products", productName, "packages/retroplug");
     const { readFileSync } = await import("node:fs");
