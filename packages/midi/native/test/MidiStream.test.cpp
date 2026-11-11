@@ -537,7 +537,6 @@ TEST_CASE("the input ring: concurrent producers deliver every message intact, on
 
 TEST_CASE("a full ring drops the incoming message and counts it, and what did land is intact") {
     Machine             machine;
-    FakeMidiBackend&    backend = machine.backend;
     MidiStream          stream(machine.backend);
     REQUIRE(stream.open());
     const std::size_t overflow = 40;
