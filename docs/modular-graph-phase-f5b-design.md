@@ -1968,15 +1968,31 @@ to fix or the plan's to stop saying:
 final review found what `sdl:pipewire`'s private wireplumber was doing (I7): its copied config dropped only the bluetooth
 context, so the daemon also ran its ALSA, v4l2 and libcamera device monitors - opening the NES capture card on
 `/dev/video0` and `/dev/video1`, and mirroring the MIDI interfaces' sequencer ports - and a bare `pnpm reaper:*` was
-unguarded. Acceptance re-runs over this section's follow-up, and its summary belongs here (the controller completes this
-paragraph).
+unguarded. Acceptance re-ran from the start over this section's follow-up, at `3220cfd32`: **PASS WITH FINDINGS**. A fresh
+clone installed, typechecked (leaving no `build/`) and built in CI's order; the serial kit's 49 lines are every one exit
+0, the guarded `sdl`, `sdlctl`, `nosnd` and `pipewire` legs among them, plus the parallel kit's `tsanaudio`, `tsanmidi`
+and `audiolink`; strict parity held bit for bit (30 files, 250 cases, none skipped); the kit and render baselines,
+`render-chunks`, `render-cli`, the registration golden and all fourteen `test:plugin` binaries held; both device images
+are byte-identical to `793c655fd`'s and the pack bytes are the baseline's; `reaper:all`, both two-instance legs on VST3
+and CLAP with `RP_LOAD_MODE=dialog` and the editor legs passed; BlipToaster 57/57 and NESVJ 19/19 on scratch copies.
+Every SDL and Reaper run was guarded: 33 Reaper job logs held 1056 refusals, every one a card CONTROL node, and none a
+card PCM, video, serial, HID or USB node; the null-pinned SDL logs were empty; `sdl:pipewire` passed 27 with `0 card
+pcm, 0 video/serial`. Its findings: the pre-existing `PluginDSP.cpp:177` `-Wformat-truncation` on a from-scratch build
+(owed, spec/07); `check:docs` at 103 files with the one plan-record warning; the Reaper harness re-points `NOSND_LOG`
+into each job's own log directory, so the plan's named log paths are never written (the counts are printed and enforced
+per job instead); stale figures the follow-up moved (`sdl:pipewire` 27, `retroplug-midi-test` 49 cases,
+`retroplug-audio-host-test` 24, `render-cli` 6); and `run-reaper-two-instances-load.sh` on CLAP skipping once on a
+missed dialog click (its heartbeat advancing, so no freeze), then passing on an identical re-run.
 
 **The hardware incident, stated plainly.** The prototype's manual `sdl:pipewire` run left an orphaned private
 `pipewire` / `wireplumber` / `dbus-daemon` behind (scratch directory `/tmp/f5bpro/pwman2`), and it kept running for about
-5.5 hours: its own log shows the libcamera monitor loading. Nothing on this desk plays to it, and no card was opened
-through it, but the harness's session manager was able to open the capture card - which is exactly what the guard, the
-monitor disablement and the self-test in the follow-up exist to prevent. The controller killed it while stopping
-acceptance.
+5.5 hours: its own log shows the libcamera monitor loading. With the old harness config, every `sdl:pipewire` run that
+started its session manager (the prototype's S4 stage and its fix pass, that orphan at its start, and Task 6) ran the
+v4l2 monitor, which opens `/dev/video0` and `/dev/video1` to query them: the follow-up's live comparison under the new
+guard logged that daemon's `Cannot open '/dev/video0'`. So the NES capture card was very likely opened, queried and
+closed during those runs (a monitor probes; it does not stream). Nothing played to any card. The guard's wider scope,
+the monitors' disablement and the harnesses' self-test exist to prevent it; the controller killed the orphan while
+stopping acceptance.
 
 **The final review** (`/tmp/f5bexec/final-review.md`, read-only over `793c655fd..27f99be3d`, five parallel sub-reviews)
 found no Critical and eleven Important, its verdict "ready to call F5b complete with fixes". Its shape finding was that
