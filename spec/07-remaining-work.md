@@ -74,7 +74,6 @@ than work.
 - [ ] [CI sees 5 of 13 render cases](#ci-sees-5-of-13-render-cases)
 - [ ] [A GBA render case](#a-gba-render-case)
 - [ ] [A sanitizer leg for renders](#a-sanitizer-leg-for-renders)
-- [ ] [retroplug-host swallows a top-level throw](#retroplug-host-swallows-a-top-level-throw)
 - [ ] [Render residuals](#render-residuals)
 - [ ] [The behavioural render tests run in-process](#the-behavioural-render-tests-run-in-process)
 - [ ] [The statics patch's camera half has no test](#the-statics-patchs-camera-half-has-no-test)
@@ -375,12 +374,15 @@ wrapped before txiki freezes `tjs`, or an exit hook) and a look at what each pro
 
 ### The test host drops an uncaught error
 
-The test host's loop ([src/main.cpp](../packages/native/src/main.cpp)) has the fault the CLI's launcher had before its
-`pumpOnce`: it pumps txiki's loop without looking for a pending exception or a stop request, so an error nothing caught
-outside the harness's reach (a module body's throw before its first `test()`, a timer created before it) is dropped,
-and the file ends as "tests did not complete" with no reason, or not at all while kept alive. Its `tjs.exit` override
-does not take either. The fix is the CLI's `pumpOnce`, then a whole `pnpm test:native` run for the strays it
-surfaces. ([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 3.)
+The test host (`retroplug-host`, [src/main.cpp](../packages/native/src/main.cpp)) swallows a top-level throw: it
+pumps txiki's loop without looking for a pending exception or a stop request, so an error nothing caught outside the
+harness's reach (a module body's throw before its first `test()`, a timer created before it) is dropped, and the file
+ends as "tests did not complete (tjs.exit never called)" with no reason, which hides a fixture script's real error (the
+renders' fixtures meet it), or with a kept-alive one only when its 30-minute deadline runs out. Its `tjs.exit` override
+does not take either. The fix is the CLI's `pumpOnce` (which handles this fault), with the failed `tjs.exit` set's
+pending exception cleared as the CLI clears it (`cli/main.cpp`), then a whole `pnpm test:native` run for the strays
+it surfaces. ([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 3; [D3
+design](../docs/modular-graph-phase-d3-design.md) section 10.)
 
 ## Engine
 
@@ -594,13 +596,6 @@ design](../docs/modular-graph-phase-d3-design.md) section 10.)
 A sanitizer leg for renders is missing: `tools/run-sanitizer.sh` has no render leg, so the pool's thread and address
 checks are `[engine-jobs]` built in `build-tsan` / `build-asan` by hand (a script leg would make them routine). ([D3
 design](../docs/modular-graph-phase-d3-design.md) section 10.)
-
-### retroplug-host swallows a top-level throw
-
-`retroplug-host` swallows a top-level throw, reporting only "tests did not complete (tjs.exit never called)"
-([main.cpp](../packages/native/src/main.cpp)), which hides a fixture script's real error; it should print a top-level
-throw. Not render-specific, but the renders' fixtures meet it. ([D3 design](../docs/modular-graph-phase-d3-design.md)
-section 10.)
 
 ### Render residuals
 

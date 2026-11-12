@@ -83,10 +83,10 @@ All three hosts compose the services, mount their facets on an rpcpp server over
   ([`SharedDSP`](../packages/native/plugin/PluginShared.hpp#L21)),
   so the UI reaches the backend through the already-bound `__rpcSend` — no second RPC bridge.
   The UI and window-geometry seams are 03's topic.
-- **Native test host**: [`main.cpp:107-151`](../packages/native/src/main.cpp#L107-L151) binds
-  the same namespace, installs a `globalThis.tjs.exit` hook that records the exit code, evals a TS
-  bundle, and pumps the job loop until the harness reports TAP. This is the
-  `test:native` runner (`retroplug-host`).
+- **Native test host**: [`main.cpp:107-151`](../packages/native/src/main.cpp#L107-L151) binds the same namespace, tries
+  to install a `globalThis.tjs.exit` hook that records the exit code (it does not take: txiki's `tjs` is frozen, so the
+  exit is txiki's own, [spec/07](07-remaining-work.md#the-test-host-drops-an-uncaught-error)), evals a TS bundle, and
+  pumps the job loop until the harness reports TAP. This is the `test:native` runner (`retroplug-host`).
 - **Headless UI-test host**: [`UiHarness`](../packages/native/test/ui/UiHarness.hpp#L30)
   is the plugin's control-plane bring-up **minus the audio thread, plus a display**. Because
   there is no audio thread, its

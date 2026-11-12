@@ -44,13 +44,12 @@ TS session at build time; the binary runs the JS). See the CLI scaffold in
 [packages/native/cli/main.cpp](../packages/native/cli/main.cpp) and
 [packages/retroplug/cli/](../packages/retroplug/cli).
 
-- **Session runtime** — [cli/session.ts](../packages/retroplug/cli/session.ts): `bootSession()`
-  wires the store graph over `createRealBackend()` (the script nodes need no boot step: every Engine has
-  their types, and the project's graph carries them and their settings), and `runSession(main)` runs the
-  body and reports the exit code. `hostArgs()` reads the session's
-  argv (hung off the `Symbol.for("plugin")` namespace — `tjs.args` is a read-only txiki accessor).
-  `keepAlive()` keeps the loop running until `tjs.exit`, for a session that awaits a timer or a child process, and an
-  error nothing catches ends any session with exit 1 and its text
+- **Session runtime** - [cli/session.ts](../packages/retroplug/cli/session.ts): `bootSession()` wires the store graph
+  over `createRealBackend()` (the script nodes need no boot step: every Engine has their types, and the project's graph
+  carries them and their settings), and `runSession(main)` runs the body and reports the exit code. `hostArgs()` reads
+  the session's argv (hung off the `Symbol.for("plugin")` namespace - `tjs.args` is a read-only txiki accessor).
+  `keepAlive()` keeps the loop running until `tjs.exit`, a Ctrl-C or an uncaught error, for a session that awaits a
+  timer or a child process, and an error nothing catches ends any session with exit 1 and its text
   ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)).
 - **The real N8**: `connectN8()` opens an Everdrive N8 Pro for a session script: its card's files, a ROM booted at the
   menu, the live sniffer region and raw FIFO bytes, synchronous calls over the n8 pack's facet

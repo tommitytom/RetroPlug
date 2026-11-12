@@ -104,11 +104,14 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   (a 181-entry one answered "dir read error 0x82"), so every listing, every file read (which lists its directory first)
   and the cart jobs' battery lookup reach past 32 entries; `FakeN8` answers the range asked for. A session call that
   fails on the line marks its session dirty in the facet, and the next call first drains the line (about 0.4 s at most)
-  and re-runs the handshake (0.3 s), answering the handshake's failure without sending itself when the line does not
-  answer (`N8Rpc::ready`), so the CLI's tools, the bridges and a session script's `connectN8()`
+  and re-runs the handshake (0.3 s, or the timeout the session was last connected with; a handshake on a dirty session
+  is that resync, run once with its caller's timeout), answering the handshake's failure without sending itself when the
+  line does not answer (`N8Rpc::ready`), so the CLI's tools, the bridges and a session script's `connectN8()`
   ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)) recover from a hiccup. The bridges
-  (`packages/n8/ts/bridge.ts`, `n8-bridge` and risa's `n8-sync`) log and count a failed FIFO write and exit only
-  after a run of failures lasting 3 s (`failureWatch`).
+  (`packages/n8/ts/bridge.ts`, `n8-bridge` and risa's `n8-sync`) log and count a failed FIFO write and exit once a run
+  of at least 5 failures, with no write succeeding between them, has lasted 3 s (`failureWatch`), and a fatal exit runs
+  once. A resync recovers a late reply, not a line the N8 is still inside a command on (the handshake's bytes are taken
+  as that command's data, so each call answers the handshake's failure until it has gone out or the N8 is reset).
 - What the cart allows, and the pack accepts: a cart's battery is reachable only at the N8 menu, through the SD card's
   save file `EDN8/gamedata/<rom>/bram.srm`, and a dump takes about a minute for 64 KB; a running game refuses every cart
   job (a direct cart-memory read wedges it and leaves the menu deaf), and a restore goes before a `rom.upload` so the
@@ -120,10 +123,10 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   (the battery dump among them, the one cart-memory read left); the capabilities deliberately offer no peek, poke,
   sniffer or FIFO reads.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
-  `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session`; for the box, `pnpm device:box`, then the
-  rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each given BlipToaster with `--rom` (`bliptoaster.nes`): without
-  `--rom` the firmware boots its default, `n8-midi.nes`, which no check uses. `retroplug-n8-hwtest` needs the physical
-  console.
+  `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session` and `pnpm test:native n8-sdk` (`connectN8`
+  over the fake N8); for the box, `pnpm device:box`, then the rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each
+  given BlipToaster with `--rom` (`bliptoaster.nes`): without `--rom` the firmware boots its default, `n8-midi.nes`,
+  which no check uses. `retroplug-n8-hwtest` needs the physical console.
 - Deeper: [docs/n8-bridge-plan.md](../docs/n8-bridge-plan.md),
   [docs/n8-usb-capabilities.md](../docs/n8-usb-capabilities.md), and the pack's design,
   [docs/modular-graph-phase-e2-design.md](../docs/modular-graph-phase-e2-design.md).

@@ -208,23 +208,27 @@ JavaScript ([tools/run-cli-ts-tests.sh](../tools/run-cli-ts-tests.sh) checks the
 [packages/n8/ts/device.ts](../packages/n8/ts/device.ts), exported as `@retroplug/n8/device`) over the process's RPC
 call, so a consumer uploads a file, boots a ROM at the menu, reads the live sniffer region or pushes raw FIFO bytes
 without spawning `n8-load` and parsing what it printed. Every call is synchronous, over the N8 facet the CLI's own N8
-tools use ([spec/13](13-subsystems.md#the-everdrive-n8-bridge)); a closed device refuses each call in its own words,
-and a call that failed on the line leaves the next to resync the session in the host. `keepAlive()` is the session's
-own: a session otherwise gets a bounded run of pumps, so a timer or an awaited `tjs.spawn(...).wait()` never completes,
-and a script that awaits anything calls it once, up front, and ends with `tjs.exit`. Both are declared whole in
-[cli/sdk-types.d.ts](../packages/retroplug/cli/sdk-types.d.ts), which `cli/sdkSurfaceCheck.ts` holds to the
-implementation by type identity, not mutual assignability (which passes a dropped `readonly`).
+tools use ([spec/13](13-subsystems.md#the-everdrive-n8-bridge)); a closed device refuses each call in its own words, and
+a call that failed on the line leaves the next to resync the session in the host. `keepAlive()` is the session's own: a
+session otherwise gets a bounded run of pumps, so a timer or an awaited `tjs.spawn(...).wait()` may not complete before
+the pumps run out, and a script that waits on either calls it once, up front, and ends with `tjs.exit`. Both are
+declared whole in [cli/sdk-types.d.ts](../packages/retroplug/cli/sdk-types.d.ts), which `cli/sdkSurfaceCheck.ts` holds
+to the implementation by type identity, not mutual assignability (which passes a dropped `readonly`).
 
 **An error nothing caught.** It ends a session, kept alive or not, with exit 1 and its text. txiki turns one (a throw in
 an async module body, a rejection nothing cancelled, a throw in a timer) into a pending exception and a request to stop
 its loop, and the launcher ([packages/native/cli/main.cpp](../packages/native/cli/main.cpp)) drives that loop itself, so
-after every pump it looks for both: the exception, which it prints, and the stop request, which it takes over because
-it survives a sibling callback's try/catch clearing the exception. In a test file the harness
-([packages/testing/ts/harness.ts](../packages/testing/ts/harness.ts), the one `pnpm test`, `test:native` and
-`test:ui` run too) takes over first, from its first `test()`: it records a rejection nothing handled, or a throw in a
-timer callback, prints it to stderr at once, fails the running case at once (each case is raced against an abort, so
-one awaiting work that died first does not wait for ever), blames a timer's throw on the case that created the timer
+after every pump it looks for both: the exception, which it prints, and the stop request, which it takes over because it
+survives a sibling callback's try/catch clearing the exception. In a test file the harness
+([packages/testing/ts/harness.ts](../packages/testing/ts/harness.ts), the one `pnpm test`, `test:native` and `test:ui`
+run too) takes over first, from its first `test()`: it records a rejection nothing handled, or a throw in a timer
+callback, prints it to stderr at once, fails the running case at once (each case is raced against an abort, so one
+awaiting work that died first does not wait for ever), blames a timer's throw on the case that created the timer
 (failing the file, naming it, when that case has already reported), and fails the file for anything outside every case,
-while the rest of the file still reports. A rejection carries no trace of its creator, so it is blamed on the case
-running, whose failure says it may be one before; one handled a loop turn late counts as unhandled, as in Node.
-[tools/run-cli-ts-tests.sh](../tools/run-cli-ts-tests.sh) checks each of these through the real binary.
+while the rest of the file still reports (a late one's reason names the case it came from; a case that skips or throws
+still owns the rejection it left; the loop turn uses the timer captured at install, not a test's stub). A rejection
+carries no trace of its creator, so it is blamed on the case running, whose failure says it may be one before; one
+handled a loop turn late counts as unhandled, as in Node. A synchronous throw in a session's `onInterrupt` (Ctrl-C) hook
+ends it with exit 1 too, as an async one that rejects does. A session holding a device releases it on that path:
+`launchpad-probe` runs each timer body so that a throw reports, leaves Programmer mode and closes its ports before
+exiting 1. [tools/run-cli-ts-tests.sh](../tools/run-cli-ts-tests.sh) checks each of these through the real binary.
