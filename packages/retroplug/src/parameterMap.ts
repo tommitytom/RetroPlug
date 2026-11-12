@@ -17,6 +17,7 @@
 import { MidiRouting } from "@retroplug/core/midiRouting";
 import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import type { RomParameter } from "@retroplug/core/romParameters";
+import { placedKinds } from "./graph/protocolNodes";
 
 /** A claimed pool slot: the same descriptor, resolved to a pool index and a pre-routing channel. */
 export interface ParameterSlot extends RomParameter {
@@ -73,7 +74,9 @@ export interface ParameterSystem {
 
 /** Project the loaded systems onto the plugin's fixed slot pool. Slot `i * CC_SLOTS_PER_SYSTEM + n`
  *  belongs to system `i`; every slot not returned stays unclaimed (hidden, generically named). A system's table is its
- *  first role whose type serves `parameters`, asked with that role's own config (a BlipToaster's `chip`, say). */
+ *  first role the graph places (graph/protocolNodes.ts placedKinds) whose type serves `parameters`, asked with that
+ *  role's own config (a BlipToaster's `chip`, say): a stored role the graph leaves out, mgb on an LSDj cart after a ROM
+ *  swap, exposes no lanes for a protocol that is not running, and a role with no node keeps its table. */
 export function projectParameterMap(
   systems: ParameterSystem[],
   mode: MidiRouting,
@@ -84,7 +87,9 @@ export function projectParameterMap(
 
   for (let i = 0; i < Math.min(systemCount, MAX_PARAMETER_SYSTEMS); i++) {
     let table: readonly RomParameter[] | undefined;
+    const placed = placedKinds(systems[i].roles);
     for (const r of systems[i].roles) {
+      if (!placed.includes(r.kind)) continue;
       table = registry.roleType(r.kind)?.parameters?.((r.config ?? {}) as Record<string, unknown>);
       if (table) break;
     }

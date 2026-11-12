@@ -39,6 +39,7 @@ function system(over: Partial<SystemInfo> = {}): SystemInfo {
     battery: true,
     missing: false,
     roles: [],
+    placed: [],
     ...over,
   };
 }

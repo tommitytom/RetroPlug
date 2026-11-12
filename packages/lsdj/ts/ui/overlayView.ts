@@ -8,7 +8,7 @@
 // cart is not supported, so nothing shows; undefined means this frame's RAM was unreadable, so the strip keeps what
 // shows.
 import type { Host } from "@retroplug/core/host";
-import { hasRole } from "@retroplug/core/systemRoles";
+import { isPlaced } from "@retroplug/core/systemRoles";
 import { hex2 } from "@retroplug/ui/format";
 import type { ReadoutFrame, TileView } from "@retroplug/ui/contribution";
 import { LsdjReader, type LsdjState } from "../runtime";
@@ -38,21 +38,22 @@ function linesOf(state: LsdjState): string[] {
   ];
 }
 
-/** The LSDj debug overlay: a readout over every LSDj tile, shown while the package's flag is on (backtick by
- *  default, through the `lsdj.debug-overlay` action). The default dedupe (the lines and the flag) is exactly what the
- *  strip draws, so the old hook's narrower signature is not needed and the displayed output is identical. */
+/** The LSDj debug overlay: a readout over every tile whose graph places lsdj-sync, shown while the package's flag is on
+ *  (backtick by default, through the `lsdj.debug-overlay` action). The default dedupe (the lines and the flag) is
+ *  exactly what the strip draws, so the old hook's narrower signature is not needed and the displayed output is
+ *  identical. */
 export const overlayView = {
   id: "lsdj-overlay",
   label: "LSDj Debug Overlay",
   placement: "tile",
   visible: lsdjDebug,
-  when: (sys) => hasRole(sys.roles, "lsdj-sync"),
+  when: (sys) => isPlaced(sys, "lsdj-sync"),
   body: {
     kind: "readout",
     open: (host: Host<"files" | "systems">, systemId: number) => {
       const sys = host.systems.view().find((s) => s.id === systemId);
       const romPath = sys?.romPath ?? "";
-      if (!sys || !romPath || !hasRole(sys.roles, "lsdj-sync")) return null;
+      if (!sys || !romPath || !isPlaced(sys, "lsdj-sync")) return null;
       const header = host.files.readPrefix(romPath, 0x150);
       if (!header) return null;
       const reader = LsdjReader.fromHeader(header);

@@ -15,7 +15,7 @@
 // `frame()` returns the pixel buffer when something moved and null when it didn't, so the shell can skip pushing an
 // unchanged surface into LVGL.
 import type { Host } from "@retroplug/core/host";
-import { hasRole, roleConfig } from "@retroplug/core/systemRoles";
+import { isPlaced, roleConfig } from "@retroplug/core/systemRoles";
 import type { PixelFrame, WindowView } from "@retroplug/ui/contribution";
 import { HD_COLS, HD_ROWS, LsdjHdCanvas, renderMode2, type KitSampleNameLookup } from "../hd";
 import { decodeSong } from "../codec/song";
@@ -155,21 +155,22 @@ function buildSession(
   return new HdSession(host, systemId, reader, rom);
 }
 
-/** The playable window view: it applies to an LSDj-sync system, and its `open` refuses a system with no such role or
- *  no ROM path itself, since the shell checks `when` only at `views.open` and a renderer opens a session too. `satisfies`
- *  rather than an annotation, so `open` keeps the host groups it declares (what a pack copied from this one sees)
- *  instead of widening to the contract's whole UI host. */
+/** The playable window view: it applies to a system whose graph places lsdj-sync (not one that merely stores it, an
+ *  mGB cart after a ROM swap), and its `open` refuses any other system or one with no ROM path itself, since the shell
+ *  checks `when` only at `views.open` and a renderer opens a session too. `satisfies` rather than an annotation, so
+ *  `open` keeps the host groups it declares (what a pack copied from this one sees) instead of widening to the
+ *  contract's whole UI host. */
 export const hdView = {
   id: "lsdj-hd",
   label: "HD Player",
   placement: "window",
-  when: (sys) => hasRole(sys.roles, "lsdj-sync"),
+  when: (sys) => isPlaced(sys, "lsdj-sync"),
   body: {
     kind: "pixels",
     unsupported: "HD view needs a supported LSDj cartridge",
     open: (host: Host<"files" | "png" | "systems">, systemId: number) => {
       const sys = host.systems.view().find((s) => s.id === systemId);
-      if (!sys || !hasRole(sys.roles, "lsdj-sync") || !sys.romPath) return null;
+      if (!sys || !isPlaced(sys, "lsdj-sync") || !sys.romPath) return null;
       return buildSession(host, systemId, sys.romPath, roleConfig(sys.roles, "lsdj-assets"));
     },
   },

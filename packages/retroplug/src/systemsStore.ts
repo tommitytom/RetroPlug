@@ -55,7 +55,7 @@ import {
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
 import type { Host } from "@retroplug/core/host";
-import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
+import { placedKinds, protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
 import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
@@ -119,6 +119,9 @@ export interface SystemView {
   missing: boolean;
   settings: CommonSettings;
   roles: RoleInstance[];
+  /** The kinds of `roles` the graph places (graph/protocolNodes.ts placedKinds): a stored role it leaves out stays in
+   *  `roles` and is not here. */
+  placed: string[];
 }
 
 /** loadRom outcome: defer to a sibling project, a built system, or a failure. */
@@ -220,6 +223,7 @@ export class SystemsStore {
       missing: e.romPath !== "" && e.embeddedRom === "" && !this.backend.fileExists(e.romPath),
       settings: e.settings ?? DEFAULT_COMMON_SETTINGS,
       roles: e.roles ?? [],
+      placed: placedKinds(e.roles ?? []),
     }));
   }
 

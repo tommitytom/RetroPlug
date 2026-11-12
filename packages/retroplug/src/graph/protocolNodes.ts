@@ -134,3 +134,26 @@ export function protocolPipeline(
   }
   return out;
 }
+
+/** The kinds of `roles` the graph places, in role order, each once: a kind with a protocol node when protocolPipeline
+ *  places it, and a kind with none (a core's config role, an asset override, a tracker's marker) when it is present,
+ *  as the pipeline never leaves one of those out. What a reader asks before it treats a system as a cart's: a stored
+ *  role list can keep a role the graph leaves out (an mGB cart still carrying lsdj-sync after a ROM swap, an LSDj cart
+ *  carrying mgb), and the stored role stays, so a ROM swapped back brings its settings back. The pipeline decides by
+ *  kind and order alone, so no config is read. */
+export function placedKinds(roles: readonly { readonly kind: string }[]): string[] {
+  const withNodes = new Set(protocolPipeline(roles.map((r) => ({ kind: r.kind, config: {} }))).map((p) => p.kind));
+  const out: string[] = [];
+  for (const r of roles) {
+    if (out.includes(r.kind)) continue;
+    if (withNodes.has(r.kind) || protocolNodeOf(r.kind) === undefined) out.push(r.kind);
+  }
+  return out;
+}
+
+/** The role of `kind` in `roles` when the graph places it (placedKinds), else undefined; of a kind named twice, the
+ *  first, which is the one placed. */
+export function placedRole<R extends { readonly kind: string }>(roles: readonly R[], kind: string): R | undefined {
+  const role = roles.find((r) => r.kind === kind);
+  return role && placedKinds(roles).includes(kind) ? role : undefined;
+}

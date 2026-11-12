@@ -6,7 +6,7 @@
 // marker is deep in the PRG, so the whole file is read), then every frame pulls the RAM snapshot (host.systems.readRam)
 // and decodes it. Null means the cart is not supported; undefined means this frame's RAM was unreadable.
 import type { Host } from "@retroplug/core/host";
-import { hasRole } from "@retroplug/core/systemRoles";
+import { isPlaced } from "@retroplug/core/systemRoles";
 import { hex2 } from "@retroplug/ui/format";
 import type { ReadoutFrame, TileView } from "@retroplug/ui/contribution";
 import * as runtime from "../runtime";
@@ -39,13 +39,13 @@ export const overlayView = {
   label: "risa Debug Overlay",
   placement: "tile",
   visible: risaDebug,
-  when: (sys) => hasRole(sys.roles, "risa"),
+  when: (sys) => isPlaced(sys, "risa"),
   body: {
     kind: "readout",
     open: (host: Host<"files" | "systems">, systemId: number) => {
       const sys = host.systems.view().find((s) => s.id === systemId);
       const romPath = sys?.romPath ?? "";
-      if (!sys || !romPath || !hasRole(sys.roles, "risa")) return null;
+      if (!sys || !romPath || !isPlaced(sys, "risa")) return null;
       const rom = host.files.readFile(romPath);
       if (!rom) return null;
       const layout = runtime.resolveRisaLayout(runtime.identifyRisaVersion(rom));

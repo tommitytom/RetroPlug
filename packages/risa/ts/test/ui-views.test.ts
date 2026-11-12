@@ -19,6 +19,7 @@ function system(over: Partial<SystemInfo> = {}): SystemInfo {
     battery: true,
     missing: false,
     roles: [{ kind: "risa", config: {} }],
+    placed: ["risa"],
     ...over,
   } as SystemInfo;
 }
@@ -122,11 +123,13 @@ test("the risa overlay's lines are the old overlay's", () => {
   expect(noVersion).toBe(null);
 });
 
-test("the risa overlay applies to risa systems only, and opens none without the role", () => {
+test("the risa overlay applies to risa systems only, and opens none without the role placed", () => {
   expect(overlayView.when?.(system())).toBeTruthy();
-  expect(overlayView.when?.(system({ roles: [{ kind: "lsdj-sync", config: {} }] }))).toBeFalsy();
+  expect(overlayView.when?.(system({ roles: [{ kind: "lsdj-sync", config: {} }], placed: ["lsdj-sync"] }))).toBeFalsy();
+  // The view asks what the system's graph places, which the shell says in `placed`, not what its roles store.
+  expect(overlayView.when?.(system({ placed: [] }))).toBeFalsy();
   expect(overlayView.body.kind === "readout" ? overlayView.body.open(hostWith({}), 1) : null).toBe(null);
-  const noRole = system({ roles: [] });
+  const noRole = system({ roles: [], placed: [] });
   const sampler =
     overlayView.body.kind === "readout"
       ? overlayView.body.open(hostWith({ rom: risaRom(), systems: [noRole] }), noRole.id)

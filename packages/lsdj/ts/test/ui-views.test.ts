@@ -34,9 +34,14 @@ function system(over: Partial<SystemInfo> = {}): SystemInfo {
     battery: true,
     missing: false,
     roles: [{ kind: "lsdj-sync", config: {} }],
+    placed: ["lsdj-sync"],
     ...over,
   } as SystemInfo;
 }
+
+/** An mGB cart still storing the lsdj-sync it carried before a ROM swap: its graph places mgb and leaves lsdj-sync out,
+ *  which is what the views ask. */
+const STALE_SYNC = system({ roles: [{ kind: "mgb", config: {} }, { kind: "lsdj-sync", config: {} }], placed: ["mgb"] });
 
 /** A host with the groups these views read. `state` is mutable so a case can change what the next read sees. */
 function hostWith(state: {
@@ -133,19 +138,21 @@ test("the HD session reads SRAM on its 15-frame countdown and decodes only when 
   expect(session.frame()).toBe(null);
 });
 
-test("the HD view refuses what the old hook gated on: no LSDj role, no ROM path, an unreadable header", () => {
+test("the HD view refuses what the old hook gated on: no placed LSDj role, no ROM path, an unreadable header", () => {
   expect(hdView.body.kind).toBe("pixels");
   if (hdView.body.kind !== "pixels") return;
   expect(hdView.body.unsupported).toBe("HD view needs a supported LSDj cartridge");
   expect(hdView.when?.(system())).toBeTruthy();
-  expect(hdView.when?.(system({ roles: [] }))).toBeFalsy();
+  expect(hdView.when?.(system({ roles: [], placed: [] }))).toBeFalsy();
+  expect(hdView.when?.(STALE_SYNC)).toBeFalsy();
 
   const open = (state: Parameters<typeof hostWith>[0], sys = system()) =>
     hdView.body.kind === "pixels" ? hdView.body.open(hostWith({ ...state, systems: [sys] }), sys.id) : null;
   expect(open({ header: header("LSDj-v9.4.2"), rom: null })).toBe(null); // no ROM bytes
   expect(open({ header: null, rom: new Uint8Array(4) })).toBe(null); // no readable header
   expect(open({ header: header("MGB"), rom: new Uint8Array(4) })).toBe(null); // not an LSDj cart
-  expect(open({ header: header("LSDj-v9.4.2"), rom: new Uint8Array(4) }, system({ roles: [] }))).toBe(null);
+  expect(open({ header: header("LSDj-v9.4.2"), rom: new Uint8Array(4) }, system({ roles: [], placed: [] }))).toBe(null);
+  expect(open({ header: header("LSDj-v9.4.2"), rom: new Uint8Array(4) }, STALE_SYNC)).toBe(null);
   expect(open({ header: header("LSDj-v9.4.2"), rom: new Uint8Array(4) }, system({ romPath: "" }))).toBe(null);
 });
 
@@ -164,14 +171,17 @@ test("the LSDj overlay's lines are the old overlay's", () => {
   state.ram = null;
   expect(sampler!.sample()).toBe(undefined);
 
-  // The overlay applies to an LSDj-sync system and opens on nothing else: a system without the role, a header that is
-  // not an LSDj cart (the reader's own `supported` gate, which is how this view says "unsupported": a sampler it opened
-  // is always one whose reader resolves a layout), and no header at all.
+  // The overlay applies to a system whose graph places lsdj-sync and opens on nothing else: a system without the role
+  // or storing it unplaced (an mGB cart after a ROM swap), a header that is not an LSDj cart (the reader's own
+  // `supported` gate, which is how this view says "unsupported": a sampler it opened is always one whose reader
+  // resolves a layout), and no header at all.
   const open = (sys = system()) =>
     overlayView.body.kind === "readout" ? overlayView.body.open(hostWith({ header: header("LSDj-v9.4.2"), systems: [sys] }), sys.id) : null;
   expect(overlayView.when?.(system())).toBeTruthy();
-  expect(overlayView.when?.(system({ roles: [] }))).toBeFalsy();
-  expect(open(system({ roles: [] }))).toBe(null);
+  expect(overlayView.when?.(system({ roles: [], placed: [] }))).toBeFalsy();
+  expect(overlayView.when?.(STALE_SYNC)).toBeFalsy();
+  expect(open(system({ roles: [], placed: [] }))).toBe(null);
+  expect(open(STALE_SYNC)).toBe(null);
   expect(overlayView.body.kind === "readout" ? overlayView.body.open(hostWith({ header: null }), 1) : null).toBe(null);
   expect(overlayView.body.kind === "readout" ? overlayView.body.open(hostWith({ header: header("MGB") }), 1) : null).toBe(null);
 });

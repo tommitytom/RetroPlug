@@ -3,10 +3,11 @@
 // value through the same fallbacks and step through the same label list. A row is data a package declares; what a step
 // DOES is the caller's, because that is the one part only a surface knows (systems.setRoleConfig, a project's
 // controller).
-import { hasRole, roleConfig, type RoleInstance, type RoleType } from "@retroplug/core/systemRoles";
+import { roleConfig, type RoleInstance, type RoleType } from "@retroplug/core/systemRoles";
 import type { RoleRow } from "@retroplug/ui/contribution";
 import { configRowCycler, rowShownFor, rowShownOn } from "@retroplug/ui/contribution";
 import { separator, type MenuItem } from "@retroplug/ui/menu";
+import { placedRole } from "../../../src/graph/protocolNodes";
 
 export { configRowCycler };
 
@@ -17,11 +18,12 @@ export interface RoleRowSystem {
   readonly roles: readonly RoleInstance[];
 }
 
-/** The items a set of contributed rows builds for a system, in the rows' order: a row shows only on a system that has
- *  its role (the core role attaches to every system of that core, so this is the old `core === "sameboy"` gate), where
- *  its platform and `when` gates allow, and a `separatorBefore` id is emitted once, before the first row that shows
- *  carrying it. A row's default is its role schema's (`schema.parse({})[key]`), which is what makes an untouched config
- *  read as the value the core really runs. */
+/** The items a set of contributed rows builds for a system, in the rows' order: a row shows only on a system whose
+ *  graph places its role (graph/protocolNodes.ts placedRole: the core role, which has no node, attaches to every system
+ *  of that core, so this is the old `core === "sameboy"` gate, and a stored role the graph leaves out, LSDj's sync on
+ *  an mGB cart after a ROM swap, shows nothing), where its platform and `when` gates allow, and a `separatorBefore` id
+ *  is emitted once, before the first row that shows carrying it. A row's default is its role schema's
+ *  (`schema.parse({})[key]`), which is what makes an untouched config read as the value the core really runs. */
 export function roleRowItems(
   rows: readonly RoleRow[],
   sys: RoleRowSystem,
@@ -32,7 +34,7 @@ export function roleRowItems(
   const emitted = new Set<string>();
   const defaultsOf = new Map<string, Record<string, unknown>>();
   for (const row of rows) {
-    if (!hasRole(sys.roles, row.role)) continue;
+    if (!placedRole(sys.roles, row.role)) continue;
     if (!rowShownOn(row, sys.platform)) continue;
     let defaults = defaultsOf.get(row.role);
     if (!defaults) {

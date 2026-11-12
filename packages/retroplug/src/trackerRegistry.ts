@@ -8,15 +8,17 @@ import type { AssetCatalog } from "@retroplug/tracker/assetCatalog";
 import type { SongCatalog } from "@retroplug/tracker/songCatalog";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import { TRACKER_INTEGRATIONS } from "./generated/packages";
+import { placedRole } from "./graph/protocolNodes";
 
 /** Every tracker integration, in the product order: a system takes the one whose markerRole it has, and the markers are
  *  exclusive, so the order decides nothing. The generated list, re-exported below as a live binding. */
 export { TRACKER_INTEGRATIONS };
 
-/** The tracker integration for a system, resolved from its attached roles (the first role whose kind is an
- *  integration's markerRole). undefined for a non-tracker system. */
+/** The tracker integration for a system, resolved from its roles: the integration whose markerRole the graph places
+ *  (graph/protocolNodes.ts placedRole). undefined for a non-tracker system, and for one whose stored marker the graph
+ *  leaves out: an mGB cart still carrying lsdj-sync after a ROM swap is not an LSDj cart. */
 export function resolveTracker(roles: readonly RoleInstance[]): TrackerIntegration | undefined {
-  return TRACKER_INTEGRATIONS.find((t) => roles.some((r) => r.kind === t.markerRole));
+  return TRACKER_INTEGRATIONS.find((t) => placedRole(roles, t.markerRole) !== undefined);
 }
 
 /** The song catalog for a system (convenience over resolveTracker) - used by the recent list. */

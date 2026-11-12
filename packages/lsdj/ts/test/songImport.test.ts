@@ -113,6 +113,7 @@ function target(): SystemInfo {
     battery: true,
     missing: false,
     roles: [{ kind: "lsdj-assets", config: { overrides: [] } }],
+    placed: ["lsdj-assets"],
   };
 }
 
