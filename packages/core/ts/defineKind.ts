@@ -36,6 +36,9 @@ export interface KindCheckContext {
    *  placer places, or the routing node the shell builds - is not in the set: nothing could set a mode on it through a
    *  document's node type, so a kind naming one is refused. */
   readonly nodeTypes: readonly string[];
+  /** The protocol node type each role kind is placed as (the generated protocol module's ROLE_NODES), for a kind whose
+   *  data names a role beside the node it belongs to and must find the two agree. */
+  readonly roleNodes: Readonly<Record<string, string>>;
 }
 
 /** A contribution kind, as its declaring package states it (a package's `retroplug.kinds.<kind>.control` module). */

@@ -595,6 +595,15 @@ test("a stored sync role the system's graph does not place is not driven: no ove
     .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "midiMap", driving: true });
 });
 
+test("a controller aimed at a system that is not there drives nothing: no override", () => {
+  // The placer would ignore the override of a system it does not place; the menu must not say it is driving one.
+  const driven = { ...CONTROLLER, cartSync: "MidiMap", systemId: 9 };
+  expect(controllerSyncOverride([{ id: 7 }], driven)).toBe(null);
+  expect(controllerSyncOverride([{ id: 7, pipeline: [LSDJ()] }], driven)).toBe(null);
+  expect(controllerSyncOverride([{ id: 7, placed: ["lsdj-sync"] }], driven)).toBe(null);
+  expect(controllerSyncOverride([], driven)).toBe(null);
+});
+
 test("the override leaves the model's own pipeline as it was", () => {
   // The whole reason it happens in the document: turning the controller off restores whatever the user had.
   const systems = [gb(1, 0, [LSDJ()])];

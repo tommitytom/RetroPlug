@@ -37,7 +37,10 @@ function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext):
   if (typeof rule.node !== "string" || rule.node === "") {
     throw new Error(`${where} needs a "node": the cart sync node type its mode is set on`);
   }
-  if (rule.role !== undefined && (typeof rule.role !== "string" || rule.role === "")) {
+  if (rule.role === undefined) {
+    throw new Error(`${where} needs a "role": the kind of the role that node belongs to`);
+  }
+  if (typeof rule.role !== "string" || rule.role === "") {
     throw new Error(
       `${where}'s "role" must be the kind of the role that node belongs to, not ${JSON.stringify(rule.role)}`,
     );
@@ -51,6 +54,22 @@ function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext):
   // value would never reach it.
   if (!ctx.nodeTypes.includes(rule.node)) {
     throw new Error(`${where} names ${JSON.stringify(rule.node)}, which no package declares a protocol node for`);
+  }
+  // The menu asks a view's placed kinds for the role and the placer asks the pipeline for the node, so the two name
+  // one thing only when the role is placed as that node: a role of another node would make the menu and the placer
+  // answer differently, and a missing one would leave the menu unable to tell a placed cart from a stored one.
+  const roleNode = ctx.roleNodes[rule.role];
+  if (roleNode === undefined) {
+    throw new Error(
+      `${where}'s role ${JSON.stringify(rule.role)} has no protocol node, so it is not the role of ` +
+        JSON.stringify(rule.node),
+    );
+  }
+  if (roleNode !== rule.node) {
+    throw new Error(
+      `${where}'s role ${JSON.stringify(rule.role)} is placed as ${JSON.stringify(roleNode)}, not the ` +
+        `${JSON.stringify(rule.node)} its node names`,
+    );
   }
   // A divisor is read off the node's own config by name (the placer hands the session what it finds there), so it is a
   // setting's name or nothing: a number here would be read as no setting and leave the session walking every tick.

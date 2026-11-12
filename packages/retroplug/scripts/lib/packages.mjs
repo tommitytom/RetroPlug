@@ -780,6 +780,7 @@ function kindBlocks({ packages, kindDecls }) {
       `const KIND_DATA_${decl.kind} = KIND_DATA.${decl.kind};`,
       `${local}.check?.(KIND_ITEMS_${decl.kind}, KIND_DATA_${decl.kind}, {`,
       "  nodeTypes: Object.keys(PROTOCOL_NODES),",
+      "  roleNodes: ROLE_NODES,",
       "});",
       `${local}.accept(KIND_ITEMS_${decl.kind}, KIND_DATA_${decl.kind});`,
       "",
@@ -818,7 +819,7 @@ function renderPackages({ packages, outDir, names, product }) {
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   // The kind's data and the product's node types reach the declaring package's check: a mode naming a node type no
   // package declares would place nothing.
-  if (kindDecls.length) lines.push('import { KIND_DATA, PROTOCOL_NODES } from "./protocol";');
+  if (kindDecls.length) lines.push('import { KIND_DATA, PROTOCOL_NODES, ROLE_NODES } from "./protocol";');
   for (const { pkg: owner, decl } of kindDecls) {
     lines.push(
       `import ${kindLocal(owner.pkg.name, decl.kind)} from "${moduleSpecifier(outDir, owner.pkg, decl.control)}";`,

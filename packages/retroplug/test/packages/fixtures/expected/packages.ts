@@ -18,7 +18,7 @@ import { PLACERS } from "./placers";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
-import { KIND_DATA, PROTOCOL_NODES } from "./protocol";
+import { KIND_DATA, PROTOCOL_NODES, ROLE_NODES } from "./protocol";
 import kind_widgets_alpha from "@retroplug/alpha/kind";
 import kind_controllerApps_beta from "@retroplug/beta/kind";
 
@@ -238,6 +238,7 @@ const KIND_ITEMS_widgets: readonly KindItem_widgets[] = KIND_SOURCES_widgets.fla
 const KIND_DATA_widgets = KIND_DATA.widgets;
 kind_widgets_alpha.check?.(KIND_ITEMS_widgets, KIND_DATA_widgets, {
   nodeTypes: Object.keys(PROTOCOL_NODES),
+  roleNodes: ROLE_NODES,
 });
 kind_widgets_alpha.accept(KIND_ITEMS_widgets, KIND_DATA_widgets);
 
@@ -286,6 +287,7 @@ const KIND_ITEMS_controllerApps: readonly KindItem_controllerApps[] = KIND_SOURC
 const KIND_DATA_controllerApps = KIND_DATA.controllerApps;
 kind_controllerApps_beta.check?.(KIND_ITEMS_controllerApps, KIND_DATA_controllerApps, {
   nodeTypes: Object.keys(PROTOCOL_NODES),
+  roleNodes: ROLE_NODES,
 });
 kind_controllerApps_beta.accept(KIND_ITEMS_controllerApps, KIND_DATA_controllerApps);
 

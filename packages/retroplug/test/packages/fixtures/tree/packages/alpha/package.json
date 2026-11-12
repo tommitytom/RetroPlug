@@ -38,6 +38,7 @@
             "module": "ts/appRuntime.ts",
             "syncOverride": {
               "node": "rp.alpha.midi",
+              "role": "alpha-midi",
               "mode": "midiMap",
               "listening": "MidiMap",
               "off": "off",

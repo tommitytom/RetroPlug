@@ -35,6 +35,6 @@ export const KIND_DATA: Readonly<Record<string, KindData>> = {
   "widgets": {
   },
   "controllerApps": {
-    "alpha-app": {"syncOverride":{"node":"rp.alpha.midi","mode":"midiMap","listening":"MidiMap","off":"off","divisor":"tempoDivisor"}},
+    "alpha-app": {"syncOverride":{"node":"rp.alpha.midi","role":"alpha-midi","mode":"midiMap","listening":"MidiMap","off":"off","divisor":"tempoDivisor"}},
   },
 };

@@ -30,8 +30,8 @@ export interface ControllerSyncRule {
   /** The node type the mode is set on: a system's cart sync node. */
   readonly node: string;
   /** The kind of the role that node belongs to: what a view's placed kinds can be asked, where the document's pipeline
-   *  (which names the node) is not at hand. Absent: the menu cannot tell a placed cart from a stored one. */
-  readonly role?: string;
+   *  (which names the node) is not at hand. The kind check holds it to the role placed as `node`. */
+  readonly role: string;
   /** The mode that node is put in. */
   readonly mode: string;
   /** The cart's own SYNC value that counts as listening. When it is polled as anything else the cart is put in `off`
@@ -142,9 +142,10 @@ export interface OverrideSystem {
 /** Whether the system's graph places the node the rule sets a mode on. A stored sync role it leaves out (an mGB cart
  *  still carrying lsdj-sync after a ROM swap) has no such node, so nothing is driven and nothing is overridden. */
 function placesRuleNode(rule: ControllerSyncRule, system: OverrideSystem | undefined): boolean {
-  if (!system) return true;
+  // A controller aimed at no live system drives nothing.
+  if (!system) return false;
   if (system.pipeline) return system.pipeline.some((r) => r.node === rule.node);
-  if (system.placed && rule.role !== undefined) return system.placed.includes(rule.role);
+  if (system.placed) return system.placed.includes(rule.role);
   return true;
 }
 
