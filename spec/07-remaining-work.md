@@ -210,10 +210,10 @@ Every pack is built in. The authoring loop, the pack format and downloads, a pac
 `Engine` has `loadScriptPack` and no unload) are what downloadable packs need (the C1 design's section 8). With them
 come menus on extensions (a downloaded pack contributing menu rows, which packages in the tree do through `defineUi`)
 and third-party controller apps: `controllerApps` registers from the product's package list, so an app from outside the
-tree waits for this road. And a provider cannot be downloaded either, since it is reached only through the generated
-static table. And scoping which of a pack's facet methods a product mounts. Whether a downloaded pack's bytecode is
-stripped is the format's to say: a pack compiled from source keeps its debug information, about a quarter more memory
-than stripped code. ([C1 design](../docs/modular-graph-phase-c1-design.md) sections 8, 12 and 13,
+tree waits for this road. And a provider cannot be downloaded either, since it is reached only through the
+generated static table, and which of a pack's facet methods a product mounts is not yet scoped. Whether a downloaded
+pack's bytecode is stripped is the format's to say: a pack compiled from source keeps its debug information, about a
+quarter more memory than stripped code. ([C1 design](../docs/modular-graph-phase-c1-design.md) sections 8, 12 and 13,
 [E1](../docs/modular-graph-phase-e1-design.md) section 10, [E2](../docs/modular-graph-phase-e2-design.md) section 13.8,
 [F3](../docs/modular-graph-phase-f3-design.md) section 11, [F5a](../docs/modular-graph-phase-f5a-design.md) section 12.)
 
@@ -387,7 +387,7 @@ design](../docs/modular-graph-phase-c4-design.md) section 12.)
 
 ### P7: the rest of the capability split
 
-C5 built three capabilities (`rp.system.memory/1`, `.sram/1`, `.rom/1`). P7's remainder, the rest of the `SystemBase`
+C5 built three capabilities (`rp.system.memory/1`, `.sram/1`, `.rom/1`). P7's remainder is the rest of the `SystemBase`
 capability split: video, buttons and debug are still `SystemBase` virtuals (`framebuffer()`, `pressButton`,
 `getCpuRegisters` / `readCpuByte` / `debugTarget`), and `state/1` is still the system-id RPC (`readState(id)`), the tap
 is still `ChannelTap` rather than `rp.system.tap/1`, and there is one node file per package, not one node file per

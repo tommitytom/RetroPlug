@@ -816,7 +816,7 @@ section 10) and these files hold what it writes.
   `test:native` step sets it ([build.yml](../.github/workflows/build.yml)). `RP_RENDER_GOLDEN_UPDATE=1` re-records
   (`pnpm test:native render-baseline`) and is refused off the target, for a case that disagrees with itself and for a
   run that did not render every case (fixtures absent). The runner gives these files `RETROPLUG_DETERMINISTIC=1`.
-- - **Fixtures and CI.** The LSDj and risa cases need `RETROPLUG_RESOURCES_DIR` (`__RESOURCES_DIR__`), so CI runs the 5
+- **Fixtures and CI.** The LSDj and risa cases need `RETROPLUG_RESOURCES_DIR` (`__RESOURCES_DIR__`), so CI runs the 5
   fixture-free cases (2 of the 5 test cases in the file; the rest skip, counted in the skip baseline), and a change to
   the render path is accepted on a run with fixtures and `RP_FAIL_ON_SKIP=1`. CI's coverage of the continuous path in
   this suite is smsggdj and the SGB jingle only (none of a NES, a split render or a Game Boy's stems until renders can
@@ -884,7 +884,7 @@ nothing, and a real mGB capture clocked through a master-sync decoder, while the
 The C++ unit tier's fourteen binaries are the [`pnpm scripts`](#pnpm-scripts) table's `test:plugin` row, which says what
 each case holds; four carry most of the engine's work, and each has a line here:
 
-- - `retroplug-engine-graph-test` (`packages/native/test/engine-graph/*.test.cpp`) holds the engine's graph to the cores
+- `retroplug-engine-graph-test` (`packages/native/test/engine-graph/*.test.cpp`) holds the engine's graph to the cores
   it wraps, bit for bit; its tags include `[alloc]`, `[video]`, `[input-drops]`, `[devices]`, `[capability]`,
   `[n8-node]`, `[n8-adapters]` (`N8Adapters.test.cpp`), `[launchpad]`, `[stage]`, `[offline]` (`OfflineJobs.test.cpp`),
   `[engine-jobs]`, `[script]`, `[packs]`, the hidden `[bench]` and `[offline-bench]`, and a profile build's `[profile]`.
@@ -895,7 +895,7 @@ each case holds; four carry most of the engine's work, and each has a line here:
 - `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`) with
   its OWN `DistrhoPluginInfo.h` first on the include path, building no plugin format, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
-- - `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's (the E1 design's section 8,
+- `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's (the E1 design's section 8,
   E3's 8, E4's 7): `rp.core` and `rp.dsp`, and in the `[device-check]` cases `rp.n8.nes`, `rp.launchpad.surface-in` /
   `-out`, `rp.device.midi-in` and `rp.devtest`, compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an
   object library that also builds the box's link in device mode (`BoxCartLink`). `[script-pack]` has 51 cases (its
@@ -932,8 +932,7 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 | `device:box` | `n8_host` (PIO-USB and `RP_NATIVE_USB`) | [tools/build-box.sh](../tools/build-box.sh): builds the Pico box's firmware ([pico/n8-host](../pico/n8-host)), C++ on the N8 pack's Edio and, since E3, a graph host (`pico/host/`) whose bridge is `plan.json` (`rp.device.midi-in` to the `bliptoaster` policy, a TypeScript node on MicroQuickJS, to `rp.n8.nes`), exported by `retroplug-export-plan` (built first) into a 64 KiB static arena with `PICO_HEAP_SIZE=0` and `-Werror=stack-usage=1024`, in both USB variants in `build-box/{pio,native}/`, each linked under the same 87-symbol trap over the whole image (TinyUSB and Pico-PIO-USB included) and with its own `n8_host_trap_probe` that must FAIL to link naming `__wrap__Znwj` and `__wrap_malloc`, and prints each image's flash, data and bss. Needs the SDK's TinyUSB submodule (`PICO_SDK_PATH` when it carries one, else `/workspaces/pico-sdk`, said aloud) and a Pico-PIO-USB checkout at 5a37a66 (`PICO_PIO_USB_PATH`, default `/workspaces/Pico-PIO-USB`); no UF2 (`PICO_NO_PICOTOOL`). Built, never run: the rig's gate is `pico/n8-host/loop.sh`, `stress.sh` and `faults.sh`. In CI (linux-x64, beside `device:check`). |
 | `build:mesen-all` | `retroplug-cli` | [tools/build-mesen-all-consoles.sh](../tools/build-mesen-all-consoles.sh), two modes, both exiting non-zero on any failure: with no argument it configures `build-mesen-all/` with `MESEN_ENABLE_SNES` / `-PCE` / `-WS` all ON (Release), builds the `mesen` library and `retroplug-cli`, and asserts every console's symbol is in the binary (`SnesPpu`, `GbPpu`, `PceVdc`, `WsPpu`), so a guard that only compiles one way is caught; `--off` configures `build-mesen-all-off/` as Debug (-O0) with the three OFF, builds the `mesen` library alone, asserts the four symbols are absent, and refuses an archive that references a C++ symbol no member defines (a call into a compiled-out console that Release folded away). Not in CI; the ON side is what `deps/mesen`'s own defaults build for upstream. |
 | `sdl:pipewire` | `retroplug-sdl` | [tools/run-sdl-pipewire.sh](../tools/run-sdl-pipewire.sh): stands up a private PipeWire server (its own `XDG_RUNTIME_DIR`, three null sinks, a `default` metadata object, no session manager) and asserts WHICH output device the host opens in BOTH audio modes - an AUTO leg first (no backend flag, the section `auto`, the state a user's config is in: PortAudio's PipeWire host API on the session default), then PortAudio's session-default / explicit-pick / stale-warn / explicit-driver cases, a libpipewire-less run degrading (its `default` a private `ALSA_CONFIG_PATH` config's null PCM; here the host falls back to `null` with a status, and the leg holds exactly that: no card's playback node attempted), 8 channels against a stereo sink (PortAudio: 8 ports, pair 1 linked; SDL reports 8 at the API but its PipeWire node shows 2 ports (only pair 1 reaches the sink), which the backend warns about), and a live menu build over a running SDL stream. The configuration is a `config.json` `audio` block (additive, so unstamped); a leg pins its backend with `--audio-backend`. The SDL and wide legs start wireplumber on a private dbus with its ALSA, v4l2 and libcamera device monitors disabled (the script checks the copied config, and the daemon's log for a loaded one: those monitors are what would open the capture card on `/dev/video0` and mirror the MIDI interfaces), and a missing wireplumber is reported as SKIP (counted, not silent). The whole script runs under the tracked device guard ([tools/sdl-audio-guard](../tools/sdl-audio-guard)) with `NOSND_LOG`, which records every refused device path and every audio-library dlopen, so the run proves no real sound card, capture card or serial device was opened; the guard is built from its source into the run's own scratch directory and self-tests before anything starts. The kit runs it as the guarded `pipewire` leg. Not in CI (the runners have no PipeWire). |
-| `audiolink` (`pnpm check:audio-linkage`) | `retroplug-cli`, `retroplug-host`, the Node addon, `retroplug-ui-test`,
-`retroplug-render-host-test` | [tools/check-audio-linkage.sh](../tools/check-audio-linkage.sh): `readelf -d`/`otool -L` plus `nm -g` hold the products that name no audio backend to naming neither backend (no `rp_portaudio_backend` / `rp_sdl_backend` factory symbol and no `Pa_*`, no audio-library dependency - SDL2 alone would prove nothing, since the window needs it), and `retroplug-sdl`'s backends to staying static. A binary with an empty symbol table fails rather than passing vacuously. |
+| `audiolink` (`pnpm check:audio-linkage`) | `retroplug-cli`, `retroplug-host`, the Node addon, `retroplug-ui-test`, `retroplug-render-host-test` | [tools/check-audio-linkage.sh](../tools/check-audio-linkage.sh): `readelf -d`/`otool -L` plus `nm -g` hold the products that name no audio backend to naming neither backend (no `rp_portaudio_backend` / `rp_sdl_backend` factory symbol and no `Pa_*`, no audio-library dependency - SDL2 alone would prove nothing, since the window needs it), and `retroplug-sdl`'s backends to staying static. A binary with an empty symbol table fails rather than passing vacuously. |
 | `test:cli-ts` | `retroplug-cli` | Runs a directory of `.ts` tests through the CLI's own embedded stripper + harness — the consumer-kit path ([09-cli-debugging.md](09-cli-debugging.md)). In CI. |
 | `validate` | `-clap` + `-vst3` | `clap-validator` + `pluginval` against the built binaries via the shared [validate-plugins.sh](../tools/validate-plugins.sh). Fails if a validator is missing rather than skipping it. |
 | `reaper:mgb-smoke-author` | `-vst3` | Authors + bakes the `.rplg` fixture for the Reaper render. |
@@ -980,7 +979,7 @@ The generic framework (DPF, lv_binding_js → LVGL/txiki, rpcpp, msgpack-c, dpf-
 nested `deps/dpf.js` submodule (documented in its own README), consumed through this seam:
 
 1. **Submodule** — `.gitmodules` registers `deps/dpf.js` (clone with `--recursive`).
-2. 2. **pnpm link** - `"dpf.js": "link:./deps/dpf.js"` in the root [package.json](../package.json) `devDependencies`;
+2. **pnpm link** - `"dpf.js": "link:./deps/dpf.js"` in the root [package.json](../package.json) `devDependencies`;
    `pnpm install` wires it before the first configure. lv_binding_js has its own pnpm workspace
    (react/react-reconciler/lvgljs-ui) that needs its own `pnpm install` in `deps/dpf.js/deps/lv_binding_js` after a
    fresh checkout, or the UI bundle cannot resolve `react`.
@@ -1122,7 +1121,7 @@ run by hand: no CI or `test:plugin` leg builds that binary there.
 
 ## Build gotchas
 
-- - **`deps/sameboy` is patched at configure, twice.** `cmake/sameboy.cmake` applies two tracked patches idempotently
+- **`deps/sameboy` is patched at configure, twice.** `cmake/sameboy.cmake` applies two tracked patches idempotently
   (`git apply --reverse --check` no-ops one already present): `cmake/patches/sameboy-per-channel-audio.patch` (the
   per-channel audio tap, `Core/apu.{c,h}`) and then `cmake/patches/sameboy-process-statics.patch` (the power-on random
   seed and its enable flag as relaxed atomics in `Core/random.c`, the camera's noise seed in `Core/camera.c`, and the
@@ -1142,7 +1141,7 @@ run by hand: no CI or `test:plugin` leg builds that binary there.
   is off is gone from its switch, unreachable because a dropped console cannot be constructed; a switch that had a
   default keeps it, a void one without becomes a no-op for that CPU, and a value one falls to the code after it
   (`nullptr`, `false`, its own `return` or its throw).
-- - **Mesen LTO is opt-in (`-DRETROPLUG_MESEN_LTO=ON`).** It buys about 10% on the NES core (Cortex-A53: xRT 0.83 ->
+- **Mesen LTO is opt-in (`-DRETROPLUG_MESEN_LTO=ON`).** It buys about 10% on the NES core (Cortex-A53: xRT 0.83 ->
   0.92), but it makes every mesen object LTO bitcode, so each binary linking the static library re-runs codegen over its
   288 objects (426 with `MESEN_ENABLE_SNES` / `-PCE` / `-WS` all on) at every link: fourteen on Linux with the opt-in
   Node addon (thirteen without it; the plugin's three formats, the JACK standalone, the host, the CLI, the Node addon,
@@ -1153,7 +1152,7 @@ run by hand: no CI or `test:plugin` leg builds that binary there.
   prints whether or not it did work); the `-Wodr` and `emu2413.cpp` warnings that link-time codegen raised at every link
   are silenced by a `-w` that `deps/mesen/CMakeLists.txt` puts on the consumers' link line under LTO (GNU/Clang), since
   the per-TU `-w` cannot reach it.
-- - **The Windows build is `/W4 /WX` on RetroPlug's OWN targets.**
+- **The Windows build is `/W4 /WX` on RetroPlug's OWN targets.**
   [packages/native/cmake/warnings.cmake](../packages/native/cmake/warnings.cmake), included at the end of
   [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt), puts it on the `_rp_werror_targets` list; the
   vendored subtrees keep their own levels, and `RETROPLUG_WERROR=OFF` opts out of `/WX`. Windows is the one platform

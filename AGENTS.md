@@ -50,16 +50,19 @@ topic, and a line here links to it. Keep it under 200 lines; a new rule cuts or 
   allowlists; [spec/13](spec/13-subsystems.md#retroplug-sdl--the-sdl2-standalone)).
 - **Never commit derived artifacts**: the embedded bundle C arrays (`build/native/*bundle_data.c`).
 - **Config migrations**: every config root is versioned raw JSON and keeps only its latest schema. A breaking change
-  bumps the root's version constant and adds one raw, idempotent step in `migrate.ts`; an additive one needs no step.
+  bumps the root's version constant and adds one raw, idempotent step to that root's migrations map, beside the constant
+  (`PROJECT_MIGRATIONS` in `projectConfig.ts`; `migrate.ts` holds the shared machinery); an additive one needs no step.
   A newer stamp is refused and latched read-only
   ([spec/05-data-persistence.md](spec/05-data-persistence.md#persistence-policy-the-precise-statement)).
 - **A `device: true` node keeps to the portable settings types and wraps its desktop hooks in `#ifndef RP_DEVICE`**
   ([spec/02](spec/02-native-host.md#packages-generated-registration-and-device-mode)).
 - **A package imports only its declared dependencies and exports no wildcard, and the shell (`packages/retroplug/src`,
   `cli`, `ui`) imports only the contract modules `SHELL_IMPORTS` / `UI_IMPORTS` list and names no platform, ROM
-  extension, core, node type or cart id** (`pnpm check:boundaries`, `test/source-literals`); adding a package follows
-  spec/06's "Adding a package" checklist ([The packages](spec/06-build-test.md#the-packages)).
-- **A harness that can reach an audio, video or serial device runs under the self-tested device guard**
+  extension, core, node type or cart id** (`pnpm check:boundaries`, `test/source-literals`; `cmake/packages.cmake`
+  holds a package's native targets to the same rule); adding a package follows spec/06's "Adding a package" checklist
+  ([The packages](spec/06-build-test.md#the-packages)).
+- **A harness that can reach an audio, video or serial device runs under the self-tested device guard** (Linux only;
+  elsewhere the run is unguarded)
   ([the device guard](spec/14-hosts-harnesses.md#the-device-guard)), and a MIDI harness sets `RP_MIDI_PORT_ALLOW` to
   its fakes' WHOLE port names and fails a listing pass, before anything is probed, if any other port appears
   ([`sdl:controller`](spec/06-build-test.md#pnpm-scripts)).
@@ -81,7 +84,7 @@ topic, and a line here links to it. Keep it under 200 lines; a new rule cuts or 
 - **The test-speed traps**: a slow suite is nearly always one slow file, not the pool; `renderAudio` takes
   milliseconds, not frames; and every system a test builds is removed once its state is read
   (`s.project.systems.removeSystem(id)` for a store-built one)
-  ([Hosts → test tiers](spec/06-build-test.md#hosts--test-tiers)).
+  ([Skips and the test-speed traps](spec/06-build-test.md#skips-are-reported-and-ratcheted)).
 - **A parity failure is a real change to the audio, never noise**; an intentional one re-records the groups it moves
   in the same commit ([the parity baseline](spec/06-build-test.md#the-parity-baseline-test-nativeparity)).
 - **The parity, kit and render goldens compare exact bytes on `linux-x64-gnu13` only** (a re-record is refused
