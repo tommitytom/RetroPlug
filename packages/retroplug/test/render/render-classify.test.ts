@@ -256,3 +256,42 @@ test("the --split refusals are rebuilt from the descriptors, so today's consoles
     "render: --split pins is NES-only (got other)",
   );
 });
+
+test("a render whose snapshot is gone refuses before it boots, when its spec says its inputs must exist", () => {
+  // A UI render's snapshot is the render's whole starting state, and it is a file the sweep judges by age alone
+  // (renderSnapshotSweep.ts): a wall clock that jumped, or an instance held past the bound, can leave a live job's
+  // snapshot gone. Booting from one that is missing would render the ROM's blank start under the user's name, so a
+  // spec that says its inputs must exist (RenderOpts.inputsMustExist, which startSystemRender sets) refuses, naming the
+  // file, before it builds a system. A spec that does not say so is the CLI's, whose `--sav <path>` may legitimately
+  // name a file it is about to make, and nothing in that road changed.
+  const backend = new MockBackend("/config");
+  backend.seed("/roms/cart.gb", gbRom());
+  let builds = 0;
+  const ctx = ctxOf(backend, silentAudio());
+  const tracking = {
+    ...ctx,
+    project: {
+      systems: {
+        addSystem: () => (builds++, 1),
+        view: () => [{ id: 1 }],
+        adopt: () => {},
+        loadState: () => 1,
+      },
+    } as unknown as RenderContext["project"],
+  };
+  const quiet = { log: () => {}, warn: () => {} };
+  const snapshot = "/config/.render-src-k1.sav";
+  expect(() =>
+    runRenderJob(tracking, opts({ rom: "/roms/cart.gb", sav: snapshot, inputsMustExist: true }), quiet),
+  ).toThrow(`render: ${snapshot} is gone: the snapshot this render was submitted with no longer exists`);
+  expect(builds).toBe(0); // refused before anything booted
+  // A savestate a UI render wrote is the same: it is one of the files the sweep may take.
+  const state = "/config/.render-src-k1.ss0";
+  expect(() =>
+    runRenderJob(tracking, opts({ rom: "/roms/cart.gb", state, inputsMustExist: true }), quiet),
+  ).toThrow(`render: ${state} is gone: the snapshot this render was submitted with no longer exists`);
+  expect(builds).toBe(0);
+  // Without the flag, a path that names no file is the CLI's business, and the render goes ahead.
+  runRenderJob(tracking, opts({ rom: "/roms/cart.gb", sav: snapshot, durationMs: 50 }), quiet);
+  expect(builds).toBe(1);
+});

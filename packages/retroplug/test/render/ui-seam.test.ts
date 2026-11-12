@@ -11,7 +11,8 @@ import { RENDER_MAX_DURATION_MAX_SEC, RENDER_MAX_DURATION_MIN_SEC } from "../../
 import { savFrom, type SavInput } from "@retroplug/lsdj";
 import type { SystemView } from "../../src/systemsStore";
 import { RenderJobs } from "../../src/renderJobs";
-import { jobHandle, type EngineRunResult } from "../../src/offline";
+import { jobHandle, OFFLINE_MAX_JOBS, OfflineJobs, type EngineRunResult, type OfflinePort } from "../../src/offline";
+import { liveJobCount } from "../../src/capability";
 
 /** A minimal SystemView carrying only the fields startSystemRender reads. */
 function sysView(over: Partial<SystemView>): SystemView {
@@ -26,6 +27,7 @@ interface Captured {
     rom: string; out: string; split: string; sav?: string; state?: string; sampleRate?: number; maxDurationMs?: number;
     roles?: { kind: string; config: Record<string, unknown> }[];
     gainDb?: number;
+    inputsMustExist?: boolean;
   };
 }
 
@@ -69,6 +71,10 @@ test("startSystemRender: battery cart → snapshots live SRAM to a temp file and
   expect(cap.spec.maxDurationMs).toBe(90000);
   expect(cap.spec.sav).toBe("/config/.render-src-job-key.sav"); // the temp snapshot, under configDir, named by the job
   expect(cap.spec.state).toBe(undefined);
+  // The spec's own inputs are these snapshots, so it says they must be there when the render boots
+  // (RenderOpts.inputsMustExist): a snapshot the startup sweep took from under a queued live job then refuses the
+  // render instead of booting the ROM blank (render-classify.test.ts).
+  expect(cap.spec.inputsMustExist).toBe(true);
 });
 
 test("startSystemRender: channels split threads the split mode through", () => {
@@ -142,13 +148,13 @@ function queuedRenders(): {
 
 const later = (): Promise<void> => new Promise((r) => void Promise.resolve().then(() => r()));
 
-test("startSystemRender: two queued renders of one system boot their own snapshots, handed to the pool", async () => {
+test("startSystemRender: two queued renders of one system boot their own snapshots, gone once settled", async () => {
   // A render reads its snapshot when a worker boots it, which can be minutes after the submission when renders queue
   // behind the engine's budget. A render, an edit and a second render must leave the first booting the state it was
   // started on: each snapshot is a file of its own, named by the job's key, and each job's own list of them rides its
-  // submission (EngineRunOptions.discardFiles), which the engine's pool deletes however the job ends. The UI deletes
-  // nothing on settle, so the files are still there when one settles (a worker removes them before it queues the
-  // completion, which the C++ [engine-jobs] cases hold).
+  // submission (EngineRunOptions.discardFiles), which the engine's pool deletes however the job ends. This side deletes
+  // them too, as the job settles: the second road, which is what a job that never reached the pool has (the C++
+  // [engine-jobs] cases hold the pool's order, removal before the completion is queued).
   const backend = new MockBackend("/config");
   const q = queuedRenders();
   const sys = sysView({ id: 1, battery: true });
@@ -165,12 +171,11 @@ test("startSystemRender: two queued renders of one system boot their own snapsho
 
   q.settle(0);
   await later();
-  expect(backend.fileExists(first.sav!)).toBe(true); // still the pool's, not this UI's, to delete
-  expect(backend.fileExists(second.sav!)).toBe(true); // and still queued
+  expect(backend.fileExists(first.sav!)).toBe(false); // deleted by this side as the job settled
+  expect(backend.fileExists(second.sav!)).toBe(true); // still queued, so still its job's
   q.settle(1);
   await later();
-  // Neither was deleted by this side: deleting is the pool's, and it is what the list it was handed is for.
-  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([first.sav!, second.sav!].sort());
+  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]);
 });
 
 test("startSystemRender: a cart whose song is outside the battery snapshots its state too, of its own", async () => {
@@ -194,14 +199,14 @@ test("startSystemRender: a cart whose song is outside the battery snapshots its 
   q.settle(0);
   q.settle(1);
   await later();
-  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([first.sav!, first.state!, second.sav!, second.state!].sort());
+  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]);
 });
 
 test("startSystemRender: a snapshot that cannot be written refuses the render, and the one it did write goes",
   async () => {
     // The savestate's write fails after the battery's succeeded: the spec function throws, so nothing is submitted and
-    // no list reaches the pool, which makes the file it did write the UI's to delete (the only road `onSettled` deletes
-    // on). The render is still listed as an error rather than booting the on-disk .sav.
+    // no list reaches the pool, and the file it did write is this side's to delete (which `onSettled` does, as it does
+    // for every road). The render is still listed as an error rather than booting the on-disk .sav.
     class HalfDisk extends MockBackend {
       override writeFileAtomic(path: string, bytes: Uint8Array): boolean {
         return path.endsWith(".ss0") ? false : super.writeFileAtomic(path, bytes);
@@ -213,7 +218,12 @@ test("startSystemRender: a snapshot that cannot be written refuses the render, a
     const backend = new HalfDisk("/config");
     backend.setSram(4, new Uint8Array([1]));
     const q = queuedRenders();
-    const sys = sysView({ id: 4, romPath: "/roms/smsggdj.sms", battery: true, roles: [{ kind: "sms-sync", config: {} }] });
+    const sys = sysView({
+      id: 4,
+      romPath: "/roms/smsggdj.sms",
+      battery: true,
+      roles: [{ kind: "sms-sync", config: {} }],
+    });
     const id = startSystemRender(backend, q.renders, sys, { split: "mix" }, "/out/a.wav");
     expect(q.specs.length).toBe(0); // nothing submitted
     expect(q.discards.length).toBe(0); // and so nothing handed over
@@ -222,6 +232,93 @@ test("startSystemRender: a snapshot that cannot be written refuses the render, a
     expect(job!.message.includes("could not snapshot")).toBeTruthy();
     expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]); // the sav it wrote went with it
   });
+
+/** A port whose side of the queue completes nothing by itself: every submission is accepted, `finish()` ends them all
+ *  at the next drain, and a job past the queue's bound never reaches it at all. */
+function heldPort(): { port: OfflinePort; submitted: string[]; finish(): void } {
+  const done = new Set<number>();
+  const ids: number[] = [];
+  const submitted: string[] = [];
+  let next = 1;
+  const accept = (what: string): { id: number; error: null } => {
+    submitted.push(what);
+    ids.push(next);
+    return { id: next++, error: null };
+  };
+  const port: OfflinePort = {
+    submitOfflineJob: (request) => accept(request.document ?? ""),
+    submitEngineJob: (request) => accept(request.spec),
+    cancelOfflineJob: (id) => (done.add(id), true),
+    drainOfflineJobs: () => ({
+      completions: [],
+      inFlight: ids.filter((id) => !done.has(id)).length,
+      engineCompletions: ids
+        .filter((id) => done.has(id))
+        .map((id) => ({ id, status: "done", message: "", outputs: [], renderedMs: 0, lines: [], droppedLines: 0 })),
+      engineProgress: [],
+    }),
+  };
+  return { port, submitted, finish: () => void ids.forEach((id) => done.add(id)) };
+}
+
+test("startSystemRender: a render the queue holds past the engine's bound deletes its snapshots when it settles",
+  async () => {
+    // Past OFFLINE_MAX_JOBS the queue keeps a submission in its own list, so it never reaches native and no JobFiles
+    // ever holds its files. Cancelling it there settles the job here, and the settle is what deletes them: without this
+    // road a snapshot nothing of the pool's knows about waits a day for the startup sweep.
+    const backend = new MockBackend("/config");
+    const held = heldPort();
+    const jobs = new OfflineJobs(held.port);
+    const renders = new RenderJobs({
+      engineRun: (kind, spec, options) => jobs.engine(kind, spec, options),
+    });
+    backend.setSram(1, new Uint8Array([1, 2, 3]));
+    const fill = Array.from({ length: OFFLINE_MAX_JOBS }, (_, k) =>
+      jobs.engine("render", { rom: "/roms/x.gb", out: `/out/f${k}.wav` }),
+    );
+    expect(jobs.pendingCount()).toBe(OFFLINE_MAX_JOBS);
+    const id = startSystemRender(backend, renders, sysView({ id: 1, battery: true }), { split: "mix" }, "/out/a.wav");
+    expect(id !== null).toBe(true);
+    const snaps = backend.paths().filter((p) => p.startsWith("/config/"));
+    expect(snaps.length).toBe(1); // written, and held: nothing of the pool's has the list
+    expect(held.submitted.length).toBe(OFFLINE_MAX_JOBS); // the render itself never reached the port
+    expect(renders.cancel(id!)).toBe(true);
+    await later();
+    expect(renders.list().find((j) => j.id === id)?.state).toBe("cancelled");
+    expect(backend.fileExists(snaps[0])).toBe(false);
+    renders.dismiss(id!);
+    // The jobs it waited behind end at the next drain, so the shared queue goes quiet again.
+    held.finish();
+    jobs.pump();
+    await Promise.all(fill);
+    expect(jobs.pendingCount()).toBe(0);
+    expect(liveJobCount()).toBe(0);
+  });
+
+test("startSystemRender: a submission the RPC throws on deletes the snapshots it wrote", async () => {
+  // The request never reached native, so no JobFiles ever held these files either: the job fails here, and the settle
+  // is again what deletes them. A link that broke is not a reason to leave a file in a directory every instance shares.
+  const backend = new MockBackend("/config");
+  const jobs = new OfflineJobs({
+    submitOfflineJob: () => ({ id: null, error: "this case submits no graph job" }),
+    submitEngineJob: () => {
+      throw new Error("the RPC link went");
+    },
+    cancelOfflineJob: () => false,
+    drainOfflineJobs: () => ({ completions: [], inFlight: 0 }),
+  });
+  const renders = new RenderJobs({ engineRun: (kind, spec, options) => jobs.engine(kind, spec, options) });
+  backend.setSram(1, new Uint8Array([4, 5]));
+  const id = startSystemRender(backend, renders, sysView({ id: 1, battery: true }), { split: "mix" }, "/out/a.wav");
+  expect(backend.paths().filter((p) => p.startsWith("/config/")).length).toBe(1); // written before the submission
+  await later();
+  const job = renders.list().find((j) => j.id === id);
+  expect(job?.state).toBe("error");
+  expect(job!.message.includes("the RPC link went")).toBeTruthy();
+  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]);
+  renders.dismiss(id!);
+  expect(liveJobCount()).toBe(0);
+});
 
 test("renderBaseName: song name → SAV basename → ROM stem, in priority order", () => {
   const backend = new MockBackend("/config");

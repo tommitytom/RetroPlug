@@ -41,6 +41,9 @@ function normalize(spec: RenderJobSpec): RenderOpts {
     roles: spec.roles,
     gainDb: spec.gainDb,
     pullMs: spec.pullMs, // a test knob (RenderOpts.pullMs)
+    // A UI render's spec says its snapshots must be there when the render boots, which can be after this job waited
+    // behind the engine's budget; a CLI render's `--sav` is its own to name a file that does not exist yet.
+    inputsMustExist: spec.inputsMustExist,
     listSongs: false, // the worker only renders — --list-songs is a CLI-only query
   };
 }

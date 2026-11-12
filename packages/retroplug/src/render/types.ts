@@ -47,6 +47,11 @@ export interface RenderOpts {
   // ends at moves with it. On an exact-blocks engine (the in-process render tests) a render with a sync node moves
   // with it.
   pullMs?: number;
+  /** Set by a caller whose `sav` / `state` are files IT wrote as a submission's own (a UI render's snapshots), so a
+   *  path that names no file refuses the render instead of booting without it. The UI's startSystemRender sets it; the
+   *  CLI does not, because its `--sav <path>` may legitimately name a battery it is about to create, and a render of a
+   *  ROM with no battery is an ordinary render. */
+  inputsMustExist?: boolean;
 }
 
 /** The driver calls a render makes: the subset of `AudioDriver` a `RenderContext` needs. Naming it is what keeps a

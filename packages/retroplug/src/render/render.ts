@@ -677,6 +677,17 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const mono = (descriptor?.render?.mixLanes ?? "stereo") === "left";
 
   validateRenderOpts(o, platform, render, readable);
+  // A submission's own files were written for it before it was submitted (a UI render's snapshot of the live system),
+  // and they are deleted when its job ends, or swept by age; a path that names none of them is a snapshot that went,
+  // and booting from a missing one renders the ROM's blank start as if it were the state the user asked for. A caller
+  // that writes its own inputs says so (RenderOpts.inputsMustExist); the CLI does not, since `--sav <path>` may name a
+  // file that is not there yet.
+  if (o.inputsMustExist) {
+    for (const path of [o.sav, o.state]) {
+      if (path === undefined || ctx.backend.fileExists(path)) continue;
+      throw new Error(`render: ${path} is gone: the snapshot this render was submitted with no longer exists`);
+    }
+  }
   const pullMs = o.pullMs ?? PLAY_HOLD_MS;
   if (!(Number.isFinite(pullMs) && pullMs > 0))
     throw new Error(`render: pullMs must be a positive number of ms (got ${o.pullMs})`);

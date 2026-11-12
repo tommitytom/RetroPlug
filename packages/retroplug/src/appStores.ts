@@ -79,8 +79,14 @@ export function composeAppStores({
   const bindings = new BindingsStore(backend, userConfig, () => notify("bindings"));
   bindings.ensureDefaults();
   // What a crash left of a render's snapshots goes with the defaults this startup writes: a live one is its job's and
-  // the engine's pool deletes it, so only what no job can own any more (a day old) is swept, and only this once.
-  sweepRenderSnapshots(backend, backend.configDir());
+  // the engine's pool deletes it, so only what no job can own any more (a day old) is swept, and only this once. A
+  // sweep that throws (a directory this filesystem refuses to list, a path that went) leaves the leftovers for the next
+  // startup rather than failing the store graph every screen stands on.
+  try {
+    sweepRenderSnapshots(backend, backend.configDir());
+  } catch (e) {
+    console.warn(`render snapshot sweep: ${(e as Error)?.message ?? String(e)}`);
+  }
 
   const project = new ProjectStore(backend, recent, registry, contributions);
   const renders = new RenderJobs(backend, () => project.systems.view().map((s) => s.id));

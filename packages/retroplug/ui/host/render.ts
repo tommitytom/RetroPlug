@@ -50,6 +50,9 @@ export function startSystemRender(
   if (req.sampleRate !== undefined) spec.sampleRate = req.sampleRate;
   if (req.maxDurationMs !== undefined) spec.maxDurationMs = req.maxDurationMs;
   if (req.onExists !== undefined) spec.onExists = req.onExists;
+  // This submission's inputs are files this module writes below, so a path among them that names no file is a snapshot
+  // something took, and the render refuses rather than booting blank (RenderOpts.inputsMustExist).
+  spec.inputsMustExist = true;
 
   // How this instance is CONFIGURED, so the offline core comes up the way you are hearing it. The render
   // boots a fresh system from the ROM on disk; without these it would take each role's schema defaults and
@@ -65,15 +68,15 @@ export function startSystemRender(
   // worker is free: renders queue behind the engine's budget, so that can be minutes on, after further edits and
   // renders. So each render's files are its own, named by the job's key (unique across instances, which share the
   // config directory), and they go with the job: the submission lists them as its discardFiles, which the engine's
-  // pool deletes however the job ends, an instance that ends or a crash before the job settled included (the startup
-  // sweep is the backstop for what a crash leaves). A snapshot that cannot be written refuses the render, listed as an
-  // error, rather than leave the field out and boot the sibling .sav on disk instead of what you hear.
+  // pool deletes however the job ends, and this module deletes them again when the job settles, whichever road it took
+  // (a render the queue held past its bound and the UI cancelled, a submission the RPC threw on, a job the engine
+  // never heard of: none of those reach the pool, and a removal of a file the pool already took is a no-op). A snapshot
+  // that cannot be written refuses the render, listed as an error, rather than leave the field out and boot the sibling
+  // .sav on disk instead of what you hear. The render also says its snapshots must exist when it boots
+  // (RenderOpts.inputsMustExist), so one the startup sweep took from under a live job refuses rather than rendering a
+  // blank boot under the user's name.
   const dir = backend.configDir();
   const snapshots: string[] = [];
-  // Whether the spec reached the submission. The files are the engine's pool's from the moment they ride it (the job's
-  // discardFiles, which the pool deletes however the job ends), so the one road left to this module is a spec that
-  // threw: a snapshot whose write failed leaves the ones before it written, and nothing was submitted to delete them.
-  let built = false;
   const prepare = (key: string): object => {
     const snapshot = (ext: string, bytes: Uint8Array): string => {
       const path = `${dir}/${RENDER_SNAPSHOT_PREFIX}${key}.${ext}`;
@@ -98,15 +101,18 @@ export function startSystemRender(
       const state = backend.readState(sys.id);
       if (state) spec.state = snapshot("ss0", state);
     }
-    built = true;
     return spec;
   };
   return renders.start(
     sys.id,
     prepare,
-    () => {
-      if (!built) snapshots.forEach((p) => backend.deleteFile(p));
-    },
+    // The files go with the job however it settles, and here is the second road beside the pool's: a job the queue
+    // never submitted (held past the engine's bound and cancelled, or a drain that threw and failed it) and a
+    // submission the RPC threw on never reach a worker or a JobFiles, so this settles them. `renders.start` runs it
+    // after a spec function that threw too, which is the snapshot whose write failed. What still leaks is an instance
+    // that ends while its job is held here (nothing of this runtime is left to hear it settle) and a crash; the startup
+    // sweep takes those.
+    () => snapshots.forEach((p) => backend.deleteFile(p)),
     () => snapshots,
   );
 }

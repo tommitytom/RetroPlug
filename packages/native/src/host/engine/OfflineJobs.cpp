@@ -27,18 +27,49 @@ namespace rp::host {
 
 JobFiles::~JobFiles() { discard(); }
 
+JobFiles::JobFiles(JobFiles&& other) noexcept : paths_(std::move(other.paths_)) { other.paths_.clear(); }
+
+JobFiles& JobFiles::operator=(JobFiles&& other) noexcept {
+    if (this == &other) return *this;
+    discard();
+    paths_ = std::move(other.paths_);
+    other.paths_.clear();
+    return *this;
+}
+
+namespace {
+
+// Whether `path`'s last component starts with the render snapshot prefix. Written over the string rather than a
+// filesystem::path, so a name this process cannot even represent is a name it does not delete.
+bool isRenderSnapshot(const std::string& path) {
+    const std::size_t slash = path.find_last_of("/\\");
+    const std::string_view name =
+        slash == std::string::npos ? std::string_view(path) : std::string_view(path).substr(slash + 1);
+    return name.starts_with(kRenderSnapshotPrefix);
+}
+
+}  // namespace
+
 void JobFiles::take(std::vector<std::string> paths) {
     discard();
-    paths_ = std::move(paths);
+    for (std::string& path : paths) {
+        if (isRenderSnapshot(path)) paths_.push_back(std::move(path));
+    }
 }
 
 void JobFiles::discard() {
     // The error_code overload: a file that is already gone (the job's own render may have written and finished it, and
-    // two instances could name one path) or that cannot be removed leaves nothing to report to anyone, and removal on
-    // a worker thread may not throw into the pool.
+    // two instances could name one path) or that cannot be removed leaves nothing to report to anyone. Each remove is
+    // guarded too: forming a filesystem path from a string can throw (an allocation failure), and a throw out of this
+    // destructor, which is noexcept, would terminate a host mid-teardown. Such a file is left for the next startup's
+    // sweep.
     for (const std::string& path : paths_) {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
+        try {
+            std::error_code ec;
+            std::filesystem::remove(path, ec);
+        } catch (...) {
+            // Nothing to do about a name this process could not form: the sweep's road takes it later.
+        }
     }
     paths_.clear();
 }
@@ -150,14 +181,18 @@ OfflineJobs::OfflineJobs(std::span<const rp_package* const> extra, unsigned size
 }
 
 OfflineJobs::~OfflineJobs() {
-    std::vector<std::thread> workers;
+    std::vector<std::thread>         workers;
+    std::deque<std::unique_ptr<Job>> dropped;  // the queue's jobs, destroyed outside the lock so their files go there
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stopping_ = true;
-        queue_.clear();  // unrun: nothing of theirs was built
+        dropped.swap(queue_);
         for (Job* job : running_) job->cancelled.store(true, std::memory_order_release);
         workers.swap(workers_);
     }
+    // Unrun: nothing of theirs was built, but each may hold the files its submission owns, and unlinking them here is
+    // not something a worker still finishing its job waits behind.
+    dropped.clear();
     work_.notify_all();
     finished_.notify_all();
     for (std::thread& t : workers) t.join();
@@ -208,15 +243,17 @@ OfflineSubmit OfflineJobs::submit(OfflineRequest request) {
 }
 
 OfflineSubmit OfflineJobs::submitEngine(EngineJobRequest request) {
+    // The submission's files are this call's from here on, deleted whichever way it answers: the request's list is
+    // empty after this, and a refusal below leaves nothing of a job the pool never built, its snapshots included.
+    JobFiles files;
+    files.take(std::move(request.discardFiles));
     // The kinds are the embedded bundles a job can run; D3 embeds one.
     if (request.kind != "render")
         return OfflineSubmit{0, "unknown engine job kind \"" + request.kind + "\": the one kind is \"render\""};
     auto job = std::make_unique<Job>();
     job->kind = Kind::Engine;
     job->engine = std::move(request);
-    // The files are the job's from here on, and the request's list is empty after this, so one destructor removes them.
-    // A kind refused above never had the job, so it leaves the list alone.
-    job->discard.take(std::move(job->engine.discardFiles));
+    job->discard = std::move(files);
     return enqueue(std::move(job));
 }
 
@@ -273,7 +310,7 @@ std::vector<OfflineCompletion> OfflineJobs::drain(std::chrono::milliseconds wait
     const auto ready = [&] { return !completions_.empty() || (engine && !engineCompletions_.empty()); };
     if (!ready() && wait.count() > 0) {
         finished_.wait_for(lock, std::min(wait, kMaxDrainWait), [&] {
-            return stopping_ || ready() || (queue_.empty() && running_.empty());
+            return stopping_ || ready() || (queue_.empty() && running_.empty() && cancelling_ == 0);
         });
     }
     std::vector<OfflineCompletion> out;
@@ -295,34 +332,52 @@ std::vector<OfflineCompletion> OfflineJobs::drain(std::chrono::milliseconds wait
             engine->progress.push_back(std::move(p));
         }
     }
-    if (inFlight) *inFlight = queue_.size() + running_.size();
+    // A job a cancel has taken out of the queue is still outstanding until its completion is published: it counts
+    // here, so a drain in that window does not tell the caller the engine has lost the job.
+    if (inFlight) *inFlight = queue_.size() + running_.size() + cancelling_;
     return out;
 }
 
 bool OfflineJobs::cancel(std::uint32_t id) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (auto it = queue_.begin(); it != queue_.end(); ++it) {
-        if ((*it)->id != id) continue;
-        std::unique_ptr<Job> job = std::move(*it);
-        queue_.erase(it);
-        if (job->kind == Kind::Engine) {
-            engineCompletions_.push_back(engineCompletion(*job, "cancelled"));
+    std::unique_ptr<Job> dropped;  // a queued job, removed from the queue: its files go outside the pool's lock
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto it = queue_.begin(); it != queue_.end(); ++it) {
+            if ((*it)->id != id) continue;
+            dropped = std::move(*it);
+            queue_.erase(it);
+            ++cancelling_;
+            break;
+        }
+        if (!dropped) {
+            for (Job* job : running_) {
+                if (job->id != id) continue;
+                job->cancelled.store(true, std::memory_order_release);
+                return true;
+            }
+            return false;
+        }
+    }
+    // The job's files go before its completion is published, and outside the pool's lock: a drain that reports the
+    // cancel must not be able to name a snapshot that is still on disk, and unlinking is not work the jobs a worker is
+    // running should wait behind. Nothing else may have claimed the job: it left the queue above, and a queued job has
+    // no worker.
+    dropped->discard.discard();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (dropped->kind == Kind::Engine) {
+            engineCompletions_.push_back(engineCompletion(*dropped, "cancelled"));
         } else {
             OfflineCompletion c;
             c.id = id;
             c.error = "cancelled";
             completions_.push_back(std::move(c));
         }
+        --cancelling_;
         finished_.notify_all();
-        // A queued job holds no worker, so cancelling it frees none for another job to take.
-        return true;
     }
-    for (Job* job : running_) {
-        if (job->id != id) continue;
-        job->cancelled.store(true, std::memory_order_release);
-        return true;
-    }
-    return false;
+    // A queued job holds no worker, so cancelling it frees none for another job to take.
+    return true;
 }
 
 std::size_t OfflineJobs::outstanding() const {

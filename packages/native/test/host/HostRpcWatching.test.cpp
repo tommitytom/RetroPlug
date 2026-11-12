@@ -113,7 +113,10 @@ TEST_CASE("fileAgeMs measures a file's age on the file clock, and has none where
     HostRpcService svc;
     const auto     age = svc.fileAgeMs(file.string());
     REQUIRE(age.has_value());
-    CHECK(*age >= 0.0);          // a file written now is not from the future
+    // A file written now is not from the future, to within the tolerance a filesystem's own clock needs: a 9p, virtiofs
+    // or NFS mount writes the file's time from the server's clock, which can be a moment behind this process's, and that
+    // reads as a small negative age. The sweep keeps such a file (it is nowhere near a day old).
+    CHECK(*age > -2000.0);
     CHECK(*age < 60000.0);       // and is younger than the minute this case could take
     // A directory ages like a file (the sweep skips them by the trailing '/' listDir marks them with, not here).
     CHECK(svc.fileAgeMs(dir.string()).has_value());

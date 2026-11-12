@@ -174,6 +174,12 @@ struct EngineJobOutcome {
 // timeline.
 using EngineJobBody = std::function<EngineJobOutcome(const EngineJobRequest&, const EngineJobHooks&)>;
 
+// The name a UI render's snapshot carries: the prefix of the filename, which startSystemRender builds each snapshot
+// path with. Its twin is RENDER_SNAPSHOT_PREFIX in packages/retroplug/src/renderSnapshotSweep.ts, which the startup
+// sweep keys on too, and the two must move together. The pool deletes a submission's files only when they carry it (see
+// JobFiles::take), so a TS bug can never name a user's own file: defence in depth beside the list being the UI's.
+inline constexpr std::string_view kRenderSnapshotPrefix = ".render-src-";
+
 // The files an engine job's submission owns (EngineJobRequest::discardFiles), deleted by this object's destructor: a
 // job that never ran leaves nothing behind, whichever road drops it (a refusal at enqueue, a cancel while it waits in
 // the queue, the pool's own teardown clearing it). A job that ran empties its list itself, on its worker and before its
@@ -185,8 +191,14 @@ public:
     ~JobFiles();
     JobFiles(const JobFiles&) = delete;
     JobFiles& operator=(const JobFiles&) = delete;
+    // A move carries the paths and leaves the source empty, so the one destructor that runs removes them once. Moving
+    // onto a holder that has paths discards those first, which is the same rule take() keeps.
+    JobFiles(JobFiles&& other) noexcept;
+    JobFiles& operator=(JobFiles&& other) noexcept;
 
-    // Take `paths` as this job's files, deleting whatever it held before, so two lists never name one file.
+    // Take `paths` as this job's files, deleting whatever it held before, so two lists never name one file. Only what a
+    // render snapshot may be (kRenderSnapshotPrefix on the filename) is kept: any other path is dropped here, and
+    // dropped paths are never deleted, whichever road the job takes.
     void take(std::vector<std::string> paths);
     // Delete the files held now, leaving none. Idempotent.
     void discard();
@@ -306,6 +318,10 @@ private:
     std::deque<OfflineCompletion>     completions_;
     std::deque<EngineJobCompletion>   engineCompletions_;
     std::size_t                       outstanding_ = 0;
+    // Queued jobs a cancel has taken out and is removing the files of, before it publishes their completions. They are
+    // still outstanding in that window (a drain that saw them neither queued nor complete would call them lost), so
+    // both the count a drain reports and its wait include them.
+    std::size_t                       cancelling_ = 0;
     std::size_t                       idle_ = 0;  // workers not running a job: parked, or started and not yet parked
     unsigned                          runningGraph_ = 0;
     unsigned                          runningEngine_ = 0;

@@ -101,6 +101,9 @@ test("fileAgeMs: over the real backend, a file just written is a moment old and 
   expect(be.writeFileAtomic(path, new Uint8Array([1, 2]))).toBe(true);
   const age = be.fileAgeMs(path);
   expect(age !== null).toBe(true);
-  expect(age! >= 0 && age! < 60000).toBe(true);
+  // Not from the future, to within the tolerance a filesystem's own clock needs (a 9p, virtiofs or NFS mount times the
+  // file by its server's clock, which can be a moment behind this process's); and younger than the minute this case
+  // could take. The sweep keeps an age that small either way.
+  expect(age! > -2000 && age! < 60000).toBe(true);
   expect(be.fileAgeMs(__CONFIG_DIR__ + "/absent.bin")).toBe(null);
 });
