@@ -41,14 +41,17 @@ each (a phase name means its "What it leaves" list in section 5).
 - [ ] The shape question the view reopen key's width leaves open (F4c)
 
 **Known bugs**
-- [x] "Is this LSDj" decided by a role's presence, not its placement (found building B3b; kb2, 63cabe651: the readers ask
-      `placedRole`, a cart view `isPlaced`, and the stored role stays)
+- [x] "Is this LSDj" decided by a role's presence, not its placement (found building B3b; kb2, 63cabe651: the readers
+      ask `placedRole`, a cart view `isPlaced`, and the stored role stays)
+- [ ] A tracker marker with no protocol node is still decided by presence (kb2's gap: `risa` and `bliptoaster` are
+      placed whenever stored, so a project storing both on a NES, a risa project whose ROM is now BlipToaster, carries
+      both markers and `resolveTracker` takes the first in product order)
 - [x] MI.MAP's predicted playhead runs ahead at a tempo divisor of 2 or more (F3; kb2, 098dd2c11: the session walks the
       divisor its cart is set to)
 - [x] `__rp_syncLatencyMs` follows the stored sync mode, not the one MI.MAP forces (C2; unreachable (F5a), closed
       with kb1: no plugin binary's list carries a controller app to force one)
-- [x] MI.OUT decodes about half the NoteOns a song plays (LSDj's serial-out node; kb2, 1e3c96b73: the capture fed the Game
-      Boy 1s where an Arduinoboy holds its serial input at 0)
+- [x] MI.OUT decodes about half the NoteOns a song plays (LSDj's serial-out node; kb2, 1e3c96b73: the capture fed the
+      Game Boy 1s where an Arduinoboy holds its serial input at 0)
 - [ ] The DPF JACK standalone's control handoff runs on JACK's thread at a buffer-size or rate change (C5)
 - [x] A Game Boy's press queue can drop a flood's last release, leaving a button held (C4; kb1, 431e20007)
 - [x] A Game Boy button byte of 8 or more writes past SameBoy's key arrays in a release build (kb1, 431e20007)

@@ -141,7 +141,7 @@ The product list is the **dependency order and the registration order both** (a 
 the shell last), and only a ROM provider's place in it is
 behaviour: the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's
 kind, a kit format's id and a tracker integration's marker role are looked up rather than sequenced (one package's
-roles interleave another's without consequence, and the markers are exclusive), so for those a duplicate is the
+roles interleave another's without consequence; two stored markers take the first), so for those a duplicate is the
 hazard: the generated module refuses a role kind, a kit format id or a marker role declared twice, each with its own
 message. The generator itself refuses a list that puts a package before a dependency, a dependency the product does
 not carry whose contribution would be lost, a dependency on the shell, a duplicate product entry, a node type or span
