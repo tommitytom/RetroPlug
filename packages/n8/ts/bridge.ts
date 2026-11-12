@@ -26,9 +26,9 @@ export function printInputs(host: CliHost): void {
 // The shared bridge loop: poll MIDI, transform each message to output bytes, forward to the cart FIFO with an
 // optional constant-delay lookahead (arrival order == release order). `transform` is the ONLY difference
 // between the raw bridge and the risa-sync bridge. Long-running: sets keepAlive() and returns; the native
-// pump drives the setInterval poll until Ctrl-C.
+// pump drives the setInterval poll until Ctrl-C. `now` is the clock the lookahead queue and the failure watch read.
 export function runBridge(host: CliHost, args: string[], clientName: string,
-  transform: (bytes: Uint8Array, out: number[]) => void): void {
+  transform: (bytes: Uint8Array, out: number[]) => void, now: () => number = Date.now): void {
   const lookaheadMs = Math.max(0, Number(flag(args, "--lookahead-ms") ?? 0) | 0);
 
   const client = createN8Client(host.devices.rpc);
@@ -51,16 +51,21 @@ export function runBridge(host: CliHost, args: string[], clientName: string,
   const FATAL_AFTER_MS = 3000;
   const watch = failureWatch(FATAL_AFTER_MS, 5);
   let failCount = 0;
+  // Set by the fatal exit: host.process.exit records the code and returns, so the rest of the tick's messages and the
+  // polls after it must not write to the session just closed, nor report the same loss again.
+  let stopped = false;
   const forward = (bytes: number[]): void => {
+    if (stopped) return;
     try {
       n8.edio.fifoWR(Uint8Array.from(bytes));
     } catch (e) {
       failCount++;
-      const fatal = watch.failed(Date.now());
+      const fatal = watch.failed(now());
       if (failCount === 1 || failCount % 100 === 0)
         console.error(`N8 bridge: a write failed (${failCount} so far): ${e instanceof Error ? e.message : String(e)}`);
       if (fatal) {
         console.error(`N8 bridge: no write has succeeded for ${FATAL_AFTER_MS} ms, so the N8 is gone; exiting`);
+        stopped = true;
         n8.close();
         host.process.exit(1);
       }
@@ -72,15 +77,16 @@ export function runBridge(host: CliHost, args: string[], clientName: string,
   };
 
   setInterval(() => {
-    const now = Date.now();
+    if (stopped) return;
+    const at = now();
     for (const bytes of midi.poll()) {
       const out: number[] = [];
       transform(bytes, out);
       if (out.length === 0) continue; // non-transport MIDI (sync) yields nothing
-      if (lookaheadMs > 0) queue.push({ due: now + lookaheadMs, bytes: out });
+      if (lookaheadMs > 0) queue.push({ due: at + lookaheadMs, bytes: out });
       else forward(out);
     }
-    while (queue.length > 0 && queue[0].due <= now) forward(queue.shift()!.bytes);
+    while (queue.length > 0 && queue[0].due <= at) forward(queue.shift()!.bytes);
   }, 1);
 
   setInterval(
