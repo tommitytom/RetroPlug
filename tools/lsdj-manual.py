@@ -240,7 +240,7 @@ def write_latest_markdown(latest: ManualSource,
                           blocks: list[tuple[int, str]],
                           images: dict[int, list[str]]) -> None:
     """Regenerate lsdj_manual.md from the highest-version manual. The fallback
-    Read+grep path docs/lsdj.md documents only needs the canonical version."""
+    Read+grep path (docs/lsdj.md) needs only the canonical version."""
     lines = [
         f"# LSDj {latest.version_str} — extracted manual\n",
         "",

@@ -6,7 +6,7 @@ audio thread. Policy over plain data, the filesystem and the RPC seam - not DSP.
 This package is the **shell**: the stores, the backend, the graph and the controller that tie the
 consoles and carts together, and the UI and CLI over them. A console, a cart, a device and the TS
 libraries are their own packages under `packages/`, and the app's registrations are generated from
-their manifests (the map is below; the rule is in [AGENTS.md](../../AGENTS.md), the mechanism in
+their manifests (the map is below; the shell's boundary rule is in [AGENTS.md](../../AGENTS.md), the mechanism in
 [spec/06-build-test.md](../../spec/06-build-test.md#the-packages)).
 
 The architecture is in [spec/03-ts-layer.md](../../spec/03-ts-layer.md); this README is the map of

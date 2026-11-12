@@ -12,8 +12,9 @@ topic, and a line here links to it. Keep it under 200 lines; a new rule cuts or 
   [The packages](spec/06-build-test.md#the-packages).
 - [docs/lsdj.md](docs/lsdj.md): the LSDj domain reference, and how to test LSDj sync, DAW timing and audio quality
   headlessly.
-- What is left to do is [spec/07-remaining-work.md](spec/07-remaining-work.md); the hosts and harnesses run by hand
-  (Reaper, Renoise, the SDL legs, `retroplug-cli test`) are [spec/14](spec/14-hosts-harnesses.md).
+- What is left to do is [spec/07-remaining-work.md](spec/07-remaining-work.md); the hosts and harnesses (Reaper,
+  Renoise, the SDL legs, `retroplug-cli test`; `sdl:smoke` and `test:cli-ts` run in CI, the rest by hand) are
+  [spec/14](spec/14-hosts-harnesses.md).
 
 ## Workflow rules
 
@@ -26,58 +27,73 @@ topic, and a line here links to it. Keep it under 200 lines; a new rule cuts or 
   ([the dpf.js seam](spec/06-build-test.md#the-dpfjs-seam)). Don't bump a submodule pointer (in either repo) without
   checking: they are managed deliberately.
 - **`deps/sameboy` is dirty after a configure, and that is EXPECTED**: the configure applies RetroPlug's tracked
-  patches. Never reset / stash / commit it, and never bump its pointer to absorb it
-  ([Build gotchas](spec/06-build-test.md#build-gotchas)).
+  patches. Never reset / stash / commit it, and never bump its pointer to absorb it; a bump that breaks a patch fails
+  the configure, and the fix is regenerating the patch ([Build gotchas](spec/06-build-test.md#build-gotchas)).
 - **Every edit to the vendored `deps/mesen` carries a `RetroPlug:` marker comment**, and a Mesen merge runs both modes
   of `tools/build-mesen-all-consoles.sh` (`--off` catches a dropped guard)
   ([Build gotchas](spec/06-build-test.md#build-gotchas)).
-- **A mquickjs pin bump that fails the configure's hash guard means regenerating the wrapper, not loosening the guard**
+- **`deps/mquickjs` is upstream's, unpatched: a fix is a wrapper in `rp_mqjs_engine.c`**, and a pin bump that fails
+  the configure's hash guard means regenerating the wrapper, not loosening the guard
   ([The device build](spec/06-build-test.md#the-device-build)).
+- **A UI change to the standalone needs the bare `cmake --build build -j$(nproc)`**: `--target retroplug` does not
+  rebuild it ([Build gotchas](spec/06-build-test.md#build-gotchas)).
 - **Never `rm -rf build` to fix CMake**: investigate first. Build with `build.sh` / `build.bat`; a single target with
   `cmake --build build --target <t> -j$(nproc)` (always `-j`: the default is single-threaded)
   ([One configure](spec/06-build-test.md#one-configure)).
 - **Windows is `/W4 /WX` on our own targets**: fix our code; suppress by NUMBER, and only what we do not own. CI's
-  compiler (`windows-2025-vs2026`) matches the dev box's, so a CI-only warning is fixed, not explained away
+  runner is `windows-2025-vs2026` to match the dev box's MSVC 14.51; keep it there (plain `windows-2025` ships 14.44,
+  which disagrees about which warnings exist), so a CI-only warning is fixed, not explained away
   ([Build gotchas](spec/06-build-test.md#build-gotchas)).
 - **Mesen LTO (`RETROPLUG_MESEN_LTO`) stays off in the dev loop and on in releases**
   ([Build gotchas](spec/06-build-test.md#build-gotchas)).
 - **`retroplug-sdl` is not in releases until the standalone is release-ready** (`release.yml`'s packaging steps are
-  allowlists; [spec/13](spec/13-subsystems.md)).
+  allowlists; [spec/13](spec/13-subsystems.md#retroplug-sdl--the-sdl2-standalone)).
 - **Never commit derived artifacts**: the embedded bundle C arrays (`build/native/*bundle_data.c`).
-- **Config migrations**: every config root is versioned raw JSON; a newer stamp is refused and latched read-only, an
-  older one migrated up, and only the latest schema is kept
+- **Config migrations**: every config root is versioned raw JSON and keeps only its latest schema. A breaking change
+  bumps the root's version constant and adds one raw, idempotent step in `migrate.ts`; an additive one needs no step.
+  A newer stamp is refused and latched read-only
   ([spec/05-data-persistence.md](spec/05-data-persistence.md#persistence-policy-the-precise-statement)).
 - **A `device: true` node keeps to the portable settings types and wraps its desktop hooks in `#ifndef RP_DEVICE`**
   ([spec/02](spec/02-native-host.md#packages-generated-registration-and-device-mode)).
-- **A package imports only its declared dependencies and exports no wildcard**; adding one follows spec/06's
-  "Adding a package" checklist ([The packages](spec/06-build-test.md#the-packages)).
-- **A harness that can reach an audio, video or serial device runs under the self-tested device guard**, and a MIDI
-  harness lists only the fakes (`RP_MIDI_PORT_ALLOW`) ([the device guard](spec/14-hosts-harnesses.md#the-device-guard)).
+- **A package imports only its declared dependencies and exports no wildcard, and the shell (`packages/retroplug/src`,
+  `cli`, `ui`) imports only the contract modules `SHELL_IMPORTS` / `UI_IMPORTS` list and names no platform, ROM
+  extension, core, node type or cart id** (`pnpm check:boundaries`, `test/source-literals`); adding a package follows
+  spec/06's "Adding a package" checklist ([The packages](spec/06-build-test.md#the-packages)).
+- **A harness that can reach an audio, video or serial device runs under the self-tested device guard**
+  ([the device guard](spec/14-hosts-harnesses.md#the-device-guard)), and a MIDI harness sets `RP_MIDI_PORT_ALLOW` to
+  its fakes' WHOLE port names and fails a listing pass, before anything is probed, if any other port appears
+  ([`sdl:controller`](spec/06-build-test.md#pnpm-scripts)).
+- **Hardware tests boot BlipToaster (`bliptoaster.nes`), never `n8-midi.nes`**; the rig scripts take it with `--rom`
+  ([the N8 bridge](spec/13-subsystems.md#the-everdrive-n8-bridge)).
 
 ## Verification
 
 - **Verify headlessly before claiming done: a "tests pass" claim needs an actual exit-zero.** Which command proves
   which change is
   [spec/06-build-test.md](spec/06-build-test.md#the-headless-verification-loop--which-command-proves-which-change); the
-  hosts and harnesses run by hand are [spec/14](spec/14-hosts-harnesses.md).
+  host and harness checks are [spec/14](spec/14-hosts-harnesses.md).
 - **On Windows, run the suites through `test.bat`**, not bare `pnpm test*`
   ([Hosts → test tiers](spec/06-build-test.md#hosts--test-tiers)).
 - **A case that cannot run skips with `skip(reason)`, and the skip is counted**: it THROWS, so no `catch` may stand
   between it and the harness, and `packages/retroplug/scripts/skip-baseline.json` pins which files may skip
-  ([Skips](spec/06-build-test.md#skips-are-reported-and-ratcheted)).
+  ([Skips](spec/06-build-test.md#skips-are-reported-and-ratcheted)). Fixtures are reached through `__RESOURCES_DIR__`
+  and its siblings, never a path literal (same section).
 - **The test-speed traps**: a slow suite is nearly always one slow file, not the pool; `renderAudio` takes
   milliseconds, not frames; and every system a test builds is removed once its state is read
   (`s.project.systems.removeSystem(id)` for a store-built one)
   ([Hosts → test tiers](spec/06-build-test.md#hosts--test-tiers)).
 - **A parity failure is a real change to the audio, never noise**; an intentional one re-records the groups it moves
   in the same commit ([the parity baseline](spec/06-build-test.md#the-parity-baseline-test-nativeparity)).
-- **The kit and render goldens compare bytes on `linux-x64-gnu13` only**; elsewhere a case must agree with itself
+- **The parity, kit and render goldens compare exact bytes on `linux-x64-gnu13` only** (a re-record is refused
+  elsewhere; elsewhere a case must agree with itself), **and their fixture-gated cases count only on a run with the
+  fixtures present and `RP_FAIL_ON_SKIP=1`**: CI runs the fixture-free ones alone
   ([kit](spec/06-build-test.md#the-kit-baselines-kit-baseline-kit-compile),
   [render](spec/06-build-test.md#the-render-baseline-render-baseline-render-chunks-render-cli)).
 
 ## Gotchas
 
 - **lv_binding_js ignores `insertChildBefore` (it always appends)**: wrap a swappable child in a stable per-id
-  `StableSlot`, or Re-key the parent on the visible set ([Framework gotchas](spec/03-ts-layer.md#framework-gotchas)).
+  `StableSlot`, or re-key the parent on the visible set ([Framework gotchas](spec/03-ts-layer.md#framework-gotchas)).
 - **The UI face is monospaced by symbol substitution**: switch faces by regenerating the font files, never in
-  `lv_conf.h` ([Framework gotchas](spec/03-ts-layer.md#framework-gotchas)).
+  `lv_conf.h`; and no layout may depend on the face being monospaced
+  ([Framework gotchas](spec/03-ts-layer.md#framework-gotchas)).

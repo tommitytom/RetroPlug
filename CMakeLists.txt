@@ -72,9 +72,9 @@ endif()
 # dearly, so it's opt-in and the release workflow turns it on (see deps/mesen/CMakeLists.txt).
 #
 # Mesen's objects (288 with the consoles RetroPlug does not run compiled out, 426 with MESEN_ENABLE_SNES /
-# -PCE / -WS all on) become LTO bitcode, and EVERY binary that links the static lib re-runs codegen over
-# all of them: fourteen on Linux (the clap, vst3 and vst2 plugins, the JACK standalone, retroplug-host,
-# -cli, -sdl, the Node addon, rp-golden-dump and five test binaries), the AU a fifteenth on macOS. Changing
+# -PCE / -WS all on) become LTO bitcode, and EVERY binary that links the static lib (fourteen on Linux: the clap,
+# vst3 and vst2 plugins, the JACK standalone, retroplug-host, -cli, -sdl, the Node addon, rp-golden-dump and five test
+# binaries; the AU a fifteenth on macOS) re-runs codegen over all of them. Changing
 # a single .cpp measured 1m05s wall / 26m51s CPU with it on, and 2s wall / ~9s CPU with it off (32
 # threads), before the compile-out, at nine links over 426 objects: the compile is one file either way,
 # the rest is full LTO links. Off by default so `./build.sh` stays quick; release.yml passes

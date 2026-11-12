@@ -3,7 +3,8 @@
 // This is what lets a consumer repo (BlipToaster) use the CLI as its whole test harness with nothing
 // installed: no Node, no npm, no esbuild, no node_modules. The kit is the binary and the tests. The SDK
 // is no file: the binary registers it as the module `retroplug-cli`, which a test imports by that bare
-// specifier, and only its `.d.ts` is written beside the tests, for an editor and tsc (../sdkAssets).
+// specifier, and only its `.d.ts` is written, into the `sdk/` directory beside the test directory and only
+// when a test imports the SDK, for an editor and tsc (../sdkAssets).
 //
 // Two things make it work, both pre-existing:
 //   * The CLI's txiki runtime resolves `import` off disk at runtime, so tests need no bundling; they
