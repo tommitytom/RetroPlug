@@ -138,3 +138,27 @@ The result is expected at 250 to 350 lines.
    No device kit is run.
 6. **Records.** This design gains an as-built section and an execution section, as batches 1 and 2 did. The ledger
    stays in `.superpowers/`; the commits are the durable record.
+
+## 5. After the ledger
+
+The ledger (1,695 rows: AGENTS.md 46 keep, 281 merge, 476 dup, 11 stale, 90 history; spec/07 23 merge, 129 dup,
+272 open, 132 done, 19 stale, 216 history) changed four things, decided by the user on 2026-11-12:
+
+- **Accepted limits leave spec/07.** The rows the ledger filed as Deferred's "accepted limits" and Engine's "accepted
+  allocation residuals" describe behaviour we accept, not work: each becomes a sentence in the spec doc of the
+  subsystem it limits (spec/02, 04, 13 and the like), and spec/07's checklist keeps about 85 lines.
+- **Wrong text is fixed where the move touches it.** The destination docs' own errors (spec/06's test-binary row
+  repeating three stale counts, its `PROVIDERS` sentence and `definePackage` list, the ts skip baseline line, spec/05's
+  "in migrate.ts") are corrected in the task that merges into them, and three stale code comments
+  (`cmake/test-binary.cmake`'s binary count, the root `CMakeLists.txt`'s LTO counts, `cli/sessions/test.ts`'s header)
+  in the references task.
+- **The map follows the ledger.** The package list is spec/00's "Package layout" (which gains its six missing
+  packages), device packs and provider mechanics merge into spec/02's packages section rather than spec/13, the params
+  checks into spec/12, and spec/06's pnpm-scripts table, which already holds most of AGENTS.md's test inventory, stays
+  as it is (AGENTS.md's copy is a duplicate) but for its errors.
+- **References that would dangle are repointed or cut.** About 30 code comments and spec lines name a spec/07 entry
+  that is done or moving (the file watcher, the render-snapshot sweep, the press queue, the MI.MAP-forced capture
+  among them); each points at the new entry or, for a done one, says what is true now.
+
+The new spec/07 gains one Before-merge line the ledger found owed: a green CI run of the tip (run 43131974297 built
+ea2517dc9; nothing after it has run on a runner).
