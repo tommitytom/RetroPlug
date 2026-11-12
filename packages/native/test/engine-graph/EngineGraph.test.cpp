@@ -357,6 +357,31 @@ TEST_CASE("setGraph over the RPC layer places a system a document's node builds"
     CHECK(e.ramSize(5) > 0);
 }
 
+TEST_CASE("an RPC button above 255 drives no button", "[engine-graph][b2]") {
+    // The RPC takes a uint32 and a press queue's button is a byte, so narrowing 260 made it 4: a value the wire cannot
+    // hold drove A. A value the byte cannot hold is now 0xFF, which no console's table names (SameBoy bounds a byte at
+    // its button count, and each Mesen console's remap answers -1 for one past its own), so a malformed press drives
+    // nothing on any of them. 255 is a byte the pad does not have, and drives nothing either.
+    Engine           e(kRate);
+    rp::host::test::Roms roms;
+    QueuedInvoker    inv(e);
+    EngineRpcService rpc(e, inv);
+    auto systems = std::vector<DocSystem>{{5, kGb}};
+    withRoms(e, systems, roms);
+    RpcSetGraphRequest graph{rp::host::test::stereoDocument(systems), {5}, std::nullopt};
+    REQUIRE(rpc.setGraph(graph).ok);
+    auto* gb = dynamic_cast<SameBoySystem*>(e.findSystem(5));
+    REQUIRE(gb != nullptr);
+    CHECK(rpc.pressButton(5, 4, true));     // A, the button a narrowed 260 would have named
+    CHECK(gb->pendingPresses() == 1);
+    CHECK(rpc.pressButton(5, 260, false));  // not A's release: 260 is not a byte at all
+    CHECK(rpc.pressButton(5, 255, false));  // nor is 255 one of the pad's
+    CHECK(gb->pendingPresses() == 1);       // neither took a slot
+    bool down = false;
+    REQUIRE(gb->peekPendingPress(4, down));
+    CHECK(down);  // A is still held
+}
+
 TEST_CASE("a render into buffers the planned graph does not write is refused", "[engine-graph][b2]") {
     // TS sets the shape a render call needs before it makes the call; the render calls only check it.
     Engine           e(kRate);

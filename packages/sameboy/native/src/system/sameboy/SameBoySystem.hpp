@@ -262,12 +262,18 @@ public:
         bool          down;
     };
     rp::FixedQueue<PendingButton> pendingButtons_{rp::kButtonsInput * 16};
-    static_assert(rp::kButtonsInput * 16 >= rp::kPressInput, "a Game Boy's press queue must hold both doors");
+    // Both doors' bound has to fit ABOVE the reserve, or a burst that fills what the doors may hand over would reach the
+    // slots the releases keep.
+    static_assert(rp::kButtonsInput * 16 - static_cast<std::uint32_t>(GameboyButton::Count) >= rp::kPressInput,
+                  "a Game Boy's press queue must hold both doors above its reserve for releases");
     // The state each button's last queued edge leaves it in, one bit a button, all up when the core is built (a
     // rebuilt core is a new object). pressButton reads it to tell a release that has a press behind it, which needs one
     // free slot, from every other edge, which needs more than GameboyButton::Count of them. The queue never holds
     // fewer free slots than the buttons it leaves held: a press is taken only with more than 8 free, so at least 8 are
-    // left and at most 8 buttons can be held, and a held release frees a button for each slot it takes.
+    // left and at most 8 buttons can be held, and a held release frees a button for each slot it takes. A reactivation
+    // keeps the queue and the bits while gb_ starts with every key up, and a stale down bit is harmless: it only ever
+    // favours a release, which takes one free slot and drives no key it did not already have up. That is why nothing
+    // clears it here.
     std::uint8_t                  queuedDown_      = 0;
     std::uint64_t                 pressesAccepted_ = 0;
     // The edges refused for want of that reserve, counted beside the queue's own drops in inputDropped().

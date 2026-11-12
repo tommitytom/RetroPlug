@@ -612,10 +612,10 @@ void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     // debouncer would simply miss). Mirrors the old SameBoyUtil::processButtons
     // logic in the legacy build's SameBoyUtil.
     //
-    // What is scheduled is a release of a button still held, or the release of one already up (or a press): the first
-    // needs one free slot, so a held button always comes back up, and the second needs more than the console's eight
-    // buttons' worth, so the reserve above them stays for releases (queuedDown_'s comment in the header). An edge the
-    // reserve refuses is counted, so inputDropped() still says how many this core did not take.
+    // An edge is either the release of a button still held, which needs one free slot so a held button always comes
+    // back up, or anything else (a press, or a release of one already up), which needs more than the console's eight:
+    // the reserve above them stays for releases (queuedDown_'s comment in the header). An edge the reserve refuses is
+    // counted, so inputDropped() still says how many this core did not take.
     const std::uint8_t bit = static_cast<std::uint8_t>(1u << button);
     const bool heldRelease = !down && (queuedDown_ & bit) != 0;
     const std::size_t need = heldRelease ? 1 : static_cast<std::size_t>(GameboyButton::Count) + 1;
@@ -627,11 +627,8 @@ void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     if (!pendingButtons_.empty())
         offset = pendingButtons_.back().offset + buttonSpacingSamples_;
     // The room above is the push's (it compacts a consumed prefix rather than refusing), so this cannot be what
-    // refuses an edge; a queue that did refuse one would still be counted as not having taken it.
-    if (!pendingButtons_.push(PendingButton{offset, static_cast<GameboyButton>(button), down})) {
-        ++pressesRefused_;
-        return;
-    }
+    // refuses an edge; a queue that did refuse one would still be counted, by the queue's own dropped().
+    if (!pendingButtons_.push(PendingButton{offset, static_cast<GameboyButton>(button), down})) return;
     if (down) queuedDown_ |= bit;
     else queuedDown_ = static_cast<std::uint8_t>(queuedDown_ & ~bit);
     ++pressesAccepted_;

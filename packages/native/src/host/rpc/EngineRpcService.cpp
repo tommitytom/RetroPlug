@@ -373,7 +373,12 @@ bool EngineRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool 
     // A joypad transition → the focused core, pushed through the invoker (flushed inline when quiescent,
     // applied on the audio thread while it runs) — so it reaches a live core in both. The store owns
     // existence; accept optimistically (the queued apply can't report back).
-    invoker_.pressButton(id, static_cast<std::uint8_t>(button), down);
+    //
+    // The button crosses as a byte, and narrowing a value above 255 would wrap it onto a real button (260 became 4, A).
+    // Such a value is 0xFF instead, a byte no console's table names (SameBoy bounds it, each Mesen console's remap
+    // answers -1), so a malformed press drives nothing rather than something.
+    const std::uint8_t byte = button > 0xFFu ? 0xFFu : static_cast<std::uint8_t>(button);
+    invoker_.pressButton(id, byte, down);
     return true;
 }
 

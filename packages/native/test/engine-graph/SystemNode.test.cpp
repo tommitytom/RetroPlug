@@ -3903,12 +3903,13 @@ TEST_CASE("a Game Boy's press queue keeps room for the releases of what it holds
     for (std::uint32_t i = 0; i < kCapacity + 16; ++i) core->pressButton(static_cast<std::uint8_t>(i % 8), true);
     CHECK(core->inputAccepted() == kCapacity - kReserve);
     CHECK(core->inputDropped() == 16 + kReserve);
-    for (std::uint8_t button = 0; button < kReserve; ++button) core->pressButton(button, false);
+    for (std::uint32_t button = 0; button < kReserve; ++button)
+        core->pressButton(static_cast<std::uint8_t>(button), false);
     CHECK(core->inputAccepted() == kCapacity);
     CHECK(core->inputDropped() == 16 + kReserve);
-    for (std::uint8_t button = 0; button < kReserve; ++button) {
+    for (std::uint32_t button = 0; button < kReserve; ++button) {
         bool down = true;
-        REQUIRE(core->peekPendingPress(button, down));
+        REQUIRE(core->peekPendingPress(static_cast<std::uint8_t>(button), down));
         CHECK_FALSE(down);   // the flood's press, and behind it the release that stands
     }
     core->pressButton(0, true);   // the queue's bound reached exactly: the reserve is empty and this needs it
