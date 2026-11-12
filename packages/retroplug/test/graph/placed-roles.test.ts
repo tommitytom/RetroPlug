@@ -9,7 +9,7 @@ import { MidiRouting } from "@retroplug/core/midiRouting";
 import { isPlaced, type RoleInstance, type RoleType } from "@retroplug/core/systemRoles";
 import type { RoleRow } from "@retroplug/ui/contribution";
 import { MGB_PARAMETERS } from "@retroplug/mgb/parameters";
-import { placedKinds, placedRole, protocolNodeOf } from "../../src/graph/protocolNodes";
+import { placedKinds, protocolNodeOf } from "../../src/graph/protocolNodes";
 import { resolveTracker } from "../../src/trackerRegistry";
 import { projectParameterMap } from "../../src/parameterMap";
 import { buildAppRegistry } from "../../src/appHost";
@@ -28,21 +28,6 @@ const ASSETS: RoleInstance = { kind: "lsdj-assets", config: { overrides: [] } };
 const MGB_CART: readonly RoleInstance[] = [SAMEBOY, MGB, LSDJ_SYNC];
 /** The reverse: an LSDj cart that still stores mgb. */
 const LSDJ_CART: readonly RoleInstance[] = [SAMEBOY, LSDJ_SYNC, MGB, ASSETS];
-
-test("placedRole answers the role the pipeline places, and a role with no protocol node when it is present", () => {
-  expect(placedRole(MGB_CART, "mgb")).toBe(MGB);
-  expect(placedRole(MGB_CART, "lsdj-sync")).toBe(undefined);
-  expect(placedRole(LSDJ_CART, "lsdj-sync")).toBe(LSDJ_SYNC);
-  expect(placedRole(LSDJ_CART, "mgb")).toBe(undefined);
-  // The core's config role and an asset override have no node, so the pipeline never leaves them out.
-  expect(placedRole(LSDJ_CART, "sameboy")).toBe(SAMEBOY);
-  expect(placedRole(LSDJ_CART, "lsdj-assets")).toBe(ASSETS);
-  // Absent is absent, node or none.
-  expect(placedRole(LSDJ_CART, "risa-sync")).toBe(undefined);
-  expect(placedRole(LSDJ_CART, "risa")).toBe(undefined);
-  // A kind named twice is placed once, as its first.
-  expect(placedRole([MGB, { kind: "mgb", config: { a: 1 } }], "mgb")).toBe(MGB);
-});
 
 test("placedKinds lists each kind the graph places once, in role order", () => {
   expect(placedKinds(MGB_CART)).toEqual(["sameboy", "mgb"]);
@@ -75,7 +60,8 @@ test("the system view says which of its stored roles the graph places, and keeps
   expect(view(lsdjId).placed).toEqual(["sameboy", "lsdj-sync", "lsdj-assets"]);
   expect(isPlaced(view(mgbId), "lsdj-sync")).toBe(false);
   expect(isPlaced(view(lsdjId), "lsdj-sync")).toBe(true);
-  // The view's answer is the document's: the kinds with a protocol node it lists are the pipeline the graph is built from.
+  // The view's answer is the document's: the kinds with a protocol node it lists are the pipeline the graph is built
+  // from.
   for (const id of [mgbId, lsdjId]) {
     const system = store.graphSystems().find((s) => s.id === id)!;
     expect(view(id).placed.filter((kind) => protocolNodeOf(kind) !== undefined)).toEqual(
@@ -123,7 +109,9 @@ test("the DAW lanes are the first placed role's with a table: an LSDj cart stori
   expect(lanes(LSDJ_CART)).toEqual([]);
   expect(lanes(MGB_CART).length).toBe(MGB_PARAMETERS.length);
   // A role with no node keeps its table beside a placed node of another kind (BlipToaster's chip beside the N8's MIDI).
-  const blip = lanes([{ kind: "mesen", config: {} }, { kind: "nes-n8-midi", config: {} }, { kind: "bliptoaster", config: {} }]);
+  const blip = lanes([
+    { kind: "mesen", config: {} }, { kind: "nes-n8-midi", config: {} }, { kind: "bliptoaster", config: {} },
+  ]);
   const blipTable = registry.roleType("bliptoaster")!.parameters!({});
   expect(blipTable.length).toBeGreaterThan(0);
   expect(blip.length).toBe(blipTable.length);

@@ -150,10 +150,3 @@ export function placedKinds(roles: readonly { readonly kind: string }[]): string
   }
   return out;
 }
-
-/** The role of `kind` in `roles` when the graph places it (placedKinds), else undefined; of a kind named twice, the
- *  first, which is the one placed. */
-export function placedRole<R extends { readonly kind: string }>(roles: readonly R[], kind: string): R | undefined {
-  const role = roles.find((r) => r.kind === kind);
-  return role && placedKinds(roles).includes(kind) ? role : undefined;
-}

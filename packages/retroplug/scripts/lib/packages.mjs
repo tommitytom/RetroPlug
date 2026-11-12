@@ -6,7 +6,7 @@
 //                                                    shell): the roles buildAppRegistry applies, the ROM providers,
 //                                                    the tracker integrations, the kit formats, the project sections
 //                                                    and services, the contribution kinds' items, and a duplicate in
-//                                                    list a key or an exclusive marker identifies refused at load
+//                                                    list a key or a marker role identifies refused at load
 //   packages/retroplug/src/generated/consoles.ts      the consoles the shell classifies a ROM with and places systems
 //                                                    by, and the physical carts a project can drive, from each
 //                                                    package's retroplug.consoles module. It imports only those

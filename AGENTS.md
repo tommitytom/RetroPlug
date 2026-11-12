@@ -243,10 +243,10 @@ The rules below are the parts that don't fit those.
   The `tsconfig.json` `pnpm typecheck` runs is the OTHER tree's, under `packages/retroplug/.products/<name>/` (so a
   typecheck leaves no `build/`), not this one. A non-desktop list must be a SUBSEQUENCE of the desktop's
   in the same relative order, and its script-node span labels are its own positions. `desktop` is the union. Only a ROM
-  provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
-  role-list order. Roles, kit formats and tracker integrations are looked up by kind, id or a marker role (a
-  system storing two markers takes the first), so for those a duplicate - refused by the generated module - is the
-  hazard, not the order. Two checks hold the
+  provider's place in it is behaviour, and a tracker integration's for a system storing two node-less markers
+  (spec/07's open entry): the providers run in that order, and the first to match a ROM fixes a system's role-list
+  order. Roles, kit formats and tracker integrations are otherwise looked up by kind, id or a marker role, so for
+  those a duplicate - refused by the generated module - is the hazard, not the order. Two checks hold the
   boundary, with no exception between them (`EXCEPTIONS` is empty, and the native check has none):
   `pnpm check:boundaries`
   ([check-boundaries.mjs](packages/retroplug/scripts/check-boundaries.mjs): a package imports only what its

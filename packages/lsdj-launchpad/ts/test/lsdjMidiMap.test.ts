@@ -380,7 +380,9 @@ test("at a tempo divisor of d, a launch cued for the row's end reaches the cart 
     }
     return at;
   };
-  for (const divisor of [1, 2, 3, 5, 6, 7, 8]) expect(released(divisor, divisor), `divisor ${divisor}`).toEqual([0, 96]);
+  for (const divisor of [1, 2, 3, 5, 6, 7, 8]) {
+    expect(released(divisor, divisor), `divisor ${divisor}`).toEqual([0, 96]);
+  }
   // The session left at 1 while the cart is at 2 releases the cued row at half its length.
   expect(released(1, 2)).toEqual([0, 48]);
 });

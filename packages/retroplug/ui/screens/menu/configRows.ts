@@ -19,11 +19,12 @@ export interface RoleRowSystem {
 }
 
 /** The items a set of contributed rows builds for a system, in the rows' order: a row shows only on a system whose
- *  graph places its role (graph/protocolNodes.ts placedKinds: the core role, which has no node, attaches to every system
- *  of that core, so this is the old `core === "sameboy"` gate, and a stored role the graph leaves out, LSDj's sync on
- *  an mGB cart after a ROM swap, shows nothing), where its platform and `when` gates allow, and a `separatorBefore` id
- *  is emitted once, before the first row that shows carrying it. A row's default is its role schema's
- *  (`schema.parse({})[key]`), which is what makes an untouched config read as the value the core really runs. */
+ *  graph places its role (graph/protocolNodes.ts placedKinds: the core role, which has no node, attaches to every
+ *  system of that core, so this is the old `core === "sameboy"` gate, and a stored role the graph leaves out,
+ *  LSDj's sync on an mGB cart after a ROM swap, shows nothing), where its platform and `when` gates allow, and a
+ *  `separatorBefore` id is emitted once, before the first row that shows carrying it. A row's default is its role
+ *  schema's (`schema.parse({})[key]`), which is what makes an untouched config read as the value the core really
+ *  runs. */
 export function roleRowItems(
   rows: readonly RoleRow[],
   sys: RoleRowSystem,

@@ -42,7 +42,7 @@ each (a phase name means its "What it leaves" list in section 5).
 
 **Known bugs**
 - [x] "Is this LSDj" decided by a role's presence, not its placement (found building B3b; kb2, 63cabe651: the readers
-      ask `placedRole`, a cart view `isPlaced`, and the stored role stays)
+      ask `placedKinds`, a cart view `isPlaced`, and the stored role stays)
 - [ ] A tracker marker with no protocol node is still decided by presence (kb2's gap: `risa` and `bliptoaster` are
       placed whenever stored, so a project storing both on a NES, a risa project whose ROM is now BlipToaster, carries
       both markers and `resolveTracker` takes the first in product order)
@@ -803,7 +803,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     ([trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts), by its integration's placed `markerRole`;
     behind the tracker menus, song import, the render's tracker and `projectStore`'s tracker questions), the config
     rows (`roleRowItems`, [configRows.ts](../packages/retroplug/ui/screens/menu/configRows.ts)) and
-    `projectParameterMap` ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)) through `placedRole`
+    `projectParameterMap` ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)) through `placedKinds`
     ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)), and the LSDj HD view, the LSDj
     overlay and the risa overlay through `isPlaced`, over the system view's `placed`. A role whose kind has no node
     counts as placed when present, and the left-out role stays stored, so a ROM swapped back brings its settings

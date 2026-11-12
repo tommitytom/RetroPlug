@@ -137,16 +137,16 @@ The desktop's run also writes the typecheck paths: `tsconfig.host-modules.json` 
 file, which a package with a `retroplug.host` declaration extends) and `tsconfig.paths.json` (the same entries plus the
 shell's own aliases, from `tsconfig.aliases.json`: a child's `paths` REPLACE its parent's, so the shell's program needs
 one file carrying both).
-The product list is the **dependency order and the registration order both** (a package before the ones that use it,
-the shell last), and only a ROM provider's place in it is
-behaviour: the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's
-kind, a kit format's id and a tracker integration's marker role are looked up rather than sequenced (one package's
-roles interleave another's without consequence; two stored markers take the first), so for those a duplicate is the
-hazard: the generated module refuses a role kind, a kit format id or a marker role declared twice, each with its own
-message. The generator itself refuses a list that puts a package before a dependency, a dependency the product does
-not carry whose contribution would be lost, a dependency on the shell, a duplicate product entry, a node type or span
-label declared twice, a label that is below 16 or leaves a gap, a role naming a node no package wires, a manifest that
-names a missing module or one its `exports` do not publish, and a contributing package the shell does not declare.
+The product list is the **dependency order and the registration order both** (a package before the ones that use it, the
+shell last), and only a ROM provider's place in it is behaviour, and a tracker integration's for a system storing two
+node-less markers (spec/07's open entry): the providers run in that order, and the first to match a ROM fixes a system's
+role-list order. A role's kind, a kit format's id and a tracker integration's marker role are otherwise looked up rather
+than sequenced (one package's roles interleave another's without consequence), so for those a duplicate is the hazard:
+the generated module refuses a role kind, a kit format id or a marker role declared twice, each with its own message.
+The generator itself refuses a list that puts a package before a dependency, a dependency the product does not carry
+whose contribution would be lost, a dependency on the shell, a duplicate product entry, a node type or span label
+declared twice, a label that is below 16 or leaves a gap, a role naming a node no package wires, a manifest that names a
+missing module or one its `exports` do not publish, and a contributing package the shell does not declare.
 A package's `retroplug.embed` entry (the bytes a product bakes in) is paired at load with the `embeds` declaration its
 **app module** makes (`{ id, label, platform }`): the generated module refuses a manifest entry no app module declares, a
 declaration no manifest bakes in (or one whose halves are in two packages), an id declared twice and a platform no
@@ -434,10 +434,10 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    [launchpad/ts/control/kind.ts](../packages/launchpad/ts/control/kind.ts), with MI.MAP contributing the control-plane
    half from [lsdj-launchpad/ts/app.ts](../packages/lsdj-launchpad/ts/app.ts) and the runtime half and `syncOverride`
    data from its manifest. What an app's launches need the cart to run in travels as `syncOverride` DATA (`node`,
-   `role`, `mode`, `listening`, `off`, `divisor`), applied by the launchpad pack's graph placer (`ts/control/placer.ts`),
-   never as a function a planner's bundle would have to import. The generator and the fixture suite hold the
-   mechanism over a fixture kind that is no real pack's (`widgets`); each real kind's own rules are its package's
-   test ([kind.test.ts](../packages/launchpad/ts/test/kind.test.ts)).
+   `role`, `mode`, `listening`, `off`, `divisor`), applied by the launchpad pack's graph placer
+   (`ts/control/placer.ts`), never as a function a planner's bundle would have to import. The generator and the
+   fixture suite hold the mechanism over a fixture kind that is no real pack's (`widgets`); each real kind's own rules
+   are its package's test ([kind.test.ts](../packages/launchpad/ts/test/kind.test.ts)).
 9. A device pack's imports are limited to `build-device-pack.mjs`'s four-file core SDK (`defineNode`,
    `settingsSchema`, `descriptor`, `register`), and `pico/n8-host/exporter-stale.sh` watches `packages/core/ts` plus
    each pack's own `ts/`.

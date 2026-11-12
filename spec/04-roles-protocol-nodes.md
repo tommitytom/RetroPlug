@@ -441,17 +441,17 @@ once, after the core has built. The serial-out capture and the reported sync lat
 pipeline places, so a left-out one arms nothing. `DirectGraph.setPipeline` sends the document without the later role
 and can report it through a callback.
 
-**Readers ask what is placed.** Whatever decides what a system is asks the same question: `placedRole(roles, kind)`,
-beside `protocolPipeline`, is the role of `kind` the pipeline places, and a role whose kind has no node (a core's
-config role, an asset override, a tracker's marker such as risa's `risa`) counts as placed when it is present, since
-the pipeline never leaves one out. The tracker a system resolves (`resolveTracker`, behind every tracker menu, song
-import, the render's tracker and the live SAV), the config rows its menu shows (`roleRowItems`) and the DAW lanes it
-exposes (`projectParameterMap`, the first placed role with a parameter table) read it, so an mGB cart that still
-stores `lsdj-sync` after a ROM swap is no LSDj cart, and an LSDj cart that stores `mgb` exposes no mGB lanes. The
-system view says the same in `placed` (`SystemInfo.placed`, from `placedKinds`), which a package's cart view asks
-through `isPlaced` (`@retroplug/core/systemRoles`). Reads of a role's own config, where presence is right (the asset
-overrides, the core's config, the role editor, persistence), keep `hasRole` and `roleConfig`, and the left-out role
-stays stored, so a ROM swapped back brings its settings back.
+**Readers ask what is placed.** Whatever decides what a system is asks the same question: `placedKinds(roles)`, beside
+`protocolPipeline`, is the kinds of `roles` the pipeline places, in role order, and a role whose kind has no node (a
+core's config role, an asset override, a tracker's marker such as risa's `risa`) counts as placed when it is present,
+since the pipeline never leaves one out. The tracker a system resolves (`resolveTracker`, behind every tracker menu,
+song import, the render's tracker and the live SAV), the config rows its menu shows (`roleRowItems`) and the DAW lanes
+it exposes (`projectParameterMap`, the first placed role with a parameter table) read it, so an mGB cart that still
+stores `lsdj-sync` after a ROM swap is no LSDj cart, and an LSDj cart that stores `mgb` exposes no mGB lanes. The system
+view says the same in `placed` (`SystemInfo.placed`, from `placedKinds`), which a package's cart view asks through
+`isPlaced` (`@retroplug/core/systemRoles`). Reads of a role's own config, where presence is right (the asset overrides,
+the core's config, the role editor, persistence), keep `hasRole` and `roleConfig`, and the left-out role stays stored,
+so a ROM swapped back brings its settings back.
 
 **Loaded role configs are parsed.** A loaded protocol role's config is parsed by its `RoleType` schema in `adopt`
 (so the node's settings, the capture its Game Boy's node runs, the menus and a save all see the parsed one), and a

@@ -583,7 +583,7 @@ test("the sync override is the app's DATA: a node type, a mode, and what counts 
     .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "off", driving: false });
 });
 
-test("a stored sync role the system's graph does not place is not driven: no override, whatever the placement asks", () => {
+test("a stored sync role the system's graph does not place is not driven: no override", () => {
   // An mGB cart that still stores lsdj-sync after a ROM swap places mgb and leaves the sync node out, so there is no
   // node of the rule's type to put in a mode. The placer asks its pipeline; the menu asks the view's placed kinds.
   const driven = { ...CONTROLLER, cartSync: "MidiMap" };

@@ -886,12 +886,15 @@ TEST_CASE("what a Game Boy's core captures reaches rp.lsdj.serial-out, where mGB
           "[engine-graph][host-io]") {
     // A real core's capture into the real decoder, with no fixture: mGB, with capture armed in drive, has its idle line
     // clocked out of its serial port. An Arduinoboy holds the Game Boy's serial input low, and so does the capture, so
-    // every bit the core shifts in is 0 and its port carries 0x00 byte after 0x00 byte (after one other as it boots),
-    // which MI.OUT reads as idle bits: the decoder sends nothing, where one stray 1 bit would be a start bit and a
-    // message LSDj never sent. In ragged blocks, a 1-frame one among them. That a nothing is a decoded nothing, and
-    // not a decoder the capture never reaches, is the next case's (the same port under master sync, which sends a
-    // clock for every byte whatever its value); what LSDj's own bytes decode to is the fixture-gated cases' (test-native/
-    // lsdj-midiout and the parity groups' MI.OUT cases).
+    // every bit the core shifts in is 0 and its port carries 0x00 byte after 0x00 byte. The one exception is the first
+    // byte, 0x66: mGB's own serial setup loads SB with it (LD A,$66; LDH (SB),A; LD A,$80; LDH (SC),A, at $01BE and
+    // $3686 of its ROM) before it waits on an external clock, and it is the first thing the clocked port shifts out. It
+    // is the ROM's constant, not SameBoy's time-seeded power-on RAM, so it is the same on every run. MI.OUT reads all
+    // of it as idle bits: the decoder sends nothing, where one stray 1 bit would be a start bit and a message LSDj
+    // never sent. In ragged blocks, a 1-frame one among them. That a nothing is a decoded nothing, and not a decoder
+    // the capture never reaches, is the next case's (the same port under master sync, which sends a clock for every
+    // byte whatever its value); what LSDj's own bytes decode to is the fixture-gated cases' (test-native/lsdj-midiout
+    // and the parity groups' MI.OUT cases).
     Engine e(kRate);
     rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"}};
@@ -915,7 +918,7 @@ TEST_CASE("what a Game Boy's core captures reaches rp.lsdj.serial-out, where mGB
         CHECK(e.midiOut().empty());
     }
     CHECK(bytes > 1000);      // the port is clocked, and its bytes reach the decoder every block
-    CHECK(idle + 1 >= bytes);  // all of them idle but the one as it boots
+    CHECK(idle + 1 >= bytes);  // all of them idle but mGB's preloaded 0x66
     CHECK(e.scriptThrows() == 0);
     CHECK(e.droppedMessages() == 0);
 }
