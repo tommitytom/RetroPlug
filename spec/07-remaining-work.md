@@ -936,6 +936,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     in the pipeline and hands the session `tickDivisor`, and the session walks `24 / tickDivisor` ticks a quarter, as
     MI.MAP clocks the cart, reading it every block. A quantise of `bar` or `beat` still counts the host's bars, as
     before: at divisor 2 a cart's phrase lasts two of them.
+  - **No row says a plain-ROM target has nothing to drive**: a controller aimed at a system whose graph places no cart
+    sync node shows no `Cart: <app>` row at all, where an info row ("nothing to drive") would say why.
   - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
     `projectStore.ts`) until F4, which also takes the menu rows.
 - **F4a built: the non-UI registrations**

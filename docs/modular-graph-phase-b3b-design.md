@@ -410,7 +410,7 @@ the limitation it found".
     suggestion the order is as stored and the first wins. A save writes the moved order. What is left out is logged
     once, after the core has built. `DirectGraph.setPipeline` sends the document without the later role and takes an
     optional callback that hears what was left out. The serial-out capture and the reported LSDj sync latency
-    (`__rp_syncLatencyMs`) follow the `lsdj-sync` the pipeline places (`placedRole`), so a left-out one arms no capture
+    (`__rp_syncLatencyMs`) follow the `lsdj-sync` the pipeline places (`placedKinds`), so a left-out one arms no capture
     and reports no latency. Known limitation: spec/07.
   - A throw stops only the node it is in (section 5).
   - The routing always runs before the controller; the kernel ran its project stages in the order given, which the

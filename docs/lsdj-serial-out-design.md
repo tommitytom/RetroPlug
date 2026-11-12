@@ -62,7 +62,7 @@ a Game Boy, as the feedback wire was.
 
 In [protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) a spec names a node placed after its system
 beside the one before it: `rp.lsdj.sync`'s spec drops `serialOut` and `midiOut` and names `rp.lsdj.serial-out`,
-whose own spec says it reads its system's `serialOut` and sends host MIDI. `protocolPipeline`, `placedRole` and the
+whose own spec says it reads its system's `serialOut` and sends host MIDI. `protocolPipeline`, `placedKinds` and the
 one-writer rule are unchanged: the decoder writes no system input.
 [buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts) pushes the decoders after the systems in slot order,
 before the cart's node and the host outputs, and its comment that every script node goes before the systems becomes
