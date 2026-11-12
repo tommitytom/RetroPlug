@@ -383,6 +383,76 @@ else
 	echo "skip - render leg: the smsggdj ROM or the render golden is absent"
 fi
 
+# 6e. The harness RECORDS a rejection nothing handled, rather than leaving it to the runtime: uncancelled, txiki makes
+#     it fatal, and whether a given leak killed the file with no TAP at all (every other case lost) or passed unseen
+#     depended on whether it was dispatched before the harness had exited. A rejection handled a loop turn late counts,
+#     as in Node.
+RJ="$TMP/rejections"
+mkdir -p "$RJ/src"
+cat >"$RJ/src/late.test.ts" <<'EOF'
+import { test, keepAlive } from "retroplug-cli";
+keepAlive();
+test("handles its rejection a turn late", async () => {
+  const p = Promise.reject(new Error("late-handled"));
+  await new Promise((r) => setTimeout(r, 1));
+  await p.catch(() => {});
+});
+test("a clean case after it", () => {});
+EOF
+cat >"$RJ/src/outside.test.ts" <<'EOF'
+import { test } from "retroplug-cli";
+test("registered first", () => {});
+Promise.reject(new Error("stray rejection at top level"));
+EOF
+out="$TMP/test-rj.log"
+timeout 30 "$CLI" test "$RJ/src" -j1 >"$out" 2>&1
+check "files with stray rejections fail the run" 1 $?
+contains "a late-handled rejection fails ITS case" "$out" "not ok 1 - handles its rejection a turn late"
+contains "...and the file's other cases still report" "$out" "ok 2 - a clean case after it"
+contains "a rejection outside every case fails the file, saying so" "$out" "outside any test"
+
+# 6f. Recording an error is not waiting for it. A case awaiting work that died first (a background task that threw
+#     before signalling) used to wait for ever, since the record was read only once the case returned, which under
+#     keepAlive() hung the run; and a timer's throw was blamed on whichever case was running when it fired. `timeout`
+#     turns a regression into a 124 rather than a hung suite.
+RW="$TMP/recorded"
+mkdir -p "$RW/src"
+cat >"$RW/src/dies.test.ts" <<'EOF'
+import { test, keepAlive } from "retroplug-cli";
+keepAlive();
+test("awaits a background task that dies before signalling", async () => {
+  let done!: () => void;
+  const finished = new Promise<void>((r) => (done = r));
+  void (async () => {
+    await Promise.resolve();
+    throw new Error("background task died");
+    done();
+  })();
+  await finished;
+});
+test("a clean case after it", () => {});
+EOF
+cat >"$RW/src/blame.test.ts" <<'EOF'
+import { test, keepAlive } from "retroplug-cli";
+keepAlive();
+test("leaves a timer that throws later", () => {
+  setTimeout(() => {
+    throw new Error("from the first test");
+  }, 20);
+});
+test("innocent, and busy when that timer fires", async () => {
+  await new Promise((r) => setTimeout(r, 60));
+});
+EOF
+out="$TMP/test-rw.log"
+timeout 30 "$CLI" test "$RW/src" -j1 >"$out" 2>&1
+check "a case awaiting a dead task fails the run instead of hanging it" 1 $?
+contains "...and fails THAT case, with the reason" "$out" "background task died"
+contains "...and the file's other cases still report" "$out" "ok 2 - a clean case after it"
+contains "a timer's throw does not fail the innocent case running when it fires" "$out" \
+	"ok 2 - innocent, and busy when that timer fires"
+contains "...it is blamed on the case that created it" "$out" "from test 1, after it had finished"
+
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.
 for f in pass.test fail.test helper; do
