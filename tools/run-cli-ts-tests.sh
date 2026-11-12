@@ -453,6 +453,44 @@ contains "a timer's throw does not fail the innocent case running when it fires"
 	"ok 2 - innocent, and busy when that timer fires"
 contains "...it is blamed on the case that created it" "$out" "from test 1, after it had finished"
 
+# 6g. An error nothing caught ends a session, kept alive or not, with exit 1 and its text. txiki turns one (a throw in
+#     an async module body, a rejection nothing cancelled, a throw in a timer) into a pending exception and a request to
+#     stop ITS loop, and the launcher drives the loop itself, so it used to be dropped: a plain session said only that it
+#     did not complete, a kept-alive one pumped for ever (and under `test` wedged the whole run), and a timer's throw was
+#     lost with exit 0.
+UC="$TMP/uncaught"
+mkdir -p "$UC/src"
+printf 'import { keepAlive } from "retroplug-cli";\nkeepAlive();\nthrow new Error("setup bug after keepAlive");\n' \
+	>"$UC/src/ka.test.ts"
+out="$TMP/run-ka.log"
+timeout 20 "$CLI" run "$UC/src/ka.test.ts" >"$out" 2>&1
+check "an uncaught error after keepAlive() exits 1, not a hang" 1 $?
+contains "...and prints the error" "$out" "setup bug after keepAlive"
+out="$TMP/test-ka.log"
+timeout 20 "$CLI" test "$UC/src" >"$out" 2>&1
+check "a test file that throws after keepAlive() fails the run, not hangs it" 1 $?
+printf 'throw new Error("plain setup bug");\n' >"$UC/plain.ts"
+out="$TMP/run-plain.log"
+timeout 20 "$CLI" run "$UC/plain.ts" >"$out" 2>&1
+check "an uncaught error without keepAlive() exits 1" 1 $?
+contains "...and prints the error, not only that the session did not complete" "$out" "plain setup bug"
+printf '%s\n' 'declare const tjs: { exit(code: number): void };' 'import { keepAlive } from "retroplug-cli";' \
+	'keepAlive();' 'setTimeout(() => {' '  throw new Error("thrown in a timer");' '}, 5);' \
+	'setTimeout(() => tjs.exit(0), 200);' >"$UC/timer.ts"
+out="$TMP/run-timer.log"
+timeout 20 "$CLI" run "$UC/timer.ts" >"$out" 2>&1
+check "a timer's throw ends the session with exit 1, not a lost error and exit 0" 1 $?
+contains "...and prints the error" "$out" "thrown in a timer"
+#     An error a sibling callback's try/catch cleared before it was reported: the session ran on and exited 0. txiki's
+#     stop request survives where the exception does not.
+printf '%s\n' 'declare const tjs: { exit(code: number): void };' 'import { keepAlive } from "retroplug-cli";' \
+	'keepAlive();' 'setTimeout(() => {' '  throw new Error("lost");' '}, 5);' 'setTimeout(() => {' \
+	'  try {' '    JSON.parse("{");' '  } catch {}' '}, 5);' 'setTimeout(() => tjs.exit(0), 200);' >"$UC/lost.ts"
+out="$TMP/run-lost.log"
+timeout 20 "$CLI" run "$UC/lost.ts" >"$out" 2>&1
+check "an error cleared by a sibling callback still ends the session (exit 1)" 1 $?
+contains "...and says why" "$out" "a callback threw, and its error was cleared before it could be reported"
+
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.
 for f in pass.test fail.test helper; do
