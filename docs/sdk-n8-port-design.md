@@ -84,3 +84,40 @@ review; this design's as-built and execution sections.
 **After it lands**, and only on the user's word: delete the local branch `feat/sdk-n8` and remove its worktree
 (`/home/vscode/orca/workspaces/RetroPlug-main/marakihau`, clean but for `deps/sameboy`). nesvj needs a CLI built from
 `feature/modularize`; syncing it into `/workspaces/nesvj` is the user's step.
+
+## 4. As built
+
+Every item of sections 1 to 3 landed as designed, with these differences:
+
+- **`connectN8` is a one-line wrapper** in `cli/sdk.ts` (`openN8Device(makeCall(), opts)`), not a bare re-export: the
+  n8 pack cannot import the shell's `makeCall`.
+- **Which failures dirty a session:** every failure but ok, file-not-found and the refusals made before the first byte
+  (one shared `refusedBeforePort` helper names those for `portSaid` and the resync). `n8FlushInput` and
+  `n8SetReadTimeout` neither resync nor dirty. A resync keeps the session's own handshake timeout, and a handshake on a
+  dirty session is the resync, run once with the caller's timeout.
+- **Hardened past the branch**, from the reviews: `romName` also refuses control bytes (as the host's `plainFileName`
+  does); the device's `close()` is retryable and a throwing close no longer hides a failed handshake; a fatal bridge
+  exit runs once; a throw in a `launchpad-probe` timer sends the Launchpad back to Live mode before exiting; a case that
+  skips or throws owns the rejection it left; a throwing Ctrl-C hook ends a session.
+- **The CLI harness checks match whole result lines** and the CLI's per-file verdicts, so a broken exit code turns them
+  red (they first matched substrings, and `ok 2` matched `not ok 2`).
+- **spec/07** gained "A normal CLI exit skips the teardown" (with the throw lost in the same loop turn as
+  `tjs.exit(0)`) and merged the test host's dropped error with D3's "retroplug-host swallows a top-level throw".
+- **Not proved on hardware:** the paging was verified on the real N8 when the branch was written; here it is proved
+  against `FakeN8` only, and nothing runs `connectN8` through the shipped module (on this box the CLI lists the real
+  serial ports).
+- **Python:** the tracked `tools/run-cli-ts-tests.sh` (three snippets in its render leg), `tools/run-sdl-controller.sh`
+  and `tools/run-sdl-pipewire.sh` run `python3`; the implementers ran the CLI check through a python-free copy, and the
+  kits run the tracked scripts as before.
+
+## 5. Execution
+
+Port map by Opus; plan by Opus (every block applied on the tree red then green, replayed to an identical tree). Nine
+tasks by Sonnet implementers, each spec-checked as tree identity with the validated diff: f283de0b0, c78928630,
+bb93aeb48, f7a432fa3, 797ecdd3f, 886dde3bc, dc39e032f, b0cc7dc0e, b5d06160a. An Opus review per task: seven approved
+with Minor findings, two asked for changes (Task 7: the CLI checks proved nothing; Task 9: a duplicated spec/07 entry),
+none Critical. Four follow-up passes, each verifying a finding before fixing it test-first: d38788f02 and 3ad23c57e (the
+N8 C++), 7573c594f, 8af0f43de, b9811df0c and da0664cf8 (the TS N8, the SDK, launchpad-probe), edd4ea2bd (the harness
+and the launcher), 99e2a74bc (docs). The Opus final review found the whole READY, with Minor findings settled in
+97d67b71f. Acceptance: the serial kit at 99e2a74bc, 45/45 (BlipToaster 57/57 and NESVJ 19/19 against the rebuilt CLI,
+strict parity with no skips, SDL PipeWire 27/0/0); the parallel kit at 97d67b71f, 47/47 (sdlctl run in the serial kit).
