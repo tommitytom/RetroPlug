@@ -144,6 +144,12 @@ export interface EngineRunOptions {
    *  (EngineJobRecord: 256 lines, 64 KiB); writes past it were dropped, and arrive as one stderr line saying how
    *  many. */
   onLog?: (line: EngineLogLine) => void;
+  /** Files the submission owns, which the engine's pool deletes however the job ends: on the job's worker once its
+   *  body has returned and before its completion is queued, and with the job itself on a road that drops it unrun (a
+   *  refusal, a cancel while it waits in the queue, the pool's teardown). So they are gone by the time the job settles,
+   *  and a caller does not delete them itself. Never a user's own file (a `--sav` handed to a render): a UI render
+   *  lists the snapshots it wrote into the config directory, which every instance shares. */
+  discardFiles?: string[];
 }
 
 /** An engine job's console lines on this runtime's own: stderr to console.error, the rest to console.log. */
@@ -171,6 +177,9 @@ export function jobHandle<T>(promise: Promise<T>, cancel: () => boolean): JobHan
 export interface EngineWireRequest {
   kind: string;
   spec: string;
+  /** Always present, an empty list when the caller lists none: native reads the request without tolerating a missing
+   *  field (rfl), and an empty list deletes nothing. */
+  discardFiles: string[];
 }
 export interface EngineWireProgress {
   id: number;
@@ -316,7 +325,11 @@ export class OfflineJobs implements JobQueue {
     const promise = new Promise<EngineRunResult>(
       (resolve, reject) => (waiter = { kind: "engine", resolve, reject, id: null, options, renderedMs: 0 }),
     );
-    const wire = { kind, spec: typeof spec === "string" ? spec : JSON.stringify(spec) };
+    const wire: EngineWireRequest = {
+      kind,
+      spec: typeof spec === "string" ? spec : JSON.stringify(spec),
+      discardFiles: [...(options.discardFiles ?? [])],
+    };
     return jobHandle(promise, this.start({ kind: "engine", wire }, waiter!));
   }
 

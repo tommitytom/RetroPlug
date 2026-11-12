@@ -118,26 +118,37 @@ test("startSystemRender: no on-disk ROM → no-op (returns null, nothing started
 });
 
 /** A RenderJobs over a backend whose engineRun holds every job until the test settles it, as an engine queues a render
- *  behind the worker budget: `specs` lists what each submission carried, `settle(i)` ends job i. */
-function queuedRenders(): { renders: RenderJobs; specs: Captured["spec"][]; settle(i: number): void } {
+ *  behind the worker budget: `specs` lists what each submission carried, `discards` the files each one handed the
+ *  engine's pool (which deletes them), `settle(i)` ends job i. */
+function queuedRenders(): {
+  renders: RenderJobs;
+  specs: Captured["spec"][];
+  discards: (string[] | undefined)[];
+  settle(i: number): void;
+} {
   const specs: Captured["spec"][] = [];
+  const discards: (string[] | undefined)[] = [];
   const resolvers: ((r: EngineRunResult) => void)[] = [];
   const renders = new RenderJobs({
-    engineRun: (_kind, spec) => {
+    engineRun: (_kind, spec, options) => {
       specs.push(spec as Captured["spec"]);
+      discards.push(options?.discardFiles);
       return jobHandle(new Promise<EngineRunResult>((res) => resolvers.push(res)), () => true);
     },
   });
   const settle = (i: number) => resolvers[i]({ status: "done", message: "", outputs: [], renderedMs: 1 });
-  return { renders, specs, settle };
+  return { renders, specs, discards, settle };
 }
 
 const later = (): Promise<void> => new Promise((r) => void Promise.resolve().then(() => r()));
 
-test("startSystemRender: two queued renders of one system boot their own snapshots, gone once settled", async () => {
+test("startSystemRender: two queued renders of one system boot their own snapshots, handed to the pool", async () => {
   // A render reads its snapshot when a worker boots it, which can be minutes after the submission when renders queue
   // behind the engine's budget. A render, an edit and a second render must leave the first booting the state it was
-  // started on: each snapshot is a file of its own, and it goes when its job settles.
+  // started on: each snapshot is a file of its own, named by the job's key, and each job's own list of them rides its
+  // submission (EngineRunOptions.discardFiles), which the engine's pool deletes however the job ends. The UI deletes
+  // nothing on settle, so the files are still there when one settles (a worker removes them before it queues the
+  // completion, which the C++ [engine-jobs] cases hold).
   const backend = new MockBackend("/config");
   const q = queuedRenders();
   const sys = sysView({ id: 1, battery: true });
@@ -150,14 +161,16 @@ test("startSystemRender: two queued renders of one system boot their own snapsho
   expect(first.sav !== undefined && second.sav !== undefined && first.sav !== second.sav).toBeTruthy();
   expect(Array.from(backend.readFile(first.sav!) ?? [])).toEqual([1, 1, 1]);
   expect(Array.from(backend.readFile(second.sav!) ?? [])).toEqual([2, 2, 2]);
+  expect(q.discards).toEqual([[first.sav], [second.sav]]); // each render's own, and only its own
 
   q.settle(0);
   await later();
-  expect(backend.fileExists(first.sav!)).toBe(false);
-  expect(backend.fileExists(second.sav!)).toBe(true); // still queued: its snapshot stays
+  expect(backend.fileExists(first.sav!)).toBe(true); // still the pool's, not this UI's, to delete
+  expect(backend.fileExists(second.sav!)).toBe(true); // and still queued
   q.settle(1);
   await later();
-  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]);
+  // Neither was deleted by this side: deleting is the pool's, and it is what the list it was handed is for.
+  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([first.sav!, second.sav!].sort());
 });
 
 test("startSystemRender: a cart whose song is outside the battery snapshots its state too, of its own", async () => {
@@ -176,27 +189,39 @@ test("startSystemRender: a cart whose song is outside the battery snapshots its 
   const [first, second] = q.specs;
   expect(first.state !== undefined && second.state !== undefined && first.state !== second.state).toBeTruthy();
   expect(first.sav !== second.sav).toBeTruthy();
+  // Both files of each job are its submission's: the battery and the savestate that captures the working song.
+  expect(q.discards).toEqual([[first.sav, first.state], [second.sav, second.state]]);
   q.settle(0);
   q.settle(1);
   await later();
-  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]);
+  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([first.sav!, first.state!, second.sav!, second.state!].sort());
 });
 
-test("startSystemRender: a snapshot that cannot be written refuses the render, not boot the on-disk .sav", async () => {
-  class FullDisk extends MockBackend {
-    override writeFileAtomic(): boolean {
-      return false;
+test("startSystemRender: a snapshot that cannot be written refuses the render, and the one it did write goes",
+  async () => {
+    // The savestate's write fails after the battery's succeeded: the spec function throws, so nothing is submitted and
+    // no list reaches the pool, which makes the file it did write the UI's to delete (the only road `onSettled` deletes
+    // on). The render is still listed as an error rather than booting the on-disk .sav.
+    class HalfDisk extends MockBackend {
+      override writeFileAtomic(path: string, bytes: Uint8Array): boolean {
+        return path.endsWith(".ss0") ? false : super.writeFileAtomic(path, bytes);
+      }
+      override readState(): Uint8Array | null {
+        return new Uint8Array([9]);
+      }
     }
-  }
-  const backend = new FullDisk("/config");
-  backend.setSram(1, new Uint8Array([1]));
-  const q = queuedRenders();
-  const id = startSystemRender(backend, q.renders, sysView({ id: 1, battery: true }), { split: "mix" }, "/out/a.wav");
-  expect(q.specs.length).toBe(0); // nothing submitted
-  const job = q.renders.list().find((j) => j.id === id);
-  expect(job?.state).toBe("error");
-  expect(job!.message.includes("could not snapshot")).toBeTruthy();
-});
+    const backend = new HalfDisk("/config");
+    backend.setSram(4, new Uint8Array([1]));
+    const q = queuedRenders();
+    const sys = sysView({ id: 4, romPath: "/roms/smsggdj.sms", battery: true, roles: [{ kind: "sms-sync", config: {} }] });
+    const id = startSystemRender(backend, q.renders, sys, { split: "mix" }, "/out/a.wav");
+    expect(q.specs.length).toBe(0); // nothing submitted
+    expect(q.discards.length).toBe(0); // and so nothing handed over
+    const job = q.renders.list().find((j) => j.id === id);
+    expect(job?.state).toBe("error");
+    expect(job!.message.includes("could not snapshot")).toBeTruthy();
+    expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]); // the sav it wrote went with it
+  });
 
 test("renderBaseName: song name → SAV basename → ROM stem, in priority order", () => {
   const backend = new MockBackend("/config");

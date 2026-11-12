@@ -46,10 +46,18 @@ export class RenderJobs {
   /** Start rendering `spec` (a render job spec) for system `systemId`, and return the job's id here. A render the
    *  engine refuses, or that cannot be submitted, is listed as an error. `spec` can be a function of the job's key, a
    *  name no other job of any list shares (the caller's files for this job carry it), and a throw from it is listed as
-   *  the job's error with nothing submitted. `onSettled` runs once the job has ended however it ended (listed or
-   *  dismissed, a throw from `spec` included): the engine has let go of the job's files by then, or can
-   *  no longer report on the job (a broken link to it). */
-  start(systemId: number, spec: object | ((key: string) => object), onSettled?: () => void): number {
+   *  the job's error with nothing submitted. `discardFiles`, when given, answers the files the submission owns once
+   *  `spec` has run (the caller's snapshots, which `spec` writes): they ride the record to the engine
+   *  (EngineRunOptions.discardFiles), whose pool deletes them however the job ends, so the caller deletes nothing on
+   *  settle. `onSettled` runs once the job has ended however it ended (listed or dismissed, a throw from `spec`
+   *  included): the engine has let go of the job's files by then, or can no longer report on the job (a broken link to
+   *  it). */
+  start(
+    systemId: number,
+    spec: object | ((key: string) => object),
+    onSettled?: () => void,
+    discardFiles?: () => string[],
+  ): number {
     const status: RenderJobStatus = { id: this.nextId++, systemId, state: "rendering", renderedMs: 0, message: "" };
     const entry: Entry = { status, handle: null };
     this.entries.set(status.id, entry);
@@ -71,6 +79,7 @@ export class RenderJobs {
       entry.handle = this.backend.engineRun("render", body, {
         onProgress: (renderedMs) => update({ renderedMs }),
         onLog: echoJobLog,
+        discardFiles: discardFiles?.(),
       });
     } catch (e) {
       update({ state: "error", message: (e as Error)?.message ?? String(e) });

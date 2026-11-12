@@ -842,6 +842,134 @@ TEST_CASE("an engine job runs in the default floating-point mode whatever its su
     CHECK(kept.load(std::memory_order_acquire));
 }
 
+TEST_CASE("an engine job deletes the files its submission owns, however it ends",
+          "[engine-graph][engine-jobs]") {
+    // A render's snapshot is a file of the job's own in the config directory every process and instance shares, so it
+    // may not outlive the job by even the span between the job's end and its completion being drained: a worker
+    // deletes the files its request lists before it publishes the completion, and a job dropped unrun (refused,
+    // cancelled while queued, cleared off the pool at teardown) deletes them with itself. A file the submission does
+    // not list, a caller's own `.sav` or a finished WAV beside them, is never touched.
+    TempDir    dir;
+    const auto make = [&dir](const std::string& name) {
+        const std::string path = dir.file(name);
+        std::ofstream(path) << "a snapshot";
+        REQUIRE(fs::exists(path));
+        return path;
+    };
+    SECTION("done") {
+        const std::string listed = make("done.sav");
+        const std::string kept = make("done.wav");
+        const EngineJobBody body = [](const EngineJobRequest&, const EngineJobHooks&) {
+            return EngineJobOutcome{"done", "", {}};
+        };
+        OfflineJobs jobs({}, 2, body);
+        const auto  s = jobs.submitEngine({"render", "{}", {listed}});
+        REQUIRE(s.id != 0);
+        const Seen seen = collect(jobs, {s.id});
+        REQUIRE(seen.done.count(s.id) == 1);
+        CHECK(seen.done.at(s.id).status == "done");
+        CHECK_FALSE(fs::exists(listed));  // gone before the completion was queued, which is when TS hears of it
+        CHECK(fs::exists(kept));
+    }
+    SECTION("error") {
+        const std::string listed = make("error.sav");
+        const EngineJobBody body = [](const EngineJobRequest&, const EngineJobHooks&) -> EngineJobOutcome {
+            throw std::runtime_error("the render failed");  // the pool turns a throw into an error's status
+        };
+        OfflineJobs jobs({}, 2, body);
+        const auto  s = jobs.submitEngine({"render", "{}", {listed}});
+        REQUIRE(s.id != 0);
+        const Seen seen = collect(jobs, {s.id});
+        REQUIRE(seen.done.count(s.id) == 1);
+        CHECK(seen.done.at(s.id).status == "error");
+        CHECK_FALSE(fs::exists(listed));
+    }
+    SECTION("cancelled while running") {
+        std::atomic<bool> started{false};
+        const std::string listed = make("running.sav");
+        const EngineJobBody body = [&](const EngineJobRequest&, const EngineJobHooks& hooks) {
+            started.store(true, std::memory_order_release);
+            while (!hooks.cancelled()) std::this_thread::yield();
+            return EngineJobOutcome{"cancelled", "", {}};
+        };
+        OfflineJobs jobs({}, 2, body);
+        const auto  s = jobs.submitEngine({"render", "{}", {listed}});
+        REQUIRE(s.id != 0);
+        REQUIRE(waitFor(started));
+        CHECK(jobs.cancel(s.id));
+        const Seen seen = collect(jobs, {s.id});
+        REQUIRE(seen.done.count(s.id) == 1);
+        CHECK(seen.done.at(s.id).status == "cancelled");
+        CHECK_FALSE(fs::exists(listed));
+    }
+    SECTION("cancelled while queued, behind a long job on a pool of one") {
+        std::atomic<bool>   running{false};
+        std::atomic<bool>   release{false};
+        const std::string first = make("first.sav");
+        const std::string second = make("second.sav");
+        const EngineJobBody body = [&](const EngineJobRequest&, const EngineJobHooks& hooks) {
+            // The first job holds the pool's one engine worker; the second waits behind it with nothing run.
+            if (!release.load(std::memory_order_acquire)) {
+                running.store(true, std::memory_order_release);
+                while (!release.load(std::memory_order_acquire) && !hooks.cancelled()) std::this_thread::yield();
+            }
+            return EngineJobOutcome{"done", "", {}};
+        };
+        OfflineJobs jobs({}, 1, body);
+        const auto  a = jobs.submitEngine({"render", "{}", {first}});
+        REQUIRE(a.id != 0);
+        REQUIRE(waitFor(running));
+        const auto b = jobs.submitEngine({"render", "{}", {second}});
+        REQUIRE(b.id != 0);
+        REQUIRE(fs::exists(second));   // queued, so its files are still there for the run to boot
+        CHECK(jobs.cancel(b.id));
+        CHECK_FALSE(fs::exists(second));  // the queued job went with its files, unrun
+        CHECK(fs::exists(first));         // and the one running still owns its own
+        release.store(true, std::memory_order_release);
+        const Seen seen = collect(jobs, {a.id, b.id});
+        CHECK(seen.done.at(b.id).status == "cancelled");
+        CHECK(seen.done.at(a.id).status == "done");
+        CHECK_FALSE(fs::exists(first));
+    }
+    SECTION("refused at submit") {
+        const std::string listed = make("refused.sav");
+        OfflineJobs       jobs({}, 2);
+        for (std::size_t i = 0; i < OfflineJobs::kMaxJobs; ++i) {
+            const auto filled = jobs.submit(echoRequest());
+            REQUIRE(filled.id != 0);
+        }
+        // Nothing may be drained here: a job finished and not yet drained is outstanding too, which is the bound's
+        // point, so the pool is full whether its workers ran or not.
+        const auto refused = jobs.submitEngine({"render", "{}", {listed}});
+        CHECK(refused.id == 0);
+        CHECK(refused.error ==
+              "busy: " + std::to_string(OfflineJobs::kMaxJobs) + " offline jobs are outstanding");
+        CHECK_FALSE(fs::exists(listed));  // the pool built the job, refused it, and dropped its files with it
+    }
+    SECTION("abandoned at teardown") {
+        std::atomic<bool>   running{false};
+        const std::string first = make("teardown-running.sav");
+        const std::string queued = make("teardown-queued.sav");
+        const EngineJobBody body = [&](const EngineJobRequest&, const EngineJobHooks& hooks) {
+            running.store(true, std::memory_order_release);
+            while (!hooks.cancelled()) std::this_thread::yield();  // the pool's teardown sets the cancel
+            return EngineJobOutcome{"cancelled", "", {}};
+        };
+        {
+            OfflineJobs jobs({}, 1, body);  // one engine worker: the second job waits behind the first
+            REQUIRE(jobs.submitEngine({"render", "{}", {first}}).id != 0);
+            REQUIRE(waitFor(running));
+            REQUIRE(jobs.submitEngine({"render", "{}", {queued}}).id != 0);
+            CHECK(fs::exists(first));
+            CHECK(fs::exists(queued));
+        }
+        // The pool went with both: the queued job was dropped unrun and the running one ended cancelled, and neither
+        // left a file behind on either road.
+        CHECK_FALSE(fs::exists(first));
+        CHECK_FALSE(fs::exists(queued));
+    }
+}
+
 TEST_CASE("an engine job's console record keeps its bounds between takes, and counts what it drops",
           "[engine-graph][engine-jobs]") {
     EngineJobRecord record;

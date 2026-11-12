@@ -210,8 +210,9 @@ struct RpcOfflineCompletion {
 // run on a worker of the same pool with a runtime and an Engine of its own; the one kind is "render", whose `spec` is
 // the render job JSON (a RenderOpts the render worker reads). Its answer is a graph job's, RpcOfflineSubmitResult.
 struct RpcEngineJobRequest {
-    std::string kind;
-    std::string spec;
+    std::string              kind;
+    std::string              spec;
+    std::vector<std::string> discardFiles;  // files the pool deletes however the job ends (EngineJobRequest's)
 };
 // One console write a job's script made, without its newline, and its stream: "stdout" or "stderr".
 struct RpcEngineJobLine {

@@ -298,8 +298,8 @@ RpcOfflineSubmitResult EngineRpcService::submitOfflineJob(RpcOfflineRequest requ
 
 RpcOfflineSubmitResult EngineRpcService::submitEngineJob(RpcEngineJobRequest request) {
     RpcOfflineSubmitResult  out{std::nullopt, std::nullopt};
-    rp::host::OfflineSubmit submitted =
-        engine_.submitEngineJob({std::move(request.kind), std::move(request.spec)});
+    rp::host::OfflineSubmit submitted = engine_.submitEngineJob(
+        {std::move(request.kind), std::move(request.spec), std::move(request.discardFiles)});
     if (submitted.id != 0) out.id = submitted.id;
     else out.error = std::move(submitted.error);
     return out;

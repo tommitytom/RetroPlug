@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <limits>
 #include <string_view>
 #include <system_error>
@@ -23,6 +24,24 @@
 #include "kit/SampleCache.hpp"
 
 namespace rp::host {
+
+JobFiles::~JobFiles() { discard(); }
+
+void JobFiles::take(std::vector<std::string> paths) {
+    discard();
+    paths_ = std::move(paths);
+}
+
+void JobFiles::discard() {
+    // The error_code overload: a file that is already gone (the job's own render may have written and finished it, and
+    // two instances could name one path) or that cannot be removed leaves nothing to report to anyone, and removal on
+    // a worker thread may not throw into the pool.
+    for (const std::string& path : paths_) {
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+    }
+    paths_.clear();
+}
 
 namespace {
 
@@ -195,6 +214,9 @@ OfflineSubmit OfflineJobs::submitEngine(EngineJobRequest request) {
     auto job = std::make_unique<Job>();
     job->kind = Kind::Engine;
     job->engine = std::move(request);
+    // The files are the job's from here on, and the request's list is empty after this, so one destructor removes them.
+    // A kind refused above never had the job, so it leaves the list alone.
+    job->discard.take(std::move(job->engine.discardFiles));
     return enqueue(std::move(job));
 }
 
@@ -334,6 +356,10 @@ void OfflineJobs::workerLoop() {
         EngineJobCompletion engineDone;
         if (job->kind == Kind::Graph) done = run(*job);
         else engineDone = runEngine(*job);
+        // The job has let go of its own files before anything can hear that it ended: a render's snapshot is in the
+        // config directory every instance shares, and the next instance may boot from it the moment the next drain
+        // reports the job done. This is a graph job's no-op.
+        job->discard.discard();
         lock.lock();
         running_.erase(std::find(running_.begin(), running_.end(), job.get()));
         (job->kind == Kind::Graph ? runningGraph_ : runningEngine_)--;

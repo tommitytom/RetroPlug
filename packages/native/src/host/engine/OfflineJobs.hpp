@@ -174,6 +174,27 @@ struct EngineJobOutcome {
 // timeline.
 using EngineJobBody = std::function<EngineJobOutcome(const EngineJobRequest&, const EngineJobHooks&)>;
 
+// The files an engine job's submission owns (EngineJobRequest::discardFiles), deleted by this object's destructor: a
+// job that never ran leaves nothing behind, whichever road drops it (a refusal at enqueue, a cancel while it waits in
+// the queue, the pool's own teardown clearing it). A job that ran empties its list itself, on its worker and before its
+// completion is queued (OfflineJobs::workerLoop), so its files are gone by the time a drain reports the job ended.
+// Removal never throws and never fails a job: a file already gone, or one that cannot be removed, is passed over.
+class JobFiles {
+public:
+    JobFiles() = default;
+    ~JobFiles();
+    JobFiles(const JobFiles&) = delete;
+    JobFiles& operator=(const JobFiles&) = delete;
+
+    // Take `paths` as this job's files, deleting whatever it held before, so two lists never name one file.
+    void take(std::vector<std::string> paths);
+    // Delete the files held now, leaving none. Idempotent.
+    void discard();
+
+private:
+    std::vector<std::string> paths_;
+};
+
 class OfflineJobs {
 public:
     static constexpr std::size_t   kMaxJobs = 64;        // outstanding: queued, running, or finished and not drained
@@ -247,6 +268,7 @@ private:
         Kind              kind = Kind::Graph;
         OfflineRequest    request;  // a graph job's
         EngineJobRequest  engine;   // an engine job's
+        JobFiles          discard;  // an engine job's own files (empty for a graph job, and once the job has run)
         std::atomic<bool> cancelled{false};
         EngineJobRecord   record;   // an engine job's
     };

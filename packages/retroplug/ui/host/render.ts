@@ -63,10 +63,16 @@ export function startSystemRender(
   // the render worker's own Engine loads by path. The worker reads them when it boots the render, which is when a
   // worker is free: renders queue behind the engine's budget, so that can be minutes on, after further edits and
   // renders. So each render's files are its own, named by the job's key (unique across instances, which share the
-  // config directory), and deleted once the job has settled. A snapshot that cannot be written refuses the render,
-  // listed as an error, rather than leave the field out and boot the sibling .sav on disk instead of what you hear.
+  // config directory), and they go with the job: the submission lists them as its discardFiles, which the engine's
+  // pool deletes however the job ends, an instance that ends or a crash before the job settled included (the startup
+  // sweep is the backstop for what a crash leaves). A snapshot that cannot be written refuses the render, listed as an
+  // error, rather than leave the field out and boot the sibling .sav on disk instead of what you hear.
   const dir = backend.configDir();
   const snapshots: string[] = [];
+  // Whether the spec reached the submission. The files are the engine's pool's from the moment they ride it (the job's
+  // discardFiles, which the pool deletes however the job ends), so the one road left to this module is a spec that
+  // threw: a snapshot whose write failed leaves the ones before it written, and nothing was submitted to delete them.
+  let built = false;
   const prepare = (key: string): object => {
     const snapshot = (ext: string, bytes: Uint8Array): string => {
       const path = `${dir}/.render-src-${key}.${ext}`;
@@ -91,9 +97,17 @@ export function startSystemRender(
       const state = backend.readState(sys.id);
       if (state) spec.state = snapshot("ss0", state);
     }
+    built = true;
     return spec;
   };
-  return renders.start(sys.id, prepare, () => snapshots.forEach((p) => backend.deleteFile(p)));
+  return renders.start(
+    sys.id,
+    prepare,
+    () => {
+      if (!built) snapshots.forEach((p) => backend.deleteFile(p));
+    },
+    () => snapshots,
+  );
 }
 
 /** The base filename a render should default to, in priority order: the loaded tracker cart's WORKING song

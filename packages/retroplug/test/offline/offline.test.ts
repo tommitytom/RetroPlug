@@ -26,6 +26,7 @@ import {
   type EngineWireCompletion,
   type EngineWireProgress,
   type EngineWireRequest,
+  type OfflinePort,
   type OfflineRunRequest,
   type OfflineSubmitResult,
   type OfflineWireCompletion,
@@ -172,6 +173,42 @@ test("the mock backend rejects every offline job: only a native host runs graphs
   await be.offlineRun({ frames: 64, rate: 48000 }).catch((e: Error) => (message = e.message));
   expect(message).toBe("offline jobs need a native host: the mock backend cannot run graphs");
   expect(be.pumpJobs()).toBe(0);
+});
+
+test("an engine job's discard files ride its submission, empty when it lists none", async () => {
+  // The pool deletes what a submission lists (whatever road the job takes), so the option crosses on the wire request
+  // rather than being remembered here: one request, one list, and a caller with none sends an empty one.
+  const requests: EngineWireRequest[] = [];
+  let finish = false;
+  const port: OfflinePort = {
+    submitOfflineJob: () => ({ id: null, error: "this test submits no graph job" }),
+    submitEngineJob: (request) => {
+      requests.push(request);
+      return { id: requests.length, error: null };
+    },
+    cancelOfflineJob: () => true,
+    drainOfflineJobs: () => ({
+      completions: [],
+      inFlight: finish ? 0 : requests.length,
+      engineCompletions: finish
+        ? requests.map((_, i) => ({
+            id: i + 1, renderedMs: 0, lines: [], droppedLines: 0, status: "done", message: "", outputs: [],
+          }))
+        : [],
+      engineProgress: [],
+    }),
+  };
+  const jobs = new OfflineJobs(port);
+  const listed = jobs.engine("render", { rom: "/x.gb", out: "/x.wav" },
+    { discardFiles: ["/config/.render-src-a.sav"] });
+  const plain = jobs.engine("render", { rom: "/x.gb", out: "/x.wav" });
+  // Both end first, so no queue of this case's outlives a failed assertion (a live queue is a runtime's, and there is
+  // one at a time).
+  finish = true;
+  jobs.pump();
+  await Promise.all([listed, plain]);
+  expect(requests.map((r) => r.discardFiles)).toEqual([["/config/.render-src-a.sav"], []]);
+  expect(liveJobCount()).toBe(0);
 });
 
 test("the mock backend rejects every engine job, and its handles have nothing to cancel", async () => {

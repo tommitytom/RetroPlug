@@ -124,6 +124,12 @@ struct OfflineCompletion {
 struct EngineJobRequest {
     std::string kind;
     std::string spec;
+    // Files the submission owns, which the pool deletes however the job ends: on the job's worker once its body has
+    // returned and before its completion is queued, and with the job itself on a road that drops it unrun (a refusal,
+    // a cancel while queued, the pool's teardown). Empty for a caller with none, so a user's own `--sav` or `--state`
+    // is never in it. A UI render lists the snapshots it wrote into the config directory, which every process and
+    // instance shares.
+    std::vector<std::string> discardFiles;
 };
 
 // One console write a job's script made (console.log, console.warn and the rest), without the newline the console

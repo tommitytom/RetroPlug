@@ -145,6 +145,28 @@ test("a finished job whose system has no tile is dropped as it settles, and when
   expect(renders.list().map((j) => [j.systemId, j.state])).toEqual([[2, "error"]]);
 });
 
+test("a job's discard files are read once its spec has run, and ride the submission", () => {
+  // The UI's spec function is what writes a job's snapshot files, so the list of them is read after it returns and
+  // handed to the engine as the submission's own (EngineRunOptions.discardFiles): the pool deletes them however the
+  // job ends, which is why nothing here deletes them. A job that lists none hands over no list, which the wire request
+  // carries as an empty one (offline.test.ts).
+  const { backend, jobs } = scripted();
+  const renders = new RenderJobs(backend);
+  const written: string[] = [];
+  const id = renders.start(
+    1,
+    (key) => (written.push(`/config/.render-src-${key}.sav`), { sav: written[0] }),
+    undefined,
+    () => [...written],
+  );
+  expect(written.length).toBe(1);
+  expect(jobs[0].options.discardFiles).toEqual([written[0]]);
+  const plain = renders.start(2, {});
+  expect(jobs[1].options.discardFiles).toBe(undefined);
+  renders.dismiss(id);
+  renders.dismiss(plain);
+});
+
 test("a job's spec can name its files by the job's key, and onSettled runs once however the job ends", async () => {
   const { backend, jobs } = scripted();
   const renders = new RenderJobs(backend);
