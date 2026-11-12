@@ -1,116 +1,18 @@
-// Arduinoboy MIDIOUT (MI.OUT / "Arduinoboy Master", mode 7) — the full end-to-end functional proof on a
-// real LSDj core. A song authored with SYNC=MI.OUT + N (NoteOn) commands, once playing, emits the
-// Arduinoboy protocol on LSDj's serial-out port; native captures those raw bytes (`drive`, the Game Boy node's
-// capture setting the mode places) and feeds them, in the block it captured them, to the lsdj-sync role's
-// decoder after the Game Boy (rp.lsdj.serial-out), where the mode-7 decoder strips the flag-gated framing +
-// decodes the byte protocol into host MIDI (its midiOut port), each message at the frame of the byte that
-// completes it. We drain that MIDI and assert a transport START (0xFA), a clock stream (0xF8), and NoteOns
-// (0x9x), at frames inside their blocks.
+// Arduinoboy MIDIOUT (MI.OUT / "Arduinoboy Master", mode 7) at 44.1 kHz: the full end-to-end proof on a real LSDj
+// core, that the MIDI its decoder sends is exactly what the song plays, and the one way a real LSDj reaches the
+// decoder's clock, an N command's value of 0x7F (./lsdjMidiOut.ts runs the cases; the lsdj-midiout-48k and
+// lsdj-midiout-96k files run the first at their rates, each a host process of its own).
 //
-// This is the reversal of the old "MI.OUT is unreachable headlessly" folklore (docs/lsdj.md): SYNC=MI.OUT
-// is byte 9 (cold-authored here), and the wire's 1-flag-bit + 7-payload-bit framing — which the raw 8-bit
-// capture had mis-read as garbage — decodes cleanly.
-import { test, expect, skip } from "@retroplug/testing";
-import { createRealBackend } from "../src/realBackend";
-import { createAudioDriver } from "../src/audioDriver";
-import { savFrom, type SavInput } from "@retroplug/lsdj";
-import { directGraph } from "../src/graph/directGraph";
+// This is the reversal of the old "MI.OUT is unreachable headlessly" folklore (docs/lsdj.md): SYNC=MI.OUT is byte 9
+// (cold-authored here), and the wire's 1-flag-bit + 7-payload-bit framing, which the raw 8-bit capture had mis-read
+// as garbage, decodes cleanly once the capture feeds the Game Boy the 0s an Arduinoboy does.
+import { test } from "@retroplug/testing";
+import { midiOutCase, midiOutClockCase } from "./lsdjMidiOut";
 
-// Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
-const graph = directGraph();
+test("MIDIOUT (mode 7) at 44.1 kHz: a real LSDj's decoded MI.OUT is exactly the MIDI its song plays", () => {
+  midiOutCase(44100);
+});
 
-declare const __RESOURCES_DIR__: string;
-
-const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
-const START = 7; // GameboyButton::Start
-const MIDIOUT = "midiOut"; // LsdjSyncMode / lsdj-sync role mode
-
-// A phrase of eight rows, each an audible note plus an `N` (NoteOn) command whose value is the MIDI note
-// to transmit — that command is what drives the MI.OUT NoteOn protocol. SYNC=MI.OUT so LSDj emits the
-// Arduinoboy stream (clock + START on play, NoteOns from the N commands).
-const MIDIOUT_SONG: SavInput = {
-  workingSong: {
-    formatVersion: 22,
-    settings: { syncMode: "MidiOut" },
-    rows: [{ chains: [0] }],
-    chains: [{ phrases: [0] }],
-    phrases: [
-      {
-        notes: [1, 13, 25, 1, 13, 25, 1, 13],
-        instruments: [0, 0, 0, 0, 0, 0, 0, 0],
-        commands: ["N", "N", "N", "N", "N", "N", "N", "N"],
-        commandValues: [48, 52, 55, 60, 64, 67, 72, 36],
-      },
-    ],
-    instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
-  },
-};
-
-const lsdjSync = (mode: string) => [{ kind: "lsdj-sync", config: { mode } }];
-
-// Flatten a drainMidiOut result into the raw status/data byte messages for assertions.
-const messages = (drained: { data: Uint8Array }[]): number[][] => drained.map((m) => Array.from(m.data));
-
-test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI its decoder turns into host MIDI", () => {
-  const be = createRealBackend();
-  if (!be.fileExists(ABOY)) skip(`lsdj-midiout: aboy LSDj ROM not found at ${ABOY}`);
-
-  const audio = createAudioDriver();
-
-  const id = 1;
-  expect(graph.add({
-    romPath: ABOY,
-    platform: "gb",
-    core: "sameboy",
-    embeddedRom: "",
-    savPath: null,
-    statePath: null,
-    sramBytes: savFrom(MIDIOUT_SONG),
-  }, id)).toBeTruthy();
-
-  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
-  // The mode's capture, `drive`, rides the same document on the Game Boy's node, as a store places it.
-  expect(graph.setPipeline(id, lsdjSync(MIDIOUT))).toBeTruthy();
-
-  audio.renderAudio(6000); // reach the song screen
-  audio.drainMidiOut(); // discard any boot-time noise
-
-  // LSDj's START button toggles play/stop; each tap sends the transport bookend on its serial-out (the
-  // MI.OUT stream — LSDj is the serial master and self-clocks). We play, stop, then play again: the
-  // stop→restart lands a clean 0xFC/0xFA transport edge mid-stream, after the external-clock serial link
-  // has settled (the very first byte at play-start can be lost to the capture-arming handshake).
-  const tap = () => {
-    audio.pressButton(id, START, true);
-    audio.renderAudio(80);
-    audio.pressButton(id, START, false);
-  };
-  tap(); // play
-  audio.renderAudio(2000); // let the phrase run so N commands + clocks transmit
-  tap(); // stop → 0xFC
-  audio.renderAudio(400);
-  tap(); // play again → 0xFA, mid-stream where framing is aligned
-  audio.renderAudio(2000);
-
-  const out = audio.drainMidiOut();
-  const drained = messages(out);
-  const status = drained.map((m) => m[0]);
-  const starts = status.filter((s) => s === 0xfa).length;
-  const stops = status.filter((s) => s === 0xfc).length;
-  const clocks = status.filter((s) => s === 0xf8).length;
-  const noteOns = status.filter((s) => (s & 0xf0) === 0x90).length;
-  console.log(`[lsdj-midiout] ${drained.length} msgs; starts=${starts} stops=${stops} clocks=${clocks} noteOns=${noteOns}`);
-
-  // A clock stream — LSDj clocks its MI.OUT output while playing (the transport heartbeat).
-  expect(clocks > 4).toBeTruthy();
-  // NoteOns from the N commands — the actual musical MIDI content.
-  expect(noteOns > 0).toBeTruthy();
-  // A transport bookend — the stop→restart toggle sends 0xFC then 0xFA on the (aligned) MI.OUT stream.
-  expect(starts + stops > 0).toBeTruthy();
-  // Each message at its byte's frame in the block it was captured in: inside renderAudio's 1024-frame blocks, and
-  // spread across them, never all at a block's frame 0 as a decoder timestamping by block would send them.
-  const frames = out.map((m) => m.frame);
-  const offZero = frames.filter((f) => f > 0).length;
-  console.log(`[lsdj-midiout] frames ${Math.min(...frames)}..${Math.max(...frames)}, ${offZero} of ${frames.length} past frame 0`);
-  expect(frames.every((f) => f >= 0 && f < 1024)).toBeTruthy();
-  expect(offZero > frames.length / 2).toBeTruthy();
+test("MIDIOUT (mode 7): an N command's value of 0x7F reaches the host as an Arduinoboy reads it, a clock", () => {
+  midiOutClockCase();
 });

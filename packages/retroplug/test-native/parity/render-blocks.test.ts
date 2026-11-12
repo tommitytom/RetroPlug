@@ -225,7 +225,9 @@ test("MIDI out through renderBlocks is what renderAudio + drainMidiOut yields, t
   });
 
   expect(viaAudio.length).toBeGreaterThan(4); // a real stream, not two empties agreeing
-  expect(viaAudio.some((m) => m.data[0] === 0xf8)).toBeTruthy();
+  // The song's N commands, as NoteOns; it sends no clock, so a 0xF8 would be a bit the capture made up.
+  expect(viaAudio.some((m) => (m.data[0] & 0xf0) === 0x90)).toBeTruthy();
+  expect(viaAudio.some((m) => m.data[0] === 0xf8)).toBe(false);
   expect(JSON.stringify(viaBlocks)).toBe(JSON.stringify(viaAudio));
   expect(Math.max(...blockOf)).toBeGreaterThan(0); // entries carry the block they came from, not always 0
 });

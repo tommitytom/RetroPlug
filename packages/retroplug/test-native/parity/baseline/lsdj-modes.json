@@ -284,12 +284,12 @@
   },
   "midiOut": {
    "midiOut": {
-    "count": 42,
-    "fnv": "c8f61b17"
+    "count": 23,
+    "fnv": "8642472a"
    },
    "ram": {
     "0": {
-     "fnv": "2d2fb067",
+     "fnv": "1caeaea0",
      "length": 32768
     }
    },

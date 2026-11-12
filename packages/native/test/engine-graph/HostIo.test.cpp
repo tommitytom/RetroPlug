@@ -882,14 +882,14 @@ TEST_CASE("master sync's stop after Engine::setSampleRate drops the rate during 
     CHECK(e.faultCount() == 0);
 }
 
-TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out into Engine::midiOut inside each block",
+TEST_CASE("what a Game Boy's core captures reaches rp.lsdj.serial-out, where mGB's idle line decodes to nothing",
           "[engine-graph][host-io]") {
-    // A real core's capture through the real decoder into the host's MIDI out, with no fixture: mGB, with capture
-    // armed in drive, has its idle line clocked out of its serial port, 0xFF byte after 0xFF byte (after one other as
-    // it boots), and MI.OUT reads 0xFF as a wire frame of flag 1 and payload 0x7F, LSDj's clock, so a 0xF8 at the frame
-    // of the byte that completes it. In ragged blocks, a 1-frame one among them, each block's messages lie inside it,
-    // each at the frame of a byte the core captured in that block (a wire frame straddling two blocks completes in the
-    // later one), at most one a byte, and Engine::midiOut is frame-sorted.
+    // A real core's capture into the real decoder, with no fixture: mGB, with capture armed in drive, has its idle line
+    // clocked out of its serial port. An Arduinoboy holds the Game Boy's serial input low, and so does the capture, so
+    // every bit the core shifts in is 0 and its port carries 0x00 byte after 0x00 byte (after one other as it boots),
+    // which MI.OUT reads as idle bits: the decoder sends nothing, where one stray 1 bit would be a start bit and a
+    // message LSDj never sent. In ragged blocks, a 1-frame one among them. What LSDj's own bytes decode to, at their
+    // frames, is the fixture-gated cases' (test-native/lsdj-midiout and the parity groups' MI.OUT cases).
     Engine e(kRate);
     rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"}};
@@ -901,48 +901,30 @@ TEST_CASE("what a Game Boy's core captures decodes through rp.lsdj.serial-out in
     SameBoySystem* const gb = dynamic_cast<SameBoySystem*>(e.findSystem(1));
     REQUIRE(gb != nullptr);
     const std::uint32_t sizes[] = {1024, 1, 333, 64, 2048, 7};
-    std::size_t clocks = 0, bytes = 0;
-    bool spread = false;
+    std::size_t bytes = 0, idle = 0;
     for (int b = 0; b < 600; ++b) {
         const std::uint32_t frames = sizes[b % std::size(sizes)];
         block(e, frames);
-        const auto stamped = serialStamped(*gb, frames);
-        const auto& out = e.midiOut();
-        bool clocksOnly = true, inside = true, sorted = true, atBytes = true;
-        std::size_t j = 0;  // the next captured byte a message may lie at
-        for (std::size_t i = 0; i < out.size(); ++i) {
-            const auto& m = out[i];
-            clocksOnly = clocksOnly && m.system == kLoop && m.data == std::vector<std::uint8_t>{0xF8};
-            inside = inside && m.frame < frames;
-            sorted = sorted && (i == 0 || out[i - 1].frame <= m.frame);
-            while (j < stamped.size() && stamped[j].first != m.frame) ++j;
-            atBytes = atBytes && j < stamped.size();  // at a captured byte's frame, after the last message's byte
-            ++j;
+        for (const auto& [frame, byte] : serialStamped(*gb, frames)) {
+            idle += byte == 0x00 ? 1 : 0;
+            ++bytes;
         }
         INFO("block " << b << ", " << frames << " frames");
-        CHECK(clocksOnly);
-        CHECK(inside);
-        CHECK(sorted);
-        CHECK(atBytes);
-        clocks += out.size();
-        bytes += stamped.size();
-        spread = spread || (out.size() > 1 && out.front().frame != out.back().frame);
+        CHECK(e.midiOut().empty());
     }
-    CHECK(clocks > 1000);
-    // A clock a byte, but for the one other byte as it boots and the one that completes an unpaired value.
-    CHECK(clocks + 2 >= bytes);
-    CHECK(spread);  // the frames are the bytes', not one frame for the whole block
+    CHECK(bytes > 1000);      // the port is clocked, and its bytes reach the decoder every block
+    CHECK(idle + 1 >= bytes);  // all of them idle but the one as it boots
     CHECK(e.scriptThrows() == 0);
     CHECK(e.droppedMessages() == 0);
 }
 
 TEST_CASE("one setGraph switches a Game Boy's capture and its decoder's mode together, in the same block",
           "[engine-graph][host-io][settings]") {
-    // MI.OUT drives mGB's port, and its decoder reads the idle 0xFF bytes as LSDj's clock; master sync only listens,
-    // and mGB, waiting on an external clock, sends nothing. The capture is a setting of the Game Boy's node and the
-    // mode one of its decoder's (docs/modular-graph-phase-c2-design.md section 4), so one document carries both and
-    // they land in one block: the first block of the plan that carries them captures in the new mode and decodes in it.
-    // Moved by two paths, the capture a block behind, master sync would decode a block of MI.OUT's bytes as clocks,
+    // MI.OUT drives mGB's port, whose idle line its decoder reads as nothing; master sync only listens, and mGB,
+    // waiting on an external clock, sends nothing. The capture is a setting of the Game Boy's node and the mode one of
+    // its decoder's (docs/modular-graph-phase-c2-design.md section 4), so one document carries both and they land in
+    // one block: the first block of the plan that carries them captures in the new mode and decodes in it. Moved by
+    // two paths, a capture in drive under a master sync decoder would decode a block of MI.OUT's bytes as clocks,
     // starting a run (docs/lsdj-master-sync-fix-design.md section 10).
     Engine e(kRate);
     rp::host::test::Roms roms;
@@ -960,23 +942,17 @@ TEST_CASE("one setGraph switches a Game Boy's capture and its decoder's mode tog
                                         std::string(R"("model":"dmgB","serialOutCapture":")") + capture + "\""}};
         return graphRequest(stereoDocument(systems, extras), {1});
     };
-    const auto clocksOnly = [&] {
-        for (const auto& m : e.midiOut())
-            if (m.data != std::vector<std::uint8_t>{0xF8}) return false;
-        return !e.midiOut().empty();
-    };
     REQUIRE(e.setGraph(switched("drive", "midiOut")).ok);
     const auto* gb = dynamic_cast<const SameBoySystem*>(e.findSystem(1));
     REQUIRE(gb);
-    // mGB opens its port once the boot ROM has run, about 2.5 s in; then every block clocks.
+    // mGB opens its port once the boot ROM has run, about 2.5 s in; then every block clocks a block's worth of bytes.
     int b = 0;
-    while (b < 200 && e.midiOut().empty()) {
+    do {
         block(e);
         ++b;
-    }
+        CHECK(e.midiOut().empty());  // the idle line, 0s, decodes to nothing
+    } while (b < 200 && gb->serialOutLog_.size() <= 64);
     REQUIRE(b < 200);
-    block(e);
-    REQUIRE(clocksOnly());
 
     REQUIRE(e.setGraph(switched("listen", "masterSync")).ok);
     CHECK(gb->serialOutCapture() == SerialOutCapture::Drive);  // the plan is adopted; the capture waits for its block
@@ -989,9 +965,9 @@ TEST_CASE("one setGraph switches a Game Boy's capture and its decoder's mode tog
     }
 
     REQUIRE(e.setGraph(switched("drive", "midiOut")).ok);
-    block(e);  // its first block captures in drive and decodes in MI.OUT
+    block(e);  // its first block captures in drive and decodes in MI.OUT, which a master sync decoder would clock on
     CHECK(gb->serialOutLog_.size() > 64);
-    CHECK(clocksOnly());
+    CHECK(e.midiOut().empty());
     CHECK(e.scriptThrows() == 0);
     CHECK(e.droppedMessages() == 0);
 }

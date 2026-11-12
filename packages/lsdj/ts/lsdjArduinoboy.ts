@@ -6,12 +6,14 @@
 // Two layers, both pure + testable in isolation:
 //
 //   1. FLAG-GATED FRAMING (arduinoboyDecodeSerialOut). LSDj's MI.OUT wire sends each command as a wire
-//      frame, `1 data-present flag bit + 7 payload bits`, MSB-first, so a captured 8-bit byte reads as
-//      `0x80|payload` and the native 8-bit `captureSerialOutBit` mis-frames it as high-bit "garbage".
-//      We reconstruct the raw bit stream (MSB-first per captured byte) and apply: read 1 flag; if it
-//      is 1, read 7 payload bits → a 7-bit command byte; else it's an idle bit. A wire frame that
-//      straddles a block boundary is buffered in `state` (bitAcc/bitCount) across calls. A "frame"
-//      alone is an audio frame, as everywhere in the graph: where a message lies in its block.
+//      frame, `1 data-present flag bit + 7 payload bits`, MSB-first (LSDj writes SB = 0x80|payload). The
+//      native capture's 8-bit groups are not wire bytes: it also clocks the bits LSDj's serial interrupt
+//      leaves armed between its writes (the 0s an Arduinoboy holds the line at), so a group can straddle
+//      two writes. The groups carry the bit stream in order, though, so we reconstruct it (MSB-first per
+//      captured byte) and apply: read 1 flag; if it is 1, read 7 payload bits → a 7-bit command byte;
+//      else it's an idle bit. A wire frame that straddles a block boundary is buffered in `state`
+//      (bitAcc/bitCount) across calls. A "frame" alone is an audio frame, as everywhere in the graph:
+//      where a message lies in its block.
 //
 //   2. BYTE PROTOCOL (arduinoboyDecodeByte). The 7-bit command byte drives the Arduinoboy protocol
 //      (verbatim from the trash80/Arduinoboy firmware, Mode_LSDJ_Midiout.ino):

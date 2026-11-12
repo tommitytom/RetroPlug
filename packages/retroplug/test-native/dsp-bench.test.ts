@@ -304,9 +304,9 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   // The lsdj-sync role's two MIDI-out modes run their decoders, in rp.lsdj.serial-out after the Game Boy, only on what
   // a playing LSDj clocks out, so each has a window of its own on a real LSDj, the mGB systems gone: master sync on a
   // stock LSDj in SYNC=LSDj (a byte a 24-PPQN tick, which the core captures in `listen`, as lsdj-mastersync.test.ts
-  // runs it), and MI.OUT on an Arduinoboy build in SYNC=MI.OUT (its clock and the N commands' NoteOns, captured in
-  // `drive`, as lsdj-midiout.test.ts runs it). Each window is held to the mGB window's zero, the clocks its decoder
-  // sent say LSDj played through it, and the same proof as above says the window counted.
+  // runs it), and MI.OUT on an Arduinoboy build in SYNC=MI.OUT (the N commands' NoteOns, captured in `drive`, as
+  // lsdj-midiout.test.ts runs it). Each window is held to the mGB window's zero, what its decoder sent (master sync's
+  // clocks, MI.OUT's NoteOns) says LSDj played through it, and the same proof as above says the window counted.
   //
   // RP_BENCH_LSDJ=0 leaves them out, as tools/run-profile.sh's valgrind modes do by default: their boots and warmups do
   // not follow RP_BENCH_BLOCKS, so under valgrind they would make the run several times longer and fill the census
@@ -319,15 +319,15 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
   for (const id of ids) graph.remove(id);
   const be = createRealBackend();
   // A window of RP_BENCH_BLOCKS, but at most 400 blocks (9.3 s), the LSDj windows coming on top of the mGB one, and at
-  // least 100 (2.3 s): MI.OUT's clocks come unevenly (at the default warmup none in the window's first 20 blocks, 8 in
-  // its first 100 and 40 in 400), so a shorter window can fail the playing check below for want of them.
+  // least 100 (2.3 s), so the playing check below counts a phrase or more of MI.OUT's NoteOns (eight a 1.9 s phrase).
   const lsdjBlocks = Math.max(100, Math.min(blocks, 400));
   const lsdjWindow = (
     workload: string,
     romPath: string,
     song: SavInput,
     mode: string,
-    minClocks: number,
+    played: "clocks" | "noteOns",
+    min: number,
   ): void => {
     if (!be.fileExists(romPath)) skip(`dsp-bench: the ${workload} window needs the LSDj ROM at ${romPath}`);
     const id = extra + 1;
@@ -364,12 +364,12 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
         }),
     );
     expect(w.blockCount, `${workload}: blocks measured`).toBe(lsdjBlocks);
-    // LSDj played through the window: its decoder sent more clocks than the bound, which is most of what its tempo
-    // sends in master sync (40 a second, of about 51 at tempo 128, a byte a 24-PPQN tick) and half of it in MI.OUT (2
-    // a second, of about 4). The bound is the default warmup's, as the zero is: MI.OUT's clocks come unevenly, and a
+    // LSDj played through the window: its decoder sent more than the bound, which is most of what LSDj sends: master
+    // sync's clocks (40 a second, of about 51 at tempo 128, a byte a 24-PPQN tick) and MI.OUT's NoteOns (3 a second, of
+    // about 4.3: the phrase's eight N commands every 1.9 s). The bound is the default warmup's, as the zero is: a
     // shorter warmup starts the window earlier.
     if (warmup >= DEFAULT_WARMUP) {
-      expect(clocks, `${workload}: clocks decoded in the window`).toBeGreaterThan(minClocks);
+      expect(played === "clocks" ? clocks : notes, `${workload}: ${played} decoded in the window`).toBeGreaterThan(min);
       expect(w.allocCalls, `${workload}: allocations in the measured window`).toBe(0);
       expect(w.maxBlockAllocCalls, `${workload}: allocations in the worst block`).toBe(0);
     }
@@ -377,6 +377,6 @@ test("dsp-bench: the script nodes' per-block allocation under an mGB + MIDI work
     expectWindowLive();
   };
   const seconds = (lsdjBlocks * BLOCK_MS) / 1000;
-  lsdjWindow("lsdj-masterSync", LSDJ_ROM, MASTER_SONG, "masterSync", 40 * seconds);
-  lsdjWindow("lsdj-midiOut", LSDJ_ABOY_ROM, MIDIOUT_SONG, "midiOut", 2 * seconds);
+  lsdjWindow("lsdj-masterSync", LSDJ_ROM, MASTER_SONG, "masterSync", "clocks", 40 * seconds);
+  lsdjWindow("lsdj-midiOut", LSDJ_ABOY_ROM, MIDIOUT_SONG, "midiOut", "noteOns", 3 * seconds);
 });

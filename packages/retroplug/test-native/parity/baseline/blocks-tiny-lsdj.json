@@ -2,12 +2,12 @@
  "cases": {
   "midiOut-1": {
    "midiOut": {
-    "count": 38,
-    "fnv": "15804b2c"
+    "count": 21,
+    "fnv": "2444c942"
    },
    "ram": {
     "0": {
-     "fnv": "e5b0806a",
+     "fnv": "f3ba11b1",
      "length": 32768
     }
    },
@@ -92,12 +92,12 @@
   },
   "midiOut-fl": {
    "midiOut": {
-    "count": 38,
-    "fnv": "6108dcb3"
+    "count": 21,
+    "fnv": "3d00ffd2"
    },
    "ram": {
     "0": {
-     "fnv": "49240d8a",
+     "fnv": "8bf2bc35",
      "length": 32768
     }
    },
@@ -182,12 +182,12 @@
   },
   "midiOut-fl256": {
    "midiOut": {
-    "count": 38,
-    "fnv": "3f054ada"
+    "count": 21,
+    "fnv": "e2d50f05"
    },
    "ram": {
     "0": {
-     "fnv": "f0613a11",
+     "fnv": "f573627e",
      "length": 32768
     }
    },

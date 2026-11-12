@@ -93,6 +93,14 @@
    "total": 2
   },
   "lsdj-midiout": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-midiout-48k": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-midiout-96k": {
    "skipped": 1,
    "total": 1
   },
