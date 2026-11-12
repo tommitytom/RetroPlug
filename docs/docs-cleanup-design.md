@@ -162,3 +162,39 @@ The ledger (1,695 rows: AGENTS.md 46 keep, 281 merge, 476 dup, 11 stale, 90 hist
 
 The new spec/07 gains one Before-merge line the ledger found owed: a green CI run of the tip (run 43131974297 built
 ea2517dc9; nothing after it has run on a runner).
+
+## 6. As built
+
+| File | Before | After |
+|------|--------|-------|
+| AGENTS.md | 835 lines | 102 lines: rules and pointers, each with its link |
+| spec/07-remaining-work.md | 1,181 lines, 13 ticked lines, phase histories | 825 lines: the top note, 85 checklist lines, one detail entry each, Deferred |
+| spec/14-hosts-harnesses.md | none | 204 lines: the Reaper leg, Renoise, the SDL harnesses and the device guard, `retroplug-cli test` |
+
+- **spec/07 is longer than section 3 expected** (250 to 350 lines). 245 open ledger rows survived the audit, each
+  carried with its fact, and an entry is a heading rather than a bold title so its checklist line can link it. The
+  per-task and final reviews spot-checked 46 entries against the code and found none done.
+- **AGENTS.md gained back rules the cut first lost**, found by the review of its task: the shell boundary rule, the
+  fixture-gated acceptance of a parity or render change, the migration step, mquickjs staying unpatched, the MIDI
+  listing pass; and three that had lived only in the specs (fixtures through `__RESOURCES_DIR__`, BlipToaster with
+  `--rom` on the rig, the bare build for a standalone UI change).
+- **Facts corrected on the way** (each checked against the code): the script-pack heap sizing (3/2 on a 64-bit device
+  build, 4x with a 1 MiB floor on the desktop), which product names which `PROVIDERS`, the test-binary and golden
+  counts, the rig scripts' default ROM (`n8-midi.nes` unless `--rom` names BlipToaster), the device guard being
+  Linux's, `sdl:smoke` and `test:cli-ts` being CI gates, the migrations maps' home, drifted `PluginDSP.cpp` line links,
+  and three stale code comments (`cmake/test-binary.cmake`, the root `CMakeLists.txt`'s LTO counts,
+  `cli/sessions/test.ts`).
+- **Left as they are:** design docs and plans that name a moved section (records of their time, among them
+  `docs/package-split.md` and `docs/sdl-standalone.md`); spec/13's two sentences that CI builds the SDL standalone.
+
+## 7. Execution
+
+Ledger by Opus (1,695 rows, 1,703 after the plan's updates); plan by Opus, every block applied on the tree against
+`check.mjs` red then green, and replayed from the plan's text to an identical tree. Six tasks, each by a Sonnet
+implementer and spec-checked as tree identity with the validated diff: 80851a1c4, 38b2d6df1, e7ad71036, 54a8d9285,
+166d89a7d, 9d0e84152. An Opus review per task asked for changes on all six (2 Critical, 28 Important in all); four
+Sonnet follow-up passes, each verifying a finding against the code before applying it, fixed them: 4fa64ea0e,
+ed4c6b678, 5876484ff, 74821c799. The Opus final review found two Important (the migrations line, doubled list
+markers) and Minor items, settled in 4778e2075. Acceptance at the tip: `check.mjs` all checks pass, `pnpm
+check:boundaries` and `pnpm typecheck` exit 0, a reconfigure and a build of `retroplug-cli`, `retroplug-clap`,
+`retroplug-watcher-test`, `retroplug-engine-graph-test` and `retroplug-audio-test` exit 0.
