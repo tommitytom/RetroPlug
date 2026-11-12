@@ -6,9 +6,16 @@
 import { test, expect } from "@retroplug/testing";
 import { FakeLaunchpad } from "@retroplug/launchpad/testSupport/fakeDevice";
 import { ControllerSession } from "@retroplug/launchpad/session";
+import { controllerSessionNode } from "@retroplug/launchpad/controllerSession";
+import { registerControllerApps } from "@retroplug/launchpad/apps";
+import { NodeRig, bytesOn, type BlockSpec } from "@retroplug/testing/rig";
+import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
+import { MIDIMAP_CLOCK, MIDIMAP_NOTEOFF } from "@retroplug/lsdj/lsdjSyncBytes";
+import { songRowTicks } from "@retroplug/lsdj/playback";
+import runtime from "../appRuntime";
 import { lsdjMidiMap, rowAt, channelAt, followRow, WINDOW_ROWS, MAX_PAGE } from "../lsdjMidiMap";
 import { lsdjMidiMapTarget } from "../launchTarget";
-import { Palette, palette, type Led } from "@retroplug/launchpad";
+import { Palette, padIndex, palette, type Led } from "@retroplug/launchpad";
 import { SongSchema, type Song } from "@retroplug/lsdj/model";
 import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
 import { idlePosition, type PlaybackModel, type PlaybackPosition } from "@retroplug/tracker/playbackModel";
@@ -336,4 +343,43 @@ test("driven by a real predictor over a long run, the lit playhead tracks the mo
     checked++;
   }
   expect(checked > 80).toBeTruthy(); // the run really did span several song wraps
+});
+
+test("at a tempo divisor of 2, a launch cued for the row's end reaches the cart as the cart's row ends", () => {
+  // The session node walks the clock the cart hears (24 / tickDivisor a quarter, as rp.lsdj.sync clocks MI.MAP), so
+  // the row its predictor turns over on is the cart's own. Counted in the clocks rp.lsdj.sync sent the cart, the launch
+  // cued while row 0 plays reaches it once row 0 has had all 96 of its ticks; walking every host tick would release it
+  // halfway through, at 48.
+  registerControllerApps([runtime]);
+  const released = (tickDivisor: number): number[] => {
+    const controller = new NodeRig(controllerSessionNode, {
+      app: "lsdj-midimap",
+      target: "system",
+      systemId: 1,
+      appConfig: { quantise: "rowEnd", follow: true, page: 0 },
+      songRowTicks: songRowTicks(fullSong(16)),
+      tickDivisor,
+    });
+    const cart = new NodeRig(lsdjSyncNode, { mode: "midiMap", tempoDivisor: 2 });
+    const pad = (row: number) => [{ frame: 0, data: [0x90, padIndex({ x: row < 8 ? 0 : 4, y: row % 8 }), 100] }];
+    const at: number[] = []; // how many clocks the cart had been sent when each row byte (not a NoteOff's) reached it
+    let clocks = 0;
+    for (let block = 0; block < 8; block++) {
+      // One second at 120 BPM: 48 host ticks, 24 of the cart's. Row 0 is launched at once (nothing plays yet), row 9 is
+      // cued in the next block.
+      const spec: BlockSpec = { frames: 44100, playing: true, ppq: 2 * block, tempo: 120 };
+      const surface = block === 0 ? pad(0) : block === 1 ? pad(9) : [];
+      const launches = controller
+        .run({ ...spec, inputs: { controllerIn: surface } })
+        .filter((s) => s.port === "launches")
+        .map((s) => ({ frame: s.queued, data: s.data }));
+      for (const [, byte] of bytesOn(cart.run({ ...spec, inputs: { launches } }), "serialIn")) {
+        if (byte === MIDIMAP_CLOCK) clocks++;
+        else if (byte !== MIDIMAP_NOTEOFF) at.push(clocks);
+      }
+    }
+    return at;
+  };
+  expect(released(2)).toEqual([0, 96]);
+  expect(released(1)).toEqual([0, 48]);
 });

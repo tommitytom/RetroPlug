@@ -89,10 +89,10 @@ class Wired {
   constructor(over: Record<string, unknown> = {}) {
     this.controller = session(over) as NodeRig<unknown>;
   }
-  run(step: Step, midi: In[] = []): { controller: Sent[]; lsdj: Sent[] } {
-    const controller = this.controller.run(blockOf(step));
+  run(step: Step, midi: In[] = [], frames = 1024): { controller: Sent[]; lsdj: Sent[] } {
+    const controller = this.controller.run(blockOf(step, frames));
     const launches = controller.filter((s) => s.port === "launches").map((s) => ({ frame: s.queued, data: s.data }));
-    const lsdj = this.lsdj.run({ ...blockOf(step), inputs: { midi, launches } });
+    const lsdj = this.lsdj.run({ ...blockOf(step, frames), inputs: { midi, launches } });
     return { controller, lsdj };
   }
 }
@@ -126,6 +126,7 @@ test("settings default as the role's did, and keep the parsed app config and the
     songRowTicks: [],
     anchorRows: [],
     anchorSeq: 0,
+    tickDivisor: 1,
   });
   const given = {
     app: "lsdj-midimap",
@@ -135,6 +136,7 @@ test("settings default as the role's did, and keep the parsed app config and the
     songRowTicks: [[96, null], [96]],
     anchorRows: [1, null, 3, 4],
     anchorSeq: 2,
+    tickDivisor: 2,
   };
   expect(controllerSessionNode.parseSettings(given)).toEqual(given);
   expect(() => controllerSessionNode.parseSettings({ target: "elsewhere" })).toThrow("target: Invalid option");
@@ -429,6 +431,49 @@ test("adopting a new song table does not restart the song", () => {
   dev.feed(rig.run(still({ playing: true, ppq: 4, connected: true })));
   expect(dev.leds.get(pad(0, 1))).toBe(playheadBefore);
   expect(dev.lit(0, 4)).toBe(true);
+});
+
+test("at tickDivisor 2 the predictor walks half the ticks a block, as the cart clocked at 24 / 2 hears them", () => {
+  // MI.MAP clocks its cart at 24 / tempoDivisor ticks a quarter (rp.lsdj.sync), so at divisor 2 a row of 96 ticks
+  // lasts eight quarters. The session walks the same division: four blocks of 96 host ticks after the launch are 192 of
+  // the cart's, row 2, where walking every host tick would put the playhead on row 4, two rows ahead of the cart.
+  const twoSeconds = 88200; // 96 ticks a block at divisor 1
+  const lit = (tickDivisor: number): number => {
+    const rig = session({ songRowTicks: table(), tickDivisor });
+    const dev = new Device();
+    dev.feed(rig.run(blockOf({ playing: true, ppq: 0, connected: true, surface: [PRESS_ROW_0] }, twoSeconds)));
+    for (let i = 1; i <= 4; i++) dev.feed(rig.run(blockOf({ playing: true, ppq: 4 * i, connected: true }, twoSeconds)));
+    return [0, 1, 2, 3, 4, 5].findIndex((row) => dev.leds.get(pad(0, row)) === Palette.greenBright);
+  };
+  expect(lit(2)).toBe(2);
+  expect(lit(1)).toBe(4);
+});
+
+test("a divisor changed while a song plays reaches the running session at its next block, its cue kept", () => {
+  // tickDivisor is read every block and is not part of the session's shape, so the change rebuilds nothing: no hello,
+  // and the launch cued for the end of row 0 still waiting. The session walks what its cart is clocked, the block the
+  // walk changes resolution in included, so the cued row reaches the cart once the cart has been sent row 0's 96 ticks.
+  const w = new Wired({ appConfig: parsed({ quantise: "rowEnd" }) });
+  const second = 44100; // 48 host ticks a block at 120 BPM
+  let clocks = 0;
+  const run = (step: Step): { controller: Sent[]; rows: number[] } => {
+    const out = w.run(step, [], second);
+    const rows: number[] = [];
+    for (const [, byte] of bytesOn(out.lsdj, "serialIn")) {
+      if (byte === 0xff) clocks++;
+      else if (byte !== 0xfe) rows.push(clocks);
+    }
+    return { controller: out.controller, rows };
+  };
+  expect(run({ ppq: 0, surface: [PRESS_ROW_0] }).rows).toEqual([0]); // nothing was playing: launched at once
+  expect(w.controller.set(settingsOf({ appConfig: parsed({ quantise: "rowEnd" }), tickDivisor: 2 }))).toBe(true);
+  expect(w.lsdj.set({ mode: "midiMap", tempoDivisor: 2 })).toBe(true);
+  const changed = run({ ppq: 2, surface: [press(9)] });
+  expect(surface(changed.controller).some((m) => sameBytes(m, HELLO))).toBe(false); // the same session, not a new one
+  expect(changed.rows).toEqual([]); // cued for the end of row 0
+  const reached: number[] = [];
+  for (let block = 2; block < 8; block++) reached.push(...run({ ppq: 2 * block }).rows);
+  expect(reached).toEqual([96]);
 });
 
 test("an app knob changes behaviour on the next block", () => {

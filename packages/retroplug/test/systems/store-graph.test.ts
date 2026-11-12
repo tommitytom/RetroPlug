@@ -688,12 +688,15 @@ test("a controller session is a node of the document, with the sync mode its car
   expect(be.graphNode("controller")?.settings).toEqual(
     canon({
       app: "lsdj-midimap", target: "system", systemId: id, appConfig: { quantise: "bar", follow: true, page: 0 },
-      songRowTicks: [], anchorRows: [], anchorSeq: 0,
+      songRowTicks: [], anchorRows: [], anchorSeq: 0, tickDivisor: 1,
     }),
   );
   expect(wired(be, "controller.launches", `sys-${id}/lsdj-sync.launches`)).toBe(true);
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe("midiMap"); // forced in the document, never saved
   expect(sys.view()[0].roles.find((r) => r.kind === "lsdj-sync")?.config.mode).toBe(LsdjSyncMode.MidiSync);
+  // The session walks the clock its cart hears: the cart's divisor, read off the role's config the pipeline carries.
+  sys.setRoleConfig(id, "lsdj-sync", { tempoDivisor: 4 });
+  expect(be.graphNode("controller")?.settings?.tickDivisor).toBe(4);
   p.setSection(CONTROLLER_SECTION, { enabled: false });
   expect(be.graphNode("controller")).toBe(undefined);
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe(LsdjSyncMode.MidiSync);
@@ -1305,7 +1308,7 @@ test("DirectGraph takes the project's controller as one of the graph's models, i
   expect(be.graphNode("controller")?.settings).toEqual(
     canon({
       app: "lsdj-midimap", target: "midiOut", systemId: 1, appConfig: { quantise: "beat", follow: true, page: 0 },
-      songRowTicks: [], anchorRows: [], anchorSeq: 0,
+      songRowTicks: [], anchorRows: [], anchorSeq: 0, tickDivisor: 1,
     }),
   );
   // Bound for a real Game Boy, its launches leave the host, under the system it resolved.

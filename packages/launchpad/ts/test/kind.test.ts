@@ -30,7 +30,7 @@ test("a syncOverride that is not an object is refused", () => {
 
 test("a syncOverride key nothing reads is refused, naming the keys there are", () => {
   expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", of: "off" }))
-    .toThrow('has "of", which nothing reads (its keys are node, mode, listening, off)');
+    .toThrow('has "of", which nothing reads (its keys are node, mode, listening, off, divisor)');
 });
 
 test("a syncOverride with no node or no mode is refused", () => {
@@ -59,6 +59,12 @@ test("a listening value and its off mode must both be strings, and off must diff
     .toThrow('names "midiMap" as both its mode and the mode a cart that is not listening is put in');
 });
 
+test("a divisor must name the setting that divides the node's clock: a non-empty string", () => {
+  expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", divisor: 2 }))
+    .toThrow('\'s "divisor" must name the setting that divides that node\'s 24-tick clock, not 2');
+  expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", divisor: "" })).toThrow('\'s "divisor" must name');
+});
+
 test("a node type the product wires no protocol node for is refused", () => {
   expect(() => refuse({ node: "rp.lsdj.syncs", mode: "midiMap" }))
     .toThrow('names "rp.lsdj.syncs", which no package declares a protocol node for');
@@ -68,6 +74,7 @@ test("a well-formed override passes, with or without a listening value", () => {
   // A bare call: the harness has no negated `toThrow`, and a throw here fails the case.
   refuse({ node: "rp.lsdj.sync", mode: "midiMap" });
   refuse({ node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off" });
+  refuse({ node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off", divisor: "tempoDivisor" });
 });
 
 test("accept fills the app registry and hands the menu the data it applies", () => {

@@ -49,6 +49,10 @@ const settings = s.object({
    *  number so one anchor is applied once. Empty and 0 on the real-hardware path. */
   anchorRows: s.json<(number | null)[]>([]),
   anchorSeq: s.int({ min: 0, max: 0x7fffffff, default: 0 }),
+  /** What the cart the launches drive divides its 24-tick clock by: its sync node's own divisor setting, which the
+   *  app's sync rule names and the placer reads off the pipeline (1 when it cannot). Read every block and not part of
+   *  the session's shape, so a divisor changed while a song plays reaches the running session at its next block. */
+  tickDivisor: s.number(1),
 });
 
 export type ControllerSessionSettings = Infer<typeof settings>;
@@ -107,10 +111,10 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
     // The session's whole input for a block, one object refilled each block so none is built per block.
     const frame = { input, tick: 0, transport: false, ticks: 0 };
     // The clock the cart is sent, walked here so the predictor can be given the COUNT of ticks a block fired. It is the
-    // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), at 24 ticks a quarter. What it counts is what
-    // MI.MAP would clock at divisor 1: an app's override sets the cart's sync MODE, never its tempoDivisor, and MI.MAP
-    // clocks the cart at 24 / tempoDivisor, so at divisor 2 and above this walk runs that many times ahead of the cart -
-    // the predicted playhead and the quantise with it. A cart in a mode that clocks only on a launch counts its own
+    // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), at its resolution: an app's override sets the
+    // cart's sync MODE and never its divisor, and MI.MAP clocks the cart at 24 / tempoDivisor ticks a quarter, so the
+    // walk divides by the cart's divisor (tickDivisor) or the predicted playhead, and a launch cued for the end of a
+    // row, would run that many times ahead of the cart. A cart in a mode that clocks only on a launch counts its own
     // either way. The callback only counts, and is made once so a block allocates nothing for it.
     const clock = new TickClock();
     let walked = 0;
@@ -209,7 +213,7 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         // playhead behind the cart for good. Counting the walk gives the predictor exactly the ticks the cart heard.
         clock.begin(b);
         counted = 0;
-        clock.walk(TICKS_PER_QUARTER, countTick);
+        clock.walk(TICKS_PER_QUARTER / (config.tickDivisor >= 1 ? config.tickDivisor : 1), countTick);
         const elapsed = walked;
         walked = counted;
 

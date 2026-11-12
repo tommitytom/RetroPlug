@@ -15,7 +15,7 @@
 // mode that node is put in, and the polled SYNC value that counts as the cart listening. The graph reads it through
 // PlaceContext.kindData (generated/protocol.ts's KIND_DATA), and the menu reads the same data from the copy the kind's
 // `accept` handed this package (setControllerSyncData): one shape, one reader, two carriers.
-import { definePlacer, type Placement, type Placed, type PlaceContext } from "@retroplug/core/placer";
+import { definePlacer, type Placement, type Placed, type PlaceContext, type PlaceSystem } from "@retroplug/core/placer";
 import type { KindData } from "@retroplug/core/defineKind";
 import type { ControllerAnchor, RowTicksTable } from "@retroplug/tracker/trackerPlayback";
 import { type WireDoc } from "@retroplug/core/graphDocument";
@@ -36,6 +36,10 @@ export interface ControllerSyncRule {
   readonly listening?: string;
   /** The mode that means "send this cart nothing", for one polled as not listening. */
   readonly off?: string;
+  /** The name of that node's setting that divides the 24-tick clock it sends the cart (LSDj's `tempoDivisor`): the
+   *  session walks the same division (tickDivisorOf), so its predicted playhead stays on the cart's. Absent: the cart
+   *  hears every tick. */
+  readonly divisor?: string;
 }
 
 /** An enabled controller: the user's choices, and what the control plane derived for it. */
@@ -90,9 +94,9 @@ function ruleOfData(data: KindData, app: string): ControllerSyncRule | null {
   if (item === null || typeof item !== "object") return null;
   const rule = (item as { syncOverride?: unknown }).syncOverride;
   if (rule === null || typeof rule !== "object") return null;
-  const { node, mode, listening, off } = rule as ControllerSyncRule;
+  const { node, mode, listening, off, divisor } = rule as ControllerSyncRule;
   if (typeof node !== "string" || node === "" || typeof mode !== "string" || mode === "") return null;
-  return { node, mode, listening, off };
+  return { node, mode, listening, off, divisor };
 }
 
 /** The `lsdj-sync` mode the controller needs the cart it drives to be in, and which system that is.
@@ -150,9 +154,28 @@ export function syncModeFor(rule: ControllerSyncRule, cartSync: string | null): 
   return rule.mode;
 }
 
+/** What the cart a controller drives divides its 24-tick clock by: the setting the app's rule names (`divisor`), on
+ *  that system's node of the rule's type, as the pipeline the placer is handed carries its config. 1 when nothing is
+ *  driven, the rule names no setting, the system has no such node or the value is not a finite number of at least 1,
+ *  which is what the node itself clocks by then (rp.lsdj.sync's `config.tempoDivisor || 1`). */
+function tickDivisorOf(
+  rule: ControllerSyncRule | null,
+  sync: { systemId: number } | null,
+  systems: readonly PlaceSystem[],
+): number {
+  if (!rule || !sync || typeof rule.divisor !== "string") return 1;
+  const role = systems.find((s) => s.id === sync.systemId)?.pipeline.find((r) => r.node === rule.node);
+  const value = role?.config[rule.divisor];
+  return typeof value === "number" && Number.isFinite(value) && value >= 1 ? value : 1;
+}
+
 /** The session node's settings (@retroplug/launchpad/controllerSession): its system resolved (0 is the node's none),
- *  and the anchor spelt as the node takes it. */
-export function controllerSettings(controller: GraphController, target: number): Record<string, unknown> {
+ *  the anchor spelt as the node takes it, and the divisor of the clock the cart it drives hears (tickDivisorOf). */
+export function controllerSettings(
+  controller: GraphController,
+  target: number,
+  tickDivisor: number,
+): Record<string, unknown> {
   return {
     app: controller.app,
     target: controller.target,
@@ -163,6 +186,7 @@ export function controllerSettings(controller: GraphController, target: number):
     // rather than yanking the playhead back on every unrelated structure edit.
     anchorRows: controller.anchor?.rows ?? [],
     anchorSeq: controller.anchor?.seq ?? 0,
+    tickDivisor,
   };
 }
 
@@ -178,12 +202,19 @@ export const controllerPlacer = definePlacer<GraphController>({
     const target = controllerTarget(model, systems);
     // The app's sync rule as its manifest declares it, through the context's kind data: what the generated protocol
     // module hands every placer, so the planner carries no registry and no app.
-    const sync = overrideWith(ruleOf(ctx.kindData, model.app), systems, model);
+    const rule = ruleOf(ctx.kindData, model.app);
+    const sync = overrideWith(rule, systems, model);
     // The device's two nodes are placed on their own sides of the session (inputs before it, outputs after), so neither
     // is in a cycle with it; the session's three input wires are its wires, pushed where the session sits.
     const inputs: Placed = { nodes: [{ id: "surface-in", type: SURFACE_IN_NODE_TYPE }], wires: [] };
     const session: Placed = {
-      nodes: [{ id: "controller", type: CONTROLLER_SESSION_NODE_TYPE, settings: controllerSettings(model, target) }],
+      nodes: [
+        {
+          id: "controller",
+          type: CONTROLLER_SESSION_NODE_TYPE,
+          settings: controllerSettings(model, target, tickDivisorOf(rule, sync, systems)),
+        },
+      ],
       wires: [
         { from: "surface-in.in", to: "controller.controllerIn" },
         { from: "surface-in.connected", to: "controller.controllerConnected" },

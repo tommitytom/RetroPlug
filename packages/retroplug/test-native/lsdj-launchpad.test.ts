@@ -13,9 +13,11 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { type SavInput } from "@retroplug/lsdj";
 import { launchMessage } from "@retroplug/lsdj-launchpad/launchTarget";
-import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
+import { PredictedLsdjModel, songRowTicks } from "@retroplug/lsdj/playback";
 import { SongSchema } from "@retroplug/lsdj/model";
-import { LsdjProbe, fmtSample, type ProbeProject } from "./lsdjPlaybackProbe";
+import { padIndex } from "@retroplug/launchpad";
+import { createAudioDriver } from "../src/audioDriver";
+import { LsdjProbe, fmtSample, transitions, type ProbeProject, type ProbeSample } from "./lsdjPlaybackProbe";
 import type { GraphController } from "@retroplug/launchpad/placer";
 
 // 130 rows, every one a single-phrase chain, so every row is playable and 96 ticks long. Reaching past
@@ -75,10 +77,10 @@ test("the controller layer's launch bytes move a real cart, on both MIDI channel
 // controller forces its cart's sync mode, so what is under test is the pipeline a project would really produce.
 
 /** A project with the roles a freshly built LSDj cart has, with the STORED (default) sync mode, and `controller`. */
-const lsdjProject = (controller: GraphController | null, mode = "midiSync"): ProbeProject => ({
+const lsdjProject = (controller: GraphController | null, mode = "midiSync", tempoDivisor = 1): ProbeProject => ({
   midiRouting: "sendToAll",
   controller,
-  roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode, tempoDivisor: 1 } }],
+  roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode, tempoDivisor } }],
 });
 
 const enabled = (over: Partial<GraphController> = {}): GraphController => ({
@@ -131,4 +133,48 @@ test("a cart whose OWN SYNC is not MI.MAP is left alone rather than clocked at",
   const after = p.render(400);
   console.log(`[lsdj-launchpad] cart SYNC=LSDJ, row 42: ${fmtSample(after)}`);
   expect(after.channels.pu1.songRow !== 42).toBe(true);
+});
+
+test("at a tempo divisor of 2, launches cued for a row's end land as the cart's own rows end, row after row", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
+  // MI.MAP clocks the cart at 24 / tempoDivisor ticks a quarter, so at divisor 2 a row of 96 ticks lasts eight
+  // quarters, 4 s at 120 BPM. The session's predictor walks the same division, so a launch quantised to the end of a
+  // row is released as the cart plays that row's last step, and the cart plays each row through before the cued one.
+  // Walking every host tick, the predictor turned over halfway, and the cart left each row on step 8 of its 16.
+  const ticks = songRowTicks(SongSchema.parse(songJson));
+  const controller = enabled({ appConfig: { quantise: "rowEnd" }, songRowTicks: ticks });
+  const p = LsdjProbe.create({ song: SONG, project: () => lsdjProject(controller, "midiSync", 2) });
+  if (!p) return skip("lsdj-launchpad: aboy ROM not found / unsupported version");
+  const audio = createAudioDriver();
+  const pad = (row: number) =>
+    expect(audio.stageControllerIn([0x90, padIndex({ x: row < 8 ? 0 : 4, y: row % 8 }), 100])).toBe(true);
+
+  p.bpm(120);
+  p.transport(true);
+  p.render(100);
+  pad(0); // nothing plays yet, so this launch is not quantised
+  const samples: ProbeSample[] = p.runFree(500, 25);
+  // Each next row is cued half a second into the one before it, once the cart is seen playing that one.
+  for (const [on, next] of [[0, 5], [5, 9], [9, 2]] as const) {
+    for (let waited = 0; p.sample().channels.pu1.songRow !== on && waited < 8000; waited += 25) {
+      samples.push(p.render(25));
+    }
+    samples.push(...p.runFree(500, 25));
+    pad(next);
+  }
+  samples.push(...p.runFree(4500, 25)); // to the end of row 9, the third row of eight quarters
+
+  // The row and the step it was on when the cart left it, for each row it left.
+  const left: { row: number; step: number | null }[] = [];
+  let last: ProbeSample["channels"]["pu1"] | null = null;
+  for (const s of samples) {
+    const pu1 = s.channels.pu1;
+    if (pu1.songRow === null) continue;
+    if (last && pu1.songRow !== last.songRow) left.push({ row: last.songRow!, step: last.phraseRow });
+    if (last?.songRow !== pu1.songRow || pu1.phraseRow !== null) last = pu1;
+  }
+  const rows = transitions(samples, (s) => s.channels.pu1.songRow).filter((r) => r !== null);
+  console.log(`[lsdj-launchpad] divisor 2, rowEnd: rows ${JSON.stringify(rows)}, left ${JSON.stringify(left)}`);
+  expect(rows).toEqual([0, 5, 9, 2]);
+  expect(left.map((l) => l.step)).toEqual([15, 15, 15]);
 });

@@ -40,7 +40,8 @@
               "node": "rp.alpha.midi",
               "mode": "midiMap",
               "listening": "MidiMap",
-              "off": "off"
+              "off": "off",
+              "divisor": "tempoDivisor"
             }
           }
         ]

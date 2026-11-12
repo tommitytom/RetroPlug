@@ -36,7 +36,8 @@
               "node": "rp.lsdj.sync",
               "mode": "midiMap",
               "listening": "MidiMap",
-              "off": "off"
+              "off": "off",
+              "divisor": "tempoDivisor"
             }
           }
         ]

@@ -15,8 +15,9 @@ import { controllerApps, type ControllerAppContribution } from "../registry";
 import { setControllerSyncData } from "./placer";
 
 /** The sync override's fields: the node type it applies to, the mode it sets, the polled SYNC value that counts as the
- *  cart listening, and the mode a cart that is not listening is put in. */
-const SYNC_KEYS = ["node", "mode", "listening", "off"];
+ *  cart listening, the mode a cart that is not listening is put in, and the name of that node's setting that divides
+ *  the clock it sends the cart. */
+const SYNC_KEYS = ["node", "mode", "listening", "off", "divisor"];
 
 /** One app's `syncOverride`, checked: the data a placer applies and a menu reads. */
 function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext): void {
@@ -44,6 +45,14 @@ function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext):
   // value would never reach it.
   if (!ctx.nodeTypes.includes(rule.node)) {
     throw new Error(`${where} names ${JSON.stringify(rule.node)}, which no package declares a protocol node for`);
+  }
+  // A divisor is read off the node's own config by name (the placer hands the session what it finds there), so it is a
+  // setting's name or nothing: a number here would be read as no setting and leave the session walking every tick.
+  if (rule.divisor !== undefined && (typeof rule.divisor !== "string" || rule.divisor === "")) {
+    throw new Error(
+      `${where}'s "divisor" must name the setting that divides that node's 24-tick clock, not ` +
+        JSON.stringify(rule.divisor),
+    );
   }
   if (rule.listening === undefined) {
     if (rule.off !== undefined) {

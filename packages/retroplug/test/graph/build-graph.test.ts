@@ -389,7 +389,7 @@ test("the controller takes the surface, sends it its LEDs, and its target ('0 is
     type: CONTROLLER_SESSION_NODE_TYPE,
     settings: {
       app: "lsdj-midimap", target: "system", systemId: 7, appConfig: { quantise: "bar", follow: true, page: 0 },
-      songRowTicks: [], anchorRows: [5, 5, null, 5], anchorSeq: 3,
+      songRowTicks: [], anchorRows: [5, 5, null, 5], anchorSeq: 3, tickDivisor: 1,
     },
   });
   // The device's own side: its traffic in and its connected flag, and the session's LEDs back out, each through its own
@@ -412,6 +412,26 @@ test("the controller takes the surface, sends it its LEDs, and its target ('0 is
   expect(without.node("controller")).toBe(undefined);
   expect(without.node("surface-in")).toBe(undefined);
   expect(without.node("surface-out")).toBe(undefined);
+});
+
+test("the session is handed the divisor its cart's clock is divided by, read from that cart's node", () => {
+  // MI.MAP clocks a cart at 24 / tempoDivisor ticks a quarter, so the session walks the same division (tickDivisor).
+  // The app's rule names the setting (its manifest's `divisor`) and the placer reads it off the pipeline it is handed,
+  // so no shell module names it; what it cannot read is 1, as the node's own `config.tempoDivisor || 1` reads it.
+  const divided = (tempoDivisor: unknown): ProtocolRole =>
+    role("lsdj-sync", { mode: "midiSync", tempoDivisor, autoStart: false });
+  const tickDivisor = (systems: GraphSystem[], over: Partial<GraphController> = {}): unknown =>
+    built(systems, "stereo", multi(2), withController(over)).node("controller")?.settings?.tickDivisor;
+  expect(tickDivisor([gb(7, 0, [divided(4)]), gb(8, 0, [LSDJ()])])).toBe(4);
+  // The cart the session drives, chosen or first, and no other.
+  expect(tickDivisor([gb(7, 0, [LSDJ()]), gb(8, 0, [divided(2)])], { systemId: 8 })).toBe(2);
+  expect(tickDivisor([gb(7, 0, [divided(4)]), gb(8, 0, [LSDJ()])], { systemId: 8 })).toBe(1);
+  // No node of the rule's type on that cart, no such setting, or a value the node would not divide by.
+  expect(tickDivisor([gb(7, 0, [MGB])])).toBe(1);
+  expect(tickDivisor([gb(7, 0, [role("lsdj-sync", { mode: "midiSync" })])])).toBe(1);
+  for (const bad of [0, 0.5, -2, "2", null]) expect(tickDivisor([gb(7, 0, [divided(bad)])]), String(bad)).toBe(1);
+  // Launches out of the host drive no emulated cart, and a real Game Boy's divisor is not one the graph can read.
+  expect(tickDivisor([gb(7, 0, [divided(4)])], { target: "midiOut" })).toBe(1);
 });
 
 test("the controller's launches reach only a 'system' target's lsdj-sync node", () => {
@@ -548,7 +568,11 @@ test("the sync override is the app's DATA: a node type, a mode, and what counts 
   // the whole rule. A second app with a different cart sync node type is a manifest entry, not a branch here.
   expect(Object.keys(KIND_DATA.controllerApps)).toEqual(["lsdj-midimap"]);
   expect(KIND_DATA.controllerApps["lsdj-midimap"])
-    .toEqual({ syncOverride: { node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off" } });
+    .toEqual({
+      syncOverride: {
+        node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off", divisor: "tempoDivisor",
+      },
+    });
   // `driving` is the app's own answer - the mode its launches need is the one the cart runs - and not "the mode is not
   // the string off": a second app's off-mode is its manifest's to spell.
   expect(controllerSyncOverride([{ id: 7 }], { ...CONTROLLER, cartSync: "MidiMap" }))
