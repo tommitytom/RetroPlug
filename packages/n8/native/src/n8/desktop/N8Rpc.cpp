@@ -25,6 +25,8 @@ struct N8Rpc::Session {
     // arriving, or the N8 still inside a command. The next call resyncs first (N8Rpc::ready), and only a handshake that
     // answers clears it.
     bool dirty = false;
+    // The timeout the session's last handshake was given (0: the table's), which a resync handshakes with.
+    std::uint32_t handshakeMs = 0;
 };
 
 namespace {
@@ -45,12 +47,21 @@ N8Reply replyOf(const Status& status, const retroplug::PortTransport& port, std:
 }
 
 // Whether a call that answered `status` left the line as it found it: it succeeded, it was refused before its first byte
-// (the refusals portSaid names, and a file larger than its buffer, refused after a listing that ended in step), or its
-// file was not on a listing that ended in step. Anything else may have stopped part-way through a reply or a command.
+// (refusedBeforePort, and a file larger than its buffer, refused after a listing that ended in step), or its file was
+// not on a listing that ended in step. Anything else may have stopped part-way through a reply or a command.
 bool leavesLineInStep(const Status& status) {
-    if (status.ok() || status.code == Code::NotFound) return true;
-    return status.code == Code::TooLarge && (status.where == Where::Length || status.where == Where::BatteryPath ||
-                                             status.where == Where::Size || status.where == Where::Buffer);
+    if (status.ok() || status.code == Code::NotFound || retroplug::refusedBeforePort(status)) return true;
+    return status.code == Code::TooLarge && status.where == Where::Buffer;
+}
+
+// Read until the line has been quiet for one read (20 ms; 20 reads, about 0.4 s, at most), then drop what the OS holds:
+// the rest of a reply the caller gave up on can still be arriving, record by record. A read the port fails ends it
+// too, and the handshake after it meets that failure in the port's words.
+void drain(retroplug::PortTransport& port) {
+    std::uint8_t sink[4096];
+    for (int i = 0; i < 20 && port.read(sink, sizeof sink, 20) > 0; ++i) {
+    }
+    port.flushInput();
 }
 
 N8Reply notOpen(std::int32_t handle) {
@@ -151,16 +162,10 @@ N8Rpc::Session* N8Rpc::ready(std::int32_t handle, N8Reply& refused) {
         return nullptr;
     }
     if (!s->dirty) return s;
-    // Read until the line has been quiet for one read (20 ms; 20 reads, about 0.4 s, at most), then drop what the OS
-    // holds: the rest of a reply the caller gave up on can still be arriving, record by record. A read the port fails
-    // ends it too, and the handshake below meets that failure in the port's words.
-    std::uint8_t sink[4096];
-    for (int i = 0; i < 20 && s->port->read(sink, sizeof sink, 20) > 0; ++i) {
-    }
-    s->port->flushInput();
+    drain(*s->port);
     // A drain cannot tell a line in step from one where the N8 is still inside a command (a file write waiting for
     // data that never came); the handshake can, since only a line in step answers it.
-    const Status st = s->edio.connect();
+    const Status st = s->edio.connect(nullptr, s->handshakeMs);
     if (!st.ok()) {
         refused = replyOf(st, *s->port);
         return nullptr;
@@ -206,10 +211,16 @@ bool N8Rpc::n8Close(std::int32_t handle) { return sessions_.erase(handle) > 0; }
 
 N8Reply N8Rpc::n8Handshake(std::int32_t handle, std::uint32_t timeoutMs) {
     N8Reply  r;
-    Session* s = ready(handle, r);
-    if (!s) return r;
+    Session* s = find(handle);
+    if (!s) return notOpen(handle);
+    // The handshake is the resync: a dirty session drains and runs the caller's own once, with the caller's timeout,
+    // not ready()'s first.
+    if (s->dirty) drain(*s->port);
+    s->handshakeMs    = timeoutMs;
     std::uint8_t code = 0;
-    r                 = settle(*s, s->edio.connect(&code, timeoutMs));
+    const Status st   = s->edio.connect(&code, timeoutMs);
+    if (st.ok()) s->dirty = false;
+    r                 = settle(*s, st);
     r.value           = code;
     return r;
 }

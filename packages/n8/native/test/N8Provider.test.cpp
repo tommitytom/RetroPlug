@@ -480,6 +480,45 @@ TEST_CASE("a call refused before it reached the port is tooLarge in the protocol
 }
 
 namespace {
+// A cart port counting the CMD_STATUS commands written to it.
+struct CountingPort : retroplug::test::FakeN8Port {
+    using retroplug::test::FakeN8Port::FakeN8Port;
+    int         statusWrites = 0;
+    std::size_t write(const std::uint8_t* data, std::size_t size) override {
+        if (size >= 4 && data[0] == 0x2B && data[2] == rp::n8::Edio::CMD_STATUS) ++statusWrites;
+        return retroplug::test::FakeN8Port::write(data, size);
+    }
+};
+}  // namespace
+
+TEST_CASE("a call that left the line in step (refused before its first byte, a file a listing did not hold) does not "
+          "resync the next",
+          "[n8-rpc]") {
+    FakeN8        dev;
+    N8Host        host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
+    CountingPort* port = nullptr;
+    rp::n8::N8Rpc rpc(host, [&](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
+        auto p = std::make_unique<CountingPort>(dev);
+        port   = p.get();
+        return p;
+    }, twoPorts());
+    dev.files["d/a.bin"] = {1, 2, 3};
+    const auto h = static_cast<std::int32_t>(rpc.n8Open("/dev/ttyACM0").value);
+    REQUIRE(rpc.n8Handshake(h, 0).status == "ok");
+    REQUIRE(port->statusWrites == 1);
+    const auto ssr = static_cast<std::uint32_t>(rp::n8::Edio::ADDR_SSR);
+
+    CHECK(rpc.n8MenuInstall(h, std::string(0x10000, 'x')).status == "tooLarge");
+    CHECK(rpc.n8MemRD(h, ssr, 16).status == "ok");
+    CHECK(port->statusWrites == 1);  // no resync handshake went out after the refusal
+    // A listing writes a status of its own, so the missing file is judged by what the call after it adds: nothing.
+    CHECK(rpc.n8ReadFile(h, "d/missing.bin").status == "notFound");
+    const int afterListing = port->statusWrites;
+    CHECK(rpc.n8MemRD(h, ssr, 16).status == "ok");
+    CHECK(port->statusWrites == afterListing);
+}
+
+namespace {
 // A port that behaves as a line does, so a call that gave up part-way leaves it out of step: the N8 answers a command
 // only once it is written (CMD_STATUS with <0> A5, CMD_MEM_RD with `nextMemRd`), a flush drops only what has arrived,
 // and `late` bytes - the rest of a reply the caller gave up on - arrive once the line has gone quiet (the caller's own
@@ -488,17 +527,27 @@ struct LinePort : retroplug::PortTransport {
     std::deque<std::uint8_t>  arrived;
     std::vector<std::uint8_t> late, nextMemRd;
     bool                      wentQuiet = false;
+    int                       statusWrites = 0;  // the CMD_STATUS commands written
+    // The timeout of the read that answered each one.
+    std::vector<std::uint32_t> statusTimeouts;
+    bool                       awaitingStatus = false;
 
     std::size_t write(const std::uint8_t* data, std::size_t size) override {
         const int cmd = size >= 4 && data[0] == 0x2B ? data[2] : -1;
-        if (cmd == rp::n8::Edio::CMD_STATUS) arrived.insert(arrived.end(), {0x00, 0xA5});
+        if (cmd == rp::n8::Edio::CMD_STATUS) {
+            ++statusWrites;
+            awaitingStatus = true;
+            arrived.insert(arrived.end(), {0x00, 0xA5});
+        }
         if (cmd == rp::n8::Edio::CMD_MEM_RD) {
             arrived.insert(arrived.end(), nextMemRd.begin(), nextMemRd.end());
             nextMemRd.clear();
         }
         return size;
     }
-    std::size_t read(std::uint8_t* buffer, std::size_t size, std::uint32_t) override {
+    std::size_t read(std::uint8_t* buffer, std::size_t size, std::uint32_t timeoutMs) override {
+        if (awaitingStatus) statusTimeouts.push_back(timeoutMs);
+        awaitingStatus = false;
         if (wentQuiet && !late.empty()) {
             arrived.insert(arrived.begin(), late.begin(), late.end());
             late.clear();
@@ -571,6 +620,56 @@ TEST_CASE("the call after one that failed part-way drains what was still arrivin
     const auto            bytes = vec(next.bytes);
     CHECK(next.status == "ok");
     CHECK(std::count(bytes.begin(), bytes.end(), 0x22) == 512);
+    // The resync cleared the session, so the call after it runs without one: no further CMD_STATUS went out (the
+    // opening handshake and the one resync are the two).
+    line->nextMemRd.assign(512, 0x22);
+    CHECK(rpc.n8MemRD(h, ssr, 512).status == "ok");
+    CHECK(line->statusWrites == 2);
+}
+
+TEST_CASE("a resync handshakes with the timeout the session was connected with", "[n8-rpc]") {
+    FakeN8        dev;
+    N8Host        host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
+    LinePort*     line = nullptr;
+    rp::n8::N8Rpc rpc(host, [&line](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
+        auto port = std::make_unique<LinePort>();
+        line      = port.get();
+        return port;
+    }, twoPorts());
+    const auto h = static_cast<std::int32_t>(rpc.n8Open("/dev/ttyACM0").value);
+    REQUIRE(rpc.n8Handshake(h, 1000).status == "ok");
+    const auto ssr = static_cast<std::uint32_t>(rp::n8::Edio::ADDR_SSR);
+    line->nextMemRd.assign(10, 0x11);
+    line->late.assign(502, 0x11);
+    CHECK(rpc.n8MemRD(h, ssr, 512).status == "timeout");
+    line->nextMemRd.assign(512, 0x22);
+    CHECK(rpc.n8MemRD(h, ssr, 512).status == "ok");
+    CHECK(line->statusTimeouts == std::vector<std::uint32_t>{1000, 1000});
+}
+
+TEST_CASE("a handshake on a dirty session drains, then runs once with the caller's timeout and clears the session",
+          "[n8-rpc]") {
+    FakeN8        dev;
+    N8Host        host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
+    LinePort*     line = nullptr;
+    rp::n8::N8Rpc rpc(host, [&line](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
+        auto port = std::make_unique<LinePort>();
+        line      = port.get();
+        return port;
+    }, twoPorts());
+    const auto h = static_cast<std::int32_t>(rpc.n8Open("/dev/ttyACM0").value);
+    REQUIRE(rpc.n8Handshake(h, 0).status == "ok");
+    const auto ssr = static_cast<std::uint32_t>(rp::n8::Edio::ADDR_SSR);
+    line->nextMemRd.assign(10, 0x11);
+    line->late.assign(502, 0x11);
+    CHECK(rpc.n8MemRD(h, ssr, 512).status == "timeout");
+
+    CHECK(rpc.n8Handshake(h, 5000).status == "ok");
+    CHECK(line->statusWrites == 2);  // the opening one and this: one handshake, the caller's
+    CHECK(line->statusTimeouts.back() == 5000);
+    line->nextMemRd.assign(512, 0x22);
+    CHECK(rpc.n8MemRD(h, ssr, 512).status == "ok");
+    CHECK(line->statusWrites == 2);  // and the session is clean: the call after it resyncs nothing
 }
 
 TEST_CASE("on a dead port the call after a failure answers the handshake's failure in the port's words and is not sent",

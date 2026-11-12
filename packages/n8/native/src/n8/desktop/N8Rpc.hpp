@@ -31,7 +31,11 @@
 // marks its session dirty, since it can have stopped part-way: the rest of a reply still arriving, or the N8 still
 // inside a command. The next call on it first drains the line until it is quiet (about 0.4 s at most) and re-runs the
 // handshake (0.3 s), and answers the handshake's failure, sending nothing of its own, when the line does not answer.
-// So every session (n8-load, n8-play, the bridges, a script's device) recovers from a hiccup on the next call.
+// A resync handshakes with the timeout the session was last connected with. It recovers a reply that arrived late.
+// It cannot recover a line the N8 is still inside a command on: the handshake's own four bytes are taken as that
+// command's data (a file write cut short waits for up to a block of 1024 bytes, so some hundreds of calls go by before
+// one lands in step, and a FIFO write cut short delivers them into the running game), so each call answers the
+// handshake's failure until enough of the command's data has gone out or the N8 is reset.
 
 #include <cstdint>
 #include <map>

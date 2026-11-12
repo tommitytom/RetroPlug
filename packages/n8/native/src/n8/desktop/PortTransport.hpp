@@ -34,14 +34,19 @@ public:
     virtual std::string failure() const { return {}; }
 };
 
+// Whether `status` is a call refused before it made a transport call: a string past its length prefix, a battery slot
+// that does not fit, a size past the 32-bit count. Nothing went onto the line, and failure() is still the previous
+// call's.
+inline bool refusedBeforePort(const rp::n8::Status& status) {
+    return status.code == rp::n8::Code::TooLarge &&
+           (status.where == rp::n8::Where::Length || status.where == rp::n8::Where::BatteryPath ||
+            status.where == rp::n8::Where::Size);
+}
+
 // What the port said about `status`'s call: its failure() words, or "" when the port did not fail, or when the call was
-// refused before it made a transport call (a string past its length prefix, a battery slot that does not fit, a size
-// past the 32-bit count), where failure() is still the previous call's.
+// refusedBeforePort.
 inline std::string portSaid(const rp::n8::Status& status, const PortTransport& port) {
-    const bool refusedFirst = status.code == rp::n8::Code::TooLarge &&
-                              (status.where == rp::n8::Where::Length || status.where == rp::n8::Where::BatteryPath ||
-                               status.where == rp::n8::Where::Size);
-    return refusedFirst ? std::string() : port.failure();
+    return refusedBeforePort(status) ? std::string() : port.failure();
 }
 
 // The text of a failed Edio call on the desktop: the port's own words when the port failed, else describe()'s.
