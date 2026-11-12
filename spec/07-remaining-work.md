@@ -27,7 +27,7 @@ than work.
 - [ ] [Downloadable packs](#downloadable-packs)
 - [ ] [The app loads no script pack](#the-app-loads-no-script-pack)
 - [ ] [The template gaps a second pack meets](#the-template-gaps-a-second-pack-meets)
-- [ ] [Pack-boundary exceptions 2 and 3](#pack-boundary-exceptions-2-and-3)
+- [ ] [The N8 provider named by plugin.cmake and the test host](#the-n8-provider-named-by-plugincmake-and-the-test-host)
 - [ ] [The view reopen key's width](#the-view-reopen-keys-width)
 - [ ] [One owner for the `rp.midi` family](#one-owner-for-the-rpmidi-family)
 - [ ] [A config section paired with its UI service](#a-config-section-paired-with-its-ui-service)
@@ -115,8 +115,9 @@ What `feature/modularize` owes before it merges to main.
 
 The last green run of `build.yml` (run 43131974297, all four jobs: windows through `build.bat` at `/W4 /WX` and
 `test.bat`, macos, linux with `device:check` and `device:box`, linux-arm64) built ea2517dc9; nothing after it (the
-known-bugs batches and the docs) has run on a runner. CI runs by hand (`workflow_dispatch`), so the user starts it. ([F2
-design](../docs/modular-graph-phase-f2-design.md) section 12.)
+known-bugs batches and the docs) has run on a runner. On this branch CI runs only when dispatched (build.yml also runs
+on a pull request and on main), so the user starts it. ([F2 design](../docs/modular-graph-phase-f2-design.md) section
+12; the run and commit facts are from the [docs cleanup design](../docs/docs-cleanup-design.md) section 5.)
 
 ### `pnpm test:n8` in CI and in test.bat
 
@@ -210,11 +211,11 @@ Every pack is built in. The authoring loop, the pack format and downloads, a pac
 come menus on extensions (a downloaded pack contributing menu rows, which packages in the tree do through `defineUi`)
 and third-party controller apps: `controllerApps` registers from the product's package list, so an app from outside the
 tree waits for this road. And a provider cannot be downloaded either, since it is reached only through the generated
-static table. Whether a downloaded pack's bytecode is stripped is the format's to say: a pack compiled from source keeps
-its debug information, about a quarter more memory than stripped code. ([C1
-design](../docs/modular-graph-phase-c1-design.md) sections 8, 12 and 13, [E1](../docs/modular-graph-phase-e1-design.md)
-section 10, [E2](../docs/modular-graph-phase-e2-design.md) section 13.8, [F3](../docs/modular-graph-phase-f3-design.md)
-section 11, [F5a](../docs/modular-graph-phase-f5a-design.md) section 12.)
+static table. And scoping which of a pack's facet methods a product mounts. Whether a downloaded pack's bytecode is
+stripped is the format's to say: a pack compiled from source keeps its debug information, about a quarter more memory
+than stripped code. ([C1 design](../docs/modular-graph-phase-c1-design.md) sections 8, 12 and 13,
+[E1](../docs/modular-graph-phase-e1-design.md) section 10, [E2](../docs/modular-graph-phase-e2-design.md) section 13.8,
+[F3](../docs/modular-graph-phase-f3-design.md) section 11, [F5a](../docs/modular-graph-phase-f5a-design.md) section 12.)
 
 ### The app loads no script pack
 
@@ -224,12 +225,13 @@ is unbuilt too. ([C1 design](../docs/modular-graph-phase-c1-design.md) section 1
 
 ### The template gaps a second pack meets
 
-The E2 template gaps remain: a pack cannot add a capability beyond `rp.system.memory/sram/rom` (the engine refuses an
-unknown capability), and the test host has no seam for a pack's test provider
+The E2 template gaps remain, and a second pack meets three: an RPC method name is global, so a repeat replaces the first
+pack's without a word ([spec/02](02-native-host.md)); a pack cannot add a capability beyond `rp.system.memory/sram/rom`
+(the engine refuses an unknown capability); and the test host has no seam for a pack's test provider
 ([main.cpp](../packages/native/src/main.cpp) calls the N8's and the Launchpad's factories by name). ([E2
 design](../docs/modular-graph-phase-e2-design.md) section 13.8.)
 
-### Pack-boundary exceptions 2 and 3
+### The N8 provider named by plugin.cmake and the test host
 
 `plugin.cmake` links `retroplug-n8-desktop` by name, because the DSP library's own sources include the product's
 providers header; and the test host's `main.cpp` names the provider (it includes `FakeN8.hpp` and calls
@@ -238,9 +240,9 @@ design](../docs/modular-graph-phase-e2-design.md) section 13.6.)
 
 ### The view reopen key's width
 
-F4c's shape question about the view reopen key is still open: whether the reopen key stays as wide as a role write (a
-role write reopens a system's views, one visible case a blink;
-[viewSession.ts](../packages/retroplug/ui/views/viewSession.ts)). ([F4c
+The view reopen key keys on the `roles` array's identity, so any role write reopens every view of that system (edge E5,
+one visible case: a blink; [viewSession.ts](../packages/retroplug/ui/views/viewSession.ts)). Still open: whether the
+reopen key narrows (an optional `reopenOn?(sys)` per view, not built). ([F4c
 design](../docs/modular-graph-phase-f4c-design.md) sections 10.4 and 11.)
 
 ### One owner for the `rp.midi` family
@@ -269,8 +271,8 @@ design](../docs/modular-graph-phase-f5a-design.md) sections 12 and 14.)
 
 ### A tracker marker with no protocol node
 
-`risa` and `bliptoaster` have no protocol node, so they count as placed whenever stored: a NES project storing both (a
-risa project whose ROM is now BlipToaster) carries both markers, and `resolveTracker`
+The `risa` and `bliptoaster` marker roles have no protocol node, so they count as placed whenever stored: a NES project
+storing both (a risa project whose ROM is now BlipToaster) carries both markers, and `resolveTracker`
 ([trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts)) takes the first in product order. ([Known bugs
 batch 2 design](../docs/known-bugs-batch-2-design.md) section 5.)
 
@@ -288,19 +290,20 @@ when the new buffer exceeds the plan's maximum (`setMaxBlockFrames` -> `GraphHos
 publishes) and re-declare the DAW parameters there. The fix: marshal that whole handoff (the flush, the ownership flip,
 the drain, the release-ring reclaim, the script GC and free, and activate's replan and parameter re-declaration) to the
 control thread, or make a buffer-size or rate change a message that thread applies, so the quiescent engine has one
-owner. Rare and manual: a JACK buffer-size change in the standalone; CLAP, VST3 and AU call both on the host's main
-thread, and VST2 runs `setBufferSize(n, true)` from its block-size opcode on whichever thread its host calls that from
-([PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp), above `activate`). Only `activate`'s `setMaxBlockFrames` is a
-no-op for a block within the plan's maximum, which is why the path went unnoticed; C5's per-frame reclaim widened its
-window from an edit to any frame. ([C5 design](../docs/modular-graph-phase-c5-design.md) section 10.)
+owner. Rare and manual: a JACK buffer-size change in the standalone; CLAP, VST3 and AU call deactivate and activate on
+the host's main thread, and VST2 runs `setBufferSize(n, true)` from its block-size opcode on whichever thread its host
+calls that from ([PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp), above `activate`). Only `activate`'s
+`setMaxBlockFrames` is a no-op for a block within the plan's maximum, which is why the path went unnoticed; C5's
+per-frame reclaim widened its window from an edit to any frame. (Found after C5; no design records it. [C5
+design](../docs/modular-graph-phase-c5-design.md) section 10 records the per-frame reclaim that widened its window.)
 
 ### A cart-node handover can cut a key
 
 A handover can cut a key the new cart node strikes before the old one is reclaimed: the old node's held notes are
 released behind every byte pushed when its destroy runs, the new node's first blocks among them, so a note the new node
 starts on a key the old one still held, between the swap and the reclaim, is released with them. Where an idle tick
-reclaims that is a frame or so; in a plugin whose editor is closed it runs to the next publish. ([C5
-design](../docs/modular-graph-phase-c5-design.md) section 11.)
+reclaims that is a frame or so; in a plugin whose editor is closed it runs to the next publish, the editor opening or a
+deactivate. ([C5 design](../docs/modular-graph-phase-c5-design.md) section 11.)
 
 ### The N8 menu, unverified on a cart
 
@@ -336,32 +339,35 @@ as the Launchpad link has. ([F5b design](../docs/modular-graph-phase-f5b-design.
 
 A MIDI pick on the start screen dirties the empty untitled project (`ProjectStore.setSection` marks it dirty
 unconditionally), so the close guard asks to save a project holding only the pick; exempt a section-only change to an
-empty, pathless project. ([F5b design](../docs/modular-graph-phase-f5b-design.md) section 14.)
+empty, pathless project. (Found by the final review that [F5b design](../docs/modular-graph-phase-f5b-design.md) section
+14 summarises; recorded only here.)
 
 ### Settings > MIDI misses a claim made while open
 
 The row's reserved pair is a `describe()` snapshot, so Settings > MIDI's checklist does not notice a claim made while
-its container is open; a cheap, no-probe `state()` read on `MidiDeviceHost` would fix it. ([F5b
-design](../docs/modular-graph-phase-f5b-design.md) section 14.)
+its container is open; a cheap, no-probe `state()` read on `MidiDeviceHost` would fix it. (Found by the final review
+that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summarises; recorded only here.)
 
 ### The audio draft's sibling-backend cache
 
 The audio draft's sibling-backend cache is per backend change, not per visit
-([audioDraft.ts](../packages/audio/ts/ui/audioDraft.ts) caches by the described backend). ([F5b
-design](../docs/modular-graph-phase-f5b-design.md) section 14.)
+([audioDraft.ts](../packages/audio/ts/ui/audioDraft.ts) caches by the described backend). (Found by the final review
+that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summarises; recorded only here.)
 
 ### An Apply past a read-only config
 
-`applyAudioDraft` ignores `setSection`'s answer, so an Apply still reaches the device when `setSection` refused a
-read-only config. ([F5b design](../docs/modular-graph-phase-f5b-design.md) section 14.)
+`UserConfigStore.setSection` answers false when it leaves a read-only config alone, but the UI host's
+`config.setSection` drops that answer (`void`, [uiHost.ts](../packages/retroplug/ui/host/uiHost.ts)) and
+`applyAudioDraft` calls `audioDevice.apply` regardless, so an Apply still reaches the device. (Found by the final review
+that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summarises; recorded only here.)
 
 ## Engine
 
 ### DAW automation of node params
 
-The plugin maps DAW automation to its MIDI CC slots only: its parameters are not mapped onto `setParam`, though params
-make DAW automation of node params possible. Its own work. ([C2 design](../docs/modular-graph-phase-c2-design.md)
-section 9.)
+The plugin's parameters are an output gain and a pool of MIDI CC slots; none maps onto a node param through
+`Engine::setParam`, though params make that possible, as its own work. ([C2
+design](../docs/modular-graph-phase-c2-design.md) section 9.)
 
 ### P3: cores borrow their pinned ROM
 
@@ -383,15 +389,15 @@ design](../docs/modular-graph-phase-c4-design.md) section 12.)
 
 C5 built three capabilities (`rp.system.memory/1`, `.sram/1`, `.rom/1`). P7's remainder, the rest of the `SystemBase`
 capability split: video, buttons and debug are still `SystemBase` virtuals (`framebuffer()`, `pressButton`,
-`getCpuRegisters` / `readCpuByte` / `debugTarget`), and `state/1` is still the system-id RPC (`readState(id)`). F2 gave
-each package one node file, not one node file per console: `MesenNode.cpp` holds all three Mesen consoles' nodes; after
-F2 the split's remainder is section 10's list in its design. ([C4 design](../docs/modular-graph-phase-c4-design.md)
-section 12, [C5](../docs/modular-graph-phase-c5-design.md) section 11, [F2](../docs/modular-graph-phase-f2-design.md)
-section 10.)
+`getCpuRegisters` / `readCpuByte` / `debugTarget`), and `state/1` is still the system-id RPC (`readState(id)`), the tap
+is still `ChannelTap` rather than `rp.system.tap/1`, and there is one node file per package, not one node file per
+console (`MesenNode.cpp` holds all three Mesen consoles' nodes). ([Main design](../docs/modular-graph-design.md) section
+6.4, [C4](../docs/modular-graph-phase-c4-design.md) section 12, [C5](../docs/modular-graph-phase-c5-design.md) section
+11.)
 
 ### Allocations left on the block thread
 
-A warmed block allocates nothing, but for work that makes something:
+A warmed block allocates nothing; these are the exceptions:
 - A Mesen core's 0.5 s state publish allocates inside its streaming serializer, every 24 k frames at 48 kHz, so every
   `[alloc]` case on an Engine-built Mesen core charges a whole interval uncounted first.
 - The N8 firmware's SD path still allocates, in the emulated cart (`std::string` and `std::filesystem` in its command
@@ -476,11 +482,14 @@ a split and a tappable core). ([C4 design](../docs/modular-graph-phase-c4-design
 
 ### Threaded engine cases are smoke runs
 
-The engine-level threaded cases are smoke runs, not race detectors: `EngineGraph.test.cpp`'s case of a system joining
-and leaving beside an audio thread, and the GBA beside a publishing Game Boy, passed against a registry whose claim
-freed a buffer the publish wrote, while the registry-level cases caught it. Why the GBA case stays silent under the
-sanitizers is unproven: "an Engine hides the race" (a happens-before edge in `setGraph`) is a reading, not a finding.
-They are weak race detectors until that is understood. ([D2 design](../docs/modular-graph-phase-d2-design.md) section
+The engine-level threaded cases are smoke runs, not race detectors. Against a snapshot registry whose claim freed a
+buffer the publish wrote, `EngineGraph.test.cpp`'s GBA beside a publishing Game Boy reported nothing in three runs under
+each sanitizer, though ad hoc runs at 256-frame blocks caught it and the registry-level case fails on it. The C3 case (a
+system joining and leaving beside an audio thread) was never run against it, and alternates one Game Boy with an empty
+plan, so no claim grows beside a publishing plan. Why the GBA case stays silent is unproven: ThreadSanitizer sees an
+ordering between the `setGraph` path and the block thread (a probe written each block stopped racing at
+`GraphHost::reclaim`), but the pairing release was not found, so "an Engine hides the race" is a reading, not a finding,
+and until it is understood these are weak race detectors. ([D2 design](../docs/modular-graph-phase-d2-design.md) section
 11.)
 
 ### A plugin with its editor closed has no idle reclaim
@@ -493,8 +502,8 @@ the next publish, the editor opening or a deactivate. ([C5 design](../docs/modul
 ### The script node Block has no resource accessor
 
 The script node `Block` ([defineNode.ts](../packages/core/ts/defineNode.ts)) has no resource accessor and no link peers,
-though a `PortSpec` can declare resource and link ports. ([B3a design](../docs/modular-graph-phase-b3a-design.md)
-section 2.3.)
+though a `PortSpec` can declare resource and link ports. (Found building B3a; [section
+2.3](../docs/modular-graph-phase-b3a-design.md) is the Block's marshalling.)
 
 ### The command ring and the adoption wait
 
@@ -508,12 +517,13 @@ could be derived. ([B3a design](../docs/modular-graph-phase-b3a-design.md) secti
 
 ### Serial capacities past large blocks
 
-A Game Boy clocking its own serial port (a CGB on its fast clock) can send more in a block past about 12000 frames (6000
-in double speed) than its fixed `serialOut` holds; the rest is dropped and counted (`kSerialOutCapacity` in
-[SameBoyNode.cpp](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp)). `rp.lsdj.serial-out`'s `midiOut`
-(`MIDI_OUT` in [ports.ts](../packages/core/ts/ports.ts), 1024 messages and 8192 bytes) is sized for a decoded MI.OUT
-stream at its densest up to 8192-frame blocks, while `serialOut` is sized for 65536; in a larger block the rest is
-dropped and counted. ([B3a design](../docs/modular-graph-phase-b3a-design.md) sections 3.2 and 4.1.)
+A Game Boy clocking its own serial port (a CGB on its fast clock, a captured byte every 8 frames) can send more in a
+block past about 12000 frames (6000 in double speed) than its fixed `serialOut` holds; the rest is dropped and counted
+(`kSerialOutCapacity` in [SameBoyNode.cpp](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp)).
+`rp.lsdj.serial-out`'s `midiOut` (`MIDI_OUT` in [ports.ts](../packages/core/ts/ports.ts), 1024 messages and 8192 bytes)
+is sized for a decoded MI.OUT stream at its densest up to 8192-frame blocks, while `serialOut` is sized for 65536-frame
+blocks; in a larger block the rest is dropped and counted. ([B3a design](../docs/modular-graph-phase-b3a-design.md)
+sections 3.2 and 4.1.)
 
 ### A feedback source's capacity change
 
@@ -533,10 +543,10 @@ one line. No node has one. ([E1 design](../docs/modular-graph-phase-e1-design.md
 
 A plugin kit row is possible and not built: no UI row compiles kits in the plugin. It would call the cart's `kitFormat`,
 found through the shell's `kitFormat(id)` registry, with the stores' backend as its job runner, not
-`AudioDriver.compileKitFormat`, whose native wait would block the UI frame. It should also lower the ceiling of the 8
-offline workers each Engine parks for life once it has compiled anything (up to 8 normal-priority offline workers, so N
-instances in a DAW hold 8N threads), or retire idle ones. ([D2 design](../docs/modular-graph-phase-d2-design.md) section
-9.)
+`AudioDriver.compileKitFormat`, whose native wait would block the UI frame. Each Engine parks up to 8 normal-priority
+offline workers for life once it has run a job, so N instances in a DAW hold 8N threads; the row should lower the
+ceiling of the 8 offline workers or retire idle ones (a compile briefly puts 8 busy threads beside the audio thread).
+([D2 design](../docs/modular-graph-phase-d2-design.md) section 9.)
 
 ### The kit patcher's latency budget
 
@@ -561,7 +571,7 @@ design](../docs/modular-graph-phase-d3-design.md) section 10.)
 ### A sanitizer leg for renders
 
 A sanitizer leg for renders is missing: `tools/run-sanitizer.sh` has no render leg, so the pool's thread and address
-checks are `[engine-jobs]` built in `build-tsan` / `build-asan` by hand. ([D3
+checks are `[engine-jobs]` built in `build-tsan` / `build-asan` by hand (a script leg would make them routine). ([D3
 design](../docs/modular-graph-phase-d3-design.md) section 10.)
 
 ### retroplug-host swallows a top-level throw
@@ -578,15 +588,18 @@ The D3 design's residual list, extended after its final review:
   block boundary; block-granular probes or an autonomous recipe would remove both (D3 section 8).
 - An interrupt that lands in a pending promise job is also printed as a script error before the loop re-checks
   `interrupted_` (`RenderHost.cpp`, the job loop's `r < 0` branch); only a script working in promise jobs reaches it.
-- An interrupt after the script reported `done` keeps its `outputs` under `cancelled` (only `message` is cleared).
+- An interrupt after the script reported `done` keeps its `outputs` under `cancelled` (only `message` is cleared);
+  reachable only if the cancel has waited out `kCancelGrace` by the time the worker's post-result JS runs.
 - A failed `.part` sync reads as a failed move in `render.ts`'s error ("could not replace X"), pointing at a locked
   target rather than a disk error.
 - `foldsCase` trusts a single probe (the first entry with a cased letter), so a broken symlink or a non-simple case swap
   reads a folding filesystem as case-sensitive.
 - A battery cart whose live SRAM reads null still boots the sibling `.sav` silently in `ui/host/render.ts` (it sets the
-  spec's `sav` only when `readSram` answers); refusing is open.
+  spec's `sav` only when `readSram` answers); a running battery core should always answer `readSram`, so refusing, as
+  the unwritable-snapshot case does, is open.
 - Wedged jobs: a script missing its cancel is interrupted after `RenderHost::kCancelGrace` (2 s), but a core wedged in
-  one native call hangs the CLI and an instance's teardown.
+  one native call hangs the CLI (a second Ctrl-C kills it, possibly leaving its `.part` files) and an instance's
+  teardown.
 - Cores print straight to the process: Mesen's load log goes to fd 1 while the job's console lines arrive through the
   drain, so in the CLI the two can interleave differently.
 
@@ -594,7 +607,7 @@ The D3 design's residual list, extended after its final review:
 
 ### The behavioural render tests run in-process
 
-Some behavioural render tests (`risa-render`, `sms-render`, and the pure tier's `start-truncation` and
+Some behavioural render tests (among them `risa-render`, `sms-render`, and the pure tier's `start-truncation` and
 `risa-autodetect`) call `runRenderJob` on an exact-blocks engine, and `audio-render` and `render-guard` drive the audio
 driver's renders in-process: paths no production caller uses. Their assertions reach engine jobs only through the render
 baseline and `engine-run`. ([D3 design](../docs/modular-graph-phase-d3-design.md) section 10.)
@@ -653,7 +666,7 @@ design](../docs/modular-graph-phase-e4-design.md) section 11.8.)
 
 ## Feature gaps and SDL
 
-Things a user could reasonably expect that are not wired. None block shipping.
+Feature gaps a user could reasonably expect, and the SDL standalone's unbuilt or unverified pieces. None block shipping.
 
 ### Raw LSDj Keyboard sync mode
 
@@ -785,7 +798,7 @@ design](../docs/known-bugs-batch-2-design.md) section 5.)
 
 No project-level fallback forwards DAW MIDI to the real cart without a NES system: a card job addresses a node, and a
 project with no system places none, so driving a MIDI cart with no NES in the project has no UI path. ([C5
-design](../docs/modular-graph-phase-c5-design.md) section 11.)
+design](../docs/modular-graph-phase-c5-design.md) section 10.)
 
 ## Deferred
 
@@ -801,10 +814,9 @@ line.
 - **Savestate slots and a sav inspector**: never built; the state-snapshot machinery and the pure-TS sav codec exist, a
   multi-slot feature and a React sav view do not.
 - **A web / Emscripten port**: design only ([modular-graph-design.md](../docs/modular-graph-design.md) section 11).
-- **`MemoryType` stays a closed wire enum** of nine regions
+- **`MemoryType` stays a closed wire enum, F2's item**, of nine regions
   ([MemoryType.hpp](../packages/system/native/src/system/MemoryType.hpp)): a tenth changes the wire, the debug RPCs and
-  the TS mirror together, and it is not a build seam (the closed wire enum, F2's item; [F2
-  design](../docs/modular-graph-phase-f2-design.md) section 10).
+  the TS mirror together, and it is not a build seam ([F2 design](../docs/modular-graph-phase-f2-design.md) section 10).
 - **One Mesen library for every product**, built with the root's options: a product that wants fewer consoles, or an
   embedder who wants SNES back, flips a cache variable (`tools/build-mesen-all-consoles.sh` proves the ON build); a
   library per console set is a later question the compile-out filter's table is written to make cheap ([F2

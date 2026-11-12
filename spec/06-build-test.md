@@ -155,39 +155,40 @@ the lists: its 21 packages hold the plugin's 15. The desktop's run also writes t
 extends) and `tsconfig.paths.json` (the same entries plus the shell's own aliases, from `tsconfig.aliases.json`: a
 child's `paths` REPLACE its parent's, so the shell's program needs one file carrying both). The product list is the
 **dependency order and the registration order both** (a package before the ones that use it, the shell last), and only a
-ROM provider's place in it is behaviour, and a tracker integration's for a system storing two node-less markers (a known
-bug, spec/07): the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's
-kind, a kit format's id and a tracker integration's marker role are otherwise looked up rather than sequenced (one
-package's roles interleave another's without consequence), so for those a duplicate is the hazard: the generated module
-refuses a role kind, a kit format id or a marker role declared twice, each with its own message. The generator itself
-refuses a list that puts a package before a dependency, a dependency the product does not carry whose contribution would
-be lost, a dependency on the shell, a duplicate product entry, a node type or span label declared twice, a label that is
-below 16 or leaves a gap, a role naming a node no package wires, a manifest that names a missing module or one its
-`exports` do not publish, and a contributing package the shell does not declare. A package's `retroplug.embed` entry
-(the bytes a product bakes in) is paired at load with the `embeds` declaration its **app module** makes (`{ id, label,
-platform }`): the generated module refuses a manifest entry no app module declares, a declaration no manifest bakes in
-(or one whose halves are in two packages), an id declared twice and a platform no console registers, each naming the
-package(s). A protocol node whose core must CAPTURE its serial out declares, in the manifest, what the core's capture
-should do in each of the cart's sync modes: `capture: { "midiOut": "drive", "masterSync": "listen", ... }`, each value
-`"off"`, `"listen"` or `"drive"`. The generator refuses a capture that is not an object of mode: capture, a value that
-is none of the three, and a capture on a node that is not wired (no `midiIn` and no `writes`), on a node with no `out`,
-or on one whose `out` no package declares or declares no `serialOut`: a capture whose bytes nothing decodes would clock
-a core for nothing. The generated modules and both path configs are gitignored, and `retroplug-ts-packages` writes them
-only when their content changes. Seven targets depend on it, so they exist before the first esbuild run of a fresh
-checkout: the control-plane, UI, script, render-worker and CLI bundles, the example sessions and the CLI SDK assets. The
-root `pnpm typecheck` script runs the generator before any package's `tsc`, so a checkout with no generated file
-typechecks (CI's order is install, typecheck, build). A package that lists examples, or declares a host module the UI's
-surface owns, must have a `tsconfig.json` whose parsed `extends` names `../<shell>/tsconfig.host-modules.json` (the
-generator refuses one without: the shell's program compiles `../*/examples`, and a `.tsx` resolves `react` and
-`react/jsx-runtime` only through those paths; naming the file in a comment is not extending it); a package with
-`retroplug.host` declares each host module it imports, and the generator and rule 3 both hold the declaration to the one
-shell-owned list, [host-modules.json](../packages/retroplug/host-modules.json): five modules over two surfaces,
-`retroplug-cli` for `cli` and `react`, `react/jsx-runtime`, `lvgljs` and `lvgljs-ui` for `ui`. That list's `surface` is
-enforced too: a host module is importable only from the files its surface owns, which is the package's `examples/` and
-`ts/cli/` for `cli` and its `ts/ui/` for `ui`, and rule 3 refuses one imported from an app, protocol, console or test
-file, saying which surface the module belongs to. Rule 3's other half is where a package's React may live: a `.tsx` is
-admitted only under the package's `ts/ui/` tree, and automatic JSX makes it a use of `react/jsx-runtime` with no
-specifier, so a package with one declares that module.
+ROM provider's place in it is behaviour, and a tracker integration's for a system storing two node-less markers ([a
+known bug](07-remaining-work.md#a-tracker-marker-with-no-protocol-node)): the providers run in that order, and the first
+to match a ROM fixes a system's role-list order. A role's kind, a kit format's id and a tracker integration's marker
+role are otherwise looked up rather than sequenced (one package's roles interleave another's without consequence), so
+for those a duplicate is the hazard: the generated module refuses a role kind, a kit format id or a marker role declared
+twice, each with its own message. The generator itself refuses a list that puts a package before a dependency, a
+dependency the product does not carry whose contribution would be lost, a dependency on the shell, a duplicate product
+entry, a node type or span label declared twice, a label that is below 16 or leaves a gap, a role naming a node no
+package wires, a manifest that names a missing module or one its `exports` do not publish, and a contributing package
+the shell does not declare. A package's `retroplug.embed` entry (the bytes a product bakes in) is paired at load with
+the `embeds` declaration its **app module** makes (`{ id, label, platform }`): the generated module refuses a manifest
+entry no app module declares, a declaration no manifest bakes in (or one whose halves are in two packages), an id
+declared twice and a platform no console registers, each naming the package(s). A protocol node whose core must CAPTURE
+its serial out declares, in the manifest, what the core's capture should do in each of the cart's sync modes: `capture:
+{ "midiOut": "drive", "masterSync": "listen", ... }`, each value `"off"`, `"listen"` or `"drive"`. The generator refuses
+a capture that is not an object of mode: capture, a value that is none of the three, and a capture on a node that is not
+wired (no `midiIn` and no `writes`), on a node with no `out`, or on one whose `out` no package declares or declares no
+`serialOut`: a capture whose bytes nothing decodes would clock a core for nothing. The generated modules and both path
+configs are gitignored, and `retroplug-ts-packages` writes them only when their content changes. Seven targets depend on
+it, so they exist before the first esbuild run of a fresh checkout: the control-plane, UI, script, render-worker and CLI
+bundles, the example sessions and the CLI SDK assets. The root `pnpm typecheck` script runs the generator before any
+package's `tsc`, so a checkout with no generated file typechecks (CI's order is install, typecheck, build). A package
+that lists examples, or declares a host module the UI's surface owns, must have a `tsconfig.json` whose parsed `extends`
+names `../<shell>/tsconfig.host-modules.json` (the generator refuses one without: the shell's program compiles
+`../*/examples`, and a `.tsx` resolves `react` and `react/jsx-runtime` only through those paths; naming the file in a
+comment is not extending it); a package with `retroplug.host` declares each host module it imports, and the generator
+and rule 3 both hold the declaration to the one shell-owned list,
+[host-modules.json](../packages/retroplug/host-modules.json): five modules over two surfaces, `retroplug-cli` for `cli`
+and `react`, `react/jsx-runtime`, `lvgljs` and `lvgljs-ui` for `ui`. That list's `surface` is enforced too: a host
+module is importable only from the files its surface owns, which is the package's `examples/` and `ts/cli/` for `cli`
+and its `ts/ui/` for `ui`, and rule 3 refuses one imported from an app, protocol, console or test file, saying which
+surface the module belongs to. Rule 3's other half is where a package's React may live: a `.tsx` is admitted only under
+the package's `ts/ui/` tree, and automatic JSX makes it a use of `react/jsx-runtime` with no specifier, so a package
+with one declares that module.
 
 **The host contract.** The three TypeScript surfaces build a host for their hooks and tools from
 [core/ts/host.ts](../packages/core/ts/host.ts): `Host<G>` is an object of named groups (`files`, `png`, `kits`,
