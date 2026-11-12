@@ -3,20 +3,22 @@
 The checks that run RetroPlug inside something else: a real DAW (Reaper on Linux and Windows, Renoise), the SDL
 standalone against a real audio server, and `retroplug-cli` as a consumer repository's whole test runner. What they
 have in common is that each proves something the headless tiers cannot, and that most of them can reach real hardware,
-so they run under a guard that proves they did not.
+so on Linux they run under a guard that proves they did not.
 
-What this doc does not repeat: the [`pnpm scripts`](06-build-test.md#pnpm-scripts) table lists every script, what it
-builds and whether CI runs it; [Running the Reaper leg in parallel](06-build-test.md#running-the-reaper-leg-in-parallel)
-owns `pnpm reaper:all` and the `RP_JOB_TAG` isolation that lets the legs share a machine; the parameter legs
-(`reaper:params`, `-clap`, `-vrc7`) are [12-dynamic-parameters.md](12-dynamic-parameters.md) section 6's; the LSDj
-sync and DAW-timing renders and their analyzer are [docs/lsdj.md](../docs/lsdj.md)'s; and what `retroplug-sdl` is and
-how it is built is [13-subsystems.md](13-subsystems.md)'s.
+What this doc does not repeat: the [`pnpm scripts`](06-build-test.md#pnpm-scripts) table gives the SDL harnesses and
+`test:cli-ts` a row each (what it builds, whether CI runs it) and `reaper:all` one for the whole Reaper leg; [Running
+the Reaper leg in parallel](06-build-test.md#running-the-reaper-leg-in-parallel) owns `pnpm reaper:all` and the
+`RP_JOB_TAG` isolation that lets the legs share a machine; the parameter legs (`reaper:params`, `-clap`, `-vrc7`) are
+[12-dynamic-parameters.md](12-dynamic-parameters.md) section 6's; the LSDj sync and DAW-timing renders and their
+analyzer are [docs/lsdj.md](../docs/lsdj.md)'s; and what `retroplug-sdl` is and how it is built is
+[13-subsystems.md](13-subsystems.md)'s.
 
 ## The Reaper leg
 
 Every Reaper check boots its own headless stack through the sourced [tools/reaper-env.sh](../tools/reaper-env.sh) and
-drives the built plugin in a real Reaper. Beside the renders (docs/lsdj.md, and the parameter legs in spec/12) there
-are checks of the hosted editor and of a host holding several instances, which no headless tier can reach:
+drives the built plugin in a real Reaper. Beside the renders (the LSDj and MIDI-timing ones in docs/lsdj.md) and the
+parameter legs (spec/12) there are checks of the hosted editor and of a host holding several instances, which no
+headless tier can reach:
 
 - **`reaper:editor`** ([tools/run-reaper-editor.sh](../tools/run-reaper-editor.sh)) floats the hosted plugin editor and
   asserts its LVGL snapshot rendered: the script dumps `RETROPLUG_SCREENSHOT_PATH`, and a uniform PNG of about 159
@@ -35,15 +37,16 @@ not in CI: they need the whole DAW and X stack.
 **More than one instance.** `reaper:two-instances` and `reaper:two-instances-load` are the only checks that run MORE
 THAN ONE instance in a host, which is its own state: a control-plane runtime each, and an LVGL display each on one UI
 thread. The first ([tools/run-reaper-two-instances.sh](../tools/run-reaper-two-instances.sh)) loads N instances + N
-editors and watches the host survive; `RP_TWO_FORMAT=vst3|clap` picks the format, `RP_TWO_COUNT` the count (default
-2) and `RP_TWO_AUTOLOAD` a `.rplg` autoloaded into every instance. The second
+editors and watches the host survive; `RP_TWO_FORMAT=vst3|clap` picks the format, `RP_TWO_COUNT` the count (default 2)
+and `RP_TWO_AUTOLOAD` a `.rplg` autoloaded into every instance. The second
 ([tools/run-reaper-two-instances-load.sh](../tools/run-reaper-two-instances-load.sh)) drives the failure that was
-reported: load a ROM through instance 1's editor, open instance 2, load through that one. It judges by a ReaScript
-defer HEARTBEAT rather than by the process, because the bug froze the host rather than crashing it and a live process
-proves nothing: Reaper runs defer on the same main thread both editors idle on, so a blocked UI thread stops the
-counter dead. `RP_LOAD_MODE=dialog` (the "Load..." row) is the leg that reproduced the freeze; the default loads
-directly. The harness SIGKILLs Reaper at the end, since a host spinning in LVGL never answers SIGTERM. Neither is in
-CI, and neither is in `reaper:all`: they stand up several instances and are run on their own.
+reported: load a ROM through instance 1's editor, open instance 2, load through that one. It judges by a ReaScript defer
+HEARTBEAT rather than by the process, because the bug froze the host rather than crashing it and a live process proves
+nothing: Reaper runs defer on the same main thread both editors idle on, so a blocked UI thread stops the counter dead.
+`RP_LOAD_MODE=dialog` (the "Load..." row) is the leg that reproduced the freeze; the default, `direct`, clicks the
+built-in Load mGB row. The harness falls back to SIGKILL when SIGTERM goes unanswered, since a host spinning in LVGL
+never answers it and the script would otherwise hang on the bug it just found. Neither is in CI, and neither is in
+`reaper:all`: they stand up several instances and are run on their own.
 
 **risa's sync render.** `reaper:risa-sync` is the NES/risa twin of the LSDj drift render, judged by the same `--drift`
 analyzer ([tools/reaper-timing-analyze.py](../tools/reaper-timing-analyze.py)), whose labels are tracker-neutral for
@@ -92,19 +95,26 @@ Three scripts run the real `retroplug-sdl` binary: `sdl:smoke`, `sdl:controller`
 in the [`pnpm scripts`](06-build-test.md#pnpm-scripts) table). Each puts the [device guard](#the-device-guard) in front
 of the run itself.
 
-**`sdl:smoke`** ([tools/run-sdl-smoke.sh](../tools/run-sdl-smoke.sh)) boots and shuts down the standalone on SDL's
-dummy drivers and the null audio backend. CI runs it on the linux job (linux-x64), so CI proves the standalone both
-links AND runs; it also fails the run if the null-pinned run touched a device path (its own `NOSND_LOG` is not empty).
+**`sdl:smoke`** ([tools/run-sdl-smoke.sh](../tools/run-sdl-smoke.sh)) boots and shuts down the standalone on SDL's dummy
+drivers and the null audio backend. CI runs it on the linux job (linux-x64), so CI proves the standalone both links AND
+runs; it also fails the run if the null-pinned run touched a device path or loaded an audio library (its own `NOSND_LOG`
+is not empty).
 
-**`sdl:pipewire`** ([tools/run-sdl-pipewire.sh](../tools/run-sdl-pipewire.sh)) is the audio-device half the smoke
-cannot cover, since the smoke runs on the null device: it stands up a private PipeWire server and asserts which output
-device the host opens, in both audio modes. The PortAudio legs start from the session default sink (the
-`default.audio.sink` metadata key wins), then an explicit pick, a stale one and an explicit driver; SDL2's legs run the
-same selection cases, then the 8-channel case, which is the one place the two backends differ audibly (PortAudio opens
-8 ports with pair 1 linked; SDL reports 8 at the API but its PipeWire node has 2 output ports). The live-menu leg
-drives the real menu to Settings > Audio while a stream runs and holds the stream open across the menu build: the same
-node before and after, and exactly one open line. A leg pins its backend with `--audio-backend`, which replaces only
-the backend, so the saved driver and device survive.
+**`sdl:controller`** ([tools/run-sdl-controller.sh](../tools/run-sdl-controller.sh)) drives the control surface through
+the real standalone against an ALSA fake, under the `RP_MIDI_PORT_ALLOW` port filter; its legs are in the `pnpm scripts`
+table's row.
+
+**`sdl:pipewire`** ([tools/run-sdl-pipewire.sh](../tools/run-sdl-pipewire.sh)) is the audio-device half the smoke cannot
+cover, since the smoke runs on the null device: it stands up a private PipeWire server with three null sinks in its own
+`XDG_RUNTIME_DIR` and asserts which output device the host opens, in both audio backends, PortAudio and SDL2. The
+PortAudio legs hold that the session default sink wins (the `default.audio.sink` metadata key), that an explicit
+Settings pick beats it, that a stale pick warns and falls back, that an explicit driver resolves the same way, and that
+a run with no libpipewire degrades to ALSA, whose `default` the script points at a private `ALSA_CONFIG_PATH` config
+whose default is the null PCM, so no card is touched. SDL2's legs run the same selection cases, then the 8-channel case,
+which is the one place the two backends differ audibly (PortAudio opens 8 ports with pair 1 linked; SDL reports 8 at the
+API but its PipeWire node has 2 output ports). SDL's live-menu leg drives the real menu to Settings > Audio while a
+stream runs and holds the stream open across the menu build: the same node before and after, and exactly one open line.
+A leg pins its backend with `--audio-backend`, which replaces only the backend, so the saved driver and device survive.
 
 The private server is built the way it is for reasons a container forces:
 
@@ -128,7 +138,7 @@ script is not in CI; the devcontainer ships one for it.
 
 ### The device guard
 
-Every harness that could reach real hardware runs under the device guard, whose source is tracked:
+Every Linux harness that could reach real hardware runs under the device guard, whose source is tracked:
 [tools/sdl-audio-guard/nosnd.c](../tools/sdl-audio-guard/nosnd.c), built by
 [build-guard.sh](../tools/sdl-audio-guard/build-guard.sh) into the harness's own scratch directory and loaded through
 `LD_PRELOAD`. It refuses an open before the syscall: every `/dev/snd` node but `seq`/`timer`, every `/dev/video*`,
@@ -140,10 +150,12 @@ strace cannot: it never sees a refusal.
 The guard is sourced through [guard-env.sh](../tools/sdl-audio-guard/guard-env.sh), which self-tests after preloading
 it: a probe open of `/dev/snd/nosnd-selftest` must be refused AND logged, or the harness exits non-zero. The
 self-test is not ceremony: ld.so silently ignores a preload it cannot load, so a guard built in a noexec directory or
-for the wrong ELF class would leave the run unguarded with nothing said. The three SDL harnesses and
+for the wrong ELF class would leave the run unguarded with nothing said. The guard is a Linux facility: on macOS
+guard-env.sh prints a notice and the run is unguarded, and the PowerShell twins and the Renoise runner source nothing
+like it. The three SDL harnesses and
 [tools/reaper-env.sh](../tools/reaper-env.sh) source it themselves, so a bare `pnpm sdl:controller` or `pnpm reaper:*`
-is guarded, not only a run of the verification kit (the gitignored tip-verify scripts): the kit prepends its own copy
-of the same source for the whole run, and guard-env.sh then adds no second one. A Reaper leg's teardown prints the
+is guarded, not only a run of the verification kit (local tip-verify scripts, not in the repo): the kit prepends its own
+build of the guard for the whole run, and guard-env.sh then adds no second one. A Reaper leg's teardown prints the
 log's counts and fails on any refused card playback, video or serial node
 ([spec/06](06-build-test.md#running-the-reaper-leg-in-parallel)).
 
@@ -154,23 +166,25 @@ file, so a consumer repo (BlipToaster) needs no Node, npm, esbuild or node_modul
 and nothing else. [tools/sync-cli-to-bliptoaster.sh](../tools/sync-cli-to-bliptoaster.sh) is the sync step, a
 binaries-only copy of two binaries, `retroplug-cli` and `retroplug-n8-hwtest` (the bare N8 device access the
 nes-hardware-lab skill uses), into the consumer's `retroplug-cli/bin/`; no SDK file goes over. The harness's own check
-is `pnpm test:cli-ts`.
+is `pnpm test:cli-ts`, which CI runs on the linux job.
 
-**The SDK is a module, never a file.** A test imports the SDK by the bare specifier `"retroplug-cli"`, which the
-binary serves from QuickJS's loaded-module table: `cli/main.cpp` `JS_ReadObject`s the embedded module bytecode
-(compiled with `tjsc -n retroplug-cli`) before a session evaluates, and `js_host_resolve_imported_module` checks that
-table BEFORE the module loader, so nothing is left to sync or to go stale. A relative specifier could not work this
-way: `tjs_module_normalizer` consults the import map only for bare names (`if (name[0] != '.')`), so `"../sdk/x.js"`
-always hits the disk. Only the `.d.ts` is written out ([cli/sdkAssets.ts](../packages/retroplug/cli/sdkAssets.ts)),
-because editors and `tsc` read declarations from disk and reach it through a tsconfig `paths` entry, and only when a
-source actually imports the SDK (`buildTsDir` reports `needsSdk`).
+**The SDK is a module, never a file.** A test imports the SDK by the bare specifier `"retroplug-cli"`, which the binary
+serves from QuickJS's loaded-module table: [packages/native/cli/main.cpp](../packages/native/cli/main.cpp)
+`JS_ReadObject`s the embedded module bytecode (compiled with `tjsc -m -n retroplug-cli`) before a session evaluates, and
+`js_host_resolve_imported_module` checks that table BEFORE the module loader, so nothing is left to sync or to go stale.
+A relative specifier could not work this way: `tjs_module_normalizer` consults the import map only for bare names (`if
+(name[0] != '.')`), so `"../sdk/x.js"` always hits the disk. Only the `.d.ts` is written out
+([cli/sdkAssets.ts](../packages/retroplug/cli/sdkAssets.ts)), because editors and `tsc` read declarations from disk and
+reach it through a tsconfig `paths` entry, and only when a source actually imports the SDK (`buildTsDir` reports
+`needsSdk`).
 
 **Stripping, not bundling.** The txiki runtime already resolves `import` off disk at runtime, so tests never needed
-bundling, only stripping; and consumer tests already use explicit `.js` specifiers, so emitting `X.ts` -> `X.js` at
-the same directory depth needs no specifier rewriting. That depth is why stripped output lands in the source dir's
-sibling `.rp-test-build/` (`buildDirFor` in [cli/tsStrip.ts](../packages/retroplug/cli/tsStrip.ts)); anywhere else,
-every `../sdk/...` import breaks. Where that sibling is not writable (a session straight under `/tmp`),
-`resolveBuildDir` falls back to a directory under the runtime's temp dir, which keeps sibling imports working.
+bundling, only stripping; and consumer tests already use explicit `.js` specifiers, so emitting `X.ts` -> `X.js` at the
+same directory depth needs no specifier rewriting. That depth is why stripped output lands in the source dir's sibling
+`.rp-test-build/` (`buildDirFor` in [cli/tsStrip.ts](../packages/retroplug/cli/tsStrip.ts)); anywhere else, every
+`../sdk/...` import breaks. Where that sibling is not writable (a session straight under `/tmp`), `resolveBuildDir`
+falls back to `<tmpDir>/rp-test-build/<slug>`. The whole directory is still stripped into one place, so imports between
+its files still resolve, but a `../` import out of it misses; `--out` next to the sources covers that case.
 
 **One process per file, in a pool.** Each test file runs in its own process (`tjs.spawn`), which is required, not
 tidy: the TAP harness calls `tjs.exit` when a file ends, its case list is module-level, and the native `Engine` is
