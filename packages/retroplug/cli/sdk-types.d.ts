@@ -764,3 +764,60 @@ export declare function assertPitchInTune(mono: Float32Array, expectedHz: number
 export declare function spectralFingerprint(mono: Float32Array, opts?: { bands?: number; sampleRate?: number; fmin?: number; fmax?: number }): number[];
 /** Assert a render's fingerprint has not drifted from `golden` by more than `tol` dB in any band. */
 export declare function assertFingerprint(mono: Float32Array, golden: number[], tol?: number, opts?: { bands?: number; sampleRate?: number; fmin?: number; fmax?: number }): void;
+
+// ─── The Everdrive N8 Pro over USB (connectN8), and keeping the event loop alive. ────────────────────────────────────
+
+export interface N8ConnectOptions {
+  /** Serial port to open. Omitted = the first port whose VID:PID is the N8 Pro's (38df:0017). */
+  serial?: string;
+  /** Handshake timeout, ms. */
+  timeoutMs?: number;
+}
+export interface N8LoadOptions {
+  /** Local ROM bytes to upload to usb-games/<romName>. Omit to boot an existing SD path (sdPath). */
+  romBytes?: Uint8Array;
+  /** Upload target basename under usb-games/ (required with romBytes): a plain file name. */
+  romName?: string;
+  /** Boot a ROM already on the SD card by its SD path (instead of uploading). */
+  sdPath?: string;
+  /** Battery save (.srm) to restore via the menu's per-game slot before the game boots. */
+  srm?: Uint8Array;
+}
+export interface N8DirEntry {
+  name: string;
+  size: number;
+  isDir: boolean;
+}
+export interface N8Device {
+  /** The serial port in use. */
+  readonly port: string;
+  /** Upload and boot a ROM by driving the N8's menu. Only works AT the menu: with a game running it times out (2 s).
+   *  Power-cycle first (the cart cannot reset the console). NOT a way to ask "is a game running?": it first sends the
+   *  menu's probe bytes ("*t") through the cart FIFO, and a running game reads those as its own input. `romName` must
+   *  be a plain file name. */
+  load(opts: N8LoadOptions): { bootPath: string; mapIndex: number };
+  /** List a directory on the card ("/" or "" is the root). */
+  listDir(path: string): N8DirEntry[];
+  /** Read a whole file off the card. Slow: a USB round trip a 512-byte block. */
+  readFile(path: string): Uint8Array;
+  /** Write a whole file to the card, creating missing parent directories. No reboot needed. */
+  writeFile(path: string, bytes: Uint8Array): void;
+  makeDir(path: string): void;
+  /** Delete a file or an empty directory. Permanent. */
+  deleteFile(path: string): void;
+  /** The live sniffer region (512 bytes; the $4000-$401F write mirror is at +$080), what `n8-load --sniff-raw`
+   *  writes. Not a cart DMA, so it never disturbs a running game. */
+  sniffRaw(): Uint8Array;
+  /** Push raw bytes into the cart FIFO, where a running ROM reads them at $40F0. */
+  writeFifo(bytes: Uint8Array): void;
+  /** Release the port. Any later call on this device throws. */
+  close(): void;
+}
+/** Open the N8 and run the connect handshake. Throws if there is no N8 or it does not answer, which is also what
+ *  another process holding the (exclusive) port looks like. A call that fails on the line leaves the next one to drain
+ *  the line and re-run the handshake first. */
+export declare function connectN8(opts?: N8ConnectOptions): N8Device;
+/** Keep the session's event loop running until `tjs.exit()`. A session otherwise gets a short bounded run, so a timer
+ *  or an awaited child process (`tjs.spawn(...).wait()`) never completes. Call once, up front. An error nothing
+ *  catches still ends the session, kept alive or not, with exit 1 and its text. */
+export declare function keepAlive(): void;

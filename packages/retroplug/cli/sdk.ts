@@ -10,6 +10,9 @@
 // written: it boots the control plane, runs the callback and exits with its outcome. A TEST file must not call it - it
 // would exit the process and preempt the harness, reporting a false pass - so a test uses `test()`/`bootSession()`, and
 // runSession refuses outright (exit 1, with a message) when this process has registered a test case.
+import { openN8Device, type N8ConnectOptions, type N8Device } from "@retroplug/n8/device";
+import { makeCall } from "../src/rpcClient";
+
 export { bootSession, hostArgs, runSession } from "./session";
 export type { Session } from "./session";
 
@@ -30,6 +33,15 @@ export { encodeWav, interleaveStereoStreams, deinterleaveStereo } from "./wav";
 export { DirectGraph } from "../src/graph/directGraph";
 
 export { test, expect, skip } from "@retroplug/testing";
+
+// The Everdrive N8 Pro, and the event loop a script that awaits anything needs. The device is the n8 pack's
+// (@retroplug/n8/device), over this process's RPC call, made when a script connects; keepAlive is the session's own,
+// which the CLI's long-running tools call too.
+export function connectN8(opts?: N8ConnectOptions): N8Device {
+  return openN8Device(makeCall(), opts);
+}
+export type { N8ConnectOptions, N8Device, N8LoadOptions, N8DirEntry } from "@retroplug/n8/device";
+export { keepAlive } from "./session";
 
 // Audio analysis DSP for tuning/timbre verification (F2-F7). Pure TS over rendered PCM; prefer the decoded
 // Hz readouts (getExpansionAudioState().frequency / getApuState) for pitch when available - these are the

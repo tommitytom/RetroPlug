@@ -34,8 +34,13 @@ import {
   skip,
   interleaveStereoStreams,
   deinterleaveStereo,
+  connectN8,
+  keepAlive,
   type BreakHitBatch,
   type CoreTransportStats,
+  type N8Device,
+  type N8DirEntry,
+  type N8LoadOptions,
   type TimelineInvariant,
 } from "retroplug-cli";
 
@@ -50,10 +55,13 @@ import {
  *  either - `never extends true` is TRUE, so a `never` would quietly satisfy the assertion. */
 type Assert<T extends true> = T;
 type Covers<A, B, Msg extends string> = [A] extends [B] ? true : Msg;
+// IDENTITY, not mutual assignability. Assignability both ways passes a `readonly` dropped on one side, an optional
+// parameter added, a parameter type widened (method parameters are bivariant) and a required argument made optional:
+// each a declaration a consumer compiles against and the implementation does not honour. Two generic functions are
+// mutually assignable only when the types are identical, which is the standard way to ask the compiler that question.
+type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Exact<A, B, Msg extends string> =
-  Covers<A, B, `${Msg}: the declaration describes something the implementation does not`> extends true
-    ? Covers<B, A, `${Msg}: the implementation has something the declaration does not`>
-    : `${Msg}: the declaration describes something the implementation does not`;
+  Same<A, B> extends true ? true : `${Msg}: the declaration and the implementation are not the same type`;
 
 // Values: the NAME sets, two-way, so the declaration can neither omit an export nor invent one. This is
 // deliberately not a comparison of the types behind those names, because the declaration is a curated
@@ -77,6 +85,14 @@ export type _TimelineInvariant = Assert<Exact<Sdk.TimelineInvariant, Dts.Timelin
 export type _PngImageData = Assert<Exact<Sdk.PngImageData, Dts.PngImageData, "PngImageData">>;
 export type _LoadResult = Assert<Exact<Sdk.LoadResult, Dts.LoadResult, "LoadResult">>;
 export type _NoteOpts = Assert<Exact<Sdk.NoteOpts, Dts.NoteOpts, "NoteOpts">>;
+// The N8 surface is declared WHOLE, not as a subset, so all four are exact, and the two functions by signature: the
+// name sets above only prove they exist.
+export type _N8ConnectOptions = Assert<Exact<Sdk.N8ConnectOptions, Dts.N8ConnectOptions, "N8ConnectOptions">>;
+export type _N8LoadOptions = Assert<Exact<Sdk.N8LoadOptions, Dts.N8LoadOptions, "N8LoadOptions">>;
+export type _N8DirEntry = Assert<Exact<Sdk.N8DirEntry, Dts.N8DirEntry, "N8DirEntry">>;
+export type _N8Device = Assert<Exact<Sdk.N8Device, Dts.N8Device, "N8Device">>;
+export type _connectN8 = Assert<Exact<typeof Sdk.connectN8, typeof Dts.connectN8, "connectN8">>;
+export type _keepAlive = Assert<Exact<typeof Sdk.keepAlive, typeof Dts.keepAlive, "keepAlive">>;
 
 // The class, the spec, the graph type and the three callables are compared shape by shape rather than name by name.
 // The class is one-way (the declaration is a curated view: `setRouting` widens the real routing union to `string`),
@@ -209,4 +225,21 @@ export function sdkSurfaceCheck(): void {
 
   // The lossy-transport knob is a role config, so it is only checked for shape.
   s.project.systems.setRoleConfig(id, descriptor.core, { fifo: "hardware", fifoBytesPerSecond: 20000 });
+}
+
+// The N8 surface as a session script uses it: upload, boot, read the live state, push to the FIFO. Never called.
+export function sdkN8Check(): void {
+  keepAlive();
+  const n8: N8Device = connectN8({ serial: hostArgs()[0], timeoutMs: 1000 });
+  const entries: N8DirEntry[] = n8.listDir("/");
+  void entries.map((e) => e.name + e.size + String(e.isDir));
+  const load: N8LoadOptions = { romBytes: new Uint8Array(16), romName: "boot-me", srm: new Uint8Array(8) };
+  const booted = n8.load(load);
+  void (booted.bootPath + booted.mapIndex);
+  n8.writeFile("/clips/a.raw", n8.readFile("/clip.raw"));
+  n8.makeDir("/clips");
+  n8.deleteFile("/clips/a.raw");
+  n8.writeFifo(n8.sniffRaw());
+  void n8.port;
+  n8.close();
 }

@@ -162,6 +162,8 @@ const SHELL_IMPORTS = [
   { specifier: "@retroplug/tracker/workingSongBlob", reason: "the working-song image a project carries across a reboot" },
   // The test harness itself: the SDK serves it to a consumer's tests, and the ROM-test session imports it.
   { specifier: "@retroplug/testing", reason: "the TAP harness a session's own tests run through (the SDK serves it to a consumer)" },
+  // The SDK's Everdrive N8: a session script's device is the n8 pack's, over the process's RPC call.
+  { specifier: "@retroplug/n8/device", reason: "the N8 device the SDK hands a session script (connectN8)" },
 ];
 
 /** Rule 9's list for `ui/`: a list of its own, because the kit and the view contract are the UI's alone (src/ and cli/
