@@ -598,15 +598,55 @@ void SameBoySystem::applyDisplayConfig() {
 }
 
 void SameBoySystem::pressButton(std::uint8_t button, bool down) {
+    // A byte the console has no button for drives nothing: SameBoy checks a key's index with an assert alone
+    // (Core/joypad.c), so one of 8 or more would write past the pad's own arrays in a release build. It is still a
+    // press this core took, as a Mesen console answers for a byte outside its table, so it takes no slot, adds no
+    // spacing and drives no bit.
+    if (button >= static_cast<std::uint8_t>(GameboyButton::Count)) {
+        ++pressesAccepted_;
+        return;
+    }
     // Append to the back of the queue, advancing the offset by buttonSpacing
     // from the previous entry. This stops a press+release pair sent in the
     // same UI tick from collapsing onto a single sample (which the joypad
     // debouncer would simply miss). Mirrors the old SameBoyUtil::processButtons
     // logic in the legacy build's SameBoyUtil.
+    //
+    // What is scheduled is a release of a button still held, or the release of one already up (or a press): the first
+    // needs one free slot, so a held button always comes back up, and the second needs more than the console's eight
+    // buttons' worth, so the reserve above them stays for releases (queuedDown_'s comment in the header). An edge the
+    // reserve refuses is counted, so inputDropped() still says how many this core did not take.
+    const std::uint8_t bit = static_cast<std::uint8_t>(1u << button);
+    const bool heldRelease = !down && (queuedDown_ & bit) != 0;
+    const std::size_t need = heldRelease ? 1 : static_cast<std::size_t>(GameboyButton::Count) + 1;
+    if (pendingButtons_.capacity() - pendingButtons_.size() < need) {
+        ++pressesRefused_;
+        return;
+    }
     std::uint32_t offset = 0;
     if (!pendingButtons_.empty())
         offset = pendingButtons_.back().offset + buttonSpacingSamples_;
-    if (pendingButtons_.push(PendingButton{offset, static_cast<GameboyButton>(button), down})) ++pressesAccepted_;
+    // The room above is the push's (it compacts a consumed prefix rather than refusing), so this cannot be what
+    // refuses an edge; a queue that did refuse one would still be counted as not having taken it.
+    if (!pendingButtons_.push(PendingButton{offset, static_cast<GameboyButton>(button), down})) {
+        ++pressesRefused_;
+        return;
+    }
+    if (down) queuedDown_ |= bit;
+    else queuedDown_ = static_cast<std::uint8_t>(queuedDown_ & ~bit);
+    ++pressesAccepted_;
+}
+
+bool SameBoySystem::peekPendingPress(std::uint8_t button, bool& down) const {
+    // The queue is applied in order, so the entry that stands for `button` is the last one naming it: a pass over the
+    // live entries, oldest first, leaves that one's value behind.
+    bool held = false;
+    for (const PendingButton& pending : pendingButtons_) {
+        if (static_cast<std::uint8_t>(pending.button) != button) continue;
+        down = pending.down;
+        held = true;
+    }
+    return held;
 }
 
 std::vector<ChannelStream> SameBoySystem::channelLayout() const {

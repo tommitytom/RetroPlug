@@ -53,6 +53,16 @@ public:
     // SameBoyUtil.cpp:149-163).
     void pressButton(std::uint8_t button, bool down) override;
 
+    // The transition the queue will leave on button `button` when it applies, false when it leaves none (a queue with
+    // no entry naming it, or a byte outside the console's table, which takes no slot). The queue is applied in order,
+    // so the entry that stands for a button is the last one naming it. A test seam of the shape MesenNesSystem's is:
+    // a block applies what is due and carries the rest, so a false after the queue drained is the read that it was
+    // taken.
+    bool peekPendingPress(std::uint8_t button, bool& down) const;
+    // How many transitions are queued and not yet applied: the queue's own size, so a test can hold that an edge the
+    // console has no button for took no slot and one it has did. A read-only seam beside peekPendingPress.
+    std::size_t pendingPresses() const { return pendingButtons_.size(); }
+
     // Queue a raw byte for the GB serial port, scheduled at sample offset
     // `frame` within the block. Drained MSB-first by nextSerialInBit() / the
     // slave-mode pump in stepIfBelowTarget(), neither before `frame` is reached.
@@ -77,7 +87,9 @@ public:
     // inputDropped): serial-in bytes and button presses. A plan's block fits the queues, so a drop is a push outside
     // one: a core fed by a test or tool, or a press burst scheduled past the queue's carry.
     std::uint64_t inputAccepted() const override { return serialInAccepted_ + pressesAccepted_; }
-    std::uint64_t inputDropped() const override { return serialInDropped_ + pendingButtons_.dropped(); }
+    std::uint64_t inputDropped() const override {
+        return serialInDropped_ + pendingButtons_.dropped() + pressesRefused_;
+    }
     // The serial-in bytes the queues have taken since the core was built: the non-press half of inputAccepted(), for a
     // test that holds a staged serial run reached the core rather than only a press.
     std::uint64_t serialInAccepted() const { return serialInAccepted_; }
@@ -241,7 +253,9 @@ public:
     // collapse to zero duration (which the SameBoy joypad debouncer would miss): each press is scheduled 10 ms after
     // the one before it, so what a block adds can still be queued several blocks later. The bound is a block's buttons
     // input sixteen times over (about ten seconds of scheduled presses at 48 kHz), and a press beyond it is refused
-    // and counted rather than growing the queue on the block thread.
+    // and counted rather than growing the queue on the block thread. Its last GameboyButton::Count slots belong to the
+    // releases of what it holds (queuedDown_ below): a press is taken only with more free than that, so a button it
+    // has pressed always comes back up.
     struct PendingButton {
         std::uint32_t offset;   // samples from block start
         GameboyButton button;   // reinterpreted from the uint8_t opcode
@@ -249,7 +263,15 @@ public:
     };
     rp::FixedQueue<PendingButton> pendingButtons_{rp::kButtonsInput * 16};
     static_assert(rp::kButtonsInput * 16 >= rp::kPressInput, "a Game Boy's press queue must hold both doors");
+    // The state each button's last queued edge leaves it in, one bit a button, all up when the core is built (a
+    // rebuilt core is a new object). pressButton reads it to tell a release that has a press behind it, which needs one
+    // free slot, from every other edge, which needs more than GameboyButton::Count of them. The queue never holds
+    // fewer free slots than the buttons it leaves held: a press is taken only with more than 8 free, so at least 8 are
+    // left and at most 8 buttons can be held, and a held release frees a button for each slot it takes.
+    std::uint8_t                  queuedDown_      = 0;
     std::uint64_t                 pressesAccepted_ = 0;
+    // The edges refused for want of that reserve, counted beside the queue's own drops in inputDropped().
+    std::uint64_t                 pressesRefused_  = 0;
 
     // Default per-press duration (samples) used to space queued transitions.
     // Mirrors the old code's "10 ms at sampleRate" default.

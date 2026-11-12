@@ -3745,14 +3745,19 @@ TEST_CASE("a core's ingress queues drop what is past their bound, count it, and 
         ran(*core, {lanes.ptrs[0], lanes.ptrs[1]});
     }
     SECTION("Game Boy presses") {
+        // A Game Boy's queue cannot coalesce, since every edge is meant to be seen in turn, so it keeps the last slots
+        // for the releases of what it holds: a press, and a release of a button already up, is taken only with more
+        // than the console's 8 buttons free, i.e. while fewer than 1024 - 8 = 1016 entries are queued. Every edge of
+        // this loop is one of those (the even ones press buttons 0, 2, 4 and 6, the odd ones release 1, 3, 5 and 7,
+        // which nothing pressed), so the 1028 edges fill 1016 entries and the last 12 are refused.
         auto core = mgb(1);
         core->reserveAudio(8192);
         Lanes lanes(2);
         constexpr std::uint32_t kCapacity = rp::kButtonsInput * 16;
         for (std::uint32_t i = 0; i < kCapacity + 4; ++i)
             core->pressButton(static_cast<std::uint8_t>(i % 8), (i % 2) == 0);
-        CHECK(core->inputAccepted() == kCapacity);
-        CHECK(core->inputDropped() == 4);
+        CHECK(core->inputAccepted() == kCapacity - 8);
+        CHECK(core->inputDropped() == 12);
         ran(*core, {lanes.ptrs[0], lanes.ptrs[1]});
     }
     SECTION("Game Boy serial bytes") {
@@ -3886,6 +3891,31 @@ TEST_CASE("a Mesen press burst cannot push a release out of its queue", "[engine
     }
 }
 
+TEST_CASE("a Game Boy's press queue keeps room for the releases of what it holds",
+          "[engine-graph][system-node][input-drops]") {
+    // The queue holds 1024 entries and a press is taken only with more than the console's 8 buttons free, so a flood
+    // of presses stops at 1016 and leaves exactly the 8 slots a release may need. At most 8 buttons are held then, and
+    // each release frees the button it lets go, so the flood can never push out the edge that lets a button go: a
+    // button held after the flood comes back up. A press past that point is refused, since nothing is free any more.
+    auto core = mgb(1);
+    constexpr std::uint32_t kCapacity = rp::kButtonsInput * 16;
+    constexpr std::uint32_t kReserve = static_cast<std::uint32_t>(GameboyButton::Count);
+    for (std::uint32_t i = 0; i < kCapacity + 16; ++i) core->pressButton(static_cast<std::uint8_t>(i % 8), true);
+    CHECK(core->inputAccepted() == kCapacity - kReserve);
+    CHECK(core->inputDropped() == 16 + kReserve);
+    for (std::uint8_t button = 0; button < kReserve; ++button) core->pressButton(button, false);
+    CHECK(core->inputAccepted() == kCapacity);
+    CHECK(core->inputDropped() == 16 + kReserve);
+    for (std::uint8_t button = 0; button < kReserve; ++button) {
+        bool down = true;
+        REQUIRE(core->peekPendingPress(button, down));
+        CHECK_FALSE(down);   // the flood's press, and behind it the release that stands
+    }
+    core->pressButton(0, true);   // the queue's bound reached exactly: the reserve is empty and this needs it
+    CHECK(core->inputAccepted() == kCapacity);
+    CHECK(core->inputDropped() == 17 + kReserve);
+}
+
 TEST_CASE("a press of a byte the console has no button for drives no button",
           "[engine-graph][system-node][input-drops]") {
     // The press queue coalesces by the wire byte, so the entry that stands for a button is the last one naming it -
@@ -3917,6 +3947,21 @@ TEST_CASE("a press of a byte the console has no button for drives no button",
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rom);
         core->onActivate(kRate);
         strayByte(*core, 200);
+    }
+    SECTION("Game Boy") {
+        // A Game Boy cannot coalesce, so a byte past its table also has to leave the queue alone: it is taken (a press
+        // the console has no bit for), it drives no key past the pad's arrays, and the two entries that stand are A's
+        // press and its release.
+        auto core = mgb(1);
+        core->pressButton(4, true);      // A
+        core->pressButton(200, true);    // past GameboyButton::Count
+        core->pressButton(4, false);
+        CHECK(core->inputAccepted() == 3);
+        CHECK(core->inputDropped() == 0);
+        CHECK(core->pendingPresses() == 2);
+        bool down = true;
+        REQUIRE(core->peekPendingPress(4, down));
+        CHECK_FALSE(down);
     }
 }
 
