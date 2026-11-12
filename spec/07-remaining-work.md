@@ -40,18 +40,20 @@ each (a phase name means its "What it leaves" list in section 5).
 - [x] The shape question `tsconfig.ui.json` folds into the shell's program (F4c; F5a, task 1)
 - [ ] The shape question the view reopen key's width leaves open (F4c)
 
-**Known bugs, recorded and not fixed**
+**Known bugs**
 - [ ] "Is this LSDj" decided by a role's presence, not its placement; needs `placedRole` (found building B3b)
 - [ ] MI.MAP's predicted playhead runs ahead at a tempo divisor of 2 or more (F3)
-- [x] `__rp_syncLatencyMs` follows the stored sync mode, not the one MI.MAP forces (C2; unreachable since F5a, closed
+- [x] `__rp_syncLatencyMs` follows the stored sync mode, not the one MI.MAP forces (C2; unreachable (F5a), closed
       with kb1: no plugin binary's list carries a controller app to force one)
 - [ ] MI.OUT decodes about half the NoteOns a song plays; not investigated (LSDj's serial-out node)
 - [ ] The DPF JACK standalone's control handoff runs on JACK's thread at a buffer-size or rate change (C5)
 - [x] A Game Boy's press queue can drop a flood's last release, leaving a button held (C4; kb1, 431e20007)
 - [x] A Game Boy button byte of 8 or more writes past SameBoy's key arrays in a release build (kb1, 431e20007)
-- [x] A UI render's snapshot files are left behind when the instance ends first (D3; kb1, 5602a0c06 and 219f5389e: the job's pool
-      deletes them with it, and the startup sweep covers a crash)
-- [x] emu2413's VRC7 tables: an unsynchronised static flag, a race for two VRC7 carts built at once (D3; kb1, 0f322f0a6)
+- [x] A UI render's snapshot files are left behind when the instance ends first (D3; kb1, 5602a0c06 and 219f5389e: the
+      job's pool deletes them with it, the UI deletes them as the job settles, and the startup sweep covers a crash and
+      an instance that ends with its job still held)
+- [x] emu2413's VRC7 tables: an unsynchronised static flag, a race for two chips built at once (D3; kb1, 0f322f0a6:
+      not only a VRC7 cart's, since every SMS/GG console builds the same chip for its FM unit)
 
 **Engine**
 - [ ] DAW automation of node params through `setParam` (C2)
@@ -385,8 +387,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     saturated buttons input, and its presses are scheduled 10 ms apart and carried across blocks, so unlike a Mesen
     console's they cannot coalesce. A session that applies pushes inline between blocks (the CLI, an offline render)
     can queue more than that, so an edge other than the release of a button the queue still holds (a press, or a
-    release of a button already up) is taken only with more than the console's 8 buttons free, i.e. with at most 1016
-    entries queued, and such a release needs one slot, which is never refused: a press leaves 8 slots and at most 8
+    release of a button already up) is taken only with more than the console's 8 buttons free, i.e. with fewer than
+    1016 entries queued, and such a release needs one slot, which is never refused: a press leaves 8 slots and at most 8
     buttons are held, and a release frees a button for the slot it takes. What the reserve refuses is counted in
     `inputDropped()` with the queue's own drops. A button byte past the console's table (8 or more) drives no key and
     takes no slot, counted as taken, where SameBoy's own bound is an `assert` a release build drops.
@@ -588,17 +590,25 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     `start-truncation`, `risa-autodetect` and `render-guard` call `runRenderJob` on an exact-blocks engine, a path no
     production caller uses; for engine jobs their assertions reach users only through the render baseline's hashes and
     `engine-run`.
-  - **emu2413's VRC7 tables: fixed with kb1.** They are a process static built once by a function-local `static const
+  - **emu2413's OPLL tables: fixed with kb1.** They are a process static built once by a function-local `static const
     bool` (the order the NES database's and the GBA dispatch tables' flags spell out with acquire/release atomics), so
-    two VRC7 carts built at once as the process's first wait for the build rather than writing the tables twice.
-    `MesenShared.test.cpp`'s `[mesen-statics]` case holds it under ThreadSanitizer, which reported the old flag.
-  - **A UI render's snapshot** (`.render-src-<key>.*` in the config directory) belongs to its job's submission
-    (`EngineRunOptions.discardFiles`), so the pool deletes it however the job ends: on the job's worker once the render
-    library has returned and before the completion is queued, so it is gone by the time TS hears the job settled, and
-    with the job itself when it is dropped unrun (a refusal, a cancel while queued, the pool's teardown, which is the
-    instance ending first). A crash is what survives that, and the next startup sweeps it (`sweepRenderSnapshots`: a
-    snapshot a day old, skipping what cannot be aged or deleted, since the config directory has no owner between
-    processes). The UI deletes only a snapshot whose spec function threw, before anything was submitted.
+    two chips built at once as the process's first wait for the build rather than writing the tables twice: a VRC7
+    cart's, or any SMS/GG console's FM unit, which builds the same chip whether the game uses FM or not.
+    `MesenShared.test.cpp`'s `[mesen-statics]` case holds it under ThreadSanitizer.
+  - **A UI render's snapshot** (`.render-src-<key>.*` in the config directory: `kRenderSnapshotPrefix` natively,
+    `RENDER_SNAPSHOT_PREFIX` in `src/renderSnapshotSweep.ts`, and the two must move together) belongs to its job's
+    submission (`EngineRunOptions.discardFiles`), so the pool deletes it however the job ends: on the job's worker once
+    the render library has returned and before the completion is queued, so it is gone by the time TS hears the job
+    settled, and with the job itself when it is dropped unrun (a refusal, a cancel while queued, the pool's teardown,
+    which is the instance ending first). Only a listed file whose filename carries the prefix is deleted, so a TS bug
+    cannot name a user's own `--sav`. The UI deletes its snapshots again as the job settles, the second road beside the
+    pool's and the only road a job that never reached the pool has (held in TS past the 64-job bound and cancelled, a
+    submission the RPC threw on). What still leaks is an instance that ends with a render held in TS, never settled and
+    never pooled, and a crash; the next startup sweeps those (`sweepRenderSnapshots`: a snapshot more than a day old,
+    skipping what cannot be aged or deleted, since the config directory has no owner between processes). That age is
+    wall time, so a suspend or a clock jump can take a live job's snapshot, which costs a refused render rather than a
+    wrong one: a render says its snapshots must exist when it boots (`RenderOpts.inputsMustExist`, which the UI sets
+    and the CLI does not, its `--sav` being its own to name) and refuses, naming the file, if one is gone.
   - **The SameBoy camera half of the statics patch has no red-green test** (no Game Boy Camera ROM exists in the repo or
     the fixtures), and the exact render bytes are held only on `linux-x64-gnu13`. The patch uses GNU `__atomic`
     builtins, which GCC and Clang (clang-cl on Windows) have; the tree has not been built with MSVC since D2.

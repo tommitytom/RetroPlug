@@ -102,21 +102,25 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
 
 - **No hooks.** Renders need no `__rp_*` window hook: the UI submits through the stores' backend
   (`stores.backend.engineRun`), so every host that mounts the emulator facet renders, the SDL standalone included.
-- **`src/renderJobs.ts`** - `RenderJobs` (`start(systemId, spec, onSettled)`, `list()`, `cancel(id)`, `dismiss(id)`,
-  `prune()`) keeps what each job's progress callback and promise report, plus its handle. `spec` can be a function of
-  the job's key (a per-list token and the job's id, so unique across instances too), and `onSettled` runs once the job
-  has ended, however it ended. It belongs to the store graph (`AppStores.renders`), which in a DAW is the control
+- **`src/renderJobs.ts`** - `RenderJobs` (`start(systemId, spec, onSettled, discardFiles)`, `list()`, `cancel(id)`,
+  `dismiss(id)`, `prune()`) keeps what each job's progress callback and promise report, plus its handle. `spec` can
+  be a function of the job's key (a per-list token and the job's id, so unique across instances too), and `onSettled`
+  runs once the job has ended, however it ended. It belongs to the store graph (`AppStores.renders`), which in a DAW is the control
   plane's, so it outlives the editor and a completion settles through the same queue that submitted the job (nothing
   drains with the editor closed; the WAV is on disk either way, and the badge catches up at the next pump).
 - **`ui/host/render.ts`** - `startSystemRender` snapshots the live `readSram`/`readState` to files of the job's own
-  under `configDir` (`.render-src-<key>.sav` / `.ss0`) and calls `renders.start`, which deletes them once the job has
-  settled. The worker reads them only when it boots the render, which can be minutes later behind the worker budget,
-  so a shared name would boot a later edit's (or another instance's) state. A snapshot that cannot be written refuses
-  the render, listed as an error, rather than boot the sibling `.sav` on disk. An instance or process that ends before the job
-  settles (a closed DAW project or a removed plugin with a render queued or running, a render finished while the editor
-  was closed and the project then closed, a crash) leaves its snapshot behind; the worker deleting its own snapshot once
-  the system is built is the cheaper fix, left. `pickActiveRenderJob` selects a tile's badge job and `renderBadgeLabel` writes
-  its text.
+  under `configDir` (`.render-src-<key>.sav` / `.ss0`, `RENDER_SNAPSHOT_PREFIX`) and calls `renders.start` with their
+  list as the submission's own (`EngineRunOptions.discardFiles`): the engine's pool deletes them however the job ends
+  (on the job's worker before the completion is queued, or with the job itself when it is dropped unrun), and
+  `onSettled` deletes them again, which is the road a job that never reached the pool takes (held in TS past the
+  64-job bound and cancelled, a submission the RPC threw on) and a spec function that threw. What is left is an
+  instance that ends with a render held in TS, and a crash, which the startup sweep takes
+  (`src/renderSnapshotSweep.ts`: a snapshot more than a day old). The worker reads the snapshots only when it boots
+  the render, which can be minutes later behind the worker budget, so a shared name would boot a later edit's (or
+  another instance's) state; and the spec says they must exist when it boots (`RenderOpts.inputsMustExist`), so one
+  the sweep took from under a live job refuses rather than booting blank. A snapshot that cannot be written refuses
+  the render, listed as an error, rather than boot the sibling `.sav` on disk. `pickActiveRenderJob` selects a tile's
+  badge job and `renderBadgeLabel` writes its text.
 - **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)
   and `spec.gainDb`. The job boots a fresh core from the ROM on disk, so without them it would take each
   role's schema DEFAULTS and render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit
@@ -159,7 +163,9 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
   `cmp`-identical to `retroplug-cli render` (the same code); `--parallel <j>...` runs jobs concurrently on one pool;
   `--cancel <j>` cancels mid-render. The coverage CI runs is `[engine-jobs]`; the tool is not a CI step.
 - **UI-seam logic:** `pnpm test render` - `startSystemRender` spec/snapshot (two queued renders of one system each
-  boot their own snapshot, gone once settled; a snapshot that cannot be written refuses the render),
+  boot their own snapshot, gone once settled; a render held past the queue's bound and a submission the RPC threw on
+  delete theirs; a snapshot that cannot be written refuses the render; a render whose snapshot went refuses to boot),
+  the startup sweep (`snapshot-sweep`),
   `pickActiveRenderJob`, `renderBadgeLabel`, `validSplits`/`formatDuration`, the `userConfig.render` setters/clamps,
   and (in `risa-autodetect`) that `onRendered` reports real audio time: monotonic, stepping by the render chunk,
   settling on the length written.
