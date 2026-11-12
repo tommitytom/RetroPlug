@@ -30,6 +30,7 @@
 #include "NES/Input/BarcodeBattlerReader.h"
 #include "NES/Input/FourScore.h"
 #include "Shared/NotificationManager.h"
+#include "Shared/Utilities/emu2413.h"
 #include "system/mesen/MesenGlobalInit.hpp"
 
 namespace {
@@ -209,6 +210,23 @@ TEST_CASE("two GBA consoles can be built on two threads at once, the first in th
     std::atomic<int> built{0};
     onTwoThreadsAtOnce([&] {
         GbaConsole console(nullptr);
+        built.fetch_add(1);
+    });
+    CHECK(built.load() == 2);
+}
+
+TEST_CASE("the VRC7 sound chip's tables can be built on two threads at once, the first in the process",
+          "[engine-graph][mesen][mesen-statics]") {
+    // A VRC7 cart builds Mesen's emu2413 (the OPLL) for the NES's expansion audio, and the chip's tables are
+    // process-wide: whoever calls OPLL_new first builds them, and every later call reads them. With the plain
+    // `table_initialized` flag two carts' first builds both saw it clear, so both wrote the tables while either could
+    // read them - the race ThreadSanitizer reports as the process's first build. Each thread builds and frees a chip
+    // of its own, which is a boot's own call.
+    std::atomic<int> built{0};
+    onTwoThreadsAtOnce([&] {
+        OPLL* chip = OPLL_new(3579545, 48000);
+        if (!chip) return;
+        OPLL_delete(chip);
         built.fetch_add(1);
     });
     CHECK(built.load() == 2);

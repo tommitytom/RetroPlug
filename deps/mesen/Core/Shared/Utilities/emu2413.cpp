@@ -411,14 +411,24 @@ static void makeDefaultPatch(void) {
       OPLL_getDefaultPatch(i, j, &default_patch[i][j * 2]);
 }
 
-static uint8_t table_initialized = 0;
-
 static void initializeTables(void) {
   makeTllTable();
   makeRksTable();
   makeSinTable();
   makeDefaultPatch();
-  table_initialized = 1;
+}
+
+/* RetroPlug: these tables are process-wide, built by whichever chip is created first and read by every one after it,
+   and two VRC7 carts can be built on two threads at once (the engine's offline pool beside the live engine, two render
+   jobs), so the plain `table_initialized` flag this used to check let both write the tables while either read them.
+   A block-scope static's initialiser runs exactly once, and every other thread that reaches it waits until it has
+   finished, which is the ordering the flag was spelling out by hand. */
+static void ensureTables(void) {
+  static const bool initialized = [] {
+    initializeTables();
+    return true;
+  }();
+  (void)initialized;
 }
 
 /*********************************************************
@@ -1102,9 +1112,7 @@ OPLL *OPLL_new(uint32_t clk, uint32_t rate) {
   OPLL *opll;
   int i;
 
-  if (!table_initialized) {
-    initializeTables();
-  }
+  ensureTables();
 
   opll = (OPLL *)calloc(sizeof(OPLL), 1);
   if (opll == NULL)
