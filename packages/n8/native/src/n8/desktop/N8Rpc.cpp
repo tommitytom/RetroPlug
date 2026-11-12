@@ -21,6 +21,10 @@ struct N8Rpc::Session {
     std::string                               portName;
     std::unique_ptr<retroplug::PortTransport> port;  // before edio, which holds a reference to it
     Edio                                      edio;
+    // A call failed on the line, which may have left it out of step with the protocol: the rest of a reply still
+    // arriving, or the N8 still inside a command. The next call resyncs first (N8Rpc::ready), and only a handshake that
+    // answers clears it.
+    bool dirty = false;
 };
 
 namespace {
@@ -38,6 +42,15 @@ N8Reply replyOf(const Status& status, const retroplug::PortTransport& port, std:
     if (status.code == Code::Device) r.deviceStatus = status.device;
     if (!status.ok()) r.message = retroplug::failureText(status, port, path);
     return r;
+}
+
+// Whether a call that answered `status` left the line as it found it: it succeeded, it was refused before its first byte
+// (the refusals portSaid names, and a file larger than its buffer, refused after a listing that ended in step), or its
+// file was not on a listing that ended in step. Anything else may have stopped part-way through a reply or a command.
+bool leavesLineInStep(const Status& status) {
+    if (status.ok() || status.code == Code::NotFound) return true;
+    return status.code == Code::TooLarge && (status.where == Where::Length || status.where == Where::BatteryPath ||
+                                             status.where == Where::Size || status.where == Where::Buffer);
 }
 
 N8Reply notOpen(std::int32_t handle) {
@@ -131,6 +144,36 @@ N8Rpc::Session* N8Rpc::find(std::int32_t handle) {
     return it == sessions_.end() ? nullptr : it->second.get();
 }
 
+N8Rpc::Session* N8Rpc::ready(std::int32_t handle, N8Reply& refused) {
+    Session* s = find(handle);
+    if (!s) {
+        refused = notOpen(handle);
+        return nullptr;
+    }
+    if (!s->dirty) return s;
+    // Read until the line has been quiet for one read (20 ms; 20 reads, about 0.4 s, at most), then drop what the OS
+    // holds: the rest of a reply the caller gave up on can still be arriving, record by record. A read the port fails
+    // ends it too, and the handshake below meets that failure in the port's words.
+    std::uint8_t sink[4096];
+    for (int i = 0; i < 20 && s->port->read(sink, sizeof sink, 20) > 0; ++i) {
+    }
+    s->port->flushInput();
+    // A drain cannot tell a line in step from one where the N8 is still inside a command (a file write waiting for
+    // data that never came); the handshake can, since only a line in step answers it.
+    const Status st = s->edio.connect();
+    if (!st.ok()) {
+        refused = replyOf(st, *s->port);
+        return nullptr;
+    }
+    s->dirty = false;
+    return s;
+}
+
+N8Reply N8Rpc::settle(Session& session, const Status& status, std::string_view path) {
+    if (!leavesLineInStep(status)) session.dirty = true;
+    return replyOf(status, *session.port, path);
+}
+
 std::vector<retroplug::N8PortDto> N8Rpc::n8ListPorts() {
     return lister_ ? lister_() : std::vector<retroplug::N8PortDto>{};
 }
@@ -162,130 +205,147 @@ N8Reply N8Rpc::n8Open(std::string port) {
 bool N8Rpc::n8Close(std::int32_t handle) { return sessions_.erase(handle) > 0; }
 
 N8Reply N8Rpc::n8Handshake(std::int32_t handle, std::uint32_t timeoutMs) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint8_t code = 0;
-    N8Reply      r    = replyOf(s->edio.connect(&code, timeoutMs), *s->port);
+    r                 = settle(*s, s->edio.connect(&code, timeoutMs));
     r.value           = code;
     return r;
 }
 
 N8Reply N8Rpc::n8Status(std::int32_t handle) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint8_t code = 0;
-    N8Reply      r    = replyOf(s->edio.status(code), *s->port);
+    r                 = settle(*s, s->edio.status(code));
     r.value           = code;
     return r;
 }
 
 N8Reply N8Rpc::n8SysInfo(std::int32_t handle) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint8_t info[Edio::SIZE_SYS_INFO];
     const Status st = s->edio.sysInfo(info);
-    N8Reply      r  = replyOf(st, *s->port);
+    r               = settle(*s, st);
     if (st.ok()) r.bytes = bytesOf(info, sizeof info);
     return r;
 }
 
 N8Reply N8Rpc::n8Vdc(std::int32_t handle) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint8_t vdc[Edio::SIZE_VDC];
     const Status st = s->edio.vdc(vdc);
-    N8Reply      r  = replyOf(st, *s->port);
+    r               = settle(*s, st);
     if (st.ok()) r.bytes = bytesOf(vdc, sizeof vdc);
     return r;
 }
 
 N8Reply N8Rpc::n8FreeSpace(std::int32_t handle) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint64_t bytesFree = 0;
-    N8Reply       r         = replyOf(s->edio.freeSpace(bytesFree), *s->port);
+    r                       = settle(*s, s->edio.freeSpace(bytesFree));
     r.value                 = bytesFree;
     return r;
 }
 
 N8Reply N8Rpc::n8DirMake(std::int32_t handle, std::string path) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.dirMake(path), *s->port, path) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.dirMake(path), path) : r;
 }
 
 N8Reply N8Rpc::n8FileDelete(std::int32_t handle, std::string path) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.fileDelete(path), *s->port, path) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.fileDelete(path), path) : r;
 }
 
 N8Reply N8Rpc::n8MemRD(std::int32_t handle, std::uint32_t addr, std::uint32_t size) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::vector<std::uint8_t> buf(size);
     const Status              st = s->edio.memRD(addr, buf.data(), buf.size());
-    N8Reply                   r  = replyOf(st, *s->port);
+    r                            = settle(*s, st);
     if (st.ok()) r.bytes = bytesOf(buf.data(), buf.size());
     return r;
 }
 
 N8Reply N8Rpc::n8MemWR(std::int32_t handle, std::uint32_t addr, rfl::Bytestring data) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.memWR(addr, dataOf(data), data.size()), *s->port) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.memWR(addr, dataOf(data), data.size())) : r;
 }
 
 N8Reply N8Rpc::n8FifoWR(std::int32_t handle, rfl::Bytestring data) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.fifoWR(dataOf(data), data.size()), *s->port) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.fifoWR(dataOf(data), data.size())) : r;
 }
 
 N8Reply N8Rpc::n8FifoTxString(std::int32_t handle, std::string text) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.fifoTxString(text), *s->port, text) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.fifoTxString(text), text) : r;
 }
 
 N8Reply N8Rpc::n8ListDir(std::int32_t handle, std::string path) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::vector<N8DirEntryDto> entries;
     const Status               st = s->edio.listDir(path, [&](const DirEntry& e) {
         entries.push_back({wellFormed(e.name), e.size, e.isDir});
     });
-    N8Reply r = replyOf(st, *s->port, path);
+    r = settle(*s, st, path);
     if (st.ok()) r.entries = std::move(entries);
     return r;
 }
 
 N8Reply N8Rpc::n8FileOpen(std::int32_t handle, std::string path, std::int32_t mode) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.fileOpen(path, static_cast<std::uint8_t>(mode)), *s->port, path) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.fileOpen(path, static_cast<std::uint8_t>(mode)), path) : r;
 }
 
 N8Reply N8Rpc::n8FileRead(std::int32_t handle, std::uint32_t size) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::vector<std::uint8_t> buf(size);
     const Status              st = s->edio.fileRead(buf.data(), buf.size());
-    N8Reply                   r  = replyOf(st, *s->port);
+    r                            = settle(*s, st);
     if (st.ok()) r.bytes = bytesOf(buf.data(), buf.size());
     return r;
 }
 
 N8Reply N8Rpc::n8FileWrite(std::int32_t handle, rfl::Bytestring data) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.fileWrite(dataOf(data), data.size()), *s->port) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.fileWrite(dataOf(data), data.size())) : r;
 }
 
 N8Reply N8Rpc::n8FileClose(std::int32_t handle) {
-    Session* s = find(handle);
-    return s ? replyOf(s->edio.fileClose(), *s->port) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, s->edio.fileClose()) : r;
 }
 
 N8Reply N8Rpc::n8ReadData(std::int32_t handle, std::uint32_t size, std::uint32_t timeoutMs) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::vector<std::uint8_t> buf(size);
     const Status              st = s->edio.readData(buf.data(), buf.size(), timeoutMs);
-    N8Reply                   r  = replyOf(st, *s->port);
+    r                            = settle(*s, st);
     if (st.ok()) r.bytes = bytesOf(buf.data(), buf.size());
     return r;
 }
@@ -305,31 +365,35 @@ N8Reply N8Rpc::n8SetReadTimeout(std::int32_t handle, std::uint32_t ms) {
 }
 
 N8Reply N8Rpc::n8MenuTest(std::int32_t handle) {
-    Session* s = find(handle);
-    return s ? replyOf(Menu(s->edio).test(), *s->port) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, Menu(s->edio).test()) : r;
 }
 
 N8Reply N8Rpc::n8MenuInstall(std::int32_t handle, std::string path) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint16_t index = 0;
-    N8Reply       r     = replyOf(Menu(s->edio).install(path, &index), *s->port, path);
+    r                   = settle(*s, Menu(s->edio).install(path, &index), path);
     r.value             = index;
     return r;
 }
 
 N8Reply N8Rpc::n8MenuStart(std::int32_t handle) {
-    Session* s = find(handle);
-    return s ? replyOf(Menu(s->edio).start(), *s->port) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, Menu(s->edio).start()) : r;
 }
 
 N8Reply N8Rpc::n8MenuVramDump(std::int32_t handle) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint8_t vram[Menu::kVramBytes];
     std::uint8_t palette[Menu::kPaletteBytes];
     const Status st = Menu(s->edio).vramDump(vram, palette);
-    N8Reply      r  = replyOf(st, *s->port);
+    r               = settle(*s, st);
     if (st.ok()) {
         r.bytes = bytesOf(vram, sizeof vram);
         const rfl::Bytestring tail = bytesOf(palette, sizeof palette);
@@ -339,13 +403,15 @@ N8Reply N8Rpc::n8MenuVramDump(std::int32_t handle) {
 }
 
 N8Reply N8Rpc::n8MenuReset(std::int32_t handle) {
-    Session* s = find(handle);
-    return s ? replyOf(Menu(s->edio).reset(), *s->port) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, Menu(s->edio).reset()) : r;
 }
 
 N8Reply N8Rpc::n8ReadFile(std::int32_t handle, std::string path) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::vector<std::uint8_t> buf;
     const FileSink            sink{[](void* ctx, std::size_t size) {
                             auto& b = *static_cast<std::vector<std::uint8_t>*>(ctx);
@@ -355,24 +421,26 @@ N8Reply N8Rpc::n8ReadFile(std::int32_t handle, std::string path) {
                         &buf};
     std::size_t  size = 0;
     const Status st   = readFile(s->edio, path, sink, &size);
-    N8Reply      r    = replyOf(st, *s->port, path);
+    r                 = settle(*s, st, path);
     if (st.ok()) r.bytes = bytesOf(buf.data(), size);
     return r;
 }
 
 N8Reply N8Rpc::n8WriteFile(std::int32_t handle, std::string path, rfl::Bytestring data) {
-    Session* s = find(handle);
-    return s ? replyOf(writeFile(s->edio, path, ByteView{dataOf(data), data.size()}), *s->port, path) : notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    return s ? settle(*s, writeFile(s->edio, path, ByteView{dataOf(data), data.size()}), path) : r;
 }
 
 N8Reply N8Rpc::n8BootRom(std::int32_t handle, std::string path, rfl::Bytestring rom, rfl::Bytestring srm,
                          bool upload) {
-    Session* s = find(handle);
-    if (!s) return notOpen(handle);
+    N8Reply  r;
+    Session* s = ready(handle, r);
+    if (!s) return r;
     std::uint16_t index = 0;
     const Status  st    = bootRom(s->edio, path, ByteView{dataOf(rom), rom.size()}, ByteView{dataOf(srm), srm.size()},
                                   upload ? Upload::Always : Upload::Never, &index);
-    N8Reply       r     = replyOf(st, *s->port, path);
+    r                   = settle(*s, st, path);
     r.value             = index;
     return r;
 }

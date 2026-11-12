@@ -26,11 +26,18 @@
 // it opens it, so a second open fails busy, and a COM port is exclusive on Windows already. Every session call answers
 // an N8Reply. A link that failed keeps its port, so it stays exclusive, until it is disconnected or reconnected, and
 // an instance whose restore was refused as busy stays down until Connect.
+//
+// A session call that failed on the line (not one refused before its first byte, nor a file a listing did not hold)
+// marks its session dirty, since it can have stopped part-way: the rest of a reply still arriving, or the N8 still
+// inside a command. The next call on it first drains the line until it is quiet (about 0.4 s at most) and re-runs the
+// handshake (0.3 s), and answers the handshake's failure, sending nothing of its own, when the line does not answer.
+// So every session (n8-load, n8-play, the bridges, a script's device) recovers from a hiccup on the next call.
 
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rfl/Bytestring.hpp>
@@ -147,6 +154,13 @@ public:
 private:
     struct Session;
     Session* find(std::int32_t handle);
+    // The session `handle` names, ready for a call: when a call before it failed on the line, what was still arriving
+    // is drained and the handshake re-run first. Null, with `refused` set to what the call answers instead, for a
+    // handle that is not open or a line that did not answer the handshake (the session stays dirty, so the next call
+    // tries again, and this call's own command is never sent).
+    Session* ready(std::int32_t handle, N8Reply& refused);
+    // A call's reply, its session marked dirty when the call failed on the line.
+    static N8Reply settle(Session& session, const Status& status, std::string_view path = {});
 
     retroplug::N8Host&                                   host_;
     retroplug::N8Link::PortFactory                       factory_;

@@ -8,8 +8,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -456,15 +458,147 @@ TEST_CASE("portSaid is empty for every refusal made before the port, and the por
 
 TEST_CASE("a call refused before it reached the port is tooLarge in the protocol's words, whatever the port said last",
           "[n8-rpc]") {
-    FakeN8        dev;
-    N8Host        host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
-    rp::n8::N8Rpc rpc(host, [](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
-        return std::make_unique<GonePort>();
+    FakeN8                       dev;
+    N8Host                       host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
+    retroplug::test::FakeN8Port* port = nullptr;
+    rp::n8::N8Rpc rpc(host, [&](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
+        auto p = std::make_unique<retroplug::test::FakeN8Port>(dev);
+        port   = p.get();
+        return p;
     }, twoPorts());
     const auto h = static_cast<std::int32_t>(rpc.n8Open("/dev/ttyACM0").value);
-    REQUIRE(rpc.n8Handshake(h, 0).status == "linkDown");  // the port's last call failed, and says so still
+    REQUIRE(rpc.n8Handshake(h, 0).status == "ok");
+    // The port's last call failed, and says so still. A flush, not a failed call on the line: that would leave the
+    // session dirty, and the refused call's resync would then answer for the port before the refusal could.
+    dev.failOnFlushInput = 1;
+    REQUIRE(rpc.n8FlushInput(h).status == "ok");
+    REQUIRE(port->failure() == "fake port: flushInput failed");
 
     const auto refused = rpc.n8MenuInstall(h, std::string(0x10000, 'x'));
     CHECK(refused.status == "tooLarge");
     CHECK(refused.message.rfind("Edio: a string longer than 65535 bytes (", 0) == 0);
+}
+
+namespace {
+// A port that behaves as a line does, so a call that gave up part-way leaves it out of step: the N8 answers a command
+// only once it is written (CMD_STATUS with <0> A5, CMD_MEM_RD with `nextMemRd`), a flush drops only what has arrived,
+// and `late` bytes - the rest of a reply the caller gave up on - arrive once the line has gone quiet (the caller's own
+// timeout), ahead of anything asked for after them.
+struct LinePort : retroplug::PortTransport {
+    std::deque<std::uint8_t>  arrived;
+    std::vector<std::uint8_t> late, nextMemRd;
+    bool                      wentQuiet = false;
+
+    std::size_t write(const std::uint8_t* data, std::size_t size) override {
+        const int cmd = size >= 4 && data[0] == 0x2B ? data[2] : -1;
+        if (cmd == rp::n8::Edio::CMD_STATUS) arrived.insert(arrived.end(), {0x00, 0xA5});
+        if (cmd == rp::n8::Edio::CMD_MEM_RD) {
+            arrived.insert(arrived.end(), nextMemRd.begin(), nextMemRd.end());
+            nextMemRd.clear();
+        }
+        return size;
+    }
+    std::size_t read(std::uint8_t* buffer, std::size_t size, std::uint32_t) override {
+        if (wentQuiet && !late.empty()) {
+            arrived.insert(arrived.begin(), late.begin(), late.end());
+            late.clear();
+        }
+        if (arrived.empty()) {
+            wentQuiet = wentQuiet || !late.empty();
+            return 0;
+        }
+        std::size_t n = 0;
+        for (; n < size && !arrived.empty(); ++n) {
+            buffer[n] = arrived.front();
+            arrived.pop_front();
+        }
+        return n;
+    }
+    void flushInput() override { arrived.clear(); }
+};
+
+// A port that died after its handshake: every write is taken (a write to a gone device can still appear to go out),
+// every read fails in the port, in its words, and what the session wrote is kept, one command a write.
+struct DeadPort : retroplug::PortTransport {
+    bool                      dead = false;
+    std::vector<std::uint8_t> commands;  // each write's command byte
+    std::deque<std::uint8_t>  arrived;
+    std::string               failed;
+
+    std::size_t write(const std::uint8_t* data, std::size_t size) override {
+        failed.clear();
+        if (size >= 4 && data[0] == 0x2B) commands.push_back(data[2]);
+        if (!dead && size >= 4 && data[0] == 0x2B && data[2] == rp::n8::Edio::CMD_STATUS)
+            arrived.insert(arrived.end(), {0x00, 0xA5});
+        return size;
+    }
+    std::size_t read(std::uint8_t* buffer, std::size_t size, std::uint32_t) override {
+        failed = dead ? "read failed: Input/output error" : "";
+        std::size_t n = 0;
+        for (; !dead && n < size && !arrived.empty(); ++n) {
+            buffer[n] = arrived.front();
+            arrived.pop_front();
+        }
+        return n;
+    }
+    void        flushInput() override { arrived.clear(); }
+    std::string failure() const override { return failed; }
+};
+}  // namespace
+
+TEST_CASE("the call after one that failed part-way drains what was still arriving and handshakes before it runs",
+          "[n8-rpc]") {
+    FakeN8        dev;
+    N8Host        host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
+    LinePort*     line = nullptr;
+    rp::n8::N8Rpc rpc(host, [&line](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
+        auto port = std::make_unique<LinePort>();
+        line      = port.get();
+        return port;
+    }, twoPorts());
+    const auto h = static_cast<std::int32_t>(rpc.n8Open("/dev/ttyACM0").value);
+    REQUIRE(rpc.n8Handshake(h, 0).status == "ok");
+    const auto ssr = static_cast<std::uint32_t>(rp::n8::Edio::ADDR_SSR);
+
+    // A sniff that gets 10 of its 512 bytes and gives up; the other 502 arrive after it did.
+    line->nextMemRd.assign(10, 0x11);
+    line->late.assign(502, 0x11);
+    CHECK(rpc.n8MemRD(h, ssr, 512).status == "timeout");
+
+    // The next call's own reply. With nothing in between, the late bytes come first and are taken for it.
+    line->nextMemRd.assign(512, 0x22);
+    const rp::n8::N8Reply next  = rpc.n8MemRD(h, ssr, 512);
+    const auto            bytes = vec(next.bytes);
+    CHECK(next.status == "ok");
+    CHECK(std::count(bytes.begin(), bytes.end(), 0x22) == 512);
+}
+
+TEST_CASE("on a dead port the call after a failure answers the handshake's failure in the port's words and is not sent",
+          "[n8-rpc]") {
+    FakeN8        dev;
+    N8Host        host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
+    DeadPort*     port = nullptr;
+    rp::n8::N8Rpc rpc(host, [&port](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
+        auto p = std::make_unique<DeadPort>();
+        port   = p.get();
+        return p;
+    }, twoPorts());
+    const auto h = static_cast<std::int32_t>(rpc.n8Open("/dev/ttyACM0").value);
+    REQUIRE(rpc.n8Handshake(h, 0).status == "ok");
+    const auto ssr = static_cast<std::uint32_t>(rp::n8::Edio::ADDR_SSR);
+
+    port->dead = true;
+    port->commands.clear();
+    const rp::n8::N8Reply first = rpc.n8MemRD(h, ssr, 512);
+    CHECK(first.status == "linkDown");
+    CHECK(first.message == "read failed: Input/output error");
+    // Each call after it re-runs the handshake, which a dead port cannot answer: the call answers that failure, in the
+    // port's words, and its own command never goes out onto a line that did not answer.
+    for (int i = 0; i < 2; ++i) {
+        const rp::n8::N8Reply again = rpc.n8MemRD(h, ssr, 512);
+        CHECK(again.status == "linkDown");
+        CHECK(again.message == "read failed: Input/output error");
+    }
+    CHECK(port->commands == std::vector<std::uint8_t>{rp::n8::Edio::CMD_MEM_RD, rp::n8::Edio::CMD_STATUS,
+                                                      rp::n8::Edio::CMD_STATUS});
 }
