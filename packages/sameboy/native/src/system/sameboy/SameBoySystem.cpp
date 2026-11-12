@@ -674,12 +674,12 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     // behaviour in the legacy build's SameBoyUtil; ≤1 sample/block click).
     ++audioFrameCount_;
 
-    // MI.OUT serial-OUT capture — and yes, this belongs in the per-sample APU callback. LSDJ in
+    // MI.OUT serial-OUT capture - and yes, this belongs in the per-sample APU callback. LSDJ in
     // MI.OUT (Arduinoboy master-out) mode sets SC=0x80 (transfer enable + EXTERNAL clock) and shifts a byte
     // OUT one bit at a time, waiting for a master to clock it. We play that master here: read the
     // outgoing bit from SB.bit7 BEFORE the shift, then clock it via GB_serial_set_data_bit (feeding
     // back the 0 the master drives on SIN). It can't move to SameBoy's serial bit callbacks - those fire only as
-    // internal-clock master (SC=0x81) and are dormant in external-clock mode — and it can't be batched:
+    // internal-clock master (SC=0x81) and are dormant in external-clock mode - and it can't be batched:
     // the OUT bit must be sampled full-duplex as the GB shifts it during GB_run, which only the
     // per-sample hook sees. Serial IN (mGB / LSDJ KEYBD scancodes) is delivered separately, per byte,
     // by the slave pump in stepIfBelowTarget. Bypassed when a link peer exists (the cable owns that).

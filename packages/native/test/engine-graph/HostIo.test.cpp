@@ -888,8 +888,10 @@ TEST_CASE("what a Game Boy's core captures reaches rp.lsdj.serial-out, where mGB
     // clocked out of its serial port. An Arduinoboy holds the Game Boy's serial input low, and so does the capture, so
     // every bit the core shifts in is 0 and its port carries 0x00 byte after 0x00 byte (after one other as it boots),
     // which MI.OUT reads as idle bits: the decoder sends nothing, where one stray 1 bit would be a start bit and a
-    // message LSDj never sent. In ragged blocks, a 1-frame one among them. What LSDj's own bytes decode to, at their
-    // frames, is the fixture-gated cases' (test-native/lsdj-midiout and the parity groups' MI.OUT cases).
+    // message LSDj never sent. In ragged blocks, a 1-frame one among them. That a nothing is a decoded nothing, and
+    // not a decoder the capture never reaches, is the next case's (the same port under master sync, which sends a
+    // clock for every byte whatever its value); what LSDj's own bytes decode to is the fixture-gated cases' (test-native/
+    // lsdj-midiout and the parity groups' MI.OUT cases).
     Engine e(kRate);
     rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"}};
@@ -905,7 +907,7 @@ TEST_CASE("what a Game Boy's core captures reaches rp.lsdj.serial-out, where mGB
     for (int b = 0; b < 600; ++b) {
         const std::uint32_t frames = sizes[b % std::size(sizes)];
         block(e, frames);
-        for (const auto& [frame, byte] : serialStamped(*gb, frames)) {
+        for (const std::uint8_t byte : serialLog(*gb)) {
             idle += byte == 0x00 ? 1 : 0;
             ++bytes;
         }
@@ -914,6 +916,56 @@ TEST_CASE("what a Game Boy's core captures reaches rp.lsdj.serial-out, where mGB
     }
     CHECK(bytes > 1000);      // the port is clocked, and its bytes reach the decoder every block
     CHECK(idle + 1 >= bytes);  // all of them idle but the one as it boots
+    CHECK(e.scriptThrows() == 0);
+    CHECK(e.droppedMessages() == 0);
+}
+
+TEST_CASE("what a Game Boy's core captures reaches rp.lsdj.serial-out: a master sync decoder clocks every byte, at its "
+          "frame, inside each block",
+          "[engine-graph][host-io]") {
+    // The wire from a real core's capture to the real decoder, with no fixture: the same mGB, capture in drive, under a
+    // master sync decoder, which sends a 0xF8 for every byte it is given whatever the byte is (a NoteOn and a 0xFA
+    // first, at the byte that opens the run). So the port's 0x00 bytes, which MI.OUT reads as idle, are here a clock
+    // each at the frame of the byte the core completed: in ragged blocks, a 1-frame one among them, each block's
+    // messages lie inside it and are frame-sorted, and its clocks are at exactly the frames of the bytes the core
+    // captured in it. A decoder the capture did not reach would send nothing at all.
+    Engine e(kRate);
+    rp::host::test::Roms roms;
+    std::vector<DocSystem> systems{{1, kGb, 0, R"("model":"dmgB","serialOutCapture":"drive")"}};
+    withRoms(e, systems, roms);
+    const DocExtras extras{
+        {docNode("decoder", "rp.lsdj.serial-out", R"({"mode":"masterSync"})"), loopOut()},
+        {docWire("sys-1.serialOut", "decoder.serialOut"), docWire("decoder.midiOut", "midi-out.in1")}};
+    REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, extras), {1})).ok);
+    SameBoySystem* const gb = dynamic_cast<SameBoySystem*>(e.findSystem(1));
+    REQUIRE(gb != nullptr);
+    const std::uint32_t sizes[] = {1024, 1, 333, 64, 2048, 7};
+    std::size_t clocks = 0, bytes = 0;
+    bool spread = false;
+    for (int b = 0; b < 600; ++b) {
+        const std::uint32_t frames = sizes[b % std::size(sizes)];
+        block(e, frames);
+        const auto stamped = serialStamped(*gb, frames);
+        const auto& out = e.midiOut();
+        std::vector<std::uint32_t> clockFrames, byteFrames;
+        bool inside = true, sorted = true;
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            inside = inside && out[i].frame < frames;
+            sorted = sorted && (i == 0 || out[i - 1].frame <= out[i].frame);
+            if (out[i].data == std::vector<std::uint8_t>{0xF8}) clockFrames.push_back(out[i].frame);
+        }
+        for (const auto& entry : stamped) byteFrames.push_back(entry.first);
+        INFO("block " << b << ", " << frames << " frames");
+        CHECK(inside);
+        CHECK(sorted);
+        CHECK(clockFrames == byteFrames);  // one clock a byte, at its frame
+        clocks += clockFrames.size();
+        bytes += stamped.size();
+        spread = spread || (clockFrames.size() > 1 && clockFrames.front() != clockFrames.back());
+    }
+    CHECK(bytes > 1000);  // the port is clocked, and its bytes reach the decoder every block
+    CHECK(clocks == bytes);
+    CHECK(spread);  // the frames are the bytes', not one frame for the whole block
     CHECK(e.scriptThrows() == 0);
     CHECK(e.droppedMessages() == 0);
 }

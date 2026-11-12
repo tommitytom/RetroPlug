@@ -78,31 +78,33 @@ function played(song: SavInput, rate: number, replay: boolean): { frame: number;
     sramBytes: savFrom(song),
   }, id)).toBeTruthy();
 
-  expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
-  // The mode's capture, `drive`, rides the same document on the Game Boy's node, as a store places it.
-  expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: MIDIOUT } }])).toBeTruthy();
+  try {
+    expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
+    // The mode's capture, `drive`, rides the same document on the Game Boy's node, as a store places it.
+    expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: MIDIOUT } }])).toBeTruthy();
 
-  audio.renderAudio(6000); // reach the song screen
-  audio.drainMidiOut(); // discard any boot-time noise
+    audio.renderAudio(6000); // reach the song screen
+    audio.drainMidiOut(); // discard any boot-time noise
 
-  // LSDj's START button toggles play and stop, and each tap sends the transport's bookend on its serial out. Play,
-  // stop, then play again, so the run holds both edges and a second pass of the same notes.
-  const tap = () => {
-    audio.pressButton(id, START, true);
-    audio.renderAudio(80);
-    audio.pressButton(id, START, false);
-  };
-  tap(); // play: 0xFA, then the N commands' NoteOns
-  audio.renderAudio(2000);
-  if (replay) {
-    tap(); // stop: 0xFC
-    audio.renderAudio(400);
-    tap(); // play again: 0xFA
+    // LSDj's START button toggles play and stop, and each tap sends the transport's bookend on its serial out. Play,
+    // stop, then play again, so the run holds both edges and a second pass of the same notes.
+    const tap = () => {
+      audio.pressButton(id, START, true);
+      audio.renderAudio(80);
+      audio.pressButton(id, START, false);
+    };
+    tap(); // play: 0xFA, then the N commands' NoteOns
     audio.renderAudio(2000);
+    if (replay) {
+      tap(); // stop: 0xFC
+      audio.renderAudio(400);
+      tap(); // play again: 0xFA
+      audio.renderAudio(2000);
+    }
+    return audio.drainMidiOut().map((m) => ({ frame: m.frame, data: Array.from(m.data) }));
+  } finally {
+    graph.remove(id); // a live system is emulated by every later case in the file, a failed one included
   }
-  const out = audio.drainMidiOut().map((m) => ({ frame: m.frame, data: Array.from(m.data) }));
-  graph.remove(id); // a live system is emulated by every later case in the file
-  return out;
 }
 
 /** Play, stop and play the song at `rate` and hold the decoded MIDI to what LSDj sent: the exact sequence, and each
