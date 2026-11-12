@@ -526,22 +526,31 @@ out="$TMP/run-lost-bounded.log"
 timeout 20 "$CLI" run "$UC/lost-bounded.ts" >"$out" 2>&1
 check "an error cleared by a sibling callback ends a bounded session too (exit 1)" 1 $?
 contains "...and says why" "$out" "a callback threw, and its error was cleared before it could be reported"
+wait_ready() {
+	for _ in $(seq 1 100); do
+		grep -q '^ready$' "$1" 2>/dev/null && return 0
+		sleep 0.1
+	done
+}
 #     Ctrl-C on a kept-alive session, as a `.js` file the launcher runs itself (`run` on a `.ts` runs it in a child,
 #     which a signal to the parent never reaches): no hook is a clean exit 0; a hook that throws synchronously ends it
 #     with exit 1.
-printf '%s\n' 'globalThis.__rp_keepAlive();' >"$UC/ka-idle.js"
+# A 0 ms timer fires only once the loop is pumping, after the launcher has installed its SIGINT handler: the script
+# prints a marker from one, and the signal waits for it.
+printf '%s\n' 'globalThis.__rp_keepAlive();' 'setTimeout(() => console.log("ready"), 0);' >"$UC/ka-idle.js"
 timeout 20 "$CLI" "$UC/ka-idle.js" >"$TMP/run-ka-idle.log" 2>&1 &
 pid=$!
-sleep 1
+wait_ready "$TMP/run-ka-idle.log"
 kill -INT "$pid" 2>/dev/null
 wait "$pid"
 check "Ctrl-C on a kept-alive session with no interrupt hook exits 0" 0 $?
 printf '%s\n' 'globalThis.__rp_keepAlive();' \
-	'globalThis.__rp_onInterrupt(() => {' '  throw new Error("hook threw");' '});' >"$UC/ka-hook.js"
+	'globalThis.__rp_onInterrupt(() => {' '  throw new Error("hook threw");' '});' \
+	'setTimeout(() => console.log("ready"), 0);' >"$UC/ka-hook.js"
 out="$TMP/run-ka-hook.log"
 timeout 20 "$CLI" "$UC/ka-hook.js" >"$out" 2>&1 &
 pid=$!
-sleep 1
+wait_ready "$out"
 kill -INT "$pid" 2>/dev/null
 wait "$pid"
 check "a throwing interrupt hook ends a kept-alive session with exit 1" 1 $?

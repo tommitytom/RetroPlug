@@ -370,6 +370,8 @@ that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summaris
 (`engine.clearGraph()`, then `rp_stop_providers`) never runs on a normal exit: the plans are not reclaimed while the
 providers' links are alive, and the providers are not stopped. The fix needs an exit the launcher sees (a `tjs.exit`
 wrapped before txiki freezes `tjs`, or an exit hook) and a look at what each provider's stop does at a process's end.
+The same exit also loses an error: one thrown in the same loop turn as a `tjs.exit(0)` is never reported, since the
+process ends inside txiki's timers phase, before the launcher looks, and exits 0 with nothing printed.
 ([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 2.)
 
 ### The test host drops an uncaught error

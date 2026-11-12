@@ -109,7 +109,8 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   line does not answer (`N8Rpc::ready`), so the CLI's tools, the bridges and a session script's `connectN8()`
   ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)) recover from a hiccup. The bridges
   (`packages/n8/ts/bridge.ts`, `n8-bridge` and risa's `n8-sync`) log and count a failed FIFO write and exit once a run
-  of at least 5 failures, with no write succeeding between them, has lasted 3 s (`failureWatch`), and a fatal exit runs
+  of at least 5 failures, with no write succeeding between them and no gap of more than 3 s between two of them, has
+  lasted 3 s (`failureWatch`), and a fatal exit runs
   once. A resync recovers a late reply, not a line the N8 is still inside a command on (the handshake's bytes are taken
   as that command's data, so each call answers the handshake's failure until it has gone out or the N8 is reset).
 - What the cart allows, and the pack accepts: a cart's battery is reachable only at the N8 menu, through the SD card's

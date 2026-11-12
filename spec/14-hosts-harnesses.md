@@ -215,7 +215,8 @@ the pumps run out, and a script that waits on either calls it once, up front, an
 declared whole in [cli/sdk-types.d.ts](../packages/retroplug/cli/sdk-types.d.ts), which `cli/sdkSurfaceCheck.ts` holds
 to the implementation by type identity, not mutual assignability (which passes a dropped `readonly`).
 
-**An error nothing caught.** It ends a session, kept alive or not, with exit 1 and its text. txiki turns one (a throw in
+**An error nothing caught.** It ends a session, kept alive or not, with exit 1 and its text, when the launcher sees it before the session exits (an
+error thrown in the same loop turn as a `tjs.exit(0)` is lost: [spec/07](07-remaining-work.md#a-normal-cli-exit-skips-the-teardown)). txiki turns one (a throw in
 an async module body, a rejection nothing cancelled, a throw in a timer) into a pending exception and a request to stop
 its loop, and the launcher ([packages/native/cli/main.cpp](../packages/native/cli/main.cpp)) drives that loop itself, so
 after every pump it looks for both: the exception, which it prints, and the stop request, which it takes over because it

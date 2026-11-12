@@ -814,10 +814,11 @@ export interface N8Device {
   close(): void;
 }
 /** Open the N8 and run the connect handshake. Throws if there is no N8, its port cannot be opened (a port another
- *  process holds fails the open with "the serial port <p> is busy"), or it does not answer. A call that fails on the line leaves the next one to drain
- *  the line and re-run the handshake first. */
+ *  process holds fails the open with "the serial port <p> is busy"), or it does not answer. A call that fails on the
+ *  line leaves the next one to drain the line and re-run the handshake first. */
 export declare function connectN8(opts?: N8ConnectOptions): N8Device;
 /** Keep the session's event loop running until `tjs.exit()`. A session otherwise gets a short bounded run, so a timer
  *  or an awaited child process (`tjs.spawn(...).wait()`) never completes. Call once, up front. An error nothing
- *  catches still ends the session, kept alive or not, with exit 1 and its text. */
+ *  catches still ends the session, kept alive or not, with exit 1 and its text, unless the session calls `tjs.exit()` in the
+ *  same loop turn (the error is then lost). */
 export declare function keepAlive(): void;

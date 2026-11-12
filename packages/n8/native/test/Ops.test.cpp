@@ -607,6 +607,7 @@ TEST_CASE("a listing asks for its records in pages of 32, split exactly at the p
                     if (seen++ == 0) first = std::string(e.name);
                 }).ok());
         CHECK(seen == records);
+        CHECK(first == "f00.bin");
         CHECK(dev.dirGets == want);
         std::uint8_t code = 0;
         CHECK(edio.status(code).ok());
