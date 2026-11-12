@@ -601,14 +601,18 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     the render library has returned and before the completion is queued, so it is gone by the time TS hears the job
     settled, and with the job itself when it is dropped unrun (a refusal, a cancel while queued, the pool's teardown,
     which is the instance ending first). Only a listed file whose filename carries the prefix is deleted, so a TS bug
-    cannot name a user's own `--sav`. The UI deletes its snapshots again as the job settles, the second road beside the
-    pool's and the only road a job that never reached the pool has (held in TS past the 64-job bound and cancelled, a
-    submission the RPC threw on). What still leaks is an instance that ends with a render held in TS, never settled and
-    never pooled, and a crash; the next startup sweeps those (`sweepRenderSnapshots`: a snapshot more than a day old,
-    skipping what cannot be aged or deleted, since the config directory has no owner between processes). That age is
-    wall time, so a suspend or a clock jump can take a live job's snapshot, which costs a refused render rather than a
-    wrong one: a render says its snapshots must exist when it boots (`RenderOpts.inputsMustExist`, which the UI sets
-    and the CLI does not, its `--sav` being its own to name) and refuses, naming the file, if one is gone.
+    cannot name a user's own `--sav`. The UI deletes its snapshots again as the job settles, on whichever road it took:
+    a job the queue held past the 64-job bound and cancelled before submitting it, a submission the RPC threw on, a
+    spec function that threw, and every job a drain that threw failed, which native may still hold and run to its end
+    (a second removal of a file the pool already took is a no-op). A job native still has queued refuses to boot once
+    its snapshot is gone, but one already past that check can lose the file before its boot reads it, a window of a
+    handful of calls, and then the boot finds no sav to put and renders the cart's blank start. What still leaks is an
+    instance that ends with a render held in TS, never settled and never pooled, and a crash; the next startup sweeps
+    those (`sweepRenderSnapshots`: a snapshot more than a day old, skipping what cannot be aged or deleted, since the
+    config directory has no owner between processes). That age is wall time, so a suspend or a clock jump can take a
+    live job's snapshot, which costs that render: it refuses at boot, naming the file (`RenderOpts.inputsMustExist`,
+    which the UI sets and the CLI does not, its `--sav` being its own to name), unless it is already past that check,
+    where the window above leaves it booting blank.
   - **The SameBoy camera half of the statics patch has no red-green test** (no Game Boy Camera ROM exists in the repo or
     the fixtures), and the exact render bytes are held only on `linux-x64-gnu13`. The patch uses GNU `__atomic`
     builtins, which GCC and Clang (clang-cl on Windows) have; the tree has not been built with MSVC since D2.

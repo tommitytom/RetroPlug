@@ -112,15 +112,18 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
   under `configDir` (`.render-src-<key>.sav` / `.ss0`, `RENDER_SNAPSHOT_PREFIX`) and calls `renders.start` with their
   list as the submission's own (`EngineRunOptions.discardFiles`): the engine's pool deletes them however the job ends
   (on the job's worker before the completion is queued, or with the job itself when it is dropped unrun), and
-  `onSettled` deletes them again, which is the road a job that never reached the pool takes (held in TS past the
-  64-job bound and cancelled, a submission the RPC threw on) and a spec function that threw. What is left is an
-  instance that ends with a render held in TS, and a crash, which the startup sweep takes
-  (`src/renderSnapshotSweep.ts`: a snapshot more than a day old). The worker reads the snapshots only when it boots
-  the render, which can be minutes later behind the worker budget, so a shared name would boot a later edit's (or
-  another instance's) state; and the spec says they must exist when it boots (`RenderOpts.inputsMustExist`), so one
-  the sweep took from under a live job refuses rather than booting blank. A snapshot that cannot be written refuses
-  the render, listed as an error, rather than boot the sibling `.sav` on disk. `pickActiveRenderJob` selects a tile's
-  badge job and `renderBadgeLabel` writes its text.
+  `onSettled` deletes them again on whichever road it took: a job the queue held past the 64-job bound and cancelled
+  before it was submitted, a submission the RPC threw on, a spec function that threw, and every job a drain that threw
+  failed, which native may still hold (a second removal is a no-op). Where that last road meets a job native still has
+  queued, the boot refuses (`RenderOpts.inputsMustExist`); a job already past that check can lose the file before its
+  boot reads it, a window of a handful of calls, and then boots the cart's blank start. What is left is an instance
+  that ends with a render held in TS, and a crash, which the startup sweep takes (`src/renderSnapshotSweep.ts`: a
+  snapshot more than a day old). The worker reads the snapshots only when it boots the render, which can be minutes
+  later behind the worker budget, so a shared name would boot a later edit's (or another instance's) state; and the
+  spec says they must exist when it boots (`RenderOpts.inputsMustExist`), so one the sweep took from under a live job
+  refuses rather than booting blank, except in the window above. A snapshot that cannot be written refuses the render,
+  listed as an error, rather than boot the sibling `.sav` on disk. `pickActiveRenderJob` selects a tile's badge job and
+  `renderBadgeLabel` writes its text.
 - **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)
   and `spec.gainDb`. The job boots a fresh core from the ROM on disk, so without them it would take each
   role's schema DEFAULTS and render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit

@@ -115,11 +115,12 @@ see [05-data-persistence.md](05-data-persistence.md).)
 | `fileExists` / `rename` / `deleteFile` | `→ bool` | |
 | `syncFile` | `(string) → bool` | `rp::fsyncPath`: a streamed file's data to the device before it is renamed into place (a render's `.part`) |
 | `listDir` | `(string dir) → vector<string>` | filenames only (on Windows, one the ANSI code page cannot hold is left out: no path in that code page names it) |
-| `drainChangedPaths` | `→ vector<string>` | pull-drain of the efsw watcher (`NativeFileWatcher`); empty until a host calls `enableWatching` (the plugin does; this test host / CLI don't) ([`:210`](../packages/native/src/host/rpc/HostRpcService.cpp#L210)) |
+| `fileAgeMs` | `(string) → optional<double>` | how long ago a file was written, in ms, read on the file clock itself (`file_time_type::clock::now()` minus `last_write_time`, no `clock_cast`, which libc++ and MSVC do not implement alike): what the UI's startup sweep ages a crashed render's snapshots with, and nothing for a file that is missing or cannot be read ([`:211`](../packages/native/src/host/rpc/HostRpcService.cpp#L211)) |
+| `drainChangedPaths` | `→ vector<string>` | pull-drain of the efsw watcher (`NativeFileWatcher`); empty until a host calls `enableWatching` (the plugin does; this test host / CLI don't) ([`:219`](../packages/native/src/host/rpc/HostRpcService.cpp#L219)) |
 | `setWatchedRoms` | `(vector<string>) → bool` | register the ROM files to watch (parent dirs); recomputed by TS on every systems-list change. Config dir + `bindings/` are always watched |
 | `canonicalize` | `(string) → string` | `weakly_canonical`, falls back to input |
 | `configDir` | `→ string` | per-OS config path, computed in this TU (no config-persistence link) ([`:23`](../packages/native/src/host/rpc/HostRpcService.cpp#L23)) |
-| `zip` | `(vector<BackendZipInput>) → Bytestring` | miniz, no-copy add ([`:239`](../packages/native/src/host/rpc/HostRpcService.cpp#L239)) |
+| `zip` | `(vector<BackendZipInput>) → Bytestring` | miniz, no-copy add ([`:248`](../packages/native/src/host/rpc/HostRpcService.cpp#L248)) |
 | `unzip` | `(Bytestring) → vector<BackendZipEntry>` | |
 
 `configDir` is computed per-OS directly in this service, so the host links no config-persistence
@@ -1327,8 +1328,8 @@ files it owns (`EngineJobRequest::discardFiles`, TS's `EngineRunOptions.discardF
 however the job ends: on its worker once the body has returned and before the completion is queued, so they are gone by
 the time a drain reports the job, and with the job itself when it is dropped unrun (a refusal, a cancel while queued,
 the pool's teardown). Only a listed name whose filename carries `kRenderSnapshotPrefix` is ever deleted, so a caller's
-own `--sav` cannot be named by a bug; a removal that fails, or an unknown kind's list, is passed over or dropped
-without a throw. The UI's startup sweep takes what a crash leaves (`spec/07`). The pool is the
+own `--sav` cannot be named by a bug; a removal that fails is passed over without a throw, and an unknown kind's
+list is deleted too, as any refusal's is. The UI's startup sweep takes what a crash leaves (`spec/07`). The pool is the
 `Engine`'s, made at the first submission and reset before the engine's other members go. A graph job runs on one
 worker thread from start to end, which is the job host's control thread and block thread at once (quiescent: no audio
 thread, so `setGraph` flushes inline and `GraphHost::processBlock` is the block driver, draining then running), in
