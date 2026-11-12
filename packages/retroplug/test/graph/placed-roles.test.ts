@@ -9,7 +9,7 @@ import { MidiRouting } from "@retroplug/core/midiRouting";
 import { isPlaced, type RoleInstance, type RoleType } from "@retroplug/core/systemRoles";
 import type { RoleRow } from "@retroplug/ui/contribution";
 import { MGB_PARAMETERS } from "@retroplug/mgb/parameters";
-import { placedKinds, placedRole } from "../../src/graph/protocolNodes";
+import { placedKinds, placedRole, protocolNodeOf } from "../../src/graph/protocolNodes";
 import { resolveTracker } from "../../src/trackerRegistry";
 import { projectParameterMap } from "../../src/parameterMap";
 import { buildAppRegistry } from "../../src/appHost";
@@ -75,6 +75,13 @@ test("the system view says which of its stored roles the graph places, and keeps
   expect(view(lsdjId).placed).toEqual(["sameboy", "lsdj-sync", "lsdj-assets"]);
   expect(isPlaced(view(mgbId), "lsdj-sync")).toBe(false);
   expect(isPlaced(view(lsdjId), "lsdj-sync")).toBe(true);
+  // The view's answer is the document's: the kinds with a protocol node it lists are the pipeline the graph is built from.
+  for (const id of [mgbId, lsdjId]) {
+    const system = store.graphSystems().find((s) => s.id === id)!;
+    expect(view(id).placed.filter((kind) => protocolNodeOf(kind) !== undefined)).toEqual(
+      system.pipeline.map((p) => p.kind),
+    );
+  }
 });
 
 test("a tracker is resolved by its placed marker role: an mGB cart storing a stale lsdj-sync resolves none", () => {
@@ -117,5 +124,7 @@ test("the DAW lanes are the first placed role's with a table: an LSDj cart stori
   expect(lanes(MGB_CART).length).toBe(MGB_PARAMETERS.length);
   // A role with no node keeps its table beside a placed node of another kind (BlipToaster's chip beside the N8's MIDI).
   const blip = lanes([{ kind: "mesen", config: {} }, { kind: "nes-n8-midi", config: {} }, { kind: "bliptoaster", config: {} }]);
-  expect(blip.length > 0).toBe(true);
+  const blipTable = registry.roleType("bliptoaster")!.parameters!({});
+  expect(blipTable.length).toBeGreaterThan(0);
+  expect(blip.length).toBe(blipTable.length);
 });

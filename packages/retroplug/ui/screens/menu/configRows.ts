@@ -7,7 +7,7 @@ import { roleConfig, type RoleInstance, type RoleType } from "@retroplug/core/sy
 import type { RoleRow } from "@retroplug/ui/contribution";
 import { configRowCycler, rowShownFor, rowShownOn } from "@retroplug/ui/contribution";
 import { separator, type MenuItem } from "@retroplug/ui/menu";
-import { placedRole } from "../../../src/graph/protocolNodes";
+import { placedKinds } from "../../../src/graph/protocolNodes";
 
 export { configRowCycler };
 
@@ -19,7 +19,7 @@ export interface RoleRowSystem {
 }
 
 /** The items a set of contributed rows builds for a system, in the rows' order: a row shows only on a system whose
- *  graph places its role (graph/protocolNodes.ts placedRole: the core role, which has no node, attaches to every system
+ *  graph places its role (graph/protocolNodes.ts placedKinds: the core role, which has no node, attaches to every system
  *  of that core, so this is the old `core === "sameboy"` gate, and a stored role the graph leaves out, LSDj's sync on
  *  an mGB cart after a ROM swap, shows nothing), where its platform and `when` gates allow, and a `separatorBefore` id
  *  is emitted once, before the first row that shows carrying it. A row's default is its role schema's
@@ -33,8 +33,9 @@ export function roleRowItems(
   const items: MenuItem[] = [];
   const emitted = new Set<string>();
   const defaultsOf = new Map<string, Record<string, unknown>>();
+  const placed = placedKinds(sys.roles);
   for (const row of rows) {
-    if (!placedRole(sys.roles, row.role)) continue;
+    if (!placed.includes(row.role)) continue;
     if (!rowShownOn(row, sys.platform)) continue;
     let defaults = defaultsOf.get(row.role);
     if (!defaults) {

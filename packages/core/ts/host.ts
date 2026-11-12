@@ -82,9 +82,10 @@ export interface SystemInfo {
   readonly battery: boolean;
   readonly missing: boolean;
   readonly roles: readonly RoleInstance[];
-  /** The kinds of `roles` the system's graph places, in role order (the shell's protocol pipeline): a stored role the
-   *  graph leaves out, a stale one after a ROM swap, is in `roles` and not here. A view asks it through `isPlaced`
-   *  (systemRoles) before it treats a system as its cart's. */
+  /** The kinds of `roles` the system's graph places, in role order (the shell's protocol pipeline), and every present
+   *  kind with no protocol node (a core's config role, a tracker marker such as risa), which the pipeline never leaves
+   *  out: a stored role the graph leaves out, a stale one after a ROM swap, is in `roles` and not here. A view asks it
+   *  through `isPlaced` (systemRoles) before it treats a system as its cart's. */
   readonly placed: readonly string[];
 }
 

@@ -62,8 +62,8 @@ export const ROM_PROVIDERS: readonly RomProvider[] = [
   ...(app_retroplug.romProviders ?? []),
 ];
 
-/** The tracker integrations, in product order: a system takes the first whose markerRole it has, and the marker
- *  roles are exclusive, so a duplicate is the hazard, not the order. */
+/** The tracker integrations, in product order: a system takes the first whose markerRole its graph places. A marker
+ *  has no protocol node, so a system storing two takes the first in this order; a duplicate is refused below. */
 export const TRACKER_INTEGRATIONS: readonly TrackerIntegration[] = [
   ...(app_alpha.trackerIntegrations ?? []),
   ...(app_beta.trackerIntegrations ?? []),

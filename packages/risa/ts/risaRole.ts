@@ -1,5 +1,5 @@
 // risa's two config-free feature roles: the `risa` marker role, which gates the Songs and Assets menus
-// (`sys.roles.find(r => r.kind === "risa")`, exactly as `lsdj-sync` gates the LSDj menu), and `risa-sync`, whose work
+// (resolveTracker asks the graph's placement for it, as it does for `lsdj-sync`), and `risa-sync`, whose work
 // is the rp.risa.sync protocol node (./risaSyncNode) that drives the cart's N8-FIFO host-sync receive path from the
 // DAW transport. Both are control-plane registrations only (the package's app module, ts/app.ts); the ROM provider
 // that attaches them by ROM identity is ./romProvider.

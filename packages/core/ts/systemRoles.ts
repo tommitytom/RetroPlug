@@ -48,7 +48,7 @@ export function hasRole(roles: readonly RoleInstance[] | undefined, kind: string
  *  `hasRole` still finds, so its config reads as stored; `placed` is the shell's answer (SystemInfo.placed), and a
  *  role with no protocol node is placed whenever it is present. */
 export function isPlaced(sys: { readonly placed: readonly string[] }, kind: string): boolean {
-  return sys.placed.includes(kind);
+  return sys.placed?.includes(kind) === true;
 }
 
 /** A role's config validator: a zod schema whose `.parse` fills defaults + clamps a

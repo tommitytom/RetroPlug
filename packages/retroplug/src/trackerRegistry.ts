@@ -8,17 +8,20 @@ import type { AssetCatalog } from "@retroplug/tracker/assetCatalog";
 import type { SongCatalog } from "@retroplug/tracker/songCatalog";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import { TRACKER_INTEGRATIONS } from "./generated/packages";
-import { placedRole } from "./graph/protocolNodes";
+import { placedKinds } from "./graph/protocolNodes";
 
-/** Every tracker integration, in the product order: a system takes the one whose markerRole it has, and the markers are
- *  exclusive, so the order decides nothing. The generated list, re-exported below as a live binding. */
+/** Every tracker integration, in the product order: a system takes the first one whose markerRole its graph places. A
+ *  marker has no protocol node, so it is placed whenever it is stored: a system storing two (a NES project stored with
+ *  risa whose ROM is now BlipToaster) takes the first in this order. The generated list, re-exported below as a live
+ *  binding. */
 export { TRACKER_INTEGRATIONS };
 
 /** The tracker integration for a system, resolved from its roles: the integration whose markerRole the graph places
- *  (graph/protocolNodes.ts placedRole). undefined for a non-tracker system, and for one whose stored marker the graph
+ *  (graph/protocolNodes.ts placedKinds). undefined for a non-tracker system, and for one whose stored marker the graph
  *  leaves out: an mGB cart still carrying lsdj-sync after a ROM swap is not an LSDj cart. */
 export function resolveTracker(roles: readonly RoleInstance[]): TrackerIntegration | undefined {
-  return TRACKER_INTEGRATIONS.find((t) => placedRole(roles, t.markerRole) !== undefined);
+  const placed = placedKinds(roles);
+  return TRACKER_INTEGRATIONS.find((t) => placed.includes(t.markerRole));
 }
 
 /** The song catalog for a system (convenience over resolveTracker) - used by the recent list. */
