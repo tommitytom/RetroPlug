@@ -15,13 +15,15 @@
 // (retroplug-graph-test), the engine on the graph: its system nodes, the
 // documents TS sends it, and buildGraph's goldens planned on it
 // (retroplug-engine-graph-test), and the node SDK's device build, run against
-// the desktop's (retroplug-device-mode-test).
+// the desktop's (retroplug-device-mode-test), and the Everdrive N8 pack's protocol over fakes
+// (retroplug-n8-test) and its serial port's timeouts and exclusivity over a pseudo-terminal
+// (retroplug-serial-test, Linux only: its cases are, and an empty Catch2 binary exits non-zero).
 //
 // A tiny runner (rather than chaining `build/bin/foo && …` in package.json) so
 // the suite is cross-platform: it appends `.exe` on Windows and spawns each
 // binary directly, instead of relying on a POSIX shell to resolve the paths.
 //
-//   node scripts/run-plugin-tests.mjs [nameFilter]
+//   node scripts/run-plugin-tests.mjs [nameFilter...]    # a binary runs if its name holds any filter
 
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -37,15 +39,16 @@ const BINARIES = [
   "retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test",
   "retroplug-sameboy-test", "retroplug-mesen-test", "retroplug-watcher-test", "retroplug-lottie-test",
   "retroplug-midi-test", "retroplug-audio-host-test", "retroplug-launchpad-test", "retroplug-graph-test",
-  "retroplug-engine-graph-test", "retroplug-device-mode-test",
+  "retroplug-engine-graph-test", "retroplug-device-mode-test", "retroplug-n8-test",
+  ...(process.platform === "linux" ? ["retroplug-serial-test"] : []),
 ];
 
 const jobs = resolveJobs();
-const filter = stripRunnerFlags()[0];
-const selected = filter ? BINARIES.filter((b) => b.includes(filter)) : BINARIES;
+const filters = stripRunnerFlags();
+const selected = filters.length ? BINARIES.filter((b) => filters.some((f) => b.includes(f))) : BINARIES;
 
 if (!selected.length) {
-  console.error(`no plugin test binaries match "${filter}"`);
+  console.error(`no plugin test binaries match "${filters.join(" ")}"`);
   process.exit(1);
 }
 

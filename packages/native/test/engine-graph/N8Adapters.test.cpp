@@ -11,8 +11,8 @@
 // back to unity on a 5B after clearGraph, through the provider's own acquire and release hooks), each section
 // reporting on its own.
 //
-// Here rather than in retroplug-n8-test because that binary links no engine, cores or ROM fixtures, and because this
-// binary runs in `pnpm test:plugin` (CI) where `pnpm test:n8` does not; no serial port is opened.
+// Here rather than in retroplug-n8-test because that binary links no engine, cores or ROM fixtures; no serial port is
+// opened.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[n8-adapters]"`.
 

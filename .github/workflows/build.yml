@@ -77,6 +77,13 @@ jobs:
       - name: Build
         run: ./build.sh
 
+      # The Mesen compile-out proof (docs/modular-graph-phase-f2-design.md section 11): Mesen built with its SNES, PCE
+      # and WonderSwan consoles OFF at -O0 in a build directory of its own, the archive then held self-contained. A
+      # missed compile-out guard links in the Release build above and fails only here. Its scan reads GNU nm output, so
+      # this job alone carries it; the ON mode (every console built in, the CLI linked) stays a by-hand run.
+      - name: Mesen compile-out proof (consoles OFF, -O0)
+        run: tools/build-mesen-all-consoles.sh --off
+
       - name: TS tests
         run: pnpm test
 

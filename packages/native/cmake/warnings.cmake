@@ -48,9 +48,8 @@ if(MSVC)
         retroplug-n8 retroplug-n8-desktop retroplug-device-io-nodes retroplug-devtest-nodes
         # The console packages and the host I/O one: each core's own code, the build function, the node type.
         retroplug-sameboy retroplug-mesen retroplug-host-io
-        # retroplug-sameboy-test and retroplug-mesen-test are NOT here: their sources compiled in
-        # retroplug-audio-test and retroplug-engine-graph-test, neither of which is on this list, so /W4 /WX would ask
-        # them for more than they have ever met. The first Windows run of the two decides whether they can join it.
+        # The console packages' test binaries, whose cases build their cores directly and link no shell target.
+        retroplug-sameboy-test retroplug-mesen-test
         # The Launchpad pack: its transport and its facet (PortClaim.cpp is the one file whose Windows half only this
         # compiler ever sees), and its own test binary.
         retroplug-launchpad retroplug-launchpad-desktop retroplug-launchpad-test

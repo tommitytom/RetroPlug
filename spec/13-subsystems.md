@@ -157,7 +157,7 @@ reaches a surface, and it names no launchpad provider.
   flight: a push takes a lock the writer holds only for a swap. The pack's portable core is held to MicroQuickJS by the
   device-pack toolchain's scenario mode (byte-identical transcripts under Node and `retroplug-mqjs-run`), but it
   declares no `script` member, so the scenarios are the proof and no box image carries it.
-- **Prove a change:** `retroplug-launchpad-test` (one of the fourteen `pnpm test:plugin` binaries),
+- **Prove a change:** `retroplug-launchpad-test` (one of the sixteen `pnpm test:plugin` binaries),
   `pnpm test:native launchpad` (the facet's cases over the headless host's scripted device, and
   `launchpadDevices.ts`'s over it), `pnpm test launchpad`, `pnpm test:native lsdj-launchpad`,
   `tools/run-launchpad-loopback.sh` for the shared MIDI stream's receive path, and `pnpm sdl:controller` for the whole

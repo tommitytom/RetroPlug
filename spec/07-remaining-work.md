@@ -10,13 +10,10 @@ than work.
 
 **Before merge**
 - [ ] [A green CI run of the tip](#a-green-ci-run-of-the-tip)
-- [ ] [`pnpm test:n8` in CI and in test.bat](#pnpm-testn8-in-ci-and-in-testbat)
-- [ ] [The Mesen compile-out proof in CI](#the-mesen-compile-out-proof-in-ci)
 - [ ] [The Launchpad real-device checklist](#the-launchpad-real-device-checklist)
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
 - [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
-- [ ] [The console test binaries onto `/W4 /WX`](#the-console-test-binaries-onto-w4-wx)
 - [ ] [A `release.yml` run](#a-releaseyml-run)
 
 **Package split**
@@ -114,22 +111,12 @@ What `feature/modularize` owes before it merges to main.
 ### A green CI run of the tip
 
 The last green run of `build.yml` (run 43131974297, all four jobs: windows through `build.bat` at `/W4 /WX` and
-`test.bat`, macos, linux with `device:check` and `device:box`, linux-arm64) built ea2517dc9; nothing after it (the
-known-bugs batches and the docs) has run on a runner. On this branch CI runs only when dispatched (build.yml also runs
-on a pull request and on main), so the user starts it. ([F2 design](../docs/modular-graph-phase-f2-design.md) section
-12; the run and commit facts are from the [docs cleanup design](../docs/docs-cleanup-design.md) section 5.)
-
-### `pnpm test:n8` in CI and in test.bat
-
-`pnpm test:n8` is no CI step and not in `test.bat`: the N8 pack's Edio golden, the facet's sessions and the serial
-port's exclusivity case (`retroplug-n8-test`, `retroplug-serial-test`) run only by hand. ([E2
-design](../docs/modular-graph-phase-e2-design.md) section 13.8.)
-
-### The Mesen compile-out proof in CI
-
-No CI job runs `tools/build-mesen-all-consoles.sh` in either mode. A missed compile-out guard links in Release and fails
-only at `-O0`, which `tools/build-mesen-all-consoles.sh --off` builds, so both modes are owed by hand on every Mesen
-change until a job runs `--off`. ([F2 design](../docs/modular-graph-phase-f2-design.md) sections 11 and 12.)
+`test.bat`, macos, linux with `device:check` and `device:box`, linux-arm64) built ea2517dc9. The tip owes one too,
+and it is the first to prove three changes only CI can: `test:plugin` running the N8 pack's two binaries on every job
+(the serial test on Linux only), the linux job's Mesen compile-out proof (`tools/build-mesen-all-consoles.sh --off`),
+and `retroplug-sameboy-test` and `retroplug-mesen-test` built at `/W4 /WX` on windows. On this branch CI runs only
+when dispatched (build.yml also runs on a pull request and on main), so the user starts it.
+([F2 design](../docs/modular-graph-phase-f2-design.md) sections 11 and 12.)
 
 ### The Launchpad real-device checklist
 
@@ -161,13 +148,6 @@ headless UI host. ([F4c design](../docs/modular-graph-phase-f4c-design.md) secti
 `RP_NATIVE_USB` has never run on hardware: the image (af36f223 at E4) is still unflashed, built under the link trap
 only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modular-graph-phase-e3-design.md) section
 12.8, [E4 design](../docs/modular-graph-phase-e4-design.md) sections 11.7 and 11.8.)
-
-### The console test binaries onto `/W4 /WX`
-
-`retroplug-sameboy-test` and `retroplug-mesen-test` are still left off the `/W4 /WX` list
-([warnings.cmake](../packages/native/cmake/warnings.cmake): the first Windows run of the two was to decide). Windows now
-runs them in `test:plugin`, and nobody has tried adding them. ([F2 design](../docs/modular-graph-phase-f2-design.md)
-section 11.)
 
 ### A `release.yml` run
 
