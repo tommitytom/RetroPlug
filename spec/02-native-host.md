@@ -455,27 +455,29 @@ after each block the executor adds the counts to the producing instance's atomic
 [SurfaceNodes.cpp](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp)). Each binds the host-owned device it
 drives through `rp.host.devices/2` ([rp_device.h](../packages/node-sdk/native/src/graph/rp_device.h)), a link its host
 installed by name and interface id: an `rp::n8::CartLink` ([CartLink.hpp](../packages/n8/native/src/n8/CartLink.hpp),
-`n8` / `rp.n8.cart-link/1`, the N8 pack's own) for the cart, with a push per message (frame, bytes, the flush flag,
-the block's rate) that answers whether all of it reached the device, the link's connected state and drop count, the
+`n8` / `rp.n8.cart-link/1`, the N8 pack's own) for the cart, with a push per message (frame, bytes, the flush flag, the
+block's rate) that answers whether all of it reached the device, the link's connected state and drop count, the
 expansion-volume register and `submitJob` / `abandonJobs`; an `rp::launchpad::SurfaceLink`
-([SurfaceLink.hpp](../packages/launchpad/native/src/launchpad/SurfaceLink.hpp), `launchpad` / `rp.launchpad.surface-link/2`) for
-the pad, with a drain into the node's own array, a push, the claim's generation and its drop count. `ControllerLink`
-([ControllerLink.hpp](../packages/launchpad/native/src/launchpad/desktop/ControllerLink.hpp)) numbers every claim and tags
-every receive slot with it, so the audio thread, the ring's one consumer, drops a slot that belongs to an earlier claim
-where it sits rather than any thread rewinding it; `dropped()` counts what the link lost in both directions (a push to a
-device that is not there, an oversized message, a full ring) and `messagesSent()` what it wrote, and both are what the
-facet's status line reads. A host installs its links before its first plan with `Engine::installDevice` / `installLink`,
-into a fixed table of 8 entries (a name up to 31 characters, an interface id up to 63): the N8 pack's provider installs
-the `N8CartLink` in every product that starts providers (the plugin, the SDL standalone, the CLI, where it is never
-connected, and the test host, over a fake cart), the Launchpad pack's provider installs its `ControllerLink` in the
-products that name it and install links (the SDL standalone and the CLI, over real ports; the test host starts it for
-its facet but hands the graph a `HarnessSurfaceLink`, so a test stages a press where no port could, and the harness's
-controller seam, `stageControllerIn` and `renderBlocks`' controller field, works only there: a harness-facet host that
-installs no `HarnessSurfaceLink` refuses it); and the Node addon and the render host install neither. A name it has no
-device for answers null, and the node runs on a stub of its own that is never connected and that drops and counts
-everything, so a document plans and runs in every host. A node keeps its handle across a reactivate and gives it back
-once in destroy, which runs at reclaim on the control thread while the links are still installed: a host tears its plans
-down first (`Engine::clearGraph`), then uninstalls its links.
+([SurfaceLink.hpp](../packages/launchpad/native/src/launchpad/SurfaceLink.hpp), `launchpad` /
+`rp.launchpad.surface-link/2`) for the pad, with a drain into the node's own array, a push, the claim's generation and
+its drop count. `ControllerLink`
+([ControllerLink.hpp](../packages/launchpad/native/src/launchpad/desktop/ControllerLink.hpp)) numbers every claim and
+tags every receive slot with it, so the audio thread, the ring's one consumer, drops a slot that belongs to an earlier
+claim where it sits rather than any thread rewinding it; `dropped()` counts what the link lost in both directions (a
+push to a device that is not there, an oversized message, a full ring) and `messagesSent()` what it wrote, and both are
+what the facet's status line reads. A host installs its links before its first plan with `Engine::installDevice` /
+`installLink`, into a fixed table of 8 entries (a name up to 31 characters, an interface id up to 63): the N8 pack's
+provider installs the `N8CartLink` in every product that starts providers (the plugin, the SDL standalone, the CLI,
+where it is never connected, and the test host, over a fake cart), the Launchpad pack's provider installs its
+`ControllerLink` in the products that name it and install links (the SDL standalone and the CLI, over real ports; the
+test host starts it for its facet but hands the graph a `HarnessSurfaceLink`, so a test stages a press where no port
+could); and the Node addon and the render host install neither. The harness's controller seam, `stageControllerIn` and
+`renderBlocks`' controller field, works only in the test host: a harness-facet host that installs no
+`HarnessSurfaceLink` refuses it rather than staging into nothing. A name it has no device for answers null, and the node
+runs on a stub of its own that is never connected and that drops and counts everything, so a document plans and runs in
+every host. A node keeps its handle across a reactivate and gives it back once in destroy, which runs at reclaim on the
+control thread while the links are still installed: a host tears its plans down first (`Engine::clearGraph`), then
+uninstalls its links.
 
 A capability job ([CapabilityJobs.hpp](../packages/native/src/host/engine/CapabilityJobs.hpp)) is what `submitJob`
 takes: a request for a node of the last published plan, answered with an id or a refusal. A system node's job goes to
@@ -586,18 +588,17 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   later host growth re-activates the graph quiescently, where `reserveAudio` moves the sizes with no block in flight),
   and Mesen's per-frame plumbing reuses its buffers: its notification dispatch iterates a `thread_local` copy, so a
   console's first frame allocates nothing, and only a thread's first nested notification send allocates (the pool entry
-  for a listener that sends one of its own, `NotificationManager.cpp`). That holds with a block's host input staged into
-  it too: every ingress queue a press, a MIDI run, a serial byte or a raw message lands in is bounded and sized when the
-  core is built, and a push past its bound is dropped and counted (above), so the counted window may carry what a node
-  applies before the core's `prepareForBlock`. The cases that prove it `SKIP` the GBA, counted, where its sibling
-  fixture ROM is not present, as on CI, and cover it where the resources tree is. What still allocates on the block
-  thread is work that makes something: a Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which
-  allocates, as it did on the command ring; a NES's region change resets it, which allocates too; the 0.5 s
-  state-snapshot capture allocates inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its
-  command handlers, in
-  a bigger directory listing and in an unbounded TX queue
-  ([07-remaining-work.md](07-remaining-work.md#allocations-left-on-the-block-thread)). A Game
-  Boy's knobs, the ones it applies in place, a NES's setters but its region, and every param allocate nothing at all.
+  for a listener that sends one of its own, `NotificationManager.cpp`, which RetroPlug's own code never registers). That
+  holds with a block's host input staged into it too: every ingress queue a press, a MIDI run, a serial byte or a raw
+  message lands in is bounded and sized when the core is built, and a push past its bound is dropped and counted
+  (above), so the counted window may carry what a node applies before the core's `prepareForBlock`. The cases that prove
+  it `SKIP` the GBA, counted, where its sibling fixture ROM is not present, as on CI, and cover it where the resources
+  tree is. What still allocates on the block thread is work that makes something: a Game Boy's model change restarts the
+  core (`GB_alloc` / `GB_init`), which allocates, as it did on the command ring; a NES's region change resets it, which
+  allocates too; the 0.5 s state-snapshot capture allocates inside Mesen's streaming serializer; and the N8 firmware's
+  SD path allocates in its command handlers, in a bigger directory listing and in an unbounded TX queue
+  ([07-remaining-work.md](07-remaining-work.md#allocations-left-on-the-block-thread)). A Game Boy's knobs, the ones it
+  applies in place, a NES's setters but its region, and every param allocate nothing at all.
 - **A freshly built core's first block is the warmed block with one exception.** A Mesen core's controller snapshot, the
   four persistent frame input copies and the video filter's output buffer are sized at activation, off the block thread,
   so a core built directly has a first block that allocates and frees nothing. A core the Engine builds also arms its
@@ -1205,10 +1206,10 @@ the same way, and the dither's `seedFrom` names one too, so a kit-shaped documen
 player's port and the settings ref). A rate change resumes where the output had reached, to within one frame, so a
 fresh r8brain run-in is heard from there rather than a gap. `rp.dsp.normalize` measures its peak over the channels it
 plays (the loudest of each played channel's peak), and `rp.dsp.dpcm` refuses a multi-channel buffer rather than mixing
-one. `retroplug-r8brain-base`'s statics are why no resampler may outlive its engine: a `rp::dsp::Resampler` destroyed
-after `R8bBase.cpp`'s statics is a use-after-free in r8brain's `unref` (it locks a static mutex and writes into
-cache-owned objects), so a host tears its engines down before exit and the offline pool joins its workers in its own
-teardown (below).
+one. r8brain's caches are process statics (`R8bBase.cpp`, built in `retroplug-r8brain-base`), and a `rp::dsp::Resampler`
+destroyed after them is a use-after-free in r8brain's `unref` (it locks a static mutex and writes into cache-owned
+objects); so every resampler lives inside an `Engine`'s life: a host tears its engines down before exit, and the
+offline pool joins its workers in its own teardown (below).
 
 Two of the nodes guard their state, because nothing between a plan and the host output rejects a non-finite sample:
 `rp.dsp.biquad` resets a channel's filter and writes that block as silence when the filter comes out of it non-finite
@@ -1259,8 +1260,10 @@ missing one and skips an unknown one; the desktop reads the same blob for a type
 `settingsToMsgpack` converts a node's JSON settings. Settings use `rp::text<N>`, `rp::list<T, N>`, `rp::choice<...>`,
 numbers, bools, numeric `rp::resource_ref`s and enums with a fixed underlying type, no `operator|` and enumerators
 within -256 to 256 (the same limits hold for `enum_param`). `rp::choice` stands in for `rfl::Literal`, which a portable
-node does not use, and the device decode reads an enum by its own scan alone, so it does not see a custom
-`rfl::Reflector<E>` and does not honour an `rfl::config::enum_range<E>` override (no node has either). A device-capable
+node does not use. The device decode reads an enum by its own scan alone: an `rfl::config::enum_range<E>` override that
+changes what the scan sees is refused at compile time (`node_desc.hpp`'s `static_assert`s hold the scan to
+reflect-cpp's), and a custom `rfl::Reflector<E>` is not seen by that check or by the decode, so a portable enum must
+not have one (a rule, not a refusal; no node has one). A device-capable
 node source wraps `validate`, `adjust_layout` and the helpers only they use in one `#ifndef RP_DEVICE`; the desktop
 build compiles a `<target>-device` object library from every `device: true` target (the `RP_DEVICE` flags, nothing
 linked) so a missed guard, a pointer or non-portable `Settings`, or a `heap` node fails the desktop build.
@@ -1270,8 +1273,10 @@ device image and the link trap are in [06-build-test.md](06-build-test.md).
 **Script packs and package memory (E4).** A package with a `retroplug.script` member is a TypeScript pack whose nodes
 run on MicroQuickJS, in the device-mode script host (`MqjsHost`, `packages/graph-runtime/native/src/script/`), on the
 desktop and on the box alike ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md));
-desktop-only packs stay on QuickJS (the script host above). `heapBytes` is the box's 32-bit context: a 64-bit build
-doubles it (`kWidthFactor`) and a desktop host gives the pack twice that again (`kDesktopHeapFactor`), and
+desktop-only packs stay on QuickJS (the script host above). `heapBytes` is the box's 32-bit context, which the box's
+build gives exactly; a 64-bit device build (the exporter's trial load, the device-mode tests) gives 3/2 of it
+(`kDeviceHalves`, the toolchain check's heuristic), and a desktop host gives `heapBytes` times `kWidthFactor` (2 at 64
+bits) times `kDesktopHeapFactor` (2), at least 1 MiB (`kDesktopLeastContextBytes`, `desktopContextBytes()`).
 `retroplug_product` registers the pack beside the package's native entries. The engine is `deps/mquickjs`, vendored,
 behind `rp_mqjs_engine.c`, which wraps the fixes (`rp_mqjs_names.h`, force-included, renames its symbols).
 `build-device-pack.mjs` bundles the entry, lowers it to ES5, scans it for library calls the engine lacks, compiles the
@@ -1391,20 +1396,20 @@ worker exists and never changed, so the workers share it read-only; a script, sy
 `unknown-type`, a node fault fails the job, and a guard report does not: the completion carries `guardsFired` and the
 first `guardReason`, each buffer carries `nonFinite`, and a caller decides (a kit compile refuses the pass). A graph job
 takes no MIDI (the pool registers no `rp.host.midi-in`) and its transport stays fixed at 120 bpm, ppq 0, not playing; a
-user graph of script nodes run as a job would need a job-side script host. The whole run is held in the default
-floating-point environment, with the caller's environment saved before the default is pinned and put back after
-(rounding mode and the flush bits included), so a worker that inherited its submitter's flush-to-zero mode still
-computes what the kernels do. Cancelling completes a queued job unrun and stops a running one at its next block
-boundary, or as it finishes when it is past its last (a job decoding a file finishes that decode and stops before its
-next input; one planning finishes the plan and stops before its first block); tearing the engine down abandons every job
-in flight, joins the workers and discards undrained completions, so no resampler outlives the engine (D1's r8brain
-teardown rule). The TypeScript side ([`src/offline.ts`](../packages/retroplug/src/offline.ts)) turns submit-and-drain
-into a promise: the queue joins the capability jobs' live set so one pump settles both, the native wait is turned on by
-`createAudioDriver` for hosts with no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused
-busy. A port call that throws fails the runs it belongs to, never the queue: a submit throw rejects that run, a drain
-throw rejects every run the queue was holding, and the poll always clears its flag. The jobs native still holds after a
-drain threw are no longer counted by the queue, so a fan-out past the bound submitted before they are drained is refused
-busy rather than held.
+render, which needs a transport and MIDI, runs as an engine job instead (below); a user graph of script nodes run as a
+job would need a job-side script host. The whole run is held in the default floating-point environment, with the
+caller's environment saved before the default is pinned and put back after (rounding mode and the flush bits included),
+so a worker that inherited its submitter's flush-to-zero mode still computes what the kernels do. Cancelling completes a
+queued job unrun and stops a running one at its next block boundary, or as it finishes when it is past its last (a job
+decoding a file finishes that decode and stops before its next input; one planning finishes the plan and stops before
+its first block); tearing the engine down abandons every job in flight, joins the workers and discards undrained
+completions, so no resampler outlives the engine (D1's r8brain teardown rule). The TypeScript side
+([`src/offline.ts`](../packages/retroplug/src/offline.ts)) turns submit-and-drain into a promise: the queue joins the
+capability jobs' live set so one pump settles both, the native wait is turned on by `createAudioDriver` for hosts with
+no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused busy. A port call that throws fails
+the runs it belongs to, never the queue: a submit throw rejects that run, a drain throw rejects every run the queue was
+holding, and the poll always clears its flag. The jobs native still holds after a drain threw are no longer counted by
+the queue, so a fan-out past the bound submitted before they are drained is refused busy rather than held.
 
 The txiki host `TjsHostRuntime` comes from
 [`deps/dpf.js`](../deps/dpf.js), not the shell's own sources, and the shell compiles it into a library of its own

@@ -514,10 +514,9 @@ instance/zoom change unless a tiling WM owns geometry (`isWindowSizeControlled()
 - [`layout.ts`](../packages/retroplug/ui/screens/grid/layout.ts) is pure grid math (`GB_NATIVE_W/H`, `shapeFor`,
   `gridContentSize`, `getTileBounds`).
 
-**Why `StableSlot`.** `lv_binding_js`'s `insertChildBefore` ignores its `beforeChild` argument and always appends, so
-React reordering a child (or swapping its type) at a stable position lands the new widget at the *end* of the LVGL child
-list. [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx) is the workaround: a fixed-position wrapper View
-whose position never changes, whose *single* child swaps - where `appendChild` lands correctly. Its `tagTestId`
+**Why `StableSlot`.** lv_binding_js always appends ([Framework gotchas](#framework-gotchas)), and
+[`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx) is the workaround: a fixed-position wrapper whose
+single child swaps. Its `tagTestId`
 ([StableSlot.tsx:21](../packages/retroplug/ui/lvgl/StableSlot.tsx#L21)) tags a widget's native uid for the test harness
 and is inert in production.
 
@@ -611,11 +610,11 @@ Two behaviours of lv_binding_js (in the `deps/dpf.js` submodule) shape the UI co
 **`insertChildBefore` always appends.** React reorders children through `insertChildBefore`, and the binding's
 [comp.cpp](../deps/dpf.js/deps/lv_binding_js/src/render/native/core/basic/comp.cpp) ignores `beforeChild`, so a child
 swapped at a stable React position (a tile becoming a menu, a type swap) or a mid-list insert lands at the END of the
-LVGL child list, not at its source position. `appendChild` lands correctly only where the parent has ≤1 child, which is
-what both workarounds use: a stable per-id wrapper whose position never changes, with a single swappable child
-(`StableSlot`, used by the grid and the tile views, [above](#the-grid---screensgrid)), or re-keying the parent on the
-visible set so every child mounts fresh in JSX order ([the menu](#the-menu---screensmenu)). A tile, row or menu that
-renders in a confusingly wrong slot is almost certainly this.
+LVGL child list, not at its source position. An insert lands where React meant it only when the parent has ≤1
+child, so the two workarounds avoid an insert altogether: a stable per-id wrapper whose position never changes, with a
+single swappable child (`StableSlot`, used by the grid and the tile views, [above](#the-grid---screensgrid)), or
+re-keying the parent on the visible set, so every child mounts fresh and is appended in JSX order ([the
+menu](#the-menu---screensmenu)). A tile, row or menu that renders in a confusingly wrong slot is almost certainly this.
 
 **There is no font-family: the UI face is monospaced by SYMBOL SUBSTITUTION.** A component picks a font by pixel size
 and nothing else: the TS style pipe turns `font-size` into an index

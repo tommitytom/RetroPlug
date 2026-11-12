@@ -295,7 +295,7 @@ routing node's outputs follow the systems); a system removed and added again get
   and `midiChannelToInstance`: the channel, each modulo the system count), by `routeTarget`'s arithmetic.
   `midiChannelToInstance` hands its target a copy with the channel rewritten to 0, from a buffer made once.
   System order is authoritative: the positional modes route by a system's index in `systems`. Its layout
-  refuses two systems under one id. `routeBlock`, the pure twin in `midiRouting.ts`, stays as the reference the
+  refuses two systems under one id. `routeBlock`, the pure twin in `midiRouting.ts`, is the reference the
   node's test holds every mode to ([midi-route.test.ts](../packages/core/ts/test/midi-route.test.ts)).
 - **`rp.mgb.midi`** sends each routed message's bytes as one `serialIn` message at its frame, which is all
   mGB listens for (the system node applies a message's bytes in order at its frame).
@@ -463,8 +463,8 @@ repair is logged once with the ROM and each repaired value. A config the schema 
 what the ROM's providers suggest for the role, then to the schema's defaults. The parse drops a key the schema does
 not read, as an edit already did, and names it in the log. A system's core config is the exception: it stays as
 written, and a stored value its node would refuse reaches no document, even one the role schema would repair:
-`systemKnobs` leaves it out, so the node's default applies rather than the repaired value (there is no blob to carry
-it), and `adopt` names it in the log (`droppedKnobs`).
+`systemKnobs` leaves it out (a construct-time field takes the node's default in its place), so the node's default
+applies rather than the repaired value, and `adopt` names it in the log (`droppedKnobs`).
 
 The rest of the document follows from those nodes:
 

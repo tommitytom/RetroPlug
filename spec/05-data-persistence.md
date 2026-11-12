@@ -196,7 +196,7 @@ JSON**, backed by two mechanisms:
 2. **Migrations (raw-JSON, latest-schema-only).** Keep only the LATEST zod schema per
    root — never a per-version copy. On a breaking (non-additive) change, bump the root's
    version constant and add ONE raw `(obj) => obj` step to that root's migrations map,
-   keyed by from-version, which sits beside the root's schema constant: `PROJECT_MIGRATIONS` in
+   keyed by from-version, which sits beside the root's version constant: `PROJECT_MIGRATIONS` in
    [projectConfig.ts](../packages/retroplug/src/projectConfig.ts), `USER_CONFIG_MIGRATIONS` in
    [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), `BINDINGS_MIGRATIONS` and
    `RECENT_MIGRATIONS` in [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) and

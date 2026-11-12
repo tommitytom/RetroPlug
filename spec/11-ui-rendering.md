@@ -110,16 +110,17 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
   drains with the editor closed; the WAV is on disk either way, and the badge catches up at the next pump).
 - **`ui/host/render.ts`** - `startSystemRender` snapshots the live `readSram`/`readState` to files of the job's own
   under `configDir` (`.render-src-<key>.sav` / `.ss0`, `RENDER_SNAPSHOT_PREFIX`, the twin of native's
-  `kRenderSnapshotPrefix` in `OfflineJobs.hpp`, which keeps a listed path only under that prefix, so the two move
-  together) and calls `renders.start` with their list as the submission's own (`EngineRunOptions.discardFiles`): the
-  engine's pool deletes them however the job ends (on the job's worker before the completion is queued, or with the job
-  itself when it is dropped unrun), and `onSettled` deletes them again on whichever road it took: a job the queue held
-  past the 64-job bound and cancelled before it was submitted, a submission the RPC threw on, a spec function that
-  threw, and every job a drain that threw failed, which native may still hold (a second removal is a no-op). Where that
-  last road meets a job native still has queued, the boot refuses (`RenderOpts.inputsMustExist`); a job already past
-  that check can lose the file before its boot reads it, a window of a handful of calls, and then boots the cart's blank
-  start. What is left is an instance that ends with a render held in TS, and a crash, which the startup sweep takes
-  (`src/renderSnapshotSweep.ts`: a snapshot more than a day old). The worker reads the snapshots only when it boots the
+  `kRenderSnapshotPrefix` in `OfflineJobs.hpp`, which deletes a listed path only when its filename carries that prefix,
+  so the two move together) and calls `renders.start` with their list as the submission's own
+  (`EngineRunOptions.discardFiles`): the engine's pool deletes them however the job ends (on the job's worker before the
+  completion is queued, or with the job itself when it is dropped unrun), and `onSettled` deletes them again on
+  whichever road it took: a job the queue held past the 64-job bound and cancelled before it was submitted, a submission
+  the RPC threw on, a spec function that threw, and every job a drain that threw failed, which native may still hold (a
+  second removal is a no-op). Where that last road meets a job native still has queued, the boot refuses
+  (`RenderOpts.inputsMustExist`); a job already past that check can lose the file before its boot reads it, a window of
+  a handful of calls, and then boots the cart's blank start. What is left is an instance that ends with a render held in
+  TS, and a crash, which the startup sweep takes (`src/renderSnapshotSweep.ts`: a snapshot more than a day old by wall
+  time, so a suspend or a clock jump can take a live job's). The worker reads the snapshots only when it boots the
   render, which can be minutes later behind the worker budget, so a shared name would boot a later edit's (or another
   instance's) state; and the spec says they must exist when it boots (`RenderOpts.inputsMustExist`, which the UI sets
   and the CLI does not: its `--sav` is its own to name), so one the sweep took from under a live job refuses rather than

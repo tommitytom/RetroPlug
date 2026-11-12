@@ -91,29 +91,30 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
 
 - Code: the workspace package `packages/n8`: natively `native/src/n8/`, the portable target `retroplug-n8`
   (`device: true`): the one `Edio`, written once in C++ for the desktop and the Pico box over an abstract transport,
-  with no exceptions, beside the menu commands (`Menu`), the operations (`Ops`: `bootRom`, `readFile`,
-  `writeFile`), `rp.n8.nes` and the `CartLink` it drives; and `native/src/n8/desktop/`, the desktop target
-  `retroplug-n8-desktop` (the serial transport, `N8Link`, `N8Host`, the `N8CartLink`, the RPC facet `N8Rpc` and
-  the provider `rp_n8_provider`); in TS `packages/n8/ts` (`createN8Client`, the sniffer and the other decoders, the
-  load helpers). The emulated twin is the mesen package's `native/src/system/mesen/NesEverdriveFifo.hpp`, which every
-  NES ROM gets at `$40F0`/`$40F1`.
+  with no exceptions, beside the menu commands (`Menu`), the operations (`Ops`: `bootRom`, `readFile`, `writeFile`),
+  `rp.n8.nes` and the `CartLink` it drives; and `native/src/n8/desktop/`, the desktop target `retroplug-n8-desktop` (the
+  serial transport, `N8Link`, `N8Host`, the `N8CartLink`, the RPC facet `N8Rpc` and the provider `rp_n8_provider`); in
+  TS `packages/n8/ts` (`createN8Client`, the sniffer and the other decoders, the load helpers). The emulated twin is the
+  mesen package's `native/src/system/mesen/NesEverdriveFifo.hpp`, which every NES ROM gets at `$40F0`/`$40F1`.
 - Every product that lists the pack and includes its generated provider header starts it (the plugin, the SDL
   standalone, the headless host and the CLI, whose sessions use the facet's session half; a product's `PROVIDERS` list
   says which packs it starts). The Pico box (`pico/n8-host`) is the same Edio on TinyUSB. BlipToaster's MIDI policy
   (`rp.bliptoaster.midi-policy`) is a node of the box's plan; the desktop's N8 graphs do not use the policy node.
 - What the cart allows, and the pack accepts: a cart's battery is reachable only at the N8 menu, through the SD card's
-  save file `EDN8/gamedata/<rom>/bram.srm`, and a dump takes about a minute for 64 KB; a running game refuses the job
-  (a direct cart-memory read wedges it and leaves the menu deaf), and a restore goes before a `rom.upload` so the game
-  loads it at its next boot. `rom.header` / `rom.title` answer for what this host last booted, forgotten at a connect
-  when the running mapper differs; a game of the same mapper, or one started between connects, goes unnoticed, because
-  the cart has no query for the image it runs. A cart job pauses streaming (pushes during it are dropped and counted),
-  and a `rom.upload` leaves streaming stopped until the host reconnects. The CLI's n8 tools keep their own raw serial
-  path (the battery dump among them, the one cart-memory read left); the capabilities deliberately offer no peek,
-  poke, sniffer or FIFO reads.
+  save file `EDN8/gamedata/<rom>/bram.srm`, and a dump takes about a minute for 64 KB; a running game refuses every cart
+  job (a direct cart-memory read wedges it and leaves the menu deaf), and a restore goes before a `rom.upload` so the
+  game loads it at its next boot. `rom.header` / `rom.title` answer for what this host last booted. Each connect reads
+  the mapper the cart runs and forgets the image when it differs or cannot be read. A game of the same mapper goes
+  unnoticed, and so does any game started from the cart's browser while the link stays up, until the next connect: the
+  cart has no query for the image it runs. A cart job pauses streaming (pushes during it are dropped and counted), and a
+  `rom.upload` leaves streaming stopped until the host reconnects. The CLI's n8 tools keep their own raw serial path
+  (the battery dump among them, the one cart-memory read left); the capabilities deliberately offer no peek, poke,
+  sniffer or FIFO reads.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
-  `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session`; for the box, `pnpm device:box` and the rig's
-  `loop.sh`, `stress.sh` and `faults.sh`, which boot BlipToaster, never `n8-midi.nes`. `retroplug-n8-hwtest` needs
-  the physical console.
+  `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session`; for the box, `pnpm device:box`, then the
+  rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each given BlipToaster with `--rom` (`bliptoaster.nes`): without
+  `--rom` the firmware boots its default, `n8-midi.nes`, which no check uses. `retroplug-n8-hwtest` needs the physical
+  console.
 - Deeper: [docs/n8-bridge-plan.md](../docs/n8-bridge-plan.md),
   [docs/n8-usb-capabilities.md](../docs/n8-usb-capabilities.md), and the pack's design,
   [docs/modular-graph-phase-e2-design.md](../docs/modular-graph-phase-e2-design.md).
@@ -128,8 +129,8 @@ controller session node (below). The selection is the user's: `config.json`'s `c
 writes with a re-read, so two processes can share the file. Its fields (`input`, `output`, `device`, `enabled`)
 are additive, so no migration; and the SDL standalone holds MIDI and audio until TS's `restored()` lands (500 ms at
 most once its audio settings have applied: `retroplug-sdl` below), so a restored pair is never opened by the shared
-stream first. One controller link per process is all the registry holds, one per `rp.host.devices/2` name; more than
-one is a registry change. The plugin has no control surface: its host MIDI out caps a message at 4 bytes, so no SysEx
+stream first. One controller link per process, and one per `rp.host.devices/2` name; more than one is a registry
+change. The plugin has no control surface: its host MIDI out caps a message at 4 bytes, so no SysEx
 reaches a surface, and it names no launchpad provider.
 
 - Code: [packages/launchpad](../packages/launchpad) - the portable target (`retroplug-launchpad`, `device: true`) with
@@ -192,19 +193,19 @@ Anbernic/muOS). It composes the same backend service graph as every other host
 gamepad, and the audio and MIDI packages' backends for output and MIDI (PortAudio and SDL audio, chosen at
 runtime and named by the product's `AUDIO_BACKENDS`; RtMidi behind `packages/midi`).
 
-It is in the default `all` target, so every CI platform compiles and links it and it rides in the
-build artifact, but it is deliberately **not** in any release: `release.yml`'s packaging steps are
-explicit allowlists and it is on none of them, and each carries a comment saying so. CI builds `all` on all four
-platforms, and the standalone needs nothing extra installed: SDL2 is already REQUIRED at root scope for every plugin
-variant, and rtmidi and PortAudio are in-tree submodules. On macOS the artifact binary is build-machine-only: the
-`SDL2.framework` embed covers the plugin and app bundles, and `retroplug-sdl` is a bare executable, so shipping it
-would need a framework copy and an `@executable_path` rpath.
+It is in the default `all` target, so every CI platform compiles and links it and it rides in the build artifact (CI
+builds `all` on all four platforms), but it is deliberately **not** in any release: `release.yml`'s packaging steps are
+explicit allowlists and it is on none of them, and each carries a comment saying so. The standalone needs nothing extra
+installed: SDL2 is already REQUIRED at root scope for every plugin variant, and rtmidi and PortAudio are in-tree
+submodules. On macOS the artifact binary is build-machine-only: the `SDL2.framework` embed covers the plugin and app
+bundles, and `retroplug-sdl` is a bare executable, so shipping it would need a framework copy and an `@executable_path`
+rpath.
 
 At startup it holds MIDI and audio until the UI has reported: the control surface's `restored()` (only when it
 started the launchpad provider) and the `audio` section's apply. The wait is bounded in time, at 2000 ms
-(`kAudioBoundMs`) while the audio apply has not landed and 500 ms once it has, after which it starts on the defaults
-and says so. Render-ahead is a run flag, not a setting: `--audio-backend` / `--block-size` / `--render-ahead`
-override the saved section for that run.
+(`kAudioBoundMs`) while the audio apply has not landed and 500 ms once it has, after which it goes on without what has
+not landed, logging each (an unapplied audio section starts on the defaults). `--audio-backend` and `--block-size`
+override the saved section for that run, and `--render-ahead` exists only as a flag.
 
 - **Prove a change:** `pnpm sdl:smoke` (headless, no display or audio server — in CI) and
   `pnpm sdl:pipewire` (which output device PortAudio actually opens; not in CI, needs PipeWire).

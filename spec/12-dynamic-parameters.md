@@ -266,8 +266,9 @@ this is a BlipToaster ROM with no tag. Sega still always takes its deep read (sm
 `setState` and on `activate` - and from the editor's idle (section 9). If the JSON differs from the cached copy it stores the new descriptors
 and calls `requestParameterInfoUpdate()`. `initParameter` then reads from that cached copy, which is
 what makes the DPF re-declare/diff loop work. The latency report asks the STORED `lsdj-sync` mode, not one a
-controller app forces: no plugin binary's product list carries `launchpad` or `lsdj-launchpad`, so nothing can force
-one there, and a control surface joining the plugin's list must make the report ask the placed mode.
+controller app forces: no plugin binary's product list (the DPF JACK standalone's included) carries `launchpad` or
+`lsdj-launchpad`, so nothing can force one there; a control surface joining the plugin's list must make the report ask
+the mode the controller placer forces.
 
 **Writing values.** A DAW parameter write in `setParameterValue` is stored, and `run()` turns each
 claimed slot whose value moved into a synthesised CC at frame 0, staged into the engine after the
@@ -303,9 +304,10 @@ override would live in the project JSON, and per the config-migration rule that 
   through the UI also covers the editor idle poll. All three are in
   [run-reaper-suite.sh](../tools/run-reaper-suite.sh) as `params-vst3` / `params-clap` / `params-vrc7`;
   none is in CI (they need a full DAW + X stack).
-- Run it per format: the two take different paths in DPF. The format is requested by its **prefixed** name
-  (`"CLAPi: RetroPlug"`) and then re-checked against what Reaper actually loaded. A bare `"RetroPlug"` let Reaper
-  pick VST3 for both legs, so the CLAP run was silently a second VST3 run that still reported PASS.
+- Run the re-labelling check per format (VST3 and CLAP): the two take different paths in DPF. The format is requested by
+  its **prefixed** name (`"CLAPi: RetroPlug"`) and then re-checked against what Reaper actually loaded. A bare
+  `"RetroPlug"` let Reaper pick VST3 for both legs, so the CLAP run was silently a second VST3 run that still reported
+  PASS.
 - **`tools/run-sanitizer.sh thread`** passes, but note what it does *not* cover: it builds and runs
   `retroplug-host`, which does not link DPF, so it never exercises this code. The guard for the
   `hints` invariant in 3.3 is the Catch2 case above, not TSAN.
