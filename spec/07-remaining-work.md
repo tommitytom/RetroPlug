@@ -43,12 +43,15 @@ each (a phase name means its "What it leaves" list in section 5).
 **Known bugs, recorded and not fixed**
 - [ ] "Is this LSDj" decided by a role's presence, not its placement; needs `placedRole` (found building B3b)
 - [ ] MI.MAP's predicted playhead runs ahead at a tempo divisor of 2 or more (F3)
-- [ ] `__rp_syncLatencyMs` follows the stored sync mode, not the one MI.MAP forces (C2)
+- [x] `__rp_syncLatencyMs` follows the stored sync mode, not the one MI.MAP forces (C2; unreachable since F5a, closed
+      with kb1: no plugin binary's list carries a controller app to force one)
 - [ ] MI.OUT decodes about half the NoteOns a song plays; not investigated (LSDj's serial-out node)
 - [ ] The DPF JACK standalone's control handoff runs on JACK's thread at a buffer-size or rate change (C5)
-- [ ] A Game Boy's press queue can drop a flood's last release, leaving a button held (C4)
-- [ ] A UI render's snapshot files are left behind when the instance ends first (D3)
-- [ ] emu2413's VRC7 tables: an unsynchronised static flag, a race for two VRC7 carts built at once (D3)
+- [x] A Game Boy's press queue can drop a flood's last release, leaving a button held (C4; kb1, 431e20007)
+- [x] A Game Boy button byte of 8 or more writes past SameBoy's key arrays in a release build (kb1, 431e20007)
+- [x] A UI render's snapshot files are left behind when the instance ends first (D3; kb1, 5602a0c06 and 219f5389e: the job's pool
+      deletes them with it, and the startup sweep covers a crash)
+- [x] emu2413's VRC7 tables: an unsynchronised static flag, a race for two VRC7 carts built at once (D3; kb1, 0f322f0a6)
 
 **Engine**
 - [ ] DAW automation of node params through `setParam` (C2)
@@ -268,8 +271,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   commits; the later gain snap's 28 re-recorded cases are its section 10's. What it leaves (its sections 9 and 10):
   - **DAW automation of node params.** The plugin's parameters are not mapped onto `setParam`; params make it
     possible, and it is its own work.
-  - **The plugin's sync latency report** (`__rp_syncLatencyMs`) still follows the stored `lsdj-sync` mode, not the
-    one the MI.MAP controller forces.
+  - **The plugin's sync latency report: closed as unreachable, not fixed.** `__rp_syncLatencyMs` follows the stored
+    `lsdj-sync` mode rather than the one a controller app forces, but since F5a no plugin binary's product list carries
+    `launchpad` or `lsdj-launchpad` (the `plugin` product covers every plugin binary, the DPF JACK standalone
+    included), so no binary that reports a latency to a host can have a controller force a mode. A control surface
+    joining the plugin's list must make the report ask the placed mode.
   - **The construct-time fields and the facts a build reports: closed by C3.** SMS `enableFm`, NES `sdRoot`, the
     FIFO profile and its overrides, the N8 link and its round trip and `channelExportMode` are their system node's
     settings now, and the node builds the core from them; the export mode and a Game Boy's link group come from the
@@ -375,11 +381,15 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     discard are paid for. Not arming a split that does not fit is a CPU-only change (`buildGraph` knows the lane
     budget) and is nobody's bug.
   - **The cores this fork does not run** (PCE, SNES, WS) still copy a frame's snapshot once more per emulated frame.
-  - **A Game Boy's press queue drops the tail of a quiescent flood.** Its 1024 entries hold sixteen blocks of a
+  - **A Game Boy's press queue keeps its last slots for releases.** Its 1024 entries hold sixteen blocks of a
     saturated buttons input, and its presses are scheduled 10 ms apart and carried across blocks, so unlike a Mesen
     console's they cannot coalesce. A session that applies pushes inline between blocks (the CLI, an offline render)
-    can queue more than that; what is past the bound is dropped and counted, and the tail can be a release, leaving
-    its button held. A rule that keeps a release, or headroom reserved for one, is its own change.
+    can queue more than that, so an edge other than the release of a button the queue still holds (a press, or a
+    release of a button already up) is taken only with more than the console's 8 buttons free, i.e. with at most 1016
+    entries queued, and such a release needs one slot, which is never refused: a press leaves 8 slots and at most 8
+    buttons are held, and a release frees a button for the slot it takes. What the reserve refuses is counted in
+    `inputDropped()` with the queue's own drops. A button byte past the console's table (8 or more) drives no key and
+    takes no slot, counted as taken, where SameBoy's own bound is an `assert` a release build drops.
   - **The suite keeps its console-only casts** (`EngineGraph`, `SystemNode`, `HostIo`, `EngineSampleRate` tests read a
     config field, `linkPeers_` or a ring counter); no tap read casts any more.
 - **C5 built: hardware as nodes, and the engine names no device**
@@ -578,14 +588,17 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     `start-truncation`, `risa-autodetect` and `render-guard` call `runRenderJob` on an exact-blocks engine, a path no
     production caller uses; for engine jobs their assertions reach users only through the render baseline's hashes and
     `engine-run`.
-  - **emu2413's VRC7 tables** are a lazily built process static behind a plain flag (the one left; the NES database's
-    and the GBA dispatch tables' flags are acquire/release): two VRC7 carts built at once as the process's first race.
-  - **A UI render's snapshot** (`.render-src-<key>.*` in the config directory) is deleted when its job settles, so an
-    instance or process that ends before the job settles leaves it behind: a closed DAW project or a removed plugin
-    with a render queued or running, or a render finished while the editor was closed and the project then closed
-    (nothing drains then), as well as a crash. Nothing removes them. The cheaper real fix is left: the worker deleting
-    its own snapshot once the system is built (a spec flag only the UI sets), the settle hook then covering only jobs
-    that never booted.
+  - **emu2413's VRC7 tables: fixed with kb1.** They are a process static built once by a function-local `static const
+    bool` (the order the NES database's and the GBA dispatch tables' flags spell out with acquire/release atomics), so
+    two VRC7 carts built at once as the process's first wait for the build rather than writing the tables twice.
+    `MesenShared.test.cpp`'s `[mesen-statics]` case holds it under ThreadSanitizer, which reported the old flag.
+  - **A UI render's snapshot** (`.render-src-<key>.*` in the config directory) belongs to its job's submission
+    (`EngineRunOptions.discardFiles`), so the pool deletes it however the job ends: on the job's worker once the render
+    library has returned and before the completion is queued, so it is gone by the time TS hears the job settled, and
+    with the job itself when it is dropped unrun (a refusal, a cancel while queued, the pool's teardown, which is the
+    instance ending first). A crash is what survives that, and the next startup sweeps it (`sweepRenderSnapshots`: a
+    snapshot a day old, skipping what cannot be aged or deleted, since the config directory has no owner between
+    processes). The UI deletes only a snapshot whose spec function threw, before anything was submitted.
   - **The SameBoy camera half of the statics patch has no red-green test** (no Game Boy Camera ROM exists in the repo or
     the fixtures), and the exact render bytes are held only on `linux-x64-gnu13`. The patch uses GNU `__atomic`
     builtins, which GCC and Clang (clang-cl on Windows) have; the tree has not been built with MSVC since D2.
@@ -766,8 +779,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The controller's MI.MAP override changed only the document: closed by C2.** `controllerSyncOverride`
     ([launchpad/ts/control/placer.ts](../packages/launchpad/ts/control/placer.ts), applied in `buildGraph`) runs an LSDj's
     nodes in `midiMap` for a cart reading MidiMap (in `off` for one reading another SYNC), and `serialOutCaptureFor`,
-    beside it since C2, computes the Game Boy's capture from that forced mode, so a forced cart captures nothing. Only
-    `__rp_syncLatencyMs` still follows the stored mode, listed with C2's leftovers above.
+    beside it since C2, computes the Game Boy's capture from that forced mode, so a forced cart captures nothing.
+    `__rp_syncLatencyMs` would report the stored mode, and no plugin binary carries a controller app to force one in
+    (C2's leftover above, closed as unreachable with kb1).
   - A few test-native case names still say "the kernel" (in `dsp-lsdj-midisync`, `dsp-risa-sync`,
     `dsp-sms-sync` and `plugin-controlplane`), where they mean the protocol nodes. Renaming
     a case is harmless but was kept out of B3b, which changed no test's identity it did not have to (the one case

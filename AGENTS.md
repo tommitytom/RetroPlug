@@ -385,7 +385,7 @@ The rules below are the parts that don't fit those.
   reset / stash / commit that, and don't bump the pointer to "absorb" it.** A
   submodule bump that invalidates a patch fails LOUDLY at configure (rather than
   silently dropping what it adds); regenerate the patch if that happens. (Mesen is vendored in-tree, so its fixes are
-  plain source changes, each marked `// RetroPlug:` - 45 files carry one, `Utilities/SimpleLock.{h,cpp}`'s atomic
+  plain source changes, each marked `// RetroPlug:` - 46 files carry one, `Utilities/SimpleLock.{h,cpp}`'s atomic
   holder id and count for cores on several threads among them, and the per-console `#if MESEN_ENABLE_*` guards of
   `deps/mesen/CMakeLists.txt`'s compile-out are the newest batch.)
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
@@ -440,7 +440,7 @@ The rules below are the parts that don't fit those.
   compiler folds the arm a template parameter picks) and fails at `-O0`: `tools/build-mesen-all-consoles.sh --off`
   builds the library as Debug and refuses an archive that references a C++ symbol no member defines. 288 translation
   units of 426, 19.7 MB of 32.7 MB of archive. The vendored tree is SourMesen/Mesen2 at `b9fa69d` with no `.git` of its
-  own: a merge re-applies the 45 files carrying a `// RetroPlug:` marker (the compile-out guards among them) over the
+  own: a merge re-applies the 46 files carrying a `// RetroPlug:` marker (the compile-out guards among them) over the
   upstream snapshot, then runs BOTH modes of `tools/build-mesen-all-consoles.sh`, `--off` being the one that catches a
   guard the merge dropped (a Release link folds it away).
 - **Mesen LTO is opt-in (`-DRETROPLUG_MESEN_LTO=ON`), and that is deliberate.** It
