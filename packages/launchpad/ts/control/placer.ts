@@ -156,8 +156,11 @@ export function syncModeFor(rule: ControllerSyncRule, cartSync: string | null): 
 
 /** What the cart a controller drives divides its 24-tick clock by: the setting the app's rule names (`divisor`), on
  *  that system's node of the rule's type, as the pipeline the placer is handed carries its config. 1 when nothing is
- *  driven, the rule names no setting, the system has no such node or the value is not a finite number of at least 1,
- *  which is what the node itself clocks by then (rp.lsdj.sync's `config.tempoDivisor || 1`). */
+ *  driven, the rule names no setting, the system has no such node or the value is not a whole number of at least 1.
+ *  The role's schema has already made the setting an integer in 1..8 by the time a pipeline carries it (a saved or
+ *  hand-edited fraction is clamped and rounded there), so this guard only keeps a pipeline built by hand from handing
+ *  the session what no role config holds; for every value a config can hold it agrees with the node's own
+ *  `config.tempoDivisor || 1`. */
 function tickDivisorOf(
   rule: ControllerSyncRule | null,
   sync: { systemId: number } | null,
@@ -166,7 +169,7 @@ function tickDivisorOf(
   if (!rule || !sync || typeof rule.divisor !== "string") return 1;
   const role = systems.find((s) => s.id === sync.systemId)?.pipeline.find((r) => r.node === rule.node);
   const value = role?.config[rule.divisor];
-  return typeof value === "number" && Number.isFinite(value) && value >= 1 ? value : 1;
+  return typeof value === "number" && Number.isFinite(value) && Math.floor(value) === value && value >= 1 ? value : 1;
 }
 
 /** The session node's settings (@retroplug/launchpad/controllerSession): its system resolved (0 is the node's none),

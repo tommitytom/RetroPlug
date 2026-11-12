@@ -426,10 +426,11 @@ test("the session is handed the divisor its cart's clock is divided by, read fro
   // The cart the session drives, chosen or first, and no other.
   expect(tickDivisor([gb(7, 0, [LSDJ()]), gb(8, 0, [divided(2)])], { systemId: 8 })).toBe(2);
   expect(tickDivisor([gb(7, 0, [divided(4)]), gb(8, 0, [LSDJ()])], { systemId: 8 })).toBe(1);
-  // No node of the rule's type on that cart, no such setting, or a value the node would not divide by.
+  // No node of the rule's type on that cart, no such setting, or a value no role config holds (the schema keeps the
+  // setting a whole number in 1..8), which reads as 1: 0.5 and 2.5 are fractions, not the node's clock.
   expect(tickDivisor([gb(7, 0, [MGB])])).toBe(1);
   expect(tickDivisor([gb(7, 0, [role("lsdj-sync", { mode: "midiSync" })])])).toBe(1);
-  for (const bad of [0, 0.5, -2, "2", null]) expect(tickDivisor([gb(7, 0, [divided(bad)])]), String(bad)).toBe(1);
+  for (const bad of [0, 0.5, 2.5, -2, "2", null]) expect(tickDivisor([gb(7, 0, [divided(bad)])]), String(bad)).toBe(1);
   // Launches out of the host drive no emulated cart, and a real Game Boy's divisor is not one the graph can read.
   expect(tickDivisor([gb(7, 0, [divided(4)])], { target: "midiOut" })).toBe(1);
 });

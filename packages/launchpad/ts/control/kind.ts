@@ -48,6 +48,10 @@ function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext):
   }
   // A divisor is read off the node's own config by name (the placer hands the session what it finds there), so it is a
   // setting's name or nothing: a number here would be read as no setting and leave the session walking every tick.
+  // That the name is one of the node's settings is not checked here (the kind sees the node's type and no schema); a
+  // misspelt one reads as 1 at the placer. What holds the real name is the exact assertion on lsdj-launchpad's
+  // KIND_DATA in build-graph.test.ts and store-graph.test.ts's end-to-end case, where a changed divisor reaches the
+  // session.
   if (rule.divisor !== undefined && (typeof rule.divisor !== "string" || rule.divisor === "")) {
     throw new Error(
       `${where}'s "divisor" must name the setting that divides that node's 24-tick clock, not ` +

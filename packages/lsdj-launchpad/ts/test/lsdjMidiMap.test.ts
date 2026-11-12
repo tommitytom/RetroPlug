@@ -345,13 +345,13 @@ test("driven by a real predictor over a long run, the lit playhead tracks the mo
   expect(checked > 80).toBeTruthy(); // the run really did span several song wraps
 });
 
-test("at a tempo divisor of 2, a launch cued for the row's end reaches the cart as the cart's row ends", () => {
+test("at a tempo divisor of d, a launch cued for the row's end reaches the cart as the cart's row ends", () => {
   // The session node walks the clock the cart hears (24 / tickDivisor a quarter, as rp.lsdj.sync clocks MI.MAP), so
   // the row its predictor turns over on is the cart's own. Counted in the clocks rp.lsdj.sync sent the cart, the launch
-  // cued while row 0 plays reaches it once row 0 has had all 96 of its ticks; walking every host tick would release it
-  // halfway through, at 48.
+  // cued while row 0 plays reaches it once row 0 has had all 96 of its ticks, at every divisor the setting offers
+  // (the fractional 24 / d included); walking every host tick would release it early, at 96 / d.
   registerControllerApps([runtime]);
-  const released = (tickDivisor: number): number[] => {
+  const released = (tickDivisor: number, tempoDivisor: number): number[] => {
     const controller = new NodeRig(controllerSessionNode, {
       app: "lsdj-midimap",
       target: "system",
@@ -360,13 +360,13 @@ test("at a tempo divisor of 2, a launch cued for the row's end reaches the cart 
       songRowTicks: songRowTicks(fullSong(16)),
       tickDivisor,
     });
-    const cart = new NodeRig(lsdjSyncNode, { mode: "midiMap", tempoDivisor: 2 });
+    const cart = new NodeRig(lsdjSyncNode, { mode: "midiMap", tempoDivisor });
     const pad = (row: number) => [{ frame: 0, data: [0x90, padIndex({ x: row < 8 ? 0 : 4, y: row % 8 }), 100] }];
     const at: number[] = []; // how many clocks the cart had been sent when each row byte (not a NoteOff's) reached it
     let clocks = 0;
-    for (let block = 0; block < 8; block++) {
-      // One second at 120 BPM: 48 host ticks, 24 of the cart's. Row 0 is launched at once (nothing plays yet), row 9 is
-      // cued in the next block.
+    // One second at 120 BPM: 48 host ticks, 48 / d of the cart's. Row 0 is launched at once (nothing plays yet), row 9
+    // is cued in the next block, and the run goes on until the cart has had a little more than its 96 clocks.
+    for (let block = 0; block < 2 * tempoDivisor + 3; block++) {
       const spec: BlockSpec = { frames: 44100, playing: true, ppq: 2 * block, tempo: 120 };
       const surface = block === 0 ? pad(0) : block === 1 ? pad(9) : [];
       const launches = controller
@@ -380,6 +380,7 @@ test("at a tempo divisor of 2, a launch cued for the row's end reaches the cart 
     }
     return at;
   };
-  expect(released(2)).toEqual([0, 96]);
-  expect(released(1)).toEqual([0, 48]);
+  for (const divisor of [1, 2, 3, 5, 6, 7, 8]) expect(released(divisor, divisor), `divisor ${divisor}`).toEqual([0, 96]);
+  // The session left at 1 while the cart is at 2 releases the cued row at half its length.
+  expect(released(1, 2)).toEqual([0, 48]);
 });
