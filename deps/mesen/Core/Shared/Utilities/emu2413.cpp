@@ -419,7 +419,9 @@ static void initializeTables(void) {
 }
 
 /* RetroPlug: these tables are process-wide, built by whichever chip is created first and read by every one after it,
-   and two VRC7 carts can be built on two threads at once (the engine's offline pool beside the live engine, two render
+   and a chip is created on the thread that boots its console: a VRC7 cart for the NES's expansion audio, and any
+   SMS/GG console, whose FM unit is this same chip (SmsFmAudio's constructor builds one for every console, FM or not).
+   Two such consoles can be built on two threads at once (the engine's offline pool beside the live engine, two render
    jobs), so the plain `table_initialized` flag this used to check let both write the tables while either read them.
    A block-scope static's initialiser runs exactly once, and every other thread that reaches it waits until it has
    finished, which is the ordering the flag was spelling out by hand. */

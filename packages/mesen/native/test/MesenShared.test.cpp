@@ -9,11 +9,13 @@
 //   notification allocates nothing once its depth has been reached. These hold what that copy must keep true: a
 //   listener destroyed while the notification runs is not called after it, and a listener that sends a notification of
 //   its own does not disturb the one being iterated.
-// - Two lazy initialisations of process statics (the NES game database, the GBA CPU's dispatch tables) are taken from
-//   two threads at once, as two cores built at once on the engine's offline pool and its control thread would. Their
-//   double-checked flags are atomics (acquire before the unlocked check, release after the build); as plain bools
-//   ThreadSanitizer reports the unlocked read racing the locked write. Each initialises once per process, so the cases
-//   prove that only as the process's first of each: run the tag alone, `"[mesen-statics]"`, in build-tsan.
+// - Three lazy initialisations of process statics (the NES game database, the GBA CPU's dispatch tables, the OPLL sound
+//   chip's tables) are taken from two threads at once, as two cores built at once on the engine's offline pool and its
+//   control thread would. The first two are double-checked flags held in atomics (acquire before the unlocked check,
+//   release after the build); as plain bools ThreadSanitizer reports the unlocked read racing the locked write. The
+//   third is emu2413's block-scope static initialiser (its ensureTables), which runs exactly once and makes every other
+//   thread reaching it wait for it, so there is no flag of ours at all. Each initialises once per process, so the cases
+//   prove that only when this is the process's first of each: run the tag alone, `"[mesen-statics]"`, in build-tsan.
 
 #include <atomic>
 #include <functional>
@@ -215,13 +217,13 @@ TEST_CASE("two GBA consoles can be built on two threads at once, the first in th
     CHECK(built.load() == 2);
 }
 
-TEST_CASE("the VRC7 sound chip's tables can be built on two threads at once, the first in the process",
+TEST_CASE("the OPLL sound chip's tables can be built on two threads at once, the first in the process",
           "[engine-graph][mesen][mesen-statics]") {
-    // A VRC7 cart builds Mesen's emu2413 (the OPLL) for the NES's expansion audio, and the chip's tables are
-    // process-wide: whoever calls OPLL_new first builds them, and every later call reads them. With the plain
-    // `table_initialized` flag two carts' first builds both saw it clear, so both wrote the tables while either could
-    // read them - the race ThreadSanitizer reports as the process's first build. Each thread builds and frees a chip
-    // of its own, which is a boot's own call.
+    // A VRC7 cart builds Mesen's emu2413 (the OPLL) for the NES's expansion audio, and every SMS/GG console builds one
+    // for its FM unit, so a boot of either reaches this chip. Its tables are process-wide: whoever calls OPLL_new first
+    // builds them, and every later call reads them. With the plain `table_initialized` flag two chips' first builds
+    // both saw it clear, so both wrote the tables while either could read them - the race ThreadSanitizer reports when
+    // this is the process's first build. Each thread builds and frees a chip of its own, which is a boot's own call.
     std::atomic<int> built{0};
     onTwoThreadsAtOnce([&] {
         OPLL* chip = OPLL_new(3579545, 48000);

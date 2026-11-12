@@ -76,13 +76,13 @@
 //     at 1;
 //   - Mesen's MessageManager, whose process-wide SimpleLock keeps its holder and count in atomics (two cores built on
 //     two threads at once raced on them as plain members);
-//   - Mesen's two lazily built process tables behind a double-checked flag, the NES game database (GameDatabase, which
-//     every iNES load reaches) and the GBA CPU's dispatch tables (GbaConsole's constructor): each flag is an atomic,
-//     loaded with acquire before its unlocked check and stored with release after the build, so a core that sees the
-//     build published also sees the table (MesenShared.test.cpp's "[mesen-statics]", red as plain bools under
-//     ThreadSanitizer);
-//   - Mesen's VRC7 sound chip tables (emu2413.cpp, built by the first OPLL_new behind a plain flag and no lock), the
-//     one known to be unsynchronised: two VRC7 carts built at once as the process's first would race on it;
+//   - Mesen's three lazily built process tables. The NES game database (GameDatabase, which every iNES load reaches)
+//     and the GBA CPU's dispatch tables (GbaConsole's constructor) sit behind double-checked flags whose flag is an
+//     atomic, loaded with acquire before the unlocked check and stored with release after the build, so a core that sees
+//     the build published also sees the table; the OPLL sound chip's (emu2413.cpp's ensureTables, which a VRC7 cart and
+//     every SMS/GG console's FM unit reach through OPLL_new) sit behind a block-scope static initialiser, which runs
+//     exactly once and makes every other thread reaching it wait for the build. All three are held by
+//     MesenShared.test.cpp's "[mesen-statics]" (the two flags red as plain bools under ThreadSanitizer);
 //   - SameBoy's core statics, made safe by cmake/patches/sameboy-process-statics.patch: its random generator
 //     (Core/random.c, which runs at every reset for power-on RAM and during play for the Super Game Boy jingle's
 //     noise and a camera shoot) and the camera's noise seed (Core/camera.c) are read and written as relaxed atomics,
