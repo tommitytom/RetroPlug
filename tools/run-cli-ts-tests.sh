@@ -42,6 +42,16 @@ contains() { # contains <label> <haystack-file> <needle>
 	fi
 }
 
+contains_line() { # contains_line <label> <haystack-file> <exact line> - a result line, so "ok 2" is not "not ok 2"
+	if grep -qxF -- "$3" "$2"; then
+		echo "ok   - $1"
+	else
+		echo "FAIL - $1 (no line equal to: $3)"
+		sed 's/^/       | /' "$2" >&2
+		fails=$((fails + 1))
+	fi
+}
+
 # Each case gets its own build dir so nothing is inherited between them.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -399,6 +409,14 @@ test("handles its rejection a turn late", async () => {
 });
 test("a clean case after it", () => {});
 EOF
+cat >"$RJ/src/skips.test.ts" <<'EOF'
+import { test, skip } from "retroplug-cli";
+test("skips but leaves a rejection", () => {
+  void Promise.reject(new Error("left by the skipper"));
+  skip("no fixture");
+});
+test("innocent after the skipper", () => {});
+EOF
 cat >"$RJ/src/outside.test.ts" <<'EOF'
 import { test } from "retroplug-cli";
 test("registered first", () => {});
@@ -407,9 +425,15 @@ EOF
 out="$TMP/test-rj.log"
 timeout 30 "$CLI" test "$RJ/src" -j1 >"$out" 2>&1
 check "files with stray rejections fail the run" 1 $?
-contains "a late-handled rejection fails ITS case" "$out" "not ok 1 - handles its rejection a turn late"
-contains "...and the file's other cases still report" "$out" "ok 2 - a clean case after it"
+contains_line "a late-handled rejection fails ITS case" "$out" "not ok 1 - handles its rejection a turn late"
+contains_line "...and the file's other cases still report" "$out" "ok 2 - a clean case after it"
 contains "a rejection outside every case fails the file, saying so" "$out" "outside any test"
+contains "a file whose only error is outside every case fails on its own" "$out" \
+	"failed: late.test.js, outside.test.js, skips.test.js"
+#     A case that skips, or throws, still owns the rejection it left: the next case is innocent.
+contains_line "a case that skips with a rejection pending is not reported as a skip" "$out" \
+	"not ok 1 - skips but leaves a rejection"
+contains_line "...and the case after it is not blamed" "$out" "ok 2 - innocent after the skipper"
 
 # 6f. Recording an error is not waiting for it. A case awaiting work that died first (a background task that threw
 #     before signalling) used to wait for ever, since the record was read only once the case returned, which under
@@ -447,17 +471,22 @@ EOF
 out="$TMP/test-rw.log"
 timeout 30 "$CLI" test "$RW/src" -j1 >"$out" 2>&1
 check "a case awaiting a dead task fails the run instead of hanging it" 1 $?
-contains "...and fails THAT case, with the reason" "$out" "background task died"
-contains "...and the file's other cases still report" "$out" "ok 2 - a clean case after it"
-contains "a timer's throw does not fail the innocent case running when it fires" "$out" \
+contains_line "...and fails THAT case" "$out" "not ok 1 - awaits a background task that dies before signalling"
+contains "...with the reason" "$out" "background task died"
+contains_line "...and the file's other cases still report" "$out" "ok 2 - a clean case after it"
+contains_line "a timer's throw does not fail the innocent case running when it fires" "$out" \
 	"ok 2 - innocent, and busy when that timer fires"
 contains "...it is blamed on the case that created it" "$out" "from test 1, after it had finished"
+contains "a file whose only error is a finished case's timer fails on its own" "$out" "failed: blame.test.js, dies.test.js"
+contains "...and its TAP block names the case the timer came from" "$out" \
+	"#   uncaught error in a timer (from test 1, after it had finished): from the first test"
 
 # 6g. An error nothing caught ends a session, kept alive or not, with exit 1 and its text. txiki turns one (a throw in
 #     an async module body, a rejection nothing cancelled, a throw in a timer) into a pending exception and a request to
-#     stop ITS loop, and the launcher drives the loop itself, so it used to be dropped: a plain session said only that it
-#     did not complete, a kept-alive one pumped for ever (and under `test` wedged the whole run), and a timer's throw was
-#     lost with exit 0.
+#     stop ITS loop, and the launcher drives the loop itself, so it looks after each pump: a plain session says what
+#     threw rather than only that it did not complete, a kept-alive one stops rather than pumping for ever (under `test`
+#     it would wedge the whole run), and a timer's throw is not lost with exit 0. Ctrl-C on a kept-alive session with no
+#     interrupt hook is a clean exit 0, and a hook that throws ends the session.
 UC="$TMP/uncaught"
 mkdir -p "$UC/src"
 printf 'import { keepAlive } from "retroplug-cli";\nkeepAlive();\nthrow new Error("setup bug after keepAlive");\n' \
@@ -490,6 +519,33 @@ out="$TMP/run-lost.log"
 timeout 20 "$CLI" run "$UC/lost.ts" >"$out" 2>&1
 check "an error cleared by a sibling callback still ends the session (exit 1)" 1 $?
 contains "...and says why" "$out" "a callback threw, and its error was cleared before it could be reported"
+#     The same without keepAlive(): the bounded loop's own cleared-error path.
+printf '%s\n' 'setTimeout(() => {' '  throw new Error("lost");' '}, 5);' 'setTimeout(() => {' '  try {' \
+	'    JSON.parse("{");' '  } catch {}' '}, 5);' >"$UC/lost-bounded.ts"
+out="$TMP/run-lost-bounded.log"
+timeout 20 "$CLI" run "$UC/lost-bounded.ts" >"$out" 2>&1
+check "an error cleared by a sibling callback ends a bounded session too (exit 1)" 1 $?
+contains "...and says why" "$out" "a callback threw, and its error was cleared before it could be reported"
+#     Ctrl-C on a kept-alive session, as a `.js` file the launcher runs itself (`run` on a `.ts` runs it in a child,
+#     which a signal to the parent never reaches): no hook is a clean exit 0; a hook that throws synchronously ends it
+#     with exit 1.
+printf '%s\n' 'globalThis.__rp_keepAlive();' >"$UC/ka-idle.js"
+timeout 20 "$CLI" "$UC/ka-idle.js" >"$TMP/run-ka-idle.log" 2>&1 &
+pid=$!
+sleep 1
+kill -INT "$pid" 2>/dev/null
+wait "$pid"
+check "Ctrl-C on a kept-alive session with no interrupt hook exits 0" 0 $?
+printf '%s\n' 'globalThis.__rp_keepAlive();' \
+	'globalThis.__rp_onInterrupt(() => {' '  throw new Error("hook threw");' '});' >"$UC/ka-hook.js"
+out="$TMP/run-ka-hook.log"
+timeout 20 "$CLI" "$UC/ka-hook.js" >"$out" 2>&1 &
+pid=$!
+sleep 1
+kill -INT "$pid" 2>/dev/null
+wait "$pid"
+check "a throwing interrupt hook ends a kept-alive session with exit 1" 1 $?
+contains "...and prints the error" "$out" "hook threw"
 
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.

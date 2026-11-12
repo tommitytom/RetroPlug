@@ -62,9 +62,11 @@ function describe(r: unknown): string {
 
 function record(owner: number, what: string, reason: string): void {
   const late = owner >= 0 && owner !== current;
-  strays.push({ reason: `${what}: ${reason}`, during: owner, late });
   const where =
     owner < 0 ? "outside any test" : late ? `from test ${owner + 1}, after it had finished` : `in test ${owner + 1}`;
+  // A late one belongs to the file, whose block shows only the stored reason, so the reason names the case it came from
+  // (and two cases' identical throws stay two entries).
+  strays.push({ reason: late ? `${what} (${where}): ${reason}` : `${what}: ${reason}`, during: owner, late });
   try {
     console.error(`# harness: ${what} ${where}: ${reason.split("\n")[0]}`);
   } catch {
@@ -83,11 +85,16 @@ function installHooks(): void {
     ev.preventDefault();
     // A rejection carries no trace of who created it, so it belongs to the case running now, which may be the one
     // AFTER the culprit; its message says so.
-    record(current, "unhandled rejection (during, or left by a test before, this one)", describe(ev.reason));
+    record(
+      current,
+      current >= 0 ? "unhandled rejection (during, or left by a test before, this one)" : "unhandled rejection",
+      describe(ev.reason),
+    );
   });
   // A throw inside a timer callback is not a rejection, and txiki gives JS no event for it: it is fatal natively. Wrap
   // the timers: the callback runs in a try, and the case that created the timer is captured when it is created.
   // clearTimeout / clearInterval keep working because the original's handle is returned.
+  loopTimeout = (g.setTimeout as unknown as typeof loopTimeout) ?? null;
   for (const name of ["setTimeout", "setInterval"] as const) {
     const orig = g[name];
     if (!orig) continue;
@@ -110,9 +117,15 @@ function installHooks(): void {
   }
 }
 
+/** The timer a loop turn is taken with: the runtime's own, captured before a test can stub the global one. */
+let loopTimeout: ((f: () => void, ms: number) => unknown) | null = null;
+
 /** One turn of the event loop: long enough for the runtime to dispatch rejections left pending. */
 const turn = (): Promise<void> =>
-  new Promise((r) => (globalThis as unknown as { setTimeout(f: () => void, ms: number): unknown }).setTimeout(r, 0));
+  new Promise((r) => {
+    const t = loopTimeout ?? (globalThis as unknown as { setTimeout(f: () => void, ms: number): unknown }).setTimeout;
+    t(r, 0);
+  });
 
 /** How many cases this process has registered. The CLI's `runSession` refuses to run when one has: a session file
  *  run by path registers none, and a test file calling it would exit the process before the harness reported, which
@@ -262,11 +275,13 @@ async function runAll(): Promise<void> {
     try {
       const aborted = new Promise<never>((_, reject) => (abortCase = reject));
       await Promise.race([Promise.resolve().then(fn), aborted]);
-      await turn(); // let what the case left pending be dispatched while it still counts as this case's
     } catch (e) {
       thrown = e;
       threw = true;
     }
+    // Whatever the outcome (a skip or a throw too), let what the case left pending be dispatched while it still counts
+    // as this case's.
+    await turn();
     abortCase = null;
     const mine = strays.filter((s) => s.during === i && !s.late);
     // A skip is a skip only if nothing ELSE went wrong in the case. The skip check comes before any String(e): a

@@ -10,7 +10,8 @@
 // dispatcher is skipped). Commands are added in TS (cli/tools.ts) — never here.
 //
 // It binds the same JS surface the test host (src/main.cpp) and the plugin expose — the Backend over
-// globalThis[Symbol.for("plugin")].__rpcSend, console.log -> stdout, and globalThis.tjs.exit(code).
+// globalThis[Symbol.for("plugin")].__rpcSend and console.log -> stdout; a session ends through txiki's own
+// globalThis.tjs.exit(code), which ends the process with the code.
 // Deliberately a near-clone of src/main.cpp's host body; a shared host-run helper can be factored later.
 
 #include <chrono>
@@ -69,15 +70,17 @@ bool endsWithJs(const char* s) {
     return n >= 3 && std::strcmp(s + n - 3, ".js") == 0;
 }
 
-// The exit code the session reports through globalThis.tjs.exit(). One host per process,
+// The exit code a replacement globalThis.tjs.exit() would record. Under txiki that replacement never takes (txiki's
+// `tjs` is frozen, so the set fails and txiki's own exit ends the process), so `set` stays false and the loops below
+// end on their own conditions; it is kept for a host whose `tjs` is not frozen. One host per process,
 // single-threaded, so a TU-local is the right mechanism (mirrors src/main.cpp).
 struct ExitState { int code = 0; bool set = false; };
 ExitState g_exit;
 
 // Set when txiki asks its loop to stop. Every such request on the session runtime is an error path (an exception in a
 // callback the runtime invoked, a job that failed, a rejection nothing cancelled), and the request survives where the
-// exception may not: a sibling callback in the same loop turn that runs any try/catch clears the pending exception, and
-// the error would be lost with the session running on. See pumpOnce.
+// exception may not: a sibling callback in the same loop turn that throws and catches anything replaces, and so clears,
+// the pending exception, and the error would be lost with the session running on. See pumpOnce.
 bool g_stopRequested = false;
 
 JSValue jsExit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -318,8 +321,10 @@ int main(int argc, char** argv) try {
     // the error is dropped: a plain session would say only that it did not complete, a kept-alive one would pump for
     // ever (wedging any `retroplug-cli test` run it is part of), and a timer's throw would be lost. The stop request is
     // an async handle whose callback stops txiki's loop; it is taken over to be seen as well, since it survives a sibling
-    // callback's try/catch clearing the exception. A test file's errors reach its harness first
-    // (packages/testing/ts/harness.ts records them and fails the case), so what ends a session here is its own.
+    // callback that throws and catches clearing the exception. A test file's rejections and timer throws reach its
+    // harness first (packages/testing/ts/harness.ts records them and fails the case); anything else (a throw in a
+    // queueMicrotask job, say) ends the file here, with no TAP, and the runner fails it. The replacement body mirrors
+    // txiki's uv__stop (src/vm.c), which is `uv_stop(&qrt->loop)`; the flag is all it adds.
     TJS_GetRuntime(ctx)->stop.async_cb = [](uv_async_t* handle) {
         g_stopRequested = true;
         uv_stop(handle->loop);
@@ -352,7 +357,10 @@ int main(int argc, char** argv) try {
                 g_sigint = 0;
                 std::signal(SIGINT, SIG_DFL);
                 JSValue r = JS_Call(ctx, g_onInterrupt, JS_UNDEFINED, 0, nullptr);
-                if (JS_IsException(r)) tjs_dump_error(ctx);
+                if (JS_IsException(r)) {
+                    tjs_dump_error(ctx);
+                    threw = true;  // a hook that throws ends the session, as an async one that rejects does
+                }
                 JS_FreeValue(ctx, r);
                 JS_FreeValue(ctx, g_onInterrupt);
                 g_onInterrupt = JS_UNDEFINED;
