@@ -67,6 +67,28 @@ test("n8-load reads the card: info, free space, mkdir, a file put, listed, got b
   s.backend.deleteFile(local("got.bin"));
 });
 
+test("n8-load lists a directory of more than one listing page, and gets a file from its second page", () => {
+  // The host pulls a listing 32 records at a time (Edio::listDir): 40 files are two pages, and a file read lists its
+  // directory first, so the read is framed right only when each page answered the records asked for.
+  const name = (i: number): string => `f${String(i).padStart(2, "0")}.bin`;
+  const n8 = createN8Client(makeCall()).openN8("fake-n8");
+  try {
+    n8.connect();
+    for (let i = 0; i < 40; i++) n8.writeFile(`big/${name(i)}`, new Uint8Array(i + 1).fill(i));
+  } finally {
+    n8.close();
+  }
+  const listing = n8Load("--ls", "big");
+  expect(listing.length).toBe(41);
+  expect(listing[0]).toBe("big (40 entries):");
+  expect(listing.slice(1)).toEqual(Array.from({ length: 40 }, (_, i) => `  ${String(i + 1).padStart(8)}  ${name(i)}`));
+  expect(n8Load("--get-file", "big/f39.bin", local("f39.bin"))).toEqual([
+    `read 40 bytes of big/f39.bin -> ${local("f39.bin")}`,
+  ]);
+  expect(Array.from(s.backend.readFile(local("f39.bin")) ?? [])).toEqual(new Array(40).fill(39));
+  s.backend.deleteFile(local("f39.bin"));
+});
+
 test("n8-load boots a ROM with its battery through the menu, and the running cart answers as a game", () => {
   const rom = new Uint8Array(16 + 32768);
   rom.set([0x4e, 0x45, 0x53, 0x1a, 2, 0, 0x10, 0]); // iNES, mapper 1

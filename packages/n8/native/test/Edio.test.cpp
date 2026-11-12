@@ -590,6 +590,34 @@ TEST_CASE("listDir hands its visitor each entry, a 255-byte name whole, and the 
     CHECK(empty.written == fromHex("2bd4c53a01010078" "2bd410ef" "2bd4c639"));
 }
 
+TEST_CASE("listDir pulls a listing of more than 32 records in pages of 32: 32 and then the rest", "[n8][edio-frame]") {
+    // One CMD_F_DIR_GET for every record fails on silicon past some size (a 181-entry directory answered "dir read error
+    // 0x82" on its first record), and 32 at a time lists it. Each page is a request of its own, and the visitor sees the
+    // records in order across them.
+    FakeSerialPort port;
+    port.queueStatus(0xA500);  // DIR_LD's status
+    port.queue({40, 0});        // DIR_SIZE: 40 records
+    std::vector<std::string> want;
+    for (int i = 0; i < 40; ++i) {
+        const auto letter = static_cast<std::uint8_t>('A' + i);
+        port.queue({0x00, 0x04, 0, 0, 0, 0, 0, 0, 0, 0x20, 0x01, 0x00, letter});  // a 4-byte file, a 1-byte name
+        want.emplace_back(1, static_cast<char>(letter));
+    }
+    std::vector<std::string> seen;
+    std::uint16_t            count = 0;
+    const auto visit = [&](const rp::n8::DirEntry& e) { seen.emplace_back(e.name); };
+    REQUIRE(Edio(port).listDir("x", visit, &count).ok());
+    CHECK(count == 40);
+    CHECK(seen == want);
+    // Each DIR_GET's arguments (start, amount, the longest name asked for): 32 records from 0, then the last 8 from 32.
+    std::vector<std::vector<int>> pages;
+    const auto&                   w = port.written;
+    for (std::size_t i = 0; i + 10 <= w.size(); ++i)
+        if (w[i] == 0x2B && w[i + 1] == 0xD4 && w[i + 2] == Edio::CMD_F_DIR_GET && w[i + 3] == 0x37)
+            pages.push_back({w[i + 4] | (w[i + 5] << 8), w[i + 6] | (w[i + 7] << 8), w[i + 8] | (w[i + 9] << 8)});
+    CHECK(pages == std::vector<std::vector<int>>{{0, 32, 255}, {32, 8, 255}});
+}
+
 TEST_CASE("a link that goes down inside a wait fails it at once, as LinkDown, not a timeout", "[n8][edio-frame]") {
     FakeSerialPort port;
     port.downAfterReads = 1;   // the first read serves half the reply, then the link goes

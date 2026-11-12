@@ -350,7 +350,7 @@ Status Edio::fifoTxString(std::string_view str) {
 Status Edio::listDir(std::string_view path, void (*visit)(void* ctx, const DirEntry& entry), void* ctx,
                      std::uint16_t* count) {
     if (count) *count = 0;
-    // Load the directory into the N8's buffer (sorted), then pull every record in one range read.
+    // Load the directory into the N8's buffer (sorted), then pull its records in pages of kDirPage.
     begin(CMD_F_DIR_LD);
     put8(1);  // sorted
     if (Status s = sendPath(path); !s.ok()) return s;
@@ -363,33 +363,40 @@ Status Edio::listDir(std::string_view path, void (*visit)(void* ctx, const DirEn
     if (count) *count = records;
     if (records == 0) return {};
 
-    begin(CMD_F_DIR_GET);
-    put16(0);  // start index
-    put16(records);
-    put16(static_cast<std::uint16_t>(kNameMax));  // max name length
-    if (Status s = send(); !s.ok()) return s;
-    for (std::uint16_t i = 0; i < records; ++i) {
-        std::uint8_t resp = 0;
-        if (Status s = rx8(resp); !s.ok()) return s;
-        if (resp != 0) {
-            Status s = fail(Code::Device, Where::DirEntry);
-            s.device = resp;
-            return s;
+    // One request for every record fails on silicon past some size: a 181-entry directory answered "dir read error
+    // 0x82" on its first record, where pages of 32 list it (in 116 ms). A listing of 32 or fewer is one page, the same
+    // bytes as one request. The index is 32-bit, so start + kDirPage cannot wrap.
+    constexpr std::uint32_t kDirPage = 32;
+    for (std::uint32_t start = 0; start < records; start += kDirPage) {
+        const auto amount = static_cast<std::uint16_t>(std::min<std::uint32_t>(kDirPage, records - start));
+        begin(CMD_F_DIR_GET);
+        put16(static_cast<std::uint16_t>(start));
+        put16(amount);
+        put16(static_cast<std::uint16_t>(kNameMax));  // max name length
+        if (Status s = send(); !s.ok()) return s;
+        for (std::uint16_t i = 0; i < amount; ++i) {
+            std::uint8_t resp = 0;
+            if (Status s = rx8(resp); !s.ok()) return s;
+            if (resp != 0) {
+                Status s = fail(Code::Device, Where::DirEntry);
+                s.device = resp;
+                return s;
+            }
+            DirEntry      e;
+            std::uint16_t dateWord = 0, timeWord = 0, nameLen = 0;
+            std::uint8_t  attrib = 0;
+            if (Status s = rx32(e.size); !s.ok()) return s;
+            if (Status s = rx16(dateWord); !s.ok()) return s;  // unused
+            if (Status s = rx16(timeWord); !s.ok()) return s;  // unused
+            if (Status s = rx8(attrib); !s.ok()) return s;
+            if (Status s = rx16(nameLen); !s.ok()) return s;
+            if (nameLen > kNameMax) return fail(Code::TooLarge, Where::Name);
+            if (Status s = readData(reinterpret_cast<std::uint8_t*>(name_), nameLen); !s.ok()) return s;
+            name_[nameLen] = '\0';
+            e.name         = std::string_view(name_, nameLen);
+            e.isDir        = (attrib & 0x10) != 0;  // FatFs AM_DIR
+            if (visit) visit(ctx, e);
         }
-        DirEntry      e;
-        std::uint16_t dateWord = 0, timeWord = 0, nameLen = 0;
-        std::uint8_t  attrib = 0;
-        if (Status s = rx32(e.size); !s.ok()) return s;
-        if (Status s = rx16(dateWord); !s.ok()) return s;  // unused
-        if (Status s = rx16(timeWord); !s.ok()) return s;  // unused
-        if (Status s = rx8(attrib); !s.ok()) return s;
-        if (Status s = rx16(nameLen); !s.ok()) return s;
-        if (nameLen > kNameMax) return fail(Code::TooLarge, Where::Name);
-        if (Status s = readData(reinterpret_cast<std::uint8_t*>(name_), nameLen); !s.ok()) return s;
-        name_[nameLen] = '\0';
-        e.name         = std::string_view(name_, nameLen);
-        e.isDir        = (attrib & 0x10) != 0;  // FatFs AM_DIR
-        if (visit) visit(ctx, e);
     }
     return {};
 }

@@ -229,9 +229,10 @@ public:
     // (how the on-device menu receives a path, edlink DeviceIO.FifoTxString).
     Status fifoTxString(std::string_view s);
 
-    // List an SD-card directory, sorted: loaded into the N8's buffer, then every record pulled. `visit(ctx, entry)` is
-    // called once an entry, its name in this object's own buffer, so a listing has no capacity of its own; `count`,
-    // when given, gets the number of records the N8 said it holds.
+    // List an SD-card directory, sorted: loaded into the N8's buffer, then its records pulled 32 at a time (one request
+    // for a whole large directory fails on silicon). `visit(ctx, entry)` is called once an entry, its name in this
+    // object's own buffer, so a listing has no capacity of its own; `count`, when given, gets the number of records
+    // the N8 said it holds.
     Status listDir(std::string_view path, void (*visit)(void* ctx, const DirEntry& entry), void* ctx,
                    std::uint16_t* count = nullptr);
     template <class F>

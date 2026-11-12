@@ -261,7 +261,13 @@ private:
                 const auto n = static_cast<std::uint16_t>(dirList_.size());
                 reply({static_cast<std::uint8_t>(n), static_cast<std::uint8_t>(n >> 8)});
             } else if (cmd == Edio::CMD_F_DIR_GET) {
-                for (const auto& [name, size, isDir] : dirList_) {
+                // The records asked for, `amount` of them from `start`: a listing comes a page at a time
+                // (Edio::listDir), and a page answered with more than it asked for misframes the command after it.
+                const std::size_t start  = c[4] | (c[5] << 8);
+                const std::size_t amount = c[6] | (c[7] << 8);
+                const std::size_t end    = std::min(dirList_.size(), start + amount);
+                for (std::size_t i = std::min(start, end); i < end; ++i) {
+                    const auto& [name, size, isDir] = dirList_[i];
                     const auto s = static_cast<std::uint32_t>(size);
                     reply({0, static_cast<std::uint8_t>(s), static_cast<std::uint8_t>(s >> 8),
                            static_cast<std::uint8_t>(s >> 16), static_cast<std::uint8_t>(s >> 24), 0, 0, 0, 0,

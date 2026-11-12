@@ -566,6 +566,27 @@ TEST_CASE("writeFile and readFile round-trip a file; NotFound, TooLarge with the
     CHECK(dev.filesOpen == 0);  // the cancel came between two blocks, and closed the file
 }
 
+TEST_CASE("readFile finds a file on a directory listing's second page and the next command starts clean", "[n8][ops]") {
+    // A listing is pulled 32 records at a time (Edio::listDir), so a file past the first 32 is found, and the command
+    // after the listing framed, only when each page answers the records asked for and no more.
+    FakeN8     dev;
+    FakeN8Port port(dev);
+    Edio       edio(port);
+    for (int i = 0; i < 40; ++i) {
+        char name[16];
+        std::snprintf(name, sizeof name, "big/f%02d.bin", i);
+        dev.files[name] = pattern(static_cast<std::size_t>(10 + i), static_cast<std::uint8_t>(i));
+    }
+    Bytes       buf(64);
+    std::size_t size = 0;
+    const Status read = rp::n8::readFile(edio, "big/f39.bin", buf.data(), buf.size(), &size);
+    CHECK(text(read) == "");
+    REQUIRE(read.ok());
+    CHECK(Bytes(buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(size)) == dev.files["big/f39.bin"]);
+    std::uint8_t code = 0;
+    CHECK(edio.status(code).ok());
+}
+
 TEST_CASE("the cart-SRAM paths: a battery written straight to SRAM reads back, and a dump reads all of it",
           "[n8][ops]") {
     FakeN8      dev;
