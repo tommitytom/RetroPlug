@@ -176,3 +176,62 @@ Work files in `.superpowers/kb1plan` and `.superpowers/kb1exec`.
 - ThreadSanitizer: `[mesen-statics]` alone in `build-tsan`; `[engine-jobs]` and `[input-drops]`.
 - The render cases of `test:plugin`, `test:native`, `pnpm test` and `test:ui`, and the CI view of `test:native`.
 - BlipToaster and NESVJ through the rebuilt CLI.
+
+## 8. As built
+
+The five tasks landed as planned, each tree identical to the one the plan's author validated, and two follow-up
+passes then took the per-task reviews' and the final review's findings. What differs from sections 1 to 7:
+
+- **Section 1: the race was wider than VRC7.** Every SMS/GG console builds an `SmsFmAudio`, and so an `OPLL_new`,
+  FM or not, so two SMS/GG consoles built at once raced on the same tables. The fix covers them; the comments, the
+  `[mesen-statics]` case (renamed "the OPLL sound chip's tables can be built on two threads at once, the first in the
+  process") and spec/07 say so. The vendored file is C-style, so its marker is `/* RetroPlug: */`; AGENTS.md now counts
+  `RetroPlug:` markers by `grep -rl RetroPlug: deps/mesen` (46).
+- **Section 3: the RPC narrowed first.** `EngineRpcService::pressButton` took a `uint32` and cast it to `uint8`, so
+  260 reached the core as 4 (A) before the core's bound could see it. A value above 255 now becomes 0xFF, a byte no
+  console's table names.
+- **Section 4.1: TS deletes too.** The pool deletes a job's listed files on every road through it, but a render held in
+  TS's own queue past the 64-job bound (`src/offline.ts`) never reaches the pool, and a drain that throws fails jobs
+  the pool may still run. So `startSystemRender`'s settle deletes its snapshots as well, on every road it settles on (a
+  second removal is a no-op; each job's key is unique), and the design's "no longer deletes on settle" is not what was
+  built. `RenderJobs.start` gained an optional fourth parameter, the `discardFiles` list, called after `spec`.
+- **Section 4.1: the pool deletes only snapshot names.** `JobFiles` keeps a listed path only if its file name starts
+  with `.render-src-` (`kRenderSnapshotPrefix`, the native twin of TS's `RENDER_SNAPSHOT_PREFIX`), so no bug in a
+  caller can make the pool delete a user's own battery or state file. An unknown kind's refusal deletes its list as
+  every other refusal does. Each removal is wrapped so a throw from building a path cannot terminate a host, and no
+  removal or `Job` destruction runs under the pool's lock (a `cancelling_` count keeps a job that is between its queue
+  and its completion counted as in flight, so a drain racing a cancel does not report it lost).
+- **Section 4.1: a render refuses a vanished snapshot.** The UI's spec sets `inputsMustExist`, and `runRenderJob`
+  refuses such a spec whose `sav` or `state` names no file, before it boots, so a snapshot the sweep or a settle took
+  costs that render an error instead of a silent render from blank battery RAM. The CLI never sets it, so its `--sav`
+  for a file not yet written is unchanged. A narrow window stays: a job past its check whose snapshot goes before its
+  boot reads it.
+- **Section 4.2: the sweep is isolated, and its clock is wall time.** It runs in `composeAppStores` (the design said
+  `createAppStores`), wrapped so a failure warns and the app still starts. `file_time_type::clock` follows the wall
+  clock, so a suspend longer than a day or a clock jump on a device with no real-time clock can age a queued render's
+  snapshot past the bound; with `inputsMustExist` that render fails rather than renders wrong. The module comment
+  says so.
+- **Section 4.3: tests moved.** The native `fileAgeMs` check is under `[host]` in `retroplug-audio-test` (beside
+  `HostRpcService`'s other cases), not `[engine-jobs]`. The `test:ui` cases (a render driven through the menu leaving
+  no snapshot) were not written: the UI harness's render cases start a spec directly, so the chain is held instead by
+  `ui-seam.test.ts` (the handover and the settle's deletion on every road, a held render and a thrown submission
+  included), the native `[engine-jobs]` cases (every road through the pool, and a file of another name surviving each)
+  and the real-RPC `engine-run` and `fs-config` cases.
+- **Found and closed here, beyond the list:** `GameboyButton` bytes of 8 or more (section 3), the RPC narrowing above,
+  and a refused push that `inputDropped()` would have counted twice (unreachable today).
+
+## 9. Execution
+
+- Design 99e1c04d5, plan 67f1b0368 (written and validated by DeepSeek against the tree, then replayed from its own text
+  to the identical tree; no prototype branch).
+- Tasks, by Qwen, each tree checked identical to the validated one and Opus-reviewed: 0f322f0a6 (emu2413), 431e20007
+  (the press queue and the byte), 5602a0c06 (`discardFiles`), 219f5389e (`fileAgeMs` and the sweep), f74103578 (docs).
+- Follow-up A (DeepSeek, the 31 per-task findings): 51a37bf5d, 1c7d6af49, 02287970a, 4253ec155. Opus final review at
+  4253ec155: no Critical, one Important (an implicit narrowing MSVC `/W4 /WX` would refuse in the RPC's byte cast).
+- Follow-up B (DeepSeek, the final review's findings): 69a6e1c5e, a1997ccf4.
+- Acceptance: the serial kit at 4253ec155, 45 legs, all exit 0 (strict parity with fixtures and `RP_FAIL_ON_SKIP=1`,
+  nothing re-recorded; TSan and ASan; BlipToaster 57/57 and NESVJ 19/19; the guarded SDL legs, SDL PipeWire 27/0/0, no
+  card playback node, video or serial device opened). Re-run on the final tree after follow-up B: the parallel kit and
+  `[mesen-statics]` alone under ThreadSanitizer: 47 legs exit 0 (`sdl:controller` skipped by the parallel kit's rule; it
+  passed in the serial run), BlipToaster 57/57, NESVJ 19/19, SDL PipeWire 27/0/0, and the OPLL case clean.
+- Owed: no Windows `/W4 /WX` or macOS build has seen this batch (the first CI run of the branch covers it).
