@@ -9,21 +9,21 @@ Three entries from [spec/07](../spec/07-remaining-work.md)'s known bugs, all abo
 | 3 | MI.OUT decodes about half the NoteOns a song plays | `sameboy` (the synthetic Arduinoboy clock) | LSDj's serial-out node |
 
 User decisions (2026-11-12): readers ask placement and stored roles are kept (section 1); the predictor follows the
-divisor the cart is set to (section 2); the MI.OUT fix re-records the four parity cases it moves (section 3). The process
-is batch 1's: this design, a plan whose code its author validates on the tree, one task per bug plus docs, each
+divisor the cart is set to (section 2); the MI.OUT fix re-records the four parity cases it moves (section 3). The
+process is batch 1's: this design, a plan whose code its author validates on the tree, one task per bug plus docs, each
 implemented and given a spec review and an Opus code review, the kit as acceptance and an Opus final review.
 
 ## 1. Readers ask what is placed
 
 A system's stored role list can keep a role the graph leaves out: after a ROM swap an mGB cart can still carry
-`lsdj-sync`, an LSDj cart `mgb`. `protocolPipeline(roles)` (`packages/retroplug/src/graph/protocolNodes.ts`) decides what
-is placed (the stored order, which a load sorts so the ROM's suggested role comes first; one writer per system input; a
-kind once), and `syncLatency.ts` and `serialCapture.ts` already read it. Other readers decide by presence:
+`lsdj-sync`, an LSDj cart `mgb`. `protocolPipeline(roles)` (`packages/retroplug/src/graph/protocolNodes.ts`) decides
+what is placed (the stored order, which a load sorts so the ROM's suggested role comes first; one writer per system
+input; a kind once), and `syncLatency.ts` and `serialCapture.ts` already read it. Other readers decide by presence:
 
-- `resolveTracker(roles)` (`src/trackerRegistry.ts`, by `markerRole` presence; spec/07 calls it `trackerIntegrationFor`),
-  behind the tracker menus, Songs and Assets, song import, the render's tracker label, unsaved changes, the live SAV and
-  `projectStore`'s tracker decisions (spec/07's `roles.some((r) => r.kind === "lsdj-sync")` there is gone; its tracker
-  questions now go through `resolveTracker`);
+- `resolveTracker(roles)` (`src/trackerRegistry.ts`, by `markerRole` presence; spec/07 calls it
+  `trackerIntegrationFor`), behind the tracker menus, Songs and Assets, song import, the render's tracker label, unsaved
+  changes, the live SAV and `projectStore`'s tracker decisions (spec/07's `roles.some((r) => r.kind === "lsdj-sync")`
+  there is gone; its tracker questions now go through `resolveTracker`);
 - the config rows (`ui/screens/menu/configRows.ts`, `hasRole(sys.roles, row.role)`), which show LSDj's sync cyclers and
   divisor row on an mGB cart that stores a stale `lsdj-sync`;
 - `projectParameterMap` (`src/parameterMap.ts`), which takes the first role with a parameter table, so an LSDj cart with
@@ -51,8 +51,8 @@ kind once), and `syncLatency.ts` and `serialCapture.ts` already read it. Other r
 overlay; an LSDj cart storing a stale `mgb` exposes LSDj's parameters, not mGB's CC lanes; a no-node role keeps its
 parameter table; unit cases for `placedRole` and `isPlaced`, and for the system view's `placed`.
 
-**Docs.** spec/04 (which names `placedRole` as if it existed) matches the helper; spec/07's entry is closed and its stale
-names corrected.
+**Docs.** spec/04 (which names `placedRole` as if it existed) matches the helper; spec/07's entry is closed and its
+stale names corrected.
 
 ## 2. The MI.MAP predictor follows the cart's divisor
 
@@ -77,8 +77,8 @@ and the placer names no tracker field.
   setting's reason.
 
 **Tests.** `kind.test.ts` (the key accepted, a bad type refused); the placer (the divisor read from the pipeline's
-config, 1 when the key or the role is absent); `session.test.ts` (half the ticks a block at `tickDivisor` 2, a live change
-without a rebuild); `lsdjMidiMap.test.ts` (a launch released at its row at divisor 2); the real-core
+config, 1 when the key or the role is absent); `session.test.ts` (half the ticks a block at `tickDivisor` 2, a live
+change without a rebuild); `lsdjMidiMap.test.ts` (a launch released at its row at divisor 2); the real-core
 `test-native/lsdj-launchpad` case at divisor 2 (the predicted row holds the cart's polled row over several bars). At
 divisor 1 nothing changes.
 
@@ -119,8 +119,9 @@ audio hash.
 **Tests built on the defect, reworked:** `render-blocks`' `0xF8` check becomes a NoteOn check; dsp-bench's MI.OUT window
 counts NoteOns, not clocks, and its "uneven clocks" comment goes; the two `HostIo.test.cpp` cases keep their structural
 checks (the capture switched in the block its decoder's mode is, bytes reaching `rp.lsdj.serial-out`) and assert that
-mGB's idle line, `$00` now, decodes to nothing. The fixture-free suites then prove the wiring and the idle line; the real
-decode is proved by the fixture-gated cases and parity, and spec/07 records that CI sees no real-core MI.OUT decode.
+mGB's idle line, `$00` now, decodes to nothing. The fixture-free suites then prove the wiring and the idle line; the
+real decode is proved by the fixture-gated cases and parity, and spec/07 records that CI sees no real-core MI.OUT
+decode.
 
 **The `0x7F` clock path.** No real-core case sends one. The plan's author checks LSDj's MI.OUT sender for a `$7F` send:
 if a setting makes LSDj send clocks, that setting gets a case; if not, the decoder's unit test
@@ -131,9 +132,9 @@ if a setting makes LSDj send clocks, that setting gets a case; if not, the decod
 four cases.
 
 **Docs.** `docs/lsdj.md` (the snippet, the `0x80+` row and the "7D 7F 70 69" record), `lsdjArduinoboy.ts`'s module
-comment (the capture's 8-bit groups are not wire bytes; the decoder reads the bit stream), the B0 design's section 2 (the
-seventh defect, fixed), `docs/lsdj-serial-out-design.md`'s last bullet (and its "about 40 NoteOns" figure: LSDj sends
-about 65 to 70 in that window), spec/07's entry closed.
+comment (the capture's 8-bit groups are not wire bytes; the decoder reads the bit stream), the B0 design's section 2
+(the seventh defect, fixed), `docs/lsdj-serial-out-design.md`'s last bullet (and its "about 40 NoteOns" figure: LSDj
+sends about 65 to 70 in that window), spec/07's entry closed.
 
 ## 4. Plan, execution and acceptance
 

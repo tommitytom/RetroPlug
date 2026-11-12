@@ -620,9 +620,11 @@ completed it, and the decoders send each message in that same block, at its byte
 `renderAudio` block it went out in (`renderBlocks` adds the block's index). The core's own byte timing
 moves by tens of frames with the host's block split, so a test holds each message to its byte, not to one
 absolute time shared by every split.
-See [lsdj-midiout.test.ts](../packages/retroplug/test-native/lsdj-midiout.test.ts),
-which authors SYNC=MI.OUT with `N` commands, plays, and asserts a transport START, a clock
-stream and NoteOns come back out as host MIDI, at frames inside their blocks and mostly past frame 0, and
+See [lsdj-midiout.test.ts](../packages/retroplug/test-native/lsdj-midiout.test.ts) (and its 48 and 96 kHz
+twins), which authors SYNC=MI.OUT with `N` commands, plays, stops and plays again, and holds the host MIDI to
+exactly what the song sends: both transport edges and its 20 NoteOns with their own values, no clock (the song sends
+none) and no Program Change, at frames inside their blocks and mostly past frame 0 (its second case plays N7F,
+which decodes as a clock), and
 [lsdj-mastersync.test.ts](../packages/retroplug/test-native/lsdj-mastersync.test.ts), which holds master
 sync to one story (start, clocks, stop, start again) in three block splits at 44.1 and 48 kHz, and its
 clocks to LSDj's tempo in absolute frames in every split: consecutive clocks of a run within 3% of a tempo
@@ -648,10 +650,19 @@ play that role:
       if ((sc & 0x81) == 0x80) {
           const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
           captureSerialOutBit(outBit);           // MI.OUT: capture LSDJ's outgoing byte
-          GB_serial_set_data_bit(gb_, true);      // clock it; feed idle-high back on SIN
+          GB_serial_set_data_bit(gb_, false);     // clock it; feed SIN the 0 an Arduinoboy holds it at
       }
   }
   ```
+
+  **SIN is fed 0, as an Arduinoboy holds it.** The firmware clocks with `GB_SET(clock, 0, 0)` throughout
+  (`Mode_LSDJ_Midiout.ino`'s `getIncommingSlaveByte`), so every bit the Game Boy shifts in is 0 and SB reads `$00`
+  once a byte is out. LSDj's serial interrupt re-arms the port (`SC=$80`, at `$363C`) after every transfer, whether
+  or not it has a byte to send, so the capture also clocks bits the CPU never wrote: as 0s they are idle bits to the
+  decoder. Fed 1s, as the capture was until kb2, each of them read as a start bit and took the next 7 real bits as
+  its payload, re-framing the stream across LSDj's bytes by an amount the host rate set, so MI.OUT decoded about half
+  a song's NoteOns, most of them as other notes, plus clocks and Program Changes it never sent
+  ([known-bugs-batch-2-design.md](known-bugs-batch-2-design.md) section 3).
 
   **Drive only, never master sync.** A stopped stock LSDj in SYNC=LSDj also waits on an external clock,
   for another master. Clocked, it takes the idle `0xFF` bytes for a master's clock, turns slave and
@@ -694,8 +705,8 @@ always 0). Decoder rules:
 | `0x7C` | Reserved / no-op. The firmware consumes the value byte but does nothing. |
 | `0x7D` | Transport start — emit `0xFA`. |
 | `0x7E` | Transport stop — emit `0xFC`. |
-| `0x7F` | Clock tick — emit `0xF8`. |
-| `0x80+` | NOT part of MI.OUT. Captured for diagnostics but the decoder ignores them. |
+| `0x7F` | Clock tick: emit `0xF8`. LSDj's MI.OUT sends none of its own (below); an N, X or Y value of `0x7F` puts one on the wire. |
+| `0x80+` | Never a payload: the framing yields 7-bit bytes (LSDj writes each with its high bit set, the frame's start bit), and the decoder's byte layer drops one of `0x80` or more without disturbing a pending command. |
 
 LSDJ-side effect commands that drive this protocol (placed in note/table cells):
 
@@ -720,10 +731,16 @@ cleanly to byte 9). Verified empirically: **cold-authoring `syncMode:"MidiOut"`
 savestate fixture needed.
 
 The reason it *looked* like idle garbage: MI.OUT frames on the link as **1
-data-present flag bit + 7 payload bits**, so each data byte arrives as `0x80|payload`.
-`captureSerialOutBit` assembles fixed 8-bit bytes, which mis-frames the flag-gated
-stream into high-bit bytes. To decode, reconstruct the bit stream (MSB-first per
-captured byte) and apply the Arduinoboy framing — `read 1 flag; if 1 read 7 payload
-→ a 7-bit command byte (0x00-0x7F); else idle` — which recovers a clean stream, e.g.
-`7D(start) 7F(clock) 70 69(NoteOn ch0, note) 7F 70 6A …`. So functional MI.OUT
-playback IS achievable headlessly; the flag-gated framing is the load-bearing detail.
+data-present flag bit + 7 payload bits** (LSDj writes each byte as `0x80|payload`), and
+`captureSerialOutBit` assembles fixed 8-bit groups of whatever it clocks: LSDj's bytes and
+the idle bits between them, since LSDj's serial interrupt re-arms the port after every
+transfer, so a group is no wire byte. To decode, reconstruct the bit stream (MSB-first per
+captured byte) and apply the Arduinoboy framing (`read 1 flag; if 1 read 7 payload
+→ a 7-bit command byte (0x00-0x7F); else idle`), which recovers the stream LSDj wrote, e.g.
+`7D(start) 70 30(NoteOn ch0, note 48) 70 34 …` for the suite's song. So functional MI.OUT
+playback IS achievable headlessly; the flag-gated framing is the load-bearing detail. (An
+earlier version of this record read `7D 7F 70 69 7F 70 6A`: those clocks and notes were the
+capture's own, made while it fed the Game Boy 1s, above. LSDj's MI.OUT sender, bank 3
+`$7ADE`-`$7BBC` in 9.3.3, sends a command and its value for each N, X, Y and Q command and
+`7D`/`7E` at its transport's edges, never a clock: no setting adds one, and only an N, X or
+Y value of `7F` reaches the decoder's clock.)

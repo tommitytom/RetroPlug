@@ -97,7 +97,8 @@ frames. The one addition is a case's last block, now decoded.
 the frame of the captured byte whose bits complete it. A command whose bits straddle two blocks completes in the
 later one, at its completing byte's frame there. Its known defect (what it decodes depends on the host's sample
 rate, pinned by `lsdj-modes`' `midiOut` case, B0's seventh defect) stays as it is: this change moves MI.OUT's
-frames, not its bytes.
+frames, not its bytes. (Fixed since, with kb2: the capture fed the Game Boy 1s where an Arduinoboy holds its serial
+input at 0; [known-bugs-batch-2-design.md](known-bugs-batch-2-design.md) section 3.)
 
 **The emit.** Both decoders call `emit(frame, len, b0, b1, b2)` (a message is one to three bytes), and the node
 fills one of three reused arrays, one per length, and sends it: `send` takes an array-like and sends all of it, so a
@@ -207,7 +208,7 @@ Accepted on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`, plus the su
 ## 11. Left as it is
 
 - **The core's byte timing moves with the split** (section 8): a SameBoy matter, its own change if wanted.
-- **MI.OUT's rate-dependent decode** (section 4), still pinned.
+- **MI.OUT's rate-dependent decode** (section 4), left pinned here and fixed since, with kb2.
 - **The SDL standalone sends host MIDI at block time** (section 5).
 - **No DAW check records the host MIDI out**: section 8's tests hold `Engine::midiOut`, and the Reaper legs analyse
   audio.
@@ -322,18 +323,21 @@ The commits' reviews found more, fixed in the commits after them:
   cases are TS (the decoder, and the node on its rig's transport), the protocol rig and the bench feed it stand-ins,
   and the cases that capture from LSDj need the fixtures.
   [HostIo.test.cpp](../packages/native/test/engine-graph/HostIo.test.cpp) now runs both on an `Engine`: mGB's idle
-  line, which the capture clocks out of its serial port 0xFF byte after 0xFF byte and MI.OUT reads as LSDj's clock,
-  decoded into a 0xF8 at each completing byte's frame, inside each block of a ragged split; and a master-sync run
-  opened at 48 kHz, carried over `Engine::setSampleRate(44100)`, whose stop goes at frame 445 of the next block, the
-  first past 200 ms (the decoder before the rescale put it at frame -295, which the guard now sends at the block's last
-  frame).
-- **dsp-bench's LSDj windows needed a floor, and stay out of the valgrind modes.** MI.OUT's clocks come unevenly
-  (at the default warmup none in a window's first 20 blocks, 8 in its first 100, 40 in 400), so a window of
+  line, which the capture clocked out of its serial port 0xFF byte after 0xFF byte and MI.OUT read as LSDj's clock,
+  decoded into a 0xF8 at each completing byte's frame, inside each block of a ragged split (since kb2 the capture
+  feeds the 0s an Arduinoboy does, so the line is 0x00 bytes, which decode to nothing, and the case holds that); and
+  a master-sync run opened at 48 kHz, carried over `Engine::setSampleRate(44100)`, whose stop goes at frame 445 of
+  the next block, the first past 200 ms (the decoder before the rescale put it at frame -295, which the guard now
+  sends at the block's last frame).
+- **dsp-bench's LSDj windows needed a floor, and stay out of the valgrind modes.** MI.OUT's clocks came unevenly (at
+  the default warmup none in a window's first 20 blocks, 8 in its first 100, 40 in 400), so a window of
   `RP_BENCH_BLOCKS` 5, 10 or 20 failed the playing check for want of one: a window runs at least 100 blocks, and the
-  clock bound, like the zero, holds only at the default warmup. Their boots and warmups do not shrink with
-  `RP_BENCH_BLOCKS`, so `tools/run-profile.sh`'s valgrind modes, which lower it, would have run several times longer
-  with an LSDj's setup in the census of the mGB workload they attribute: `RP_BENCH_LSDJ=0` leaves the windows out,
-  and those modes default to it.
-- **dsp-bench's MI.OUT window decodes about half the NoteOns its song plays.** It sends 20 NoteOns in 400 blocks
-  (9.3 s), where the phrase's eight notes at tempo 128 come to about 40. Likely MI.OUT's rate-dependent decode
-  (section 4, B0's seventh defect); not looked into.
+  clock bound, like the zero, holds only at the default warmup. (Those clocks were the defect kb2 fixed, LSDj's song
+  sends none: the MI.OUT window counts NoteOns since, more than 3 a second, and the floor keeps a phrase of them.)
+  Their boots and warmups do not shrink with `RP_BENCH_BLOCKS`, so `tools/run-profile.sh`'s valgrind modes, which
+  lower it, would have run several times longer with an LSDj's setup in the census of the mGB workload they
+  attribute: `RP_BENCH_LSDJ=0` leaves the windows out, and those modes default to it.
+- **dsp-bench's MI.OUT window decoded about half the NoteOns its song plays: fixed with kb2.** It sent 20 NoteOns
+  in 400 blocks (9.3 s), where the phrase's eight notes at tempo 128 come to about 40; it now sends those 40. The
+  cause was B0's seventh defect (section 4): the capture fed the Game Boy 1s where an Arduinoboy holds its serial
+  input at 0 ([known-bugs-batch-2-design.md](known-bugs-batch-2-design.md) section 3).

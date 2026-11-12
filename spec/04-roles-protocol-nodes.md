@@ -438,8 +438,20 @@ and leaves out a later one, and a kind already placed, whole: the role stays on 
 load, `adopt` first moves each role the ROM's providers suggest ahead of the earliest role they do not suggest whose
 node writes an input its own does, so the role today's ROM calls for is the one placed; the left-out one is logged
 once, after the core has built. The serial-out capture and the reported sync latency follow the `lsdj-sync` the
-pipeline places (`placedRole`), so a left-out one arms nothing. `DirectGraph.setPipeline` sends the document
-without the later role and can report it through a callback.
+pipeline places, so a left-out one arms nothing. `DirectGraph.setPipeline` sends the document without the later role
+and can report it through a callback.
+
+**Readers ask what is placed.** Whatever decides what a system is asks the same question: `placedRole(roles, kind)`,
+beside `protocolPipeline`, is the role of `kind` the pipeline places, and a role whose kind has no node (a core's
+config role, an asset override, a tracker's marker such as risa's `risa`) counts as placed when it is present, since
+the pipeline never leaves one out. The tracker a system resolves (`resolveTracker`, behind every tracker menu, song
+import, the render's tracker and the live SAV), the config rows its menu shows (`roleRowItems`) and the DAW lanes it
+exposes (`projectParameterMap`, the first placed role with a parameter table) read it, so an mGB cart that still
+stores `lsdj-sync` after a ROM swap is no LSDj cart, and an LSDj cart that stores `mgb` exposes no mGB lanes. The
+system view says the same in `placed` (`SystemInfo.placed`, from `placedKinds`), which a package's cart view asks
+through `isPlaced` (`@retroplug/core/systemRoles`). Reads of a role's own config, where presence is right (the asset
+overrides, the core's config, the role editor, persistence), keep `hasRole` and `roleConfig`, and the left-out role
+stays stored, so a ROM swapped back brings its settings back.
 
 **Loaded role configs are parsed.** A loaded protocol role's config is parsed by its `RoleType` schema in `adopt`
 (so the node's settings, the capture its Game Boy's node runs, the menus and a save all see the parsed one), and a
@@ -469,11 +481,14 @@ The rest of the document follows from those nodes:
   from the cart's battery, on the control plane. The `lsdj-sync` nodes of the cart the MI.MAP app drives
   are forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
   (`controllerSyncOverride`, whose rule is the app's `protocol.kinds.controllerApps` entry `syncOverride` as DATA: the
-  cart sync node
-  type, the mode it forces, the polled SYNC value that counts as the cart listening, and the mode not listening
-  means), its `rp.lsdj.serial-out` with its `rp.lsdj.sync`, so a forced cart sends no
-  host MIDI, and its Game Boy's node captures nothing for them. The override is those nodes' settings and that
-  capture alone, so nothing reaches the `.rplg`.
+  cart sync node type, the mode it forces, the polled SYNC value that counts as the cart listening, the mode not
+  listening means and the name of that node's setting that divides its clock), its `rp.lsdj.serial-out` with its
+  `rp.lsdj.sync`, so a forced cart sends no host MIDI, and its Game Boy's node captures nothing for them. The
+  override is those nodes' settings and that capture alone, so nothing reaches the `.rplg`. The session is handed
+  that cart's divisor as `tickDivisor` (the setting the rule's `divisor` names, read off the cart's node in the
+  pipeline it is placed from, 1 when it cannot be read), and walks `24 / tickDivisor` ticks a quarter, the
+  expression MI.MAP clocks the cart by, so its predicted playhead stays on the cart's; the session reads it every
+  block, so a divisor changed while a song plays reaches it without a rebuild.
 
 Where nothing produces for a system input, or no controller is enabled, the input or the host I/O node is
 left unwired. The plugin loads nothing for any of this

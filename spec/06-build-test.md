@@ -434,11 +434,10 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    [launchpad/ts/control/kind.ts](../packages/launchpad/ts/control/kind.ts), with MI.MAP contributing the control-plane
    half from [lsdj-launchpad/ts/app.ts](../packages/lsdj-launchpad/ts/app.ts) and the runtime half and `syncOverride`
    data from its manifest. What an app's launches need the cart to run in travels as `syncOverride` DATA (`node`,
-   `mode`,
-   `listening`, `off`), applied by the launchpad pack's graph placer (`ts/control/placer.ts`), never as a function a
-   planner's bundle would have to import. The generator and the fixture suite hold the mechanism over a fixture kind
-   that is no real pack's (`widgets`); each real kind's own rules are its package's test
-   ([kind.test.ts](../packages/launchpad/ts/test/kind.test.ts)).
+   `mode`, `listening`, `off`, `divisor`), applied by the launchpad pack's graph placer (`ts/control/placer.ts`),
+   never as a function a planner's bundle would have to import. The generator and the fixture suite hold the
+   mechanism over a fixture kind that is no real pack's (`widgets`); each real kind's own rules are its package's
+   test ([kind.test.ts](../packages/launchpad/ts/test/kind.test.ts)).
 9. A device pack's imports are limited to `build-device-pack.mjs`'s four-file core SDK (`defineNode`,
    `settingsSchema`, `descriptor`, `register`), and `pico/n8-host/exporter-stale.sh` watches `packages/core/ts` plus
    each pack's own `ts/`.
@@ -672,24 +671,26 @@ The suite is 30 files: a file per group, and four with no baseline of their own 
   passes) gives the files to compare against. An
   intentional audio change re-records the groups it moves in the same commit, and that diff is the record
   of what moved.
-- **Recorded defects.** The baseline pins two engine defects on purpose; fixing each is its own change
+- **Recorded defects.** The baseline pins one engine defect on purpose; fixing it is its own change
   with a deliberate re-record: Arduinoboy MIDI sync plays only in some host block partitions (at divisor
   1 silent at 128 to 768 frames, in 1-frame blocks and in `fl256`, playing in `fl`, most of whose blocks
-  carry almost no clock tick; at divisor 4 silent at 1024 too); MI.OUT's decoded notes depend on the host sample
-  rate. Details in design section 2.5
-  ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)). Three more were pinned and
+  carry almost no clock tick; at divisor 4 silent at 1024 too). Details in design section 2.5
+  ([modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)). Four more were pinned and
   fixed: a single NES under a split routing on a host narrower than the split (the capture tap armed over the mix,
   which drifted ~25 frames per block at 48 kHz / 512; the core now steps on the ring the block drains, so the
   narrow host hears the mix, and its cases were re-recorded with that fix, design section 2.5 and
-  [modular-graph-phase-c4-design.md](../docs/modular-graph-phase-c4-design.md) section 10), and LSDj master sync
-  silent at 48 kHz together with its decoder reading a stopped LSDj as clocks in small
-  blocks ([lsdj-master-sync-fix-design.md](../docs/lsdj-master-sync-fix-design.md)). The MI.OUT and
-  master-sync cases (`lsdj-modes`' `midiOut` and two `masterSync`, all six of `blocks-tiny-lsdj-master`,
-  `blocks-tiny-lsdj`'s three `midiOut-*`) record the host MIDI out of `rp.lsdj.serial-out`, after the Game Boy
-  ([lsdj-serial-out-design.md](../docs/lsdj-serial-out-design.md) sections 7 and 12): each message at its
-  byte's frame in the block the core captured it, which here lies off frame 0 but in the 1-frame splits and for
-  one message of 85, a clock, in each master-sync `fl256` case, whose byte the core completed at its block's
-  first frame.
+  [modular-graph-phase-c4-design.md](../docs/modular-graph-phase-c4-design.md) section 10), LSDj master sync
+  silent at 48 kHz together with its decoder reading a stopped LSDj as clocks in small blocks
+  ([lsdj-master-sync-fix-design.md](../docs/lsdj-master-sync-fix-design.md)), and MI.OUT's decoded notes depending
+  on the host sample rate (the capture fed the Game Boy 1s where an Arduinoboy holds its serial input at 0, so the
+  bits it clocked between LSDj's writes read as start bits; the four MI.OUT cases were re-recorded with the fix,
+  their MIDI out and work RAM alone, [known-bugs-batch-2-design.md](../docs/known-bugs-batch-2-design.md) section
+  3). The MI.OUT and master-sync cases (`lsdj-modes`' `midiOut` and two `masterSync`, all six of
+  `blocks-tiny-lsdj-master`, `blocks-tiny-lsdj`'s three `midiOut-*`) record the host MIDI out of
+  `rp.lsdj.serial-out`, after the Game Boy ([lsdj-serial-out-design.md](../docs/lsdj-serial-out-design.md) sections
+  7 and 12): each message at its byte's frame in the block the core captured it, which here lies off frame 0 but in
+  the 1-frame splits and for one message of 85, a clock, in each master-sync `fl256` case, whose byte the core
+  completed at its block's first frame.
 - LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
   those groups skip in CI, counted in the skip baseline. CI therefore runs only the 152 fixture-free cases
   (every MIDI-out, controller, LSDj, risa and GBA case is fixture-only, LSDj's link-cable cases among

@@ -41,11 +41,14 @@ each (a phase name means its "What it leaves" list in section 5).
 - [ ] The shape question the view reopen key's width leaves open (F4c)
 
 **Known bugs**
-- [ ] "Is this LSDj" decided by a role's presence, not its placement; needs `placedRole` (found building B3b)
-- [ ] MI.MAP's predicted playhead runs ahead at a tempo divisor of 2 or more (F3)
+- [x] "Is this LSDj" decided by a role's presence, not its placement (found building B3b; kb2, 63cabe651: the readers ask
+      `placedRole`, a cart view `isPlaced`, and the stored role stays)
+- [x] MI.MAP's predicted playhead runs ahead at a tempo divisor of 2 or more (F3; kb2, 098dd2c11: the session walks the
+      divisor its cart is set to)
 - [x] `__rp_syncLatencyMs` follows the stored sync mode, not the one MI.MAP forces (C2; unreachable (F5a), closed
       with kb1: no plugin binary's list carries a controller app to force one)
-- [ ] MI.OUT decodes about half the NoteOns a song plays; not investigated (LSDj's serial-out node)
+- [x] MI.OUT decodes about half the NoteOns a song plays (LSDj's serial-out node; kb2, 1e3c96b73: the capture fed the Game
+      Boy 1s where an Arduinoboy holds its serial input at 0)
 - [ ] The DPF JACK standalone's control handoff runs on JACK's thread at a buffer-size or rate change (C5)
 - [x] A Game Boy's press queue can drop a flood's last release, leaving a button held (C4; kb1, 431e20007)
 - [x] A Game Boy button byte of 8 or more writes past SameBoy's key arrays in a release build (kb1, 431e20007)
@@ -758,9 +761,22 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     the shift), which predates the decoder's move. The decoder adds no split dependence of its own, so the tests
     hold each message to its byte, not to one absolute time shared by every split. A SameBoy matter, its own change
     if wanted.
-  - **MI.OUT decodes about half the NoteOns a song plays.** dsp-bench's MI.OUT window sends 20 NoteOns in 400
-    blocks (9.3 s), where its phrase's eight notes at tempo 128 come to about 40. Likely MI.OUT's rate-dependent
-    decode, one of the defects parity pins ([06-build-test.md](06-build-test.md)); not looked into.
+  - **MI.OUT decoded about half the NoteOns a song plays: fixed with kb2**
+    ([known-bugs-batch-2-design.md](../docs/known-bugs-batch-2-design.md) section 3). The capture clocked LSDj's port
+    as an Arduinoboy does but fed the Game Boy 1s on its serial input, where the Arduinoboy holds it at 0, and LSDj's
+    serial interrupt re-arms the port after every transfer, so the bits clocked between LSDj's writes were 1s, which
+    the decoder reads as start bits: the stream was re-framed by an amount the host rate set (12, 14 and 5 NoteOns,
+    nearly all of them other notes, for the song's 20 at 44.1, 48 and 96 kHz). Fed 0s, `lsdj-midiout` holds the song's
+    exact MIDI at all three rates and dsp-bench's window decodes all 40 NoteOns its phrase plays in 400 blocks;
+    parity's four MI.OUT cases were re-recorded, their MIDI out and work RAM (LSDj's received-byte shadow at `$CC20`,
+    now `$00`) alone. Two things stay. CI decodes no real LSDj's MI.OUT: the fixture-free `HostIo.test.cpp` cases hold
+    the capture's wiring and that mGB's idle line decodes to nothing, and the real decode is the fixture-gated
+    `lsdj-midiout` files' and parity's. And no setting makes LSDj send a clock: its MI.OUT sender (bank 3,
+    `$7ADE`-`$7BBC` in 9.3.3) sends a command and its value for each N, X, Y and Q command and 0x7D and 0x7E at its
+    transport's edges, never 0x7F. The one way a real LSDj reaches the decoder's clock is song data, an N command
+    whose value is 0x7F, which `lsdj-midiout` holds decoding as 0xF8, as an Arduinoboy reads it; the clock path's
+    other cases are the decoder's unit test
+    ([lsdjArduinoboy.test.ts](../packages/lsdj/ts/test/lsdjArduinoboy.test.ts)).
   - **No DAW check records LSDj's host MIDI out.** What MI.OUT and master sync send is held at `Engine::midiOut`
     (the native tests, parity's MIDI-out hashes), never as a DAW records the plugin's `writeMidiEvent`: the Reaper
     legs (`reaper:lsdj-*`) drive LSDj from the DAW and analyse the audio. A leg that records the plugin's MIDI out
@@ -777,19 +793,18 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - `DirectGraph.setPipeline` hands a node its role's config as given, where a store hands the config its
     schema parsed, and a node's settings fill their own defaults: a direct caller's `lsdj-sync` with no `mode`
     is MIDI sync, where the kernel read a missing mode as nothing.
-  - **Readers that decide "is this system LSDj" (or mGB) by a role's presence, not its placement.** In the rare
-    case a ROM path changed between an LSDj and an mGB build, a system holds both `mgb` and `lsdj-sync`, and the
-    pipeline places one (the one the ROM calls for). The graph is right; these readers are not:
-    `trackerIntegrationFor` ([trackerIntegration.ts](../packages/tracker/ts/trackerIntegration.ts), by
-    `markerRole` presence), so the LSDj menu's sync cyclers
-    ([menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts)) edit a left-out `lsdj-sync` on an mGB cart;
-    `hasRole(..., "lsdj-sync")` in
-    [lsdj/ts/ui/hdView.ts](../packages/lsdj/ts/ui/hdView.ts) and
-    [lsdj/ts/ui/overlayView.ts](../packages/lsdj/ts/ui/overlayView.ts) and `projectStore.ts` (which tests
-    `roles.some((r) => r.kind === "lsdj-sync")`); and `projectParameterMap`
-    ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)), which still exposes mGB's CC lanes for an LSDj
-    cart carrying a stale `mgb`. The fix is `placedRole(...)`
-    ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)) in those readers. Not fixed.
+  - **Readers that decided "is this system LSDj" (or mGB) by a role's presence: fixed with kb2**
+    ([known-bugs-batch-2-design.md](../docs/known-bugs-batch-2-design.md) section 1). In the rare case a ROM path
+    changed between an LSDj and an mGB build, a system holds both `mgb` and `lsdj-sync`, and the pipeline places one
+    (the one the ROM calls for). The readers now ask what it places: `resolveTracker`
+    ([trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts), by its integration's placed `markerRole`;
+    behind the tracker menus, song import, the render's tracker and `projectStore`'s tracker questions), the config
+    rows (`roleRowItems`, [configRows.ts](../packages/retroplug/ui/screens/menu/configRows.ts)) and
+    `projectParameterMap` ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)) through `placedRole`
+    ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)), and the LSDj HD view, the LSDj
+    overlay and the risa overlay through `isPlaced`, over the system view's `placed`. A role whose kind has no node
+    counts as placed when present, and the left-out role stays stored, so a ROM swapped back brings its settings
+    back.
   - **The controller's MI.MAP override changed only the document: closed by C2.** `controllerSyncOverride`
     ([launchpad/ts/control/placer.ts](../packages/launchpad/ts/control/placer.ts), applied in `buildGraph`) runs an LSDj's
     nodes in `midiMap` for a cart reading MidiMap (in `off` for one reading another SYNC), and `serialOutCaptureFor`,
@@ -912,11 +927,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Third-party controller apps are not loadable**: `controllerApps` registers from the product's package list, so an app
     from outside the tree is the downloadable-pack road (design section 11).
   - **One controller link per process**, and per `rp.host.devices/2` name; more than one is a registry change.
-  - **The controller's tick count assumes the default tempo divisor.** The session walks 24 PPQ ticks for the predictor,
-    and an app's sync override sets the cart's sync MODE only: MI.MAP clocks the cart at `24 / tempoDivisor`, and the menu
-    offers 1 to 8, so at divisor 2 and above the predicted playhead (and the quantise) runs that many times ahead of the
-    cart. At the default divisor 1 the two agree. A fix either lets `syncOverride` carry the setting it needs as data,
-    rendered into the cart's sync node, or walks at the divisor the cart is set to.
+  - **The controller's tick count assumed the default tempo divisor: fixed with kb2**
+    ([known-bugs-batch-2-design.md](../docs/known-bugs-batch-2-design.md) section 2). The app's `syncOverride` names
+    the sync node's divisor setting (`divisor`, LSDj's `tempoDivisor`), the placer reads it off the driven cart's node
+    in the pipeline and hands the session `tickDivisor`, and the session walks `24 / tickDivisor` ticks a quarter, as
+    MI.MAP clocks the cart, reading it every block. A quantise of `bar` or `beat` still counts the host's bars, as
+    before: at divisor 2 a cart's phrase lasts two of them.
   - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
     `projectStore.ts`) until F4, which also takes the menu rows.
 - **F4a built: the non-UI registrations**

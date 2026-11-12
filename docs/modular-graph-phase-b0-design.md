@@ -210,12 +210,16 @@ master waits on one for another master, so, clocked, it turned slave: it flooded
 Master sync now only listens (capture's `listen` mode, MI.OUT keeping `drive`), and `masterSync-48000` plays,
 re-recorded with the eighth defect's fix.
 
-A seventh defect is recorded as it is, not fixed (§1): **MI.OUT decoding depends on the host sample rate.**
-Measured: the decoded NoteOns are 0x52-0x6D plus program changes the song never sends at 48 kHz, and
-0x69-0x6D at 44.1 kHz; neither matches the song's N values (48-72), so the capture is partly an artefact.
-The `midiOut` case pins what is captured today (at 48 kHz); fixing it is its own change with a re-record. A
-likely cause, unconfirmed: MI.OUT's capture clocks LSDj one bit per audio frame, so its bit rate is the host's
-sample rate ([lsdj-master-sync-fix-design.md](lsdj-master-sync-fix-design.md) section 2).
+A seventh defect was recorded as it was (§1), and has since been fixed: **MI.OUT decoding depended on the host
+sample rate.** Measured: the decoded NoteOns were 0x52-0x6D plus program changes the song never sends at 48 kHz, and
+0x69-0x6D at 44.1 kHz; neither matches the song's N values (48-72), so the capture was partly an artefact. The
+`midiOut` case pinned what was captured (at 48 kHz). The cause, found with kb2
+([known-bugs-batch-2-design.md](known-bugs-batch-2-design.md) section 3), was not the bit rate this record guessed
+at: the capture fed the Game Boy 1s on its serial input, where an Arduinoboy holds it at 0, and LSDj's serial
+interrupt re-arms the port after every transfer, so the bits clocked between LSDj's writes were 1s, start bits to
+the decoder, which re-framed the stream by an amount the host rate set. Fed 0s, the decode is the song's at every
+rate from 8 to 192 kHz, and the four MI.OUT cases (`lsdj-modes`' `midiOut` and `blocks-tiny-lsdj`'s three
+`midiOut-*`) were re-recorded with the fix, in their MIDI out and work RAM alone.
 
 An eighth defect was recorded as it was (§1), and has since been fixed: **in small host blocks LSDj master sync
 decoded a stopped LSDj as clocks.** The decoder (`arduinoboyMasterSyncBlock`, `lsdjArduinoboy.ts`) took a block
@@ -247,7 +251,7 @@ suite is 23 test files with `determinism`, `render-blocks` and `comparator`); th
 | `edits-live`, `edits-structure` | gain through a held note, live role knobs; reset, duplicate, add, remove, replace mid-run, a split losing and regaining its single system, a pin split left | edit timing, per-frame gain smoothing, the tap restore; fix 2 is covered by its unit test in `test/systems/bliptoaster-assets.test.ts`, not by this case (duplicate-mid-run duplicates an mGB, which has no construct hooks) |
 | `sync-sms` | smsggdj SYNC IN24 on SMS and GG: start, bpm change, stop, locate, a short block at a loop wrap whose end is off the 24-PPQN tick grid (so its locate shows); at 48 kHz / 512 and at 44.1 kHz / 8192-frame blocks | transport-driven sync |
 | `lsdj-sync` *(fixture)* | SYNC=MIDI at divisors 1/2/4/8 and with autoStart; Arduinoboy at 1024 (divisors 1 and 4) and 512, ending with a transport stop | lsdj-sync's clock modes; the Arduinoboy defect |
-| `lsdj-modes` *(fixture)* | off, keyboard (inert: the role emits nothing), midiMap (clocked by the transport), keyboardMidi, midiPassthrough (raw clocks into a dense SYNC=MIDI song), midiOut (play / stop / play; the sample-rate defect), masterSync at 44.1 and 48 kHz (the 48 kHz one pinned the sixth defect until the master-sync fix) | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
+| `lsdj-modes` *(fixture)* | off, keyboard (inert: the role emits nothing), midiMap (clocked by the transport), keyboardMidi, midiPassthrough (raw clocks into a dense SYNC=MIDI song), midiOut (play / stop / play; it pinned the seventh defect until the kb2 fix), masterSync at 44.1 and 48 kHz (the 48 kHz one pinned the sixth defect until the master-sync fix) | every other lsdj-sync mode; MI.OUT and master clock as MIDI out |
 | `lsdj-link` *(fixture)* | leader and follower on one cable, in blocks of 512 and of every other size `blocks-*` uses (64, 199, 1024, 8192 and the cycle) | link-cable sync; lockstep stepping across partitions (the follower's lanes differ in each) |
 | `risa` *(fixture)* | the transport script, also under PinSplit | risa-sync |
 | `gba` *(fixture)* | nanoloop booting under Stereo, and under TwoPerInstance with START pressed (silent until played) | the GBA core at all |
@@ -426,8 +430,8 @@ The implementation plan's tasks, each verified before the next:
 - Exact audio on arm64, macOS and Windows: those targets get the determinism and integer-state checks of
   §5.2 (never yet run), and §1's argument for the audio bits, which a B1 change to multiply-add fusion on
   arm64 could break unseen.
-- Fixing either of the two defects still pinned (§2.5), the Arduinoboy block-size one and MI.OUT's sample-rate
-  dependence; the narrow-host NES split and LSDj master-sync defects were fixed with re-records since.
+- Fixing the defect still pinned (§2.5), the Arduinoboy block-size one; the narrow-host NES split, LSDj master-sync
+  and MI.OUT sample-rate defects were fixed with re-records since.
 
 Regression classes the suite would not catch, so a B step that touches one needs its own check:
 
