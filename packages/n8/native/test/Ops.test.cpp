@@ -585,6 +585,32 @@ TEST_CASE("readFile finds a file on a directory listing's second page and the ne
     CHECK(Bytes(buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(size)) == dev.files["big/f39.bin"]);
     std::uint8_t code = 0;
     CHECK(edio.status(code).ok());
+    CHECK(dev.dirGets == std::vector<std::pair<std::size_t, std::size_t>>{{0, 32}, {32, 8}});
+}
+
+TEST_CASE("a listing asks for its records in pages of 32, split exactly at the page boundary", "[n8][ops]") {
+    using Pages = std::vector<std::pair<std::size_t, std::size_t>>;
+    for (const auto& [records, want] : std::vector<std::pair<int, Pages>>{
+             {31, Pages{{0, 31}}}, {32, Pages{{0, 32}}}, {33, Pages{{0, 32}, {32, 1}}}, {64, Pages{{0, 32}, {32, 32}}}}) {
+        CAPTURE(records);
+        FakeN8     dev;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        for (int i = 0; i < records; ++i) {
+            char name[16];
+            std::snprintf(name, sizeof name, "p/f%02d.bin", i);
+            dev.files[name] = pattern(4, static_cast<std::uint8_t>(i));
+        }
+        int         seen  = 0;
+        std::string first;
+        REQUIRE(edio.listDir("p", [&](const rp::n8::DirEntry& e) {
+                    if (seen++ == 0) first = std::string(e.name);
+                }).ok());
+        CHECK(seen == records);
+        CHECK(dev.dirGets == want);
+        std::uint8_t code = 0;
+        CHECK(edio.status(code).ok());
+    }
 }
 
 TEST_CASE("the cart-SRAM paths: a battery written straight to SRAM reads back, and a dump reads all of it",

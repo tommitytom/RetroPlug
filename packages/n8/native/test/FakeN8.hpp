@@ -65,6 +65,8 @@ struct FakeN8 {
     std::string              booted;                // the path '*s' started
     // "fifo:90 3C 7F", "srm-rd", "srm-wr", "file-wr", "file-rd", ..., in order
     std::vector<std::string> log;
+    // Each DIR_GET's (start, amount), in order, beside the log so the cases that compare the log whole are untouched.
+    std::vector<std::pair<std::size_t, std::size_t>> dirGets;
     std::vector<Bytes>       applied;               // messages the reliable link delivered to the game
     int                      syncs = 0;             // F4 syncs the game saw
     std::vector<int>         frameSeqs;             // the seq of every intact frame it read
@@ -265,6 +267,7 @@ private:
                 // (Edio::listDir), and a page answered with more than it asked for misframes the command after it.
                 const std::size_t start  = c[4] | (c[5] << 8);
                 const std::size_t amount = c[6] | (c[7] << 8);
+                dev_.dirGets.emplace_back(start, amount);
                 const std::size_t end    = std::min(dirList_.size(), start + amount);
                 for (std::size_t i = std::min(start, end); i < end; ++i) {
                     const auto& [name, size, isDir] = dirList_[i];
