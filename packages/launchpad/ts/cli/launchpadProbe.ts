@@ -37,6 +37,33 @@ const hex = (bytes: Uint8Array | number[]): string =>
  *  real test of that claim. */
 const matching = (names: string[]): string[] => names.filter((n) => n.includes(PRO_MK3.portHint));
 
+/** A timer body that cannot strand the hardware: a throw is reported, `release` runs (the device back to Live mode, the
+ *  ports closed) and the process exits 1. An error a timer callback throws ends the session with exit 1 and its text, so
+ *  without this the device would stay in Programmer mode, which locks its own Settings menu until a power-cycle. The
+ *  body is not run again once it has thrown, and a `release` that throws too is not the error worth reporting. */
+export function releasingOnThrow(
+  host: Pick<CliHost, "process">,
+  release: () => void,
+  body: () => void,
+): () => void {
+  let failed = false;
+  return () => {
+    if (failed) return;
+    try {
+      body();
+    } catch (e) {
+      failed = true;
+      console.error(`launchpad-probe: ${e instanceof Error ? e.message : String(e)}`);
+      try {
+        release();
+      } catch {
+        // the timer's own error is the one reported
+      }
+      host.process.exit(1);
+    }
+  };
+}
+
 function pick(names: string[], explicit: string | undefined, what: string): string {
   if (explicit) {
     if (!names.includes(explicit)) throw new Error(`no MIDI ${what} named "${explicit}".\n${listing(names)}`);
@@ -99,14 +126,18 @@ function paint(surface: Surface): void {
  *  whoever is watching reads off which physical button actually lit. A name whose button never lights, or
  *  lights in the wrong place, is a wrong number - and the labels in the manual's layout diagram are an
  *  image, so this is the only way to check them. */
-function runSweep(surface: Surface, send: (b: number[]) => void): void {
+function runSweep(
+  surface: Surface,
+  send: (b: number[]) => void,
+  guard: (body: () => void) => () => void,
+): void {
   const names = Object.keys(PRO_MK3.buttons);
   const bright: Led = { mode: "static", colour: palette(Palette.red) };
   const dim: Led = { mode: "static", colour: palette(Palette.greenDim) };
   let i = 0;
 
   console.log(`sweeping ${names.length} named buttons, one per second - watch which one turns RED:`);
-  setInterval(() => {
+  setInterval(guard(() => {
     if (i > names.length) return; // done; one tick past the end restored the last button
     if (i > 0) surface.setButton(names[i - 1], dim); // restore the previous one
     if (i < names.length) {
@@ -117,7 +148,7 @@ function runSweep(surface: Surface, send: (b: number[]) => void): void {
     // button stuck red.
     for (const m of surface.flush().messages) send(m);
     i++;
-  }, 1000);
+  }), 1000);
 }
 
 /** True for traffic that is not a gesture and would otherwise drown the log.
@@ -179,9 +210,11 @@ function runProbe(host: CliHost, args: string[]): void {
   let realtime = 0;
 
   host.process.keepAlive();
-  if (sweep) runSweep(surface, send);
+  const guard = (body: () => void): (() => void) =>
+    releasingOnThrow(host, () => finish(surface, send, closePorts), body);
+  if (sweep) runSweep(surface, send, guard);
 
-  setInterval(() => {
+  setInterval(guard(() => {
     for (const bytes of heard()) {
       const data = Array.from(bytes);
       if (isRealtime(data) && !verbose) { realtime++; continue; }
@@ -207,10 +240,10 @@ function runProbe(host: CliHost, args: string[]): void {
       }
       console.log(`  [${hex(bytes)}] (not surface input)`);
     }
-  }, 5);
+  }), 5);
 
   let left = seconds;
-  setInterval(() => {
+  setInterval(guard(() => {
     if (--left > 0) return;
     console.log("");
     console.log(`done: ${events} press(es) seen, ${realtime} realtime/clock message(s) filtered.`);
@@ -220,7 +253,7 @@ function runProbe(host: CliHost, args: string[]): void {
     }
     finish(surface, send, closePorts);
     host.process.exit(0);
-  }, 1000);
+  }), 1000);
 }
 
 /** Hand the device back. Blank the surface, then LEAVE PROGRAMMER MODE - while it is set over sysex the
@@ -271,7 +304,7 @@ function runLoopback(host: CliHost, seconds: number): void {
 
   let ticks = 0;
   let sent = false;
-  setInterval(() => {
+  setInterval(releasingOnThrow(host, () => midi.close(), () => {
     ticks++;
     // Give the caller a moment to run aconnect before the one send.
     if (ticks === LOOPBACK_SEND_TICK) {
@@ -295,7 +328,7 @@ function runLoopback(host: CliHost, seconds: number): void {
       midi.close();
       host.process.exit(1);
     }
-  }, 100);
+  }), 100);
 }
 
 const LOOPBACK_CLIENT = "RetroPlug Loopback";
