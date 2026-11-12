@@ -89,9 +89,12 @@ echo "  ok: boot + non-blank render"
 #     engine the restore has not shaped yet, and the order is the one the app always had (the control surface's claim,
 #     then MIDI, then audio). Read off the host's own lines, which is what a user's log shows.
 run order 20
-midi_at=$(grep -n -F "MIDI: virtual ports" "$LOG" | head -1 | cut -d: -f1)
-audio_at=$(grep -n -F "audio: on the null device" "$LOG" | head -1 | cut -d: -f1)
-[ -n "$midi_at" ] && [ -n "$audio_at" ] || fail "startup order: the MIDI stream or the audio device never reported"
+# The stream's report is its virtual pair, or that it runs without MIDI (a CI runner has no ALSA sequencer, and the
+# guard keeps /dev/snd shut anyway): either way it is the MIDI stream's open. `|| true`, so a missing line reaches the
+# fail below with the log rather than ending the script silently under pipefail.
+midi_at=$(grep -n -E "MIDI: virtual ports|MIDI unavailable" "$LOG" | head -1 | cut -d: -f1 || true)
+audio_at=$(grep -n -F "audio: on the null device" "$LOG" | head -1 | cut -d: -f1 || true)
+[ -n "$midi_at" ] && [ -n "$audio_at" ] || { cat "$LOG" >&2; fail "startup order: the MIDI stream or the audio device never reported"; }
 [ "$midi_at" -lt "$audio_at" ] \
     || fail "startup order: the audio device opened before the MIDI stream (line $audio_at, MIDI at $midi_at)"
 echo "  ok: the MIDI stream opens before the audio device"

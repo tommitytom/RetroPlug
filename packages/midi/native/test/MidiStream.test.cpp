@@ -537,7 +537,6 @@ TEST_CASE("the input ring: concurrent producers deliver every message intact, on
 
 TEST_CASE("a full ring drops the incoming message and counts it, and what did land is intact") {
     Machine             machine;
-    FakeMidiBackend&    backend = machine.backend;
     MidiStream          stream(machine.backend);
     REQUIRE(stream.open());
     const std::size_t overflow = 40;
@@ -626,7 +625,8 @@ TEST_CASE("a swap behind back-to-back long sends waits out one send, never the r
     // the ONE send in flight - the set the swap published is what the next send reads - so a reconfigure waits one
     // send, not the stream of them. Waiting "while the epoch is odd" instead chases every send that follows: this case
     // measured hundreds of milliseconds on a 32-thread box and never returned under `taskset -c 0` (the swap spins out
-    // the whole run). The bound is three sends, loose enough for a loaded runner and tight enough to fail that wait.
+    // the whole run). The bound is a quarter of the run, loose enough for a loaded runner and tight enough to fail that
+    // wait.
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;
     backend.sendDelayMs      = 20;
@@ -645,9 +645,10 @@ TEST_CASE("a swap behind back-to-back long sends waits out one send, never the r
     const auto waited =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
     audio.join();
-    // One in-flight send plus slack: four sends' time, because a ThreadSanitizer run inside the parallel kit stretches
-    // a 20 ms send and the scheduling around it.
-    CHECK(waited < 4 * backend.sendDelayMs);
+    // One in-flight send plus slack: a quarter of the run (ten sends' time), because a ThreadSanitizer run inside the
+    // parallel kit, or a loaded macOS runner, stretches a 20 ms send and the scheduling around it (a CI run measured 92
+    // ms against the four sends this was). Chasing the run would wait out most of its 800 ms.
+    CHECK(waited < kSends * backend.sendDelayMs / 4);
     CHECK(backend.sendsAfterClose() == 0);
     CHECK(backend.totalReceived() == static_cast<std::size_t>(kSends));
 }
