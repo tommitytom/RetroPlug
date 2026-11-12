@@ -234,19 +234,31 @@ void MesenNesSystem::onActivate(double sampleRate) {
         }
 
         // Where a CMD_F_FRD_MEM DMA lands: the MCU reads the open file straight into cartridge memory
-        // over the PI bus, so an N8 address has to be resolved to a Mesen buffer. Only the CHR-RAM
-        // window is backed - the one nesvj verified byte-exact against a dump off a real cart. PRG
-        // ($000000), SRAM ($1000000) and CHR-ROM are legal PI targets on the device but have no
-        // verified counterpart here, so they are REFUSED: a silent drop would be indistinguishable
-        // from a working DMA to the ROM.
+        // over the PI bus, so an N8 address has to be resolved to a Mesen buffer. Two windows are
+        // backed, both verified on a real N8 Pro from a RUNNING game: CHR-RAM ($C00000, byte-exact
+        // against a dump off the cart) and PRG ($000000, read back by the running 6502 itself - nesvj's
+        // audio spike DMA'd 128 bytes into its own fixed bank). A game's PRG sits flat from the PRG
+        // chip's base, so PI offset N is PRG offset N, whatever the mapper banks. SRAM ($1000000) and
+        // CHR-ROM are legal PI targets on the device but have no verified counterpart here, so they are
+        // REFUSED: a silent drop would be indistinguishable from a working DMA to the ROM.
         n8Role_->setCartWriter([emu = emu_.get()](std::uint32_t piAddr, const std::uint8_t* data,
                                                   std::size_t len) -> bool {
-            ConsoleMemoryInfo info = emu->GetMemory(::MemoryType::NesChrRam);
-            if (!info.Memory || info.Size == 0) return false;  // a CHR-ROM cart has no window here
-            if (piAddr < rp::PI_ADDR_CHR_RAM) return false;
+            ::MemoryType type;
+            std::uint32_t base;
+            if (piAddr >= rp::PI_ADDR_CHR_RAM) {
+                type = ::MemoryType::NesChrRam;
+                base = rp::PI_ADDR_CHR_RAM;
+            } else if (piAddr < rp::PI_ADDR_CHR) {
+                type = ::MemoryType::NesPrgRom;
+                base = rp::PI_ADDR_PRG;
+            } else {
+                return false;  // CHR-ROM
+            }
+            ConsoleMemoryInfo info = emu->GetMemory(type);
+            if (!info.Memory || info.Size == 0) return false;  // a CHR-ROM cart has no CHR-RAM window
             // Validated whole before a byte moves: a clipped write would corrupt the tail of a frame
             // and still report success.
-            const std::uint64_t offset = piAddr - rp::PI_ADDR_CHR_RAM;
+            const std::uint64_t offset = piAddr - base;
             if (offset + len > static_cast<std::uint64_t>(info.Size)) return false;
             if (data == nullptr) return true;  // validation only: the range is backed, so write nothing
             std::memcpy(static_cast<std::uint8_t*>(info.Memory) + offset, data, len);

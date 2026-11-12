@@ -132,8 +132,9 @@ namespace rp {
 	// -----------------------------------------------------------------------
 	// PI bus geography of the N8 Pro cartridge (mirrors packages/n8/native/src/n8/Edio.hpp)
 	// -----------------------------------------------------------------------
-	// The addresses CMD_F_FRD_MEM's first parameter is drawn from. Only the CHR-RAM window is
-	// backed here; see setCartWriter for why the others are refused rather than guessed at.
+	// The addresses CMD_F_FRD_MEM's first parameter is drawn from. The CHR-RAM and PRG windows are
+	// backed (MesenNesSystem's cart writer); see setCartWriter for why the others are refused rather
+	// than guessed at.
 	static constexpr uint32_t PI_ADDR_PRG = 0x0000000;  // PRG PSRAM (8 MB)
 	static constexpr uint32_t PI_ADDR_CHR = 0x0800000;  // CHR PSRAM (8 MB)
 	static constexpr uint32_t PI_ADDR_SRM = 0x1000000;  // cart battery RAM
@@ -378,9 +379,10 @@ namespace rp {
 
 		// Where CMD_F_FRD_MEM's DMA lands: write `len` bytes into cartridge memory at a PI bus
 		// address, answering false if that range is not backed. MesenNesSystem installs one at
-		// activate, mapping the CHR-RAM window (PI_ADDR_CHR_RAM) onto Mesen's NesChrRam.
+		// activate, mapping the CHR-RAM window (PI_ADDR_CHR_RAM) onto Mesen's NesChrRam and the PRG
+		// window (PI_ADDR_PRG) onto its NesPrgRom.
 		//
-		// The whole range MUST be validated before a single byte is written. PRG, SRAM and CHR-ROM
+		// The whole range MUST be validated before a single byte is written. SRAM and CHR-ROM
 		// are legal PI targets on the device but have no verified emulated counterpart, and a
 		// silent drop would look EXACTLY like a working DMA to the ROM - the worst failure mode
 		// available here - so an unbacked address is an Edio error, not a no-op. A null `data` is a

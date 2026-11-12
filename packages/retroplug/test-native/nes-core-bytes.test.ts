@@ -334,6 +334,63 @@ test("a DMA into a cart with no CHR-RAM is refused, not silently dropped", () =>
   s.backend.deleteFile(sdRoot + path);
 });
 
+// PRG is the other backed window, verified on a real N8 Pro from a running game (nesvj's audio spike DMA'd
+// 128 bytes into its own fixed bank and read them back). A game's PRG sits flat from the PRG chip's base, so
+// PI offset N is PRG offset N: on this 16 KB NROM that is CPU $C000 + N.
+const MEM_PRG = 1; // rp::MemoryType::Rom, the PRG ROM without its iNES header
+const PI_PRG_TAIL = 0x3f00; // CPU $FF00: past the program, short of the vectors
+
+test("a ROM DMAs a file into its own PRG, where the CPU reads it", () => {
+  // The DMC fetches its samples from $C000-$FFFF, so this is how a cart streams audio to it without the
+  // 6502 copying a byte: the MCU writes the window the DMC plays from.
+  const sdRoot = "/tmp/rp-corebytes-dma-prg-card";
+  const path = "/audio.bin";
+  const payload = Uint8Array.from({ length: 64 }, (_, i) => (i ^ 0xc3) & 0xff);
+
+  const s0 = bootSession();
+  expect(s0.backend.writeFile(sdRoot + path, payload)).toBeTruthy();
+
+  const { s, id } = bootWith(nromRom(dmaProgram(path, PI_PRG_TAIL, payload.length)),
+                             "/tmp/rp-corebytes-dma-prg.nes", sdRoot);
+  s.audio.renderAudio(50);
+
+  expect(Array.from(s.backend.drainCoreBytes(id))).toEqual([0x00, 0xa5]);
+  const prg = s.backend.readMemory(id, MEM_PRG)!;
+  expect(firstDiff(prg.slice(PI_PRG_TAIL, PI_PRG_TAIL + payload.length), payload)).toEqual(-1);
+  // ...and the CPU's own view of it, through the mapper, is the same bytes.
+  const cpu = Uint8Array.from({ length: payload.length }, (_, i) => s.backend.readCpu(id, 0xc000 + PI_PRG_TAIL + i)!);
+  expect(firstDiff(cpu, payload)).toEqual(-1);
+
+  s.project.systems.removeSystem(id);
+  s.backend.deleteFile(sdRoot + path);
+});
+
+test("a PRG DMA that runs past the cart's PRG is refused whole, with nothing written", () => {
+  // 32 bytes from 16 bytes short of the end of a 16 KB PRG. Clipping it would overwrite the vectors and still
+  // report success, so the whole range is refused and the PRG left exactly as it was.
+  const sdRoot = "/tmp/rp-corebytes-dma-prg-over-card";
+  const path = "/audio.bin";
+  const payload = new Uint8Array(32).fill(0x5a);
+  const at = 16 * 1024 - 16;
+
+  const s0 = bootSession();
+  expect(s0.backend.writeFile(sdRoot + path, payload)).toBeTruthy();
+
+  const rom = nromRom(dmaProgram(path, at, payload.length));
+  const { s, id } = bootWith(rom, "/tmp/rp-corebytes-dma-prg-over.nes", sdRoot);
+  s.audio.renderAudio(50);
+
+  const got = Array.from(s.backend.drainCoreBytes(id));
+  expect(got.length).toEqual(2);
+  expect(got[0]).toBeGreaterThan(0);
+  expect(got[1]).toEqual(0xa5);
+  const prg = s.backend.readMemory(id, MEM_PRG)!;
+  expect(firstDiff(prg.slice(at, 16 * 1024), rom.slice(16 + at, 16 + 16 * 1024))).toEqual(-1);
+
+  s.project.systems.removeSystem(id);
+  s.backend.deleteFile(sdRoot + path);
+});
+
 // --- FIFO fidelity: what the transport does when the ROM can't keep up -------------------------
 //
 // The emulated queue is unbounded and instant by default, so a ROM can never be starved and can
