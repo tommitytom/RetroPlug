@@ -178,6 +178,14 @@ does on a console. The whole range the ROM asks for is validated before a byte m
 window answers an Edio error (`0x13`) and leaves both the cartridge and the file pointer untouched, even when the file
 would have run out first.
 
+While that transfer is in flight the MCU holds the cartridge bus, as on a console (measured on PAL: a free-running DMC
+tone is damaged in proportion to the DMA rate, a stopped DMC is clean). A DMC sample fetch from cartridge space inside
+the modelled window is answered `$00` (an assumption: the real value is unmeasured) and counted in
+`dmcFetchesDuringDma`; an ordinary CPU read from cartridge space (`$4020`-`$FFFF`, not the FIFO registers) is only
+counted, in `cartReadsDuringDma`, never corrupted, so a ROM that waits on `$40FF` from a loop in PRG still works while a
+test can assert the loop runs from RAM. Both are cumulative `getCoreTransportStats` fields, fed by a read observer
+(`NesMemoryManager::SetCartReadHook`) the FIFO installs. A DMA with no clock source has no window, so it counts nothing.
+
 `fifo` (plus the `fifoDepth` / `fifoBytesPerSecond` overrides) says how faithfully that FIFO behaves
 like the cartridge's. It defaults to `"instant"` (unbounded and delivered immediately, which is what
 every existing test assumes), and `"hardware"` opts in to 2048 bytes deep, dropping when full, fed at

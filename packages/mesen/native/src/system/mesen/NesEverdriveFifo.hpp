@@ -339,6 +339,12 @@ namespace rp {
 		// Cycle count at which the modelled transfer finishes and MSTAT_MCU_PEND clears. 0 = the
 		// transfer is instant (no clock source installed).
 		uint64_t _dmaDoneAtCycle = 0;
+		// The window the MCU holds the cartridge bus, as a cycle deadline the emulation thread reads WITHOUT the mutex
+		// (a hook on every cartridge read cannot take it): 0 = closed. Open from the exec until _dmaDoneAtCycle, so a DMA
+		// with no clock source (an instant one) opens none.
+		std::atomic<uint64_t> _dmaBusHeldUntil{0};
+		std::atomic<uint64_t> _dmcFetchesDuringDma{0};
+		std::atomic<uint64_t> _cartReadsDuringDma{0};
 
 	public:
 		NesEverdriveFifo() {
@@ -428,12 +434,15 @@ namespace rp {
 			uint64_t droppedBytes = 0;  // lost to a full queue, for the whole run
 			uint64_t wirePending  = 0;  // handed over by the host, not yet carried
 			uint64_t txDepth      = 0;  // NES->host (CMD_USB_WR), waiting for drainTx
+			uint64_t dmcFetchesDuringDma = 0;  // DMC sample fetches from cartridge space inside a DMA window (answered $00)
+			uint64_t cartReadsDuringDma  = 0;  // CPU reads from cartridge space inside a DMA window (counted, not corrupted)
 		};
 
 		FifoStats stats() {
 			std::lock_guard<std::mutex> lock(_mutex);
 			pumpWire();
-			return FifoStats{ _rxQueue.size(), _rxCapacity, _droppedBytes, _wireQueue.size(), _txQueue.size() };
+			return FifoStats{ _rxQueue.size(), _rxCapacity, _droppedBytes, _wireQueue.size(), _txQueue.size(),
+				_dmcFetchesDuringDma.load(), _cartReadsDuringDma.load() };
 		}
 
 		// The file-data staging buffer's size, for a case that holds it to the SDK's largest read (FILE_READ_MAX): a
@@ -453,6 +462,34 @@ namespace rp {
 			_dmaLen = 0;
 			_dmaDoneAtCycle = 0;
 			_pendBits = 0;
+			_dmaBusHeldUntil = 0;
+		}
+
+		// RetroPlug: the cartridge-bus read observer (NesMemoryManager::SetCartReadHook). While a modelled
+		// CMD_F_FRD_MEM transfer is in flight the MCU holds the cartridge's memory controller, so on a real N8 Pro
+		// a read of cartridge space fails. Measured on a PAL console (nesvj docs/audio.md): the APU's DMC sample
+		// fetches, which read PRG at $C000-$FFFF, return garbage, and a free-running DMC tone is damaged in
+		// proportion to the DMA rate; a stopped DMC is clean.
+		//  - A DMC fetch inside the window is answered $00 and COUNTED. $00 is an ASSUMPTION: the real value is
+		//    unmeasured. The count is the reliable part.
+		//  - An ordinary CPU read from cartridge space ($4020-$FFFF, not $40F0/$40F1/$40FF) inside the window is
+		//    COUNTED and answered truthfully. It would fail on hardware too, but a test that waits on $40FF from a
+		//    loop in PRG ROM (nes-core-bytes) must keep working, so it is an invariant to assert, not a corruption.
+		// Other DMA reads (OAM DMA, the halt dummy read) are neither.
+		static uint8_t cartReadHook(void* self, uint16_t addr, uint8_t value, bool isDmcFetch, bool isDma) {
+			return static_cast<NesEverdriveFifo*>(self)->onCartRead(addr, value, isDmcFetch, isDma);
+		}
+
+		uint8_t onCartRead(uint16_t addr, uint8_t value, bool isDmcFetch, bool isDma) {
+			const uint64_t until = _dmaBusHeldUntil.load(std::memory_order_relaxed);
+			if (until == 0 || !_cartCycles || _cartCycles() >= until) return value;
+			if (isDmcFetch) {
+				_dmcFetchesDuringDma.fetch_add(1, std::memory_order_relaxed);
+				return 0x00;
+			}
+			if (!isDma && addr != 0x40F0 && addr != 0x40F1 && addr != REG_MSTAT)
+				_cartReadsDuringDma.fetch_add(1, std::memory_order_relaxed);
+			return value;
 		}
 
 		// ----------------------------------------------------------------
@@ -1288,6 +1325,7 @@ namespace rp {
 				const double seconds = static_cast<double>(_dmaLen) / DMA_BYTES_PER_SECOND;
 				_dmaDoneAtCycle = _cartCycles() +
 					static_cast<uint64_t>(seconds * static_cast<double>(_cartCpuClockHz));
+				_dmaBusHeldUntil = _dmaDoneAtCycle;
 			}
 			retireDmaIfElapsed();
 		}
@@ -1303,6 +1341,7 @@ namespace rp {
 			if (_dmaDoneAtCycle != 0 && _cartCycles && _cartCycles() < _dmaDoneAtCycle) return;
 			_dmaInFlight    = false;
 			_dmaDoneAtCycle = 0;
+			_dmaBusHeldUntil = 0;
 			_pendBits &= static_cast<uint8_t>(~MSTAT_MCU_PEND);
 		}
 

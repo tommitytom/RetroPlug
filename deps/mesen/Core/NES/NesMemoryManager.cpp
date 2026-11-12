@@ -2,6 +2,7 @@
 #include "NES/NesMemoryManager.h"
 #include "NES/BaseMapper.h"
 #include "NES/NesConsole.h"
+#include "NES/NesCpu.h"
 #include "Shared/CheatManager.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
@@ -125,6 +126,11 @@ uint16_t NesMemoryManager::DebugReadWord(uint16_t addr)
 uint8_t NesMemoryManager::Read(uint16_t addr, MemoryOperationType operationType)
 {
 	uint8_t value = _ramReadHandlers[addr]->ReadRam(addr);
+	if(_cartReadHook && addr >= 0x4020) {
+		// RetroPlug: host observer of cartridge-space reads; may replace the value (see SetCartReadHook)
+		bool isDma = operationType == MemoryOperationType::DmaRead;
+		value = _cartReadHook(_cartReadHookCtx, addr, value, isDma && _console->GetCpu()->IsDmcDma(), isDma);
+	}
 	if(_cheatManager->HasCheats<CpuType::Nes>()) {
 		_cheatManager->ApplyCheat<CpuType::Nes>(addr, value);
 	}

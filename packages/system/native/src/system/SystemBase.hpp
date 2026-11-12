@@ -34,6 +34,10 @@ struct CoreTransportStats {
     // showed them lost - on an NTSC console, how many bytes a DMC-DMA halt took and the link recovered.
     std::uint64_t linkFrames   = 0;
     std::uint64_t linkResent   = 0;
+    // NES, a modelled CMD_F_FRD_MEM transfer in flight (the MCU holds the cartridge bus): DMC sample fetches from
+    // cartridge space (answered $00, an assumption) and ordinary CPU reads from it (counted, not corrupted).
+    std::uint64_t dmcFetchesDuringDma = 0;
+    std::uint64_t cartReadsDuringDma  = 0;
 };
 
 // Polymorphic runtime representation of one emulator instance. Owned by its

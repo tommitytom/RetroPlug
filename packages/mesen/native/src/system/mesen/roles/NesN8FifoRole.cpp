@@ -18,6 +18,8 @@ void NesN8FifoRole::onAttach(NesConsole& console) {
         return;
     }
     memMgr->RegisterIODevice(&fifo_);
+    // RetroPlug: let the FIFO see cartridge-space reads, to model the MCU holding the bus during a DMA.
+    memMgr->SetCartReadHook(&rp::NesEverdriveFifo::cartReadHook, &fifo_);
 
     // Give the cartridge a sense of time. Two models need it: the DMA handshake's transfer window,
     // and the host wire's delivery rate. Neither is instantaneous on the device, and both show up in

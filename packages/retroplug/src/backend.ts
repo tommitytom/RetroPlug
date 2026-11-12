@@ -689,6 +689,11 @@ export interface CoreTransportStats {
    *  lost - on NTSC, the bytes a DMC-DMA halt took that the link recovered. */
   linkFrames: number;
   linkResent: number;
+  /** NES: while a modelled CMD_F_FRD_MEM transfer is in flight (the MCU holds the cartridge bus), DMC sample fetches from
+   *  cartridge space (answered $00, an assumption) and ordinary CPU reads from it (counted, never corrupted).
+   *  Cumulative for the run. */
+  dmcFetchesDuringDma: number;
+  cartReadsDuringDma: number;
 }
 
 export interface DebugEvent {

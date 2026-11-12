@@ -255,8 +255,9 @@ function firstDiff(a: Uint8Array, b: Uint8Array): number {
 }
 
 /** Open `path`, DMA `len` bytes of it to `piAddr`, wait for the MCU, and report the status. */
-function dmaProgram(path: string, piAddr: number, len: number): number[] {
+function dmaProgram(path: string, piAddr: number, len: number, before: number[] = [], waitAndArm?: number[]): number[] {
   return parkAfter([
+    ...before,
     ...edioCmd(CMD_F_FOPN),
     ...pushByte(FA_READ),
     ...pushByte(path.length), // u16 path length
@@ -267,9 +268,12 @@ function dmaProgram(path: string, piAddr: number, len: number): number[] {
     ...edioCmd(CMD_F_FRD_MEM),
     ...pushU32(piAddr),
     ...pushU32(len),
-    ...armMstat(MSTAT_MCU_PEND),
-    ...pushByte(0x00), // _ed_halt_exec: the write that actually starts the MCU routine
-    ...WAIT_FOR_MCU,
+    // The arm, the exec and the wait run inline by default; a caller can substitute its own (a RAM routine).
+    ...(waitAndArm ?? [
+      ...armMstat(MSTAT_MCU_PEND),
+      ...pushByte(0x00), // _ed_halt_exec: the write that actually starts the MCU routine
+      ...WAIT_FOR_MCU,
+    ]),
     ...REPORT_STATUS,
   ]);
 }
@@ -485,4 +489,74 @@ test("a 60 KiB SysEx staged whole reaches a NES whole, with nothing dropped on a
   expect(s.audio.droppedMessages() - before).toEqual(0);
   expect(stats.rxDepth).toEqual(sysex.length);
   expect(stats.droppedBytes).toEqual(0);
+});
+
+// --- The MCU holds the cartridge bus during a DMA ----------------------------------------------
+//
+// Measured on a real PAL console (nesvj docs/audio.md): while CMD_F_FRD_MEM runs, the APU's DMC sample fetches
+// (which read PRG) get garbage, and a free-running DMC tone is damaged in proportion to the DMA rate; a DMC that is
+// stopped across the DMA plays clean. The emulator answers such a fetch $00 (an assumption) and COUNTS it, and counts
+// (without corrupting) every ordinary CPU read of cartridge space in the window.
+
+/** Start a looping DMC sample over the start of PRG ($4010 = $4F: loop, fastest rate; $4012 = $C000; $4013 = 4081 bytes). */
+const START_DMC: number[] = [
+  0xa9, 0x4f, 0x8d, 0x10, 0x40, // LDA #$4F, STA $4010
+  0xa9, 0x00, 0x8d, 0x12, 0x40, // LDA #$00, STA $4012
+  0xa9, 0xff, 0x8d, 0x13, 0x40, // LDA #$FF, STA $4013
+  0xa9, 0x10, 0x8d, 0x15, 0x40, // LDA #$10, STA $4015
+];
+/** `LDA #$00`, `STA $4015`: stop the DMC. */
+const STOP_DMC: number[] = [0xa9, 0x00, 0x8d, 0x15, 0x40];
+
+/** Emit `routine` into RAM at $0200, then `JSR $0200`: what follows the JSR runs from PRG again. */
+function runFromRam(routine: number[]): number[] {
+  return [
+    ...routine.flatMap((b, i) => [0xa9, b, 0x8d, i & 0xff, 0x02]), // LDA #b, STA $0200+i
+    0x20, 0x00, 0x02, // JSR $0200
+  ];
+}
+
+/** Boot a CHR-RAM ROM that DMAs 8 KB (~3.7 ms, a few dozen DMC fetches) and return its transport stats. */
+function dmaStats(tag: string, build: (path: string, len: number) => number[]) {
+  const sdRoot = `/tmp/rp-corebytes-bus-${tag}-card`;
+  const path = "/clip.bin";
+  const payload = new Uint8Array(8192).fill(0x55);
+  const s0 = bootSession();
+  expect(s0.backend.writeFile(sdRoot + path, payload)).toBeTruthy();
+  const { s, id } = bootWith(chrRamRom(build(path, payload.length)), `/tmp/rp-corebytes-bus-${tag}.nes`, sdRoot);
+  s.audio.renderAudio(100);
+  // The ROM got through its wait loop and the DMA itself worked.
+  expect(Array.from(s.backend.drainCoreBytes(id))).toEqual([0x00, 0xa5]);
+  const stats = s.backend.getCoreTransportStats(id);
+  s.project.systems.removeSystem(id);
+  s.backend.deleteFile(sdRoot + path);
+  return stats;
+}
+
+test("a DMC fetching while a DMA runs is counted", () => {
+  const stats = dmaStats("dmc-live", (path, len) => dmaProgram(path, PI_CHR_RAM, len, START_DMC));
+  expect(stats.dmcFetchesDuringDma).toBeGreaterThan(0);
+});
+
+test("a DMC stopped across the DMA is not counted", () => {
+  const stats = dmaStats("dmc-stopped", (path, len) =>
+    dmaProgram(path, PI_CHR_RAM, len, [...START_DMC, ...STOP_DMC]));
+  expect(stats.dmcFetchesDuringDma).toEqual(0);
+});
+
+test("a wait loop in PRG reads cartridge space during the DMA, and one in RAM does not", () => {
+  const inPrg = dmaStats("wait-prg", (path, len) => dmaProgram(path, PI_CHR_RAM, len));
+  expect(inPrg.cartReadsDuringDma).toBeGreaterThan(0);
+
+  // The arm, the exec write and the wait all run from RAM, so not one instruction is fetched from PRG
+  // between the exec and the loop's exit.
+  const ramRoutine = [
+    ...armMstat(MSTAT_MCU_PEND),
+    ...pushByte(0x00),
+    ...WAIT_FOR_MCU,
+    0x60, // RTS
+  ];
+  const inRam = dmaStats("wait-ram", (path, len) => dmaProgram(path, PI_CHR_RAM, len, [], runFromRam(ramRoutine)));
+  expect(inRam.cartReadsDuringDma).toEqual(0);
+  expect(inRam.dmcFetchesDuringDma).toEqual(0);
 });

@@ -13,6 +13,9 @@ class CheatManager;
 class Emulator;
 class NesConsole;
 
+// RetroPlug: see NesMemoryManager::SetCartReadHook.
+using CartReadHook = uint8_t (*)(void* ctx, uint16_t addr, uint8_t value, bool isDmcFetch, bool isDma);
+
 class NesMemoryManager : public ISerializable
 {
 private:
@@ -24,6 +27,12 @@ private:
 	CheatManager* _cheatManager = nullptr;
 	NesConsole* _console = nullptr;
 	BaseMapper* _mapper = nullptr;
+
+	// RetroPlug: an optional observer of cartridge-space reads ($4020-$FFFF), installed by the host. It sees
+	// the value the mapper answered and may replace it; `isDmcFetch` marks the APU DMC sample fetch. Null by default
+	// (one branch per read). The host owns what the hook means; Mesen knows nothing of it.
+	CartReadHook _cartReadHook = nullptr;
+	void* _cartReadHookCtx = nullptr;
 
 	uint8_t* _internalRam = nullptr;
 	uint32_t _internalRamSize = 0;
@@ -53,6 +62,9 @@ public:
 	void DebugWrite(uint16_t addr, uint8_t value, bool disableSideEffects = true);
 
 	uint8_t* GetInternalRam();
+
+	// RetroPlug: install (or clear, with null) the cartridge-space read observer.
+	void SetCartReadHook(CartReadHook hook, void* ctx) { _cartReadHook = hook; _cartReadHookCtx = ctx; }
 
 	uint8_t Read(uint16_t addr, MemoryOperationType operationType = MemoryOperationType::Read);
 	void Write(uint16_t addr, uint8_t value, MemoryOperationType operationType);

@@ -462,7 +462,7 @@ std::vector<std::uint8_t> MesenNesSystem::drainCoreBytes() {
 CoreTransportStats MesenNesSystem::coreTransportStats() {
     if (!n8Role_) return {};
     const auto s = n8Role_->fifoStats();
-    CoreTransportStats out{ s.rxDepth, s.rxCapacity, s.droppedBytes, s.wirePending, s.txDepth };
+    CoreTransportStats out{ s.rxDepth, s.rxCapacity, s.droppedBytes, s.wirePending, s.txDepth, 0, 0, s.dmcFetchesDuringDma, s.cartReadsDuringDma };
     if (const auto* l = n8Role_->link()) { out.linkFrames = l->framesSent(); out.linkResent = l->framesResent(); }
     return out;
 }
