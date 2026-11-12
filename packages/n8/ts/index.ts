@@ -163,6 +163,20 @@ export interface N8Client {
   openN8(port: string): N8;
 }
 
+/** The port to talk to: `explicit` when one was asked for (a --serial), else the first port flagged as an N8 Pro (USB
+ *  VID:PID 38df:0017). Throws, naming the ports there are, when none is one. Shared by the CLI's N8 tools and the
+ *  device a session script opens. */
+export function pickN8Port(ports: N8Port[], explicit: string | undefined): string {
+  if (explicit) return explicit;
+  const n8 = ports.find((p) => p.isN8);
+  if (!n8)
+    throw new Error(
+      "no Everdrive N8 Pro found (VID:PID 38df:0017). Plug it in, or pass --serial <port>.\n" +
+        (ports.length ? `serial ports: ${ports.map((p) => p.port).join(", ")}` : "no serial ports detected"),
+    );
+  return n8.port;
+}
+
 // The reply read tolerantly, field by field, as the UI read the hook object it replaces: a host one version apart must
 // not take the submenu down.
 function readConfig(raw: unknown): N8LinkConfig {
@@ -273,6 +287,10 @@ function openSession(call: N8Call, port: string): N8 {
       if (!bootPath) {
         if (!opts.romBytes || !opts.romName)
           throw new Error("loadRom: pass romBytes + romName to upload, or sdPath to boot an existing SD ROM");
+        // An upload name, not a path: it lands in usb-games/, and a separator or a dot directory would put it
+        // somewhere else on the card.
+        if (/[/\\]/.test(opts.romName) || opts.romName === "." || opts.romName === "..")
+          throw new Error(`loadRom: romName must be a plain file name, not "${opts.romName}"`);
         bootPath = `usb-games/${opts.romName}`;
       }
       const upload = !opts.sdPath;

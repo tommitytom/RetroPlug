@@ -6,6 +6,7 @@
 import type { CliHost, CliTool } from "@retroplug/core/cliTool";
 import {
   createN8Client,
+  pickN8Port,
   baseName,
   assertGameRegion,
   decodeMapConfig,
@@ -21,7 +22,6 @@ import {
   type ChrWindow,
   type N8,
   type N8MapConfig,
-  type N8Port,
   type LoadOptions,
   menuScreenToRgba,
   decodeSniffer,
@@ -74,17 +74,6 @@ function positional(args: string[]): string | undefined {
     return args[i];
   }
   return undefined;
-}
-
-function pickPort(ports: N8Port[], explicit: string | undefined): string {
-  if (explicit) return explicit;
-  const n8 = ports.find((p) => p.isN8);
-  if (!n8)
-    throw new Error(
-      "no Everdrive N8 Pro found (VID:PID 38df:0017). Plug it in, or pass --serial <port>.\n" +
-        (ports.length ? `ports: ${ports.map((p) => p.port).join(", ")}` : "no serial ports detected"),
-    );
-  return n8.port;
 }
 
 function readOrThrow(host: CliHost, path: string, what: string): Uint8Array {
@@ -316,7 +305,7 @@ export const n8LoadTool: CliTool = {
     const putBytes = putFile != null ? readOrThrow(host, putFile, "file") : undefined;
 
     const client = createN8Client(host.devices.rpc);
-    const n8 = client.openN8(pickPort(client.listPorts(), serialPort));
+    const n8 = client.openN8(pickN8Port(client.listPorts(), serialPort));
     try {
       n8.connect(); // throws if the N8 doesn't answer the handshake
 

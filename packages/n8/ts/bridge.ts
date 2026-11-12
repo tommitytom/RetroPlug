@@ -3,7 +3,7 @@
 // It lives in the n8 package and is published as `@retroplug/n8/bridge` so risa's n8-sync can drive the same loop,
 // which keeps n8 free of every cart (risa depends on n8, not the other way about).
 import type { CliHost } from "@retroplug/core/cliTool";
-import { createN8Client, type N8Port } from "./index";
+import { createN8Client, pickN8Port } from "./index";
 
 // txiki provides this libuv-backed global at runtime (deps/.../txiki timers); the TS lib config omits it.
 declare function setInterval(handler: () => void, ms: number): number;
@@ -12,18 +12,6 @@ const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-
-// The port to talk to: an explicit --serial, else the first attached N8 (USB VID:PID 38df:0017).
-function pickPort(ports: N8Port[], explicit: string | undefined): string {
-  if (explicit) return explicit;
-  const n8 = ports.find((p) => p.isN8);
-  if (!n8)
-    throw new Error(
-      "no Everdrive N8 Pro found (VID:PID 38df:0017). Plug it in, or pass --serial <port>.\n" +
-        (ports.length ? `serial ports: ${ports.map((p) => p.port).join(", ")}` : "no serial ports detected"),
-    );
-  return n8.port;
-}
 
 export function printInputs(host: CliHost): void {
   const inputs = host.devices.midi().listInputs();
@@ -44,7 +32,7 @@ export function runBridge(host: CliHost, args: string[], clientName: string,
   const lookaheadMs = Math.max(0, Number(flag(args, "--lookahead-ms") ?? 0) | 0);
 
   const client = createN8Client(host.devices.rpc);
-  const n8 = client.openN8(pickPort(client.listPorts(), flag(args, "--serial")));
+  const n8 = client.openN8(pickN8Port(client.listPorts(), flag(args, "--serial")));
   n8.connect(); // throws if the N8 doesn't answer the handshake
 
   const midi = host.devices.midi();

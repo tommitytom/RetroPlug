@@ -9,23 +9,12 @@
 // which is what lets a check be split across commands (hold a note with one call, push a SysEx with the
 // next, capture the whole time).
 import type { CliHost, CliTool } from "@retroplug/core/cliTool";
-import { createN8Client, ADDR_EXP_VOL, type N8Port } from "../index";
+import { createN8Client, ADDR_EXP_VOL, pickN8Port } from "../index";
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-
-function pickPort(ports: N8Port[], explicit: string | undefined): string {
-  if (explicit) return explicit;
-  const n8 = ports.find((p) => p.isN8);
-  if (!n8)
-    throw new Error(
-      "no Everdrive N8 Pro found (VID:PID 38df:0017). Plug it in, or pass --serial <port>.\n" +
-        (ports.length ? `serial ports: ${ports.map((p) => p.port).join(", ")}` : "no serial ports detected"),
-    );
-  return n8.port;
-}
 
 /** Blocking delay. The session runtime has no synchronous sleep, and a note hold has to span a real audio
  *  capture, so a hardware-test tool spins. Holds here are seconds at most. */
@@ -153,7 +142,7 @@ function run(host: CliHost, args: string[]): void {
   const plan = expVolPlan(flag(args, "--exp-vol"), mapper);
 
   const client = createN8Client(host.devices.rpc);
-  const n8 = client.openN8(pickPort(client.listPorts(), flag(args, "--serial")));
+  const n8 = client.openN8(pickN8Port(client.listPorts(), flag(args, "--serial")));
   n8.connect();
 
   // Expansion audio (VRC6/VRC7/N163/S5B/MMC5) is mixed by the FPGA, not the 2A03 - if this is 0 the

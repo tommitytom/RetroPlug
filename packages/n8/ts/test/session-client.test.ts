@@ -16,6 +16,7 @@ import {
   N8_OS_REGION,
   SIZE_SRM_GAME,
   assertGameRegion,
+  pickN8Port,
   type N8Call,
 } from "../index";
 
@@ -148,6 +149,33 @@ test("load boots through the host's bootRom: an upload to usb-games, or the SD p
   // Neither a ROM nor an SD path: refused before anything is sent, in loadRom's words.
   expect(() => n8.load({})).toThrow("loadRom: pass romBytes + romName to upload, or sdPath to boot an existing SD ROM");
   expect(sent.length).toBe(3);
+});
+
+test("load refuses a romName that is not a plain file name, before anything is sent", () => {
+  // The name lands in usb-games/: a separator or a dot directory would put the upload somewhere else on the card.
+  const { call, sent } = fakeHost({ n8BootRom: okReply({ value: 69 }) });
+  const n8 = createN8Client(call).openN8("p");
+  for (const romName of ["../EDN8/x.nes", "a/b.nes", "a\\b.nes", ".", ".."])
+    expect(() => n8.load({ romBytes: new Uint8Array(16), romName })).toThrow(
+      `loadRom: romName must be a plain file name, not "${romName}"`,
+    );
+  expect(sent.map((s) => s[0])).toEqual(["n8Open"]);
+});
+
+test("pickN8Port takes the port asked for, else the first N8, and names the ports there are when none is one", () => {
+  const ports = [
+    { port: "/dev/ttyS0", isN8: false },
+    { port: "/dev/ttyACM1", isN8: true },
+    { port: "/dev/ttyACM2", isN8: true },
+  ];
+  expect(pickN8Port(ports, undefined)).toBe("/dev/ttyACM1");
+  expect(pickN8Port(ports, "/dev/ttyS0")).toBe("/dev/ttyS0");
+  expect(() => pickN8Port([{ port: "/dev/ttyS0", isN8: false }], undefined)).toThrow(
+    "no Everdrive N8 Pro found (VID:PID 38df:0017). Plug it in, or pass --serial <port>.\nserial ports: /dev/ttyS0",
+  );
+  expect(() => pickN8Port([], undefined)).toThrow(
+    "no Everdrive N8 Pro found (VID:PID 38df:0017). Plug it in, or pass --serial <port>.\nno serial ports detected",
+  );
 });
 
 test("the direct writes are a memWR and a read-back memRD, and fail on a mismatch", () => {
