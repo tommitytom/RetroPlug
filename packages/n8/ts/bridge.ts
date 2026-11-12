@@ -44,8 +44,29 @@ export function runBridge(host: CliHost, args: string[], clientName: string,
   const queue: { due: number; bytes: number[] }[] = [];
   let msgCount = 0;
   let byteCount = 0;
+  // A write that fails is logged and counted here, not thrown out of the poll: an error a timer callback throws ends
+  // the session (the launcher prints it and exits 1), and one USB hiccup must not end a live set. What IS fatal is the
+  // cart being gone, a run of failures lasting FATAL_AFTER_MS with no write between, since a bridge forwarding into
+  // nothing would otherwise run on looking healthy.
+  const FATAL_AFTER_MS = 3000;
+  const watch = failureWatch(FATAL_AFTER_MS, 5);
+  let failCount = 0;
   const forward = (bytes: number[]): void => {
-    n8.edio.fifoWR(Uint8Array.from(bytes));
+    try {
+      n8.edio.fifoWR(Uint8Array.from(bytes));
+    } catch (e) {
+      failCount++;
+      const fatal = watch.failed(Date.now());
+      if (failCount === 1 || failCount % 100 === 0)
+        console.error(`N8 bridge: a write failed (${failCount} so far): ${e instanceof Error ? e.message : String(e)}`);
+      if (fatal) {
+        console.error(`N8 bridge: no write has succeeded for ${FATAL_AFTER_MS} ms, so the N8 is gone; exiting`);
+        n8.close();
+        host.process.exit(1);
+      }
+      return;
+    }
+    watch.succeeded();
     msgCount++;
     byteCount += bytes.length;
   };
@@ -62,12 +83,42 @@ export function runBridge(host: CliHost, args: string[], clientName: string,
     while (queue.length > 0 && queue[0].due <= now) forward(queue.shift()!.bytes);
   }, 1);
 
-  setInterval(() => console.log(`forwarded ${msgCount} messages / ${byteCount} bytes`), 2000);
+  setInterval(
+    () => console.log(`forwarded ${msgCount} messages / ${byteCount} bytes${failCount ? `, ${failCount} failed` : ""}`),
+    2000,
+  );
 
   console.log(
     `bridging ${midiIn || "all MIDI inputs"} -> Everdrive N8 on ${n8.port}` +
       `${lookaheadMs ? ` (+${lookaheadMs}ms lookahead)` : ""}. Ctrl-C to stop.`,
   );
+}
+
+/** When a run of write failures means the cart is gone. `failed(now)` records one and answers "give up?"; `succeeded()`
+ *  ends the run. A RUN, not isolated failures: MIDI can be idle for seconds and nothing is written then, so a hiccup, a
+ *  quiet stretch and a second hiccup must not read as `fatalMs` of failing. A failure more than `fatalMs` after the
+ *  previous one starts a new run, and a run is fatal only once it has lasted `fatalMs` AND held `minFailures`. */
+export function failureWatch(
+  fatalMs: number,
+  minFailures: number,
+): { failed(now: number): boolean; succeeded(): void } {
+  let since = 0;
+  let last = 0;
+  let count = 0;
+  return {
+    failed(now) {
+      if (count === 0 || now - last > fatalMs) {
+        since = now;
+        count = 0;
+      }
+      last = now;
+      count++;
+      return now - since > fatalMs && count >= minFailures;
+    },
+    succeeded() {
+      count = 0;
+    },
+  };
 }
 
 /** The flags both tools accept, for their help text. */
