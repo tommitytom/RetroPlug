@@ -46,6 +46,7 @@ expansion sub-channels, the 4-byte MIDI-out cap) tracked in
 | [11-ui-rendering.md](11-ui-rendering.md) | **Built.** Rendering a system to WAV from the `System > Render` menu or `retroplug-cli render` as an engine job on the offline pool - a fresh instance built from a *copy* of the live SRAM/savestate (never the running core). A shared `src/render/` library run by a bare-QuickJS `RenderHost` (own `Engine`, no txiki, continuous blocks) on a pool worker; one `engineRun` promise, cancellable, surviving editor close; the `RenderJobs` list behind the tile elapsed-duration/cancel badge; and the render baseline that holds the bytes. |
 | [12-dynamic-parameters.md](12-dynamic-parameters.md) | **Built** (CLAP + VST3; other formats keep their construct-time names). Per-ROM named DAW automation lanes mapped to mGB / BlipToaster MIDI CCs: the fixed-pool / mutable-descriptor contract the two formats actually permit, the DPF fork's `requestParameterInfoUpdate()` + re-declare-and-diff behind an opt-in macro, the plugin's CC slot pool and its `__rp_parameterMapJson` seam, and the real-Reaper check that proves a host acts on the flag. |
 | [13-subsystems.md](13-subsystems.md) | **The index of everything else.** One short entry each for the subsystems the docs above do not cover: the common tracker interface (`packages/tracker/ts/`), risa, smsggdj, the LSDj HD player, the Everdrive N8 hardware bridge, Launchpad, the controller role, the pico firmware, `retroplug-sdl`, the Node addon, and the node graph the engine runs on. What each is, where it lives, and which command proves a change to it. |
+| [14-hosts-harnesses.md](14-hosts-harnesses.md) | The checks that run RetroPlug inside something else, and the guard they run under: the Reaper leg's editor and multi-instance checks and its Windows twins, Renoise, the SDL harnesses (`sdl:smoke`, `sdl:pipewire`) and the device guard that proves no real card, capture card or serial device was opened, and `retroplug-cli` as a consumer repo's whole test runner. |
 
 ## Reading order
 
@@ -55,6 +56,7 @@ expansion sub-channels, the 4-byte MIDI-out cap) tracked in
 - **Working on the port itself?** [07-remaining-work.md](07-remaining-work.md) is the map of what's left.
 - **Looking for a subsystem you can't find above?** [13-subsystems.md](13-subsystems.md) - trackers,
   hardware bridges, and the non-plugin hosts.
+- **Running a DAW, the SDL standalone or a consumer's tests by hand?** [14-hosts-harnesses.md](14-hosts-harnesses.md).
 
 ## Provenance
 
