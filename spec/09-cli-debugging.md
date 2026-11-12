@@ -17,7 +17,8 @@ TAP-emitting `cli/sessions/rom-test.ts` is the agent-facing example. Proven on a
 ch1 note drives pulse1 at ~261 Hz (C4) with pulse2 silent.
 
 **The one remaining item** is Mesen native `.mlb` label files (need a new parser — Mesen's C# one
-isn't vendored; cc65 `.dbg` labels ship). See [07-remaining-work.md](07-remaining-work.md).
+isn't vendored; cc65 `.dbg` labels ship). See
+[07-remaining-work.md](07-remaining-work.md#mesen-mlb-labels-in-the-cli-debugger).
 
 This doc builds on [02-native-host.md](02-native-host.md) (the Backend RPC surface, of which `debug`
 is one facet) and [06-build-test.md](06-build-test.md) (how the CLI builds and is verified). The

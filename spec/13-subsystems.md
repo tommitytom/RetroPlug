@@ -74,7 +74,7 @@ shape one layer down — it reads its EXT parallel port (`$01`/PC4-PC6) instead.
 A full-resolution LSDj view: a pure-TS reader over live WRAM, tile-diffed into an LVGL canvas. No
 new native code — it polls `readRam` through the snapshot registry on a frame divider, because
 copying 128 KiB and decoding a song every frame is too expensive (see the live-memory entry in
-[07-remaining-work.md](07-remaining-work.md)).
+[07-remaining-work.md](07-remaining-work.md#live-memory-region-subscription)).
 
 - Code: `packages/lsdj/ts/hd/` (tiles, render, canvas) and
   `packages/lsdj/ts/ui/hdView.ts` (the "lsdj-hd" window view the shell renders).
@@ -259,7 +259,7 @@ every Engine embeds, each with its settings in the published graph, its inputs a
 host I/O nodes and to its system node's inputs, and each LSDj's Game Boy's `serialOut` going forward into
 its serial-out decoder, `rp.lsdj.serial-out`, placed after the systems
 ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)). What is left is
-[07-remaining-work.md](07-remaining-work.md) section 5.
+the Engine group of [07-remaining-work.md](07-remaining-work.md#engine).
 
 - Code: `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (C++: the node SDK, the
   executor, planner and plan loader, the `rp.core` and `rp.dsp` nodes; `packages/n8/` holds `rp.n8.nes`,

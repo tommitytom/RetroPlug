@@ -303,7 +303,8 @@ of the running plan's `SystemTable`, which is exactly the window before each sys
 > owned buffer. That second copy exists only because the shared `SystemBase` cannot yet publish
 > straight into the registry; collapsing it is a pending refactor
 > (the header comment of [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp)). It is
-> a documented redundancy, not a bug — see [07-remaining-work.md](07-remaining-work.md).
+> a documented redundancy, not a bug: P4 in
+> [07-remaining-work.md](07-remaining-work.md#p4-the-snapshot-registrys-double-copy).
 
 ---
 
@@ -580,7 +581,8 @@ lost mutation.
 ### Not yet built / deferred
 
 - **The registry double-copy** (§4) stands until the shared `SystemBase` can publish directly into
-  the registry — a pending refactor, see [07-remaining-work.md](07-remaining-work.md). (State
+  the registry: a pending refactor, P4 in
+  [07-remaining-work.md](07-remaining-work.md#p4-the-snapshot-registrys-double-copy). (State
   snapshots are now armed for **both** cores — SameBoy in
   [`SameBoyBackend.cpp`](../packages/sameboy/native/src/system/sameboy/SameBoyBackend.cpp) and Mesen in
   [`MesenBackend`](../packages/mesen/native/src/system/mesen/MesenBackend.cpp) - so `readSram`/state-based

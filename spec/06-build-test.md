@@ -88,7 +88,7 @@ stereo pairs `out_1..4` ([10-multichannel-audio-out.md](10-multichannel-audio-ou
 The build declares `clap`, `vst3`, `vst2`, `au`, and `jack` (the `dpf_add_plugin` call in
 [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)); AU is gated by DPF to macOS. Only
 **LV2** is not built — its out-of-process DSP/UI split doesn't fit RetroPlug
-([07-remaining-work.md](07-remaining-work.md)).
+([07-remaining-work.md](07-remaining-work.md#deferred)).
 
 ## The packages
 
@@ -159,7 +159,7 @@ shell's own aliases, from `tsconfig.aliases.json`: a child's `paths` REPLACE its
 one file carrying both).
 The product list is the **dependency order and the registration order both** (a package before the ones that use it, the
 shell last), and only a ROM provider's place in it is behaviour, and a tracker integration's for a system storing two
-node-less markers (spec/07's open entry): the providers run in that order, and the first to match a ROM fixes a system's
+node-less markers (a known bug, spec/07): the providers run in that order, and the first to match a ROM fixes a system's
 role-list order. A role's kind, a kit format's id and a tracker integration's marker role are otherwise looked up rather
 than sequenced (one package's roles interleave another's without consequence), so for those a duplicate is the hazard:
 the generated module refuses a role kind, a kit format id or a marker role declared twice, each with its own message.

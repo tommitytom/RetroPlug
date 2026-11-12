@@ -1,4 +1,4 @@
-// NativeFileWatcher: the efsw mechanism behind HostRpcService::drainChangedPaths (spec/07). Verifies it reports
+// NativeFileWatcher: the efsw mechanism behind HostRpcService::drainChangedPaths (spec/02). Verifies it reports
 // config.json + bindings/*.json (recursive config-dir watch) and registered ROMs (parent-dir watch, filtered by
 // path), and that unregistered files under the config dir are ignored.
 //

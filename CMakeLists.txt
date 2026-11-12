@@ -263,7 +263,7 @@ add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/miniaudio)
 
 # --- efsw: cross-platform filesystem watcher backing the native file watcher
-# (NativeFileWatcher → HostRpcService::drainChangedPaths, spec/07). EXCLUDE_FROM_ALL so only the
+# (NativeFileWatcher → HostRpcService::drainChangedPaths, spec/02). EXCLUDE_FROM_ALL so only the
 # static lib the plugin links (efsw-static) compiles — a build that never links it pays nothing.
 # efsw's own CMake links Threads::Threads to the shared lib only, so the one consumer of efsw-static adds it
 # itself (retroplug-file-watcher, which links both). BUILD_TEST_APP / EFSW_INSTALL default OFF as a subproject.

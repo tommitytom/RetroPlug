@@ -1,6 +1,6 @@
 #pragma once
 
-// NativeFileWatcher — the C++ half of "watcher = C++, policy = TS" (doc-03 / spec/07).
+// NativeFileWatcher: the C++ half of "watcher = C++, policy = TS" (spec/03).
 //
 // It owns an efsw file watcher and reports changed paths that the TS FileWatcher.pump() drains via
 // HostRpcService::drainChangedPaths(): the user config, bindings profiles, and any watched ROM. It

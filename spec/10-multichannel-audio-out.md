@@ -3,7 +3,7 @@
 **Status: built (§10 steps 1–7) — the host seam, the SameBoy GB tap, the CLI GB export, the plugin GB
 option, the NES stereo-mod pins, the NES 5-individual-mono core stems, and NES-in-plugin (mono-lane
 packing) are all in. The one open piece is the per-mapper expansion sub-channels (§3b /
-[07-remaining-work.md](07-remaining-work.md)).**
+[07-remaining-work.md](07-remaining-work.md#nes-per-mapper-expansion-sub-channels)).**
 This doc describes outputting the *individual console sound channels* of a single emulator instance
 instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair per channel), and 5 mono
 channels / the hardware "stereo-mod" pins for an NES. It builds on

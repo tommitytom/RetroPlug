@@ -25,7 +25,7 @@ The port is complete. RetroPlug is a single build: the older **legacy** build (t
 deleted, the transitional target suffix dropped, and the plugin identity reverted to the canonical
 `RetroPlug` strings. These docs describe that build in the present tense. What remains is
 **feature work, not migration** — a handful of gaps (the raw LSDj Keyboard mode, NES per-mapper
-expansion sub-channels, the 4-byte MIDI-out cap) tracked in
+expansion sub-channels, the 4-byte MIDI-out cap) tracked, with the rest of the open work, in
 [07-remaining-work.md](07-remaining-work.md).
 
 ## The documents
@@ -39,7 +39,7 @@ expansion sub-channels, the 4-byte MIDI-out cap) tracked in
 | [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md) | The role model (system-role vs feature-role) and the protocol nodes: a script node per role, the MIDI routing and the controller session, their ports and settings, the drift-exact PPQ clock in JS, the zod-free settings schema, and how `buildGraph` places them. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model and `.rplg` (thin vs export), DPF get/setState, the config schemas, the forward-tolerant-read + version-stamp policy, the LSDj sav codec, and SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How the build works, the pnpm scripts, and the headless verification loop — which command proves which kind of change. The practical "how do I verify a change" doc. |
-| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the standalone disk-wins reopen, the live memory-region subscription, the 4-byte MIDI-out cap, Mesen `.mlb` labels in the CLI debugger, the deferred items, the pending refactor, the code-comment cleanup backlog, and the node-graph engine's next steps after B3b. |
+| [07-remaining-work.md](07-remaining-work.md) | Open work only: a checklist (before merge, the package split, known bugs, the engine, renders and kits, the Pico, feature gaps and the SDL standalone) whose lines link each item's detail, then what is deliberately deferred. The commit that finishes an item deletes it. |
 | [08-profiling.md](08-profiling.md) | **Built** (behind `RETROPLUG_PROFILE`, `pnpm profile`). A benchmark harness that profiles the DSP-thread JS runtime — allocations/GC — under an mGB + heavy-MIDI workload: the refcount-churn reframe, the off-RT `renderAudio` harness, in-process QuickJS allocator instrumentation, the agent-friendly tool tier, and CI gates. |
 | [09-cli-debugging.md](09-cli-debugging.md) | **Built** (the plumbing tier). The CLI as a scriptable ROM-test harness: the session runner + `Timeline` + WAV/screenshot output, the compiled-in `render` subcommand, and Mesen's compiled-in debugger (decoded APU/PPU state, CPU/memory peeks + poke, breakpoints, trace, profiler, cc65 labels) surfaced through the debug RPC facet so an agent can drive a real NES and assert on its state. |
 | [10-multichannel-audio-out.md](10-multichannel-audio-out.md) | **Built** (steps 1–7; per-mapper NES expansion sub-channels remain). Outputting the individual console sound channels of one instance: Game Boy → 8 outputs (a stereo pair per channel, via a tracked SameBoy tap), NES → 5 mono stems or the hardware "stereo-mod" pins (via a `NesSoundMixer` edit). One mode-driven host seam (`channelLayout()` + a lane-counted `finishBlock`, with the graph TS builds wiring each stream to its lanes), the `channelSplit` / `pinSplit` / `stereoPinSplit` plugin options (menu rows `Channels` / `Pins` / `Stereo Pins`; a stereo stream takes a lane pair, a mono one a single lane, so the NES fits 8 outputs - except `Stereo Pins`, which spends a pair per pin so each is its own DAW track), and a `renderAudioPerChannel` CLI RPC feeding multichannel / per-stereo / per-mono WAV export. |
@@ -64,5 +64,4 @@ expansion sub-channels, the 4-byte MIDI-out cap) tracked in
 `packages/retroplug/plans/`) whose content had drifted out of sync with the code and with
 each other. This set describes the architecture **as it is today**; forward-looking work lives under
 a clearly-labelled "Not yet built / deferred" heading in each doc, and is inventoried in
-[07-remaining-work.md](07-remaining-work.md). Stale in-code comments that still describe the old design are
-tracked as a separate cleanup task (note, don't fix) in [07-remaining-work.md](07-remaining-work.md#4-code-comment-cleanup-backlog-note-dont-fix).
+[07-remaining-work.md](07-remaining-work.md), whose Deferred section records what is intentionally not planned.

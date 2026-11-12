@@ -13,7 +13,7 @@ exist in explicit "Not yet built" subsections.
 > build (the twin `Plugin*.cpp` DSP/UI and the old generated RPC client) has been
 > deleted; this is the sole build, with the canonical `RetroPlug` plugin identity.
 > `packages/ui/` is the F4b menu-contribution package, not the legacy UI. The
-> remaining feature gaps live in [07-remaining-work.md](07-remaining-work.md).
+> remaining open work, the feature gaps among it, lives in [07-remaining-work.md](07-remaining-work.md).
 
 ## The thesis: native owns bytes and cores; TypeScript owns meaning
 
@@ -163,7 +163,7 @@ this is specified in [01-architecture.md](01-architecture.md).
 | [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md) | The role model: system-role vs feature-role, the role registry, and the protocol nodes: a script node per role, the MIDI routing and the controller session, their settings and ports, and how `buildGraph` places them. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model + `.rplg`, DPF get/setState + autoload, config models, forward-tolerant reads + version stamps, the LSDj sav codec, SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How the project builds, the pnpm scripts, the dpf.js seam, and the headless verification loop. |
-| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the standalone disk-wins reopen, the live memory-region subscription, the 4-byte MIDI-out cap, Mesen `.mlb` labels in the CLI debugger, the deferred items, the pending refactor, the code-comment cleanup backlog, and the node-graph engine's next steps after B3b. |
+| [07-remaining-work.md](07-remaining-work.md) | Open work only: a checklist (before merge, the package split, known bugs, the engine, renders and kits, the Pico, feature gaps and the SDL standalone) whose lines link each item's detail, then what is deliberately deferred. |
 
 ## Key files
 

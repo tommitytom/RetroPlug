@@ -42,9 +42,9 @@ public:
     // How long ago `path` was written, in milliseconds, or nothing when it is missing or cannot be read. Measured on
     // the file clock itself (file_time_type::clock::now() minus last_write_time): all a caller wants is an age, and
     // C++20's clock_cast between the file clock and the system clock is not implemented the same way by libc++ and
-    // MSVC. The UI's startup sweep ages a crashed render's snapshots with it (spec/07).
+    // MSVC. The UI's startup sweep ages a crashed render's snapshots with it (spec/11).
     std::optional<double> fileAgeMs(std::string path);
-    // The native side of the file watcher (spec/07). drainChangedPaths pulls the paths the efsw watcher
+    // The native side of the file watcher (spec/02). drainChangedPaths pulls the paths the efsw watcher
     // saw since the last call (empty when watching isn't enabled); setWatchedRoms tells it which ROM
     // files to watch (their parent dirs), recomputed by TS whenever the systems list changes.
     std::vector<std::string> drainChangedPaths();

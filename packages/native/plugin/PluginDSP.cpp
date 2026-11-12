@@ -281,8 +281,8 @@ protected:
     // jackSampleRateCallback -> setBufferSize(n, true)), and VST2 runs the same setBufferSize(n, true) from its own
     // block-size opcode, on whichever thread its host calls that from. On a thread beside the main one, this is not a
     // no-op to wave through: deactivate hands the engine back there (the ring's flush, the ownership flip, the drain,
-    // the release ring) with the editor's idle reclaiming and editing on this thread, which is spec/07's "control
-    // handoff on JACK's thread" residual, and only activate's setMaxBlockFrames is a no-op for a block within the
+    // the release ring) with the editor's idle reclaiming and editing on this thread, which is spec/07's "The JACK
+    // standalone's control handoff" known bug, and only activate's setMaxBlockFrames is a no-op for a block within the
     // plan's maximum - which is why that is the only part ever noticed. The hazard predates the graph engine. (The
     // output shape is no longer set here: the control plane builds the graph for the plugin's outputs at boot.)
     void activate() override {

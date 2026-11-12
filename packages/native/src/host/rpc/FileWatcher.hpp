@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-// The file watcher a host hands HostRpcService (spec/07): the two calls the service forwards and nothing else, so the
+// The file watcher a host hands HostRpcService (spec/02): the two calls the service forwards and nothing else, so the
 // service, and every includer of its header, is clear of a watcher library's headers and of its link. The native one
 // (retroplug-file-watcher's NativeFileWatcher, over efsw) is what the plugin builds; a host that watches nothing passes
 // nothing, and drainChangedPaths then answers empty while setWatchedRoms answers false, as watching off always did.

@@ -67,7 +67,8 @@ suite holds that promise directly (`retroplug-engine-graph-test`'s `[alloc]` cas
 the profile benches measure the JS side, so their 0 is the script host's, not the core's. What still allocates inside a
 long run is Mesen's 0.5 s savestate capture (its streaming serializer), a NES's region reset and a Game Boy's model
 restart, the N8 firmware's SD-command path (`std::string` / `std::filesystem`, a bigger directory listing, an unbounded
-TX queue) and a Game Boy's serial-out capture log; [07-remaining-work.md](07-remaining-work.md) lists them.
+TX queue) and a Game Boy's serial-out capture log;
+[07-remaining-work.md](07-remaining-work.md#allocations-left-on-the-block-thread) lists them.
 
 **How it got here.** Under the DSP kernel (one TS kernel running every role, until B3b) the first
 measure was **~171 allocs/block** on Profile A: the kernel built a `Map` of routed inboxes, per-system

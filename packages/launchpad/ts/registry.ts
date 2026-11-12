@@ -9,7 +9,7 @@
 // `protocol.kinds.controllerApps` entry (the node type, the mode and the polled value that counts as listening),
 // applied by this package's graph placer (control/placer.ts), so a new app needs no code in the shell.
 //
-// Loading user scripts at runtime stays the deferred extension model (spec/07).
+// Loading user scripts at runtime stays the deferred extension model (spec/07, "Downloadable packs").
 
 import type { RoleConfigSchema } from "@retroplug/core/systemRoles";
 import type { ConfigRow } from "@retroplug/ui/contribution";

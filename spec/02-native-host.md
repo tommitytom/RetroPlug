@@ -339,7 +339,7 @@ it:
 | Node | Ports | Does |
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
-| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, and at the block's last frame at most, a guard that keeps the list frame-sorted and inside the block whatever an input's queue holds (a node on the C ABI writes its own, and a script node's `send` carries a frame past the block as given), since the plugin hands each frame to the DAW unchecked. The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
+| `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, and at the block's last frame at most, a guard that keeps the list frame-sorted and inside the block whatever an input's queue holds (a node on the C ABI writes its own, and a script node's `send` carries a frame past the block as given), since the plugin hands each frame to the DAW unchecked. The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md#allocations-left-on-the-block-thread)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
 | `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control), out `drops` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` carries the claim's `generation` (0 while nothing is attached, a new number on every claim, so a pair swapped inside one block still reads as a new device) and `drops` its lost-message count, each from frame 0 of the block, both wrapped at 2^24 (`connected` into 1..2^24 - 1, so a wrap never reads as nothing attached, and a reader compares each with the previous block, so a wrap only reads as a change). Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; every drop the link sees (an oversized message, a full receive ring, a paint sent with nothing attached) is in that one count, and one the node's queue cannot hold is dropped and counted by the queue. `unique`, category `device` |
 | `rp.launchpad.surface-out` | in `out` (events) | hands each message to the surface link's send ring in queue order; a detached link drops and counts them. `unique`, category `device` |
 | `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0; leaving the plan, hands the link the notes the cart still holds for their note-offs. No audio output. `unique`, category `device` (no `threads`, below) |
@@ -407,8 +407,8 @@ console's map names at most one button per byte, and a byte the console has no b
 System's Select, a byte past any console's table - drives nothing), a Game
 Boy's presses (1024, sixteen blocks of a saturated buttons input, because presses are scheduled ahead; a Mesen
 console's presses coalesce, but these cannot, since each is scheduled and meant to be seen, so a quiescent session that
-pushes more than 1024 transitions between two blocks drops the tail, release included, which
-[07-remaining-work.md](07-remaining-work.md) records) and its serial-in (a run a message over a byte ring of two
+pushes more than 1024 transitions between two blocks drops the tail, though never a held button's release, for
+which the queue keeps its last slots) and its serial-in (a run a message over a byte ring of two
 blocks' `serialIn` or one `serialOut`), a NES's N8
 runs (4352) and their bytes (74752), and a Master System's levels (74752, in bytes from both doors). A push
 past a bound is dropped rather than grown, and counted (a Mesen press queue has none to reach), and the
@@ -595,7 +595,8 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   allocates, as it did on the command ring; a NES's region change resets it, which allocates too; the 0.5 s
   state-snapshot capture allocates inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its
   command handlers, in
-  a bigger directory listing and in an unbounded TX queue ([07-remaining-work.md](07-remaining-work.md)). A Game
+  a bigger directory listing and in an unbounded TX queue
+  ([07-remaining-work.md](07-remaining-work.md#allocations-left-on-the-block-thread)). A Game
   Boy's knobs, the ones it applies in place, a NES's setters but its region, and every param allocate nothing at all.
 - **A freshly built core's first block is the warmed block with one exception.** A Mesen core's controller snapshot, the
   four persistent frame input copies and the video filter's output buffer are sized at activation, off the block thread,
@@ -834,7 +835,8 @@ fix for the historical live-read bug class where reads were guarded off in the r
 The registry deliberately **double-copies** from each core's own tear-free triple, because the
 shared `SystemBase` can't yet publish straight into the registry (the header comment of
 [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp));
-collapsing that second copy is a pending refactor ([07-remaining-work.md](07-remaining-work.md)).
+collapsing that second copy is a pending refactor, P4 in
+[07-remaining-work.md](07-remaining-work.md#p4-the-snapshot-registrys-double-copy).
 
 ## The build seam: `SystemBuildRequest` and each console's build function
 
@@ -994,7 +996,8 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   editor is open) and the SDL standalone reclaim at every frame of their idle tick too, so there the generation goes
   within a few frames of the replan; a host with no tick while audio runs (a plugin whose editor is closed, the harness
   hosts) frees it only at those calls, a stop or `drainReleased`
-  ([07-remaining-work.md](07-remaining-work.md) section 5). A record the release ring back could not take,
+  ([07-remaining-work.md](07-remaining-work.md#a-plugin-with-its-editor-closed-has-no-idle-reclaim)).
+  A record the release ring back could not take,
   leaked rather than freed on the audio thread, keeps its pack for the host's life. It is left as it is, since nothing
   has filled that ring.
 - **Settings and layout** (control side, the planning thread). `layout_for` and `prepare_settings` run
@@ -1364,7 +1367,7 @@ however the job ends: on its worker once the body has returned and before the co
 the time a drain reports the job, and with the job itself when it is dropped unrun (a refusal, a cancel while queued,
 the pool's teardown). Only a listed name whose filename carries `kRenderSnapshotPrefix` is ever deleted, so a caller's
 own `--sav` cannot be named by a bug; a removal that fails is passed over without a throw, and an unknown kind's
-list is deleted too, as any refusal's is. The UI's startup sweep takes what a crash leaves (`spec/07`). The pool is the
+list is deleted too, as any refusal's is. The UI's startup sweep takes what a crash leaves (`spec/11`). The pool is the
 `Engine`'s, made at the first submission and reset before the engine's other members go. A graph job runs on one
 worker thread from start to end, which is the job host's control thread and block thread at once (quiescent: no audio
 thread, so `setGraph` flushes inline and `GraphHost::processBlock` is the block driver, draining then running), in
@@ -1445,9 +1448,9 @@ is one automatable parameter applied post-render across all 8 channels
   it outright, so nothing is left to enable.
 - **Per-block host buttons/keys.** No node has an input for them (the DSP kernel carried empty `buttons`
   and `keys` arrays until B3b) and no host feeds them yet: this blocks the raw LSDj Keyboard mode, which
-  needs `keys` on `rp.lsdj.sync` ([07-remaining-work.md](07-remaining-work.md)).
+  needs `keys` on `rp.lsdj.sync` ([07-remaining-work.md](07-remaining-work.md#raw-lsdj-keyboard-sync-mode)).
 - **The snapshot double-copy collapse** (§`SnapshotRegistry`) is a documented redundancy, not a
-  bug — a pending refactor, see [07-remaining-work.md](07-remaining-work.md).
+  bug: a pending refactor, P4 in [07-remaining-work.md](07-remaining-work.md#p4-the-snapshot-registrys-double-copy).
 
 ## Key files
 

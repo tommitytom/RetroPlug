@@ -381,11 +381,10 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 
 - **Standalone disk-wins reopen.** The standalone starts empty (or from
   `RETROPLUG_AUTOLOAD_PROJECT`); reopening the last-saved project from disk on
-  launch is not implemented. See [07-remaining-work.md](07-remaining-work.md).
+  launch is not implemented. See [07-remaining-work.md](07-remaining-work.md#the-standalone-reopens-the-last-project).
 - **Kit-patch persistence.** The thin config persists platform, paths, sav
   suffix/override, embedded-ROM marker, non-default universal settings, and
-  roles; kit (sample-patch) state is not yet serialized. Rich per-system domains
-  are tracked in [07-remaining-work.md](07-remaining-work.md).
+  roles; kit (sample-patch) state is not yet serialized.
 
 ## Key files
 

@@ -1,4 +1,4 @@
-// HostRpcService's watcher gate (spec/07): the service forwards its two watcher calls to the watcher a host hands it,
+// HostRpcService's watcher gate (spec/02): the service forwards its two watcher calls to the watcher a host hands it,
 // and is inert until one is handed over, which is what the test host and the CLI (which watch nothing) rely on. The
 // watcher here is a fake, so the case pins the gate itself; the real one is efsw's, and NativeFileWatcher's own cases
 // in retroplug-watcher-test hold that, in a binary that links the watcher library alone.
@@ -96,7 +96,7 @@ TEST_CASE("HostRpcService forwards to the one watcher it was handed", "[watcher]
 }
 
 TEST_CASE("fileAgeMs measures a file's age on the file clock, and has none where there is no file", "[host]") {
-    // What a UI render's snapshot is aged by when a crash leaves it: the sweep TS runs at startup (spec/07) deletes
+    // What a UI render's snapshot is aged by when a crash leaves it: the sweep TS runs at startup (spec/11) deletes
     // the ones a day old, and asks here rather than comparing a system clock, which would need C++20's clock_cast
     // between the file clock and the system clock, an operation libc++ and MSVC do not agree on.
     // The directory carries a random suffix: build/ and build-tsan/'s copies of this binary can run at once, and a
