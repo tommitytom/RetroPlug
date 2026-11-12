@@ -16,7 +16,6 @@ than work.
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
 - [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
-- [ ] [The format-truncation warning at PluginDSP.cpp:177](#the-format-truncation-warning-at-plugindspcpp177)
 - [ ] [The console test binaries onto `/W4 /WX`](#the-console-test-binaries-onto-w4-wx)
 - [ ] [A `release.yml` run](#a-releaseyml-run)
 
@@ -162,13 +161,6 @@ headless UI host. ([F4c design](../docs/modular-graph-phase-f4c-design.md) secti
 `RP_NATIVE_USB` has never run on hardware: the image (af36f223 at E4) is still unflashed, built under the link trap
 only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modular-graph-phase-e3-design.md) section
 12.8, [E4 design](../docs/modular-graph-phase-e4-design.md) sections 11.7 and 11.8.)
-
-### The format-truncation warning at PluginDSP.cpp:177
-
-A cold GCC build warns `-Wformat-truncation` at `packages/native/plugin/PluginDSP.cpp:177`, the audio-port naming code
-(`snprintf` of `"out_%u_%c"` into a 16-byte `symBuf`, whose worst case is 17). It predates F5a; fix it as its own
-change. ([F5a design](../docs/modular-graph-phase-f5a-design.md) section 14, finding F1; [F5b
-design](../docs/modular-graph-phase-f5b-design.md) section 14.)
 
 ### The console test binaries onto `/W4 /WX`
 

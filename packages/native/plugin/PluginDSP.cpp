@@ -171,8 +171,9 @@ protected:
         if (input) { Plugin::initAudioPort(input, index, port); return; }
         const uint32_t pair = index / 2;
         const bool     left = (index % 2) == 0;
-        char nameBuf[16];
-        char symBuf [16];
+        // Sized for any uint32_t pair number: GCC's -Wformat-truncation counts that, not the four pairs.
+        char nameBuf[24];
+        char symBuf [24];
         std::snprintf(nameBuf, sizeof(nameBuf), "Out %u%c", pair + 1, left ? 'L' : 'R');
         std::snprintf(symBuf,  sizeof(symBuf),  "out_%u_%c", pair + 1, left ? 'l' : 'r');
         port.hints   = 0;
