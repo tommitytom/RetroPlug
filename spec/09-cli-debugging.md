@@ -49,6 +49,12 @@ TS session at build time; the binary runs the JS). See the CLI scaffold in
   their types, and the project's graph carries them and their settings), and `runSession(main)` runs the
   body and reports the exit code. `hostArgs()` reads the session's
   argv (hung off the `Symbol.for("plugin")` namespace — `tjs.args` is a read-only txiki accessor).
+  `keepAlive()` keeps the loop running until `tjs.exit`, for a session that awaits a timer or a child process, and an
+  error nothing catches ends any session with exit 1 and its text
+  ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)).
+- **The real N8**: `connectN8()` opens an Everdrive N8 Pro for a session script: its card's files, a ROM booted at the
+  menu, the live sniffer region and raw FIFO bytes, synchronous calls over the n8 pack's facet
+  ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)).
 - **Event scripting** — [cli/timeline.ts](../packages/retroplug/cli/timeline.ts): a fluent,
   typed `Timeline` (`midi`/`sysex`/`note`/`press`/`tap`/`bpm`/`transport`/`screenshot` at absolute ms)
   whose `build()` is pure (stable ms-sort), and `renderTimeline(session, timeline, { durationMs, warmupMs })`

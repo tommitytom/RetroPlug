@@ -45,6 +45,8 @@ than work.
 - [ ] [Settings > MIDI misses a claim made while open](#settings--midi-misses-a-claim-made-while-open)
 - [ ] [The audio draft's sibling-backend cache](#the-audio-drafts-sibling-backend-cache)
 - [ ] [An Apply past a read-only config](#an-apply-past-a-read-only-config)
+- [ ] [A normal CLI exit skips the teardown](#a-normal-cli-exit-skips-the-teardown)
+- [ ] [The test host drops an uncaught error](#the-test-host-drops-an-uncaught-error)
 
 **Engine**
 - [ ] [DAW automation of node params](#daw-automation-of-node-params)
@@ -360,6 +362,25 @@ that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summaris
 `config.setSection` drops that answer (`void`, [uiHost.ts](../packages/retroplug/ui/host/uiHost.ts)) and
 `applyAudioDraft` calls `audioDevice.apply` regardless, so an Apply still reaches the device. (Found by the final review
 that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summarises; recorded only here.)
+
+### A normal CLI exit skips the teardown
+
+`retroplug-cli`'s override of `tjs.exit` never takes: txiki's `tjs` is frozen, so the set in
+[cli/main.cpp](../packages/native/cli/main.cpp) fails (the launcher clears the exception it leaves) and a session's
+`tjs.exit` is txiki's own, which ends the process at once. So `g_exit` is never set and the launcher's `Teardown`
+(`engine.clearGraph()`, then `rp_stop_providers`) never runs on a normal exit: the plans are not reclaimed while the
+providers' links are alive, and the providers are not stopped. The fix needs an exit the launcher sees (a `tjs.exit`
+wrapped before txiki freezes `tjs`, or an exit hook) and a look at what each provider's stop does at a process's end.
+([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 2.)
+
+### The test host drops an uncaught error
+
+The test host's loop ([src/main.cpp](../packages/native/src/main.cpp)) has the fault the CLI's launcher had before its
+`pumpOnce`: it pumps txiki's loop without looking for a pending exception or a stop request, so an error nothing caught
+outside the harness's reach (a module body's throw before its first `test()`, a timer created before it) is dropped,
+and the file ends as "tests did not complete" with no reason, or not at all while kept alive. Its `tjs.exit` override
+does not take either. The fix is the CLI's `pumpOnce`, then a whole `pnpm test:native` run for the strays it
+surfaces. ([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 3.)
 
 ## Engine
 

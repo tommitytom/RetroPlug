@@ -100,6 +100,15 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   standalone, the headless host and the CLI, whose sessions use the facet's session half; a product's `PROVIDERS` list
   says which packs it starts). The Pico box (`pico/n8-host`) is the same Edio on TinyUSB. BlipToaster's MIDI policy
   (`rp.bliptoaster.midi-policy`) is a node of the box's plan; the desktop's N8 graphs do not use the policy node.
+- A listing is pulled 32 records a request (`Edio::listDir`): one request for a whole large directory fails on silicon
+  (a 181-entry one answered "dir read error 0x82"), so every listing, every file read (which lists its directory first)
+  and the cart jobs' battery lookup reach past 32 entries; `FakeN8` answers the range asked for. A session call that
+  fails on the line marks its session dirty in the facet, and the next call first drains the line (about 0.4 s at most)
+  and re-runs the handshake (0.3 s), answering the handshake's failure without sending itself when the line does not
+  answer (`N8Rpc::ready`), so the CLI's tools, the bridges and a session script's `connectN8()`
+  ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)) recover from a hiccup. The bridges
+  (`packages/n8/ts/bridge.ts`, `n8-bridge` and risa's `n8-sync`) log and count a failed FIFO write and exit only
+  after a run of failures lasting 3 s (`failureWatch`).
 - What the cart allows, and the pack accepts: a cart's battery is reachable only at the N8 menu, through the SD card's
   save file `EDN8/gamedata/<rom>/bram.srm`, and a dump takes about a minute for 64 KB; a running game refuses every cart
   job (a direct cart-memory read wedges it and leaves the menu deaf), and a restore goes before a `rom.upload` so the
