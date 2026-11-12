@@ -20,7 +20,8 @@ export const baseName = (path: string): string => {
 export interface LoadOptions {
   /** Local ROM bytes to upload to usb-games/<romName>. Omit to boot an existing SD path (sdPath). */
   romBytes?: Uint8Array;
-  /** Upload target basename under usb-games/ (required with romBytes). */
+  /** Upload target basename under usb-games/ (required with romBytes). A plain file name: one holding a separator, a
+   *  control byte or a dot directory is refused. */
   romName?: string;
   /** Boot a ROM already on the SD card by its SD path (instead of uploading). */
   sdPath?: string;

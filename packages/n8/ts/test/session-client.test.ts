@@ -155,7 +155,7 @@ test("load refuses a romName that is not a plain file name, before anything is s
   // The name lands in usb-games/: a separator or a dot directory would put the upload somewhere else on the card.
   const { call, sent } = fakeHost({ n8BootRom: okReply({ value: 69 }) });
   const n8 = createN8Client(call).openN8("p");
-  for (const romName of ["../EDN8/x.nes", "a/b.nes", "a\\b.nes", ".", ".."])
+  for (const romName of ["../EDN8/x.nes", "a/b.nes", "a\\b.nes", ".", "..", "a\u0000b.nes", "x.nes\u0000", "a\nb.nes"])
     expect(() => n8.load({ romBytes: new Uint8Array(16), romName })).toThrow(
       `loadRom: romName must be a plain file name, not "${romName}"`,
     );

@@ -288,8 +288,9 @@ function openSession(call: N8Call, port: string): N8 {
         if (!opts.romBytes || !opts.romName)
           throw new Error("loadRom: pass romBytes + romName to upload, or sdPath to boot an existing SD ROM");
         // An upload name, not a path: it lands in usb-games/, and a separator or a dot directory would put it
-        // somewhere else on the card.
-        if (/[/\\]/.test(opts.romName) || opts.romName === "." || opts.romName === "..")
+        // somewhere else on the card. A control byte is refused too, as N8Host's plainFileName refuses it: a NUL
+        // cuts the path short at the device, so "a\0b" would reach ROM a's folder.
+        if (/[\x00-\x1f/\\]/.test(opts.romName) || opts.romName === "." || opts.romName === "..")
           throw new Error(`loadRom: romName must be a plain file name, not "${opts.romName}"`);
         bootPath = `usb-games/${opts.romName}`;
       }
