@@ -15,7 +15,8 @@
     "./protocol": "./ts/protocol.ts",
     "./ui": "./ts/ui/index.ts",
     "./cli": "./ts/cli/index.ts",
-    "./bridge": "./ts/bridge.ts"
+    "./bridge": "./ts/bridge.ts",
+    "./device": "./ts/device.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
