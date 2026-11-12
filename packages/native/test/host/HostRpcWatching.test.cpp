@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -90,4 +92,32 @@ TEST_CASE("HostRpcService forwards to the one watcher it was handed", "[watcher]
     CHECK(firstCalls->romSets == 2);
     CHECK(secondCalls->romSets == 0);
     CHECK(secondCalls->drains == 0);
+}
+
+TEST_CASE("fileAgeMs measures a file's age on the file clock, and has none where there is no file", "[host]") {
+    // What a UI render's snapshot is aged by when a crash leaves it: the sweep TS runs at startup (spec/07) deletes
+    // the ones a day old, and asks here rather than comparing a system clock, which would need C++20's clock_cast
+    // between the file clock and the system clock, an operation libc++ and MSVC do not agree on.
+    namespace fs = std::filesystem;
+    std::error_code    ec;
+    const fs::path     dir = fs::temp_directory_path(ec) / "rp-hostrpc-file-age";
+    fs::remove_all(dir, ec);
+    REQUIRE(fs::create_directories(dir, ec));
+    REQUIRE_FALSE(ec);
+
+    const fs::path file = dir / "written.txt";
+    {
+        std::ofstream out(file);
+        out << "a snapshot";
+    }
+    HostRpcService svc;
+    const auto     age = svc.fileAgeMs(file.string());
+    REQUIRE(age.has_value());
+    CHECK(*age >= 0.0);          // a file written now is not from the future
+    CHECK(*age < 60000.0);       // and is younger than the minute this case could take
+    // A directory ages like a file (the sweep skips them by the trailing '/' listDir marks them with, not here).
+    CHECK(svc.fileAgeMs(dir.string()).has_value());
+    // Nothing to age is nothing, not zero: a missing file is not one the sweep may delete.
+    CHECK_FALSE(svc.fileAgeMs((dir / "absent.txt").string()).has_value());
+    fs::remove_all(dir, ec);
 }

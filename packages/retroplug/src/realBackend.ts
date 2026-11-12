@@ -81,6 +81,7 @@ export function createHostClient(): HostBackend {
     syncFile: (path) => call("syncFile", path) as boolean,
     listDir: (dir) => call("listDir", dir) as string[],
     deleteFile: (path) => call("deleteFile", path) as boolean,
+    fileAgeMs: (path) => (call("fileAgeMs", path) as number | null) ?? null, // an absent optional (null or absent)
     drainChangedPaths: () => call("drainChangedPaths") as string[],
     setWatchedRoms: (paths) => void call("setWatchedRoms", paths),
     canonicalize: (path) => call("canonicalize", path) as string,

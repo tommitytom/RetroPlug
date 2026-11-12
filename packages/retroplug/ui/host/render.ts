@@ -9,6 +9,7 @@ import { resolveSongCatalog } from "../../src/trackerRegistry";
 import { consoleOfPlatform } from "../../src/consoles";
 import { stem } from "../../src/pathUtil";
 import { resolveSavPath } from "../../src/savPaths";
+import { RENDER_SNAPSHOT_PREFIX } from "../../src/renderSnapshotSweep";
 import type { RenderJobs, RenderJobStatus } from "../../src/renderJobs";
 
 export type { RenderJobStatus };
@@ -75,7 +76,7 @@ export function startSystemRender(
   let built = false;
   const prepare = (key: string): object => {
     const snapshot = (ext: string, bytes: Uint8Array): string => {
-      const path = `${dir}/.render-src-${key}.${ext}`;
+      const path = `${dir}/${RENDER_SNAPSHOT_PREFIX}${key}.${ext}`;
       snapshots.push(path);
       if (!backend.writeFileAtomic(path, bytes))
         throw new Error(`render: could not snapshot the system's state to ${path}`);

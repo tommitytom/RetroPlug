@@ -25,6 +25,7 @@ import { BindingsStore } from "./bindingsStore";
 import { ProjectStore, type ProjectContributions } from "./projectStore";
 import { FileSelection } from "./fileSelection";
 import { RenderJobs } from "./renderJobs";
+import { sweepRenderSnapshots } from "./renderSnapshotSweep";
 
 /** The categories of store change a consumer can observe. `project` = project settings / dirty;
  *  `systems` = the systems-structure list; the rest name their store. */
@@ -77,6 +78,9 @@ export function composeAppStores({
 
   const bindings = new BindingsStore(backend, userConfig, () => notify("bindings"));
   bindings.ensureDefaults();
+  // What a crash left of a render's snapshots goes with the defaults this startup writes: a live one is its job's and
+  // the engine's pool deletes it, so only what no job can own any more (a day old) is swept, and only this once.
+  sweepRenderSnapshots(backend, backend.configDir());
 
   const project = new ProjectStore(backend, recent, registry, contributions);
   const renders = new RenderJobs(backend, () => project.systems.view().map((s) => s.id));

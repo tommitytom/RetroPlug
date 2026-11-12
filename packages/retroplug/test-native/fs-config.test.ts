@@ -92,3 +92,15 @@ test("writeFileAtomic: a rewrite replaces the contents and still leaves the dir 
   const strays = be.listDir(__CONFIG_DIR__).filter((n) => n.includes(".tmp."));
   expect(strays).toEqual([]);
 });
+
+test("fileAgeMs: over the real backend, a file just written is a moment old and a missing one is nothing", () => {
+  // What the startup sweep of render snapshots decides by (src/renderSnapshotSweep.ts): native ages the file on its
+  // own clock, and a path with no file is no age at all rather than zero, which would make it deletable.
+  const be = createRealBackend();
+  const path = __CONFIG_DIR__ + "/aged.bin";
+  expect(be.writeFileAtomic(path, new Uint8Array([1, 2]))).toBe(true);
+  const age = be.fileAgeMs(path);
+  expect(age !== null).toBe(true);
+  expect(age! >= 0 && age! < 60000).toBe(true);
+  expect(be.fileAgeMs(__CONFIG_DIR__ + "/absent.bin")).toBe(null);
+});

@@ -1,6 +1,7 @@
 #include "host/rpc/HostRpcService.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -205,6 +206,14 @@ bool HostRpcService::deleteFile(std::string path) {
     std::error_code ec;
     const bool removed = fs::remove(path, ec);
     return removed && !ec;
+}
+
+std::optional<double> HostRpcService::fileAgeMs(std::string path) {
+    std::error_code ec;
+    const fs::file_time_type written = fs::last_write_time(path, ec);
+    if (ec) return std::nullopt;
+    const std::chrono::duration<double, std::milli> age = fs::file_time_type::clock::now() - written;
+    return age.count();
 }
 
 std::vector<std::string> HostRpcService::drainChangedPaths() {

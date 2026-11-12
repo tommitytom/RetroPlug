@@ -114,6 +114,7 @@ export interface MockResource {
 
 export class MockBackend implements Backend {
   private files = new Map<string, Uint8Array>();
+  private fileAges = new Map<string, number>();
   private dir: string;
 
   /** Names of Backend methods called, in order — lets tests assert side-effects
@@ -193,6 +194,11 @@ export class MockBackend implements Backend {
   /** Remove a file from the fake disk, as deleting it would: readFile answers null afterwards. */
   unseed(path: string): void {
     this.files.delete(this.canonicalize(path));
+  }
+
+  /** Set how many milliseconds old a file on the fake disk reads (a file a test seeds is 0 ms old). */
+  setFileAge(path: string, ageMs: number): void {
+    this.fileAges.set(this.canonicalize(path), ageMs);
   }
 
   /** Drive a system's live SRAM content (what readSram returns), overriding the
@@ -311,6 +317,13 @@ export class MockBackend implements Backend {
   deleteFile(path: string): boolean {
     this.log.push("deleteFile");
     return this.files.delete(this.canonicalize(path));
+  }
+
+  fileAgeMs(path: string): number | null {
+    this.log.push("fileAgeMs");
+    const key = this.canonicalize(path);
+    if (!this.files.has(key)) return null;
+    return this.fileAges.get(key) ?? 0; // a file written by a test is a moment old, as one this process wrote is
   }
 
   drainChangedPaths(): string[] {

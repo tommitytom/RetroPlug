@@ -65,6 +65,11 @@ export interface Backend {
   /** Delete the file at `path`. Returns false when it isn't present. */
   deleteFile(path: string): boolean;
 
+  /** How long ago `path` was written, in milliseconds, or `null` when it is missing or cannot be read. Native measures
+   *  it on the file clock itself, so the age is the file's, not a difference between two clocks. The startup sweep of
+   *  render snapshots (src/renderSnapshotSweep.ts) decides what a crash left by it. */
+  fileAgeMs(path: string): number | null;
+
   /** The watched-file paths that changed since the last drain (empty when nothing did).
    *  Native owns the watching — efsw over the config dir + `bindings/` (recursive) and over
    *  each watched ROM's parent directory — and collects the changed paths; TS pulls + reacts
@@ -474,7 +479,7 @@ export interface Backend {
 export type HostBackend = Pick<
   Backend,
   | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "syncFile"
-  | "listDir" | "deleteFile"
+  | "listDir" | "deleteFile" | "fileAgeMs"
   | "drainChangedPaths" | "setWatchedRoms" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
   | "zip" | "unzip" | "pngEncode" | "pngDecode" | "openFileBrowser"
 >;
