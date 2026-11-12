@@ -4,8 +4,8 @@
 `/home/vscode/orca/workspaces/RetroPlug-main/marakihau`. They gave consumer scripts the real N8 and a keep-alive, fixed
 a real N8 hardware bug, and hardened the CLI launcher and the TAP harness against errors they dropped. None of it is on
 `feature/modularize`, which has since moved every file the branch touched (the N8 into `packages/n8`, the harness into
-`packages/testing`, the CLI tools per package). The port map behind this design is
-`.superpowers/sdkn8/port-map.md` (gitignored; every claim below is checked there against the code at 3fe37401d).
+`packages/testing`, the CLI tools per package). The port map behind this design is `.superpowers/sdkn8/port-map.md`
+(gitignored; every claim below is checked there against the code at 3fe37401d).
 
 | Concern | Today on `feature/modularize` |
 |---------|-------------------------------|
@@ -20,28 +20,28 @@ shapes, and its clip-set directory is the over-32-entry case.
 
 User decisions (2026-11-12): `connectN8` lives in the n8 package (section 1); the resync lives in `N8Rpc::Session`
 (section 1); the `tjs.exit` exception is cleared now and the skipped teardown is its own later change (section 2); the
-test host's loop is a follow-up (section 3). The other choices take the port map's recommendations: the branch's
-device surface, the wrapper's closed-device words, `keepAlive` as a plain re-export, the harness's hooks installed on
-the first `test()`, `FakeN8` honouring the requested range without inventing the silicon's threshold, and
-`failureWatch`'s 3 s and 5 failures.
+test host's loop is a follow-up (section 3). The other choices take the port map's recommendations: the branch's device
+surface, the wrapper's closed-device words, `keepAlive` as a plain re-export, the harness's hooks installed on the first
+`test()`, `FakeN8` honouring the requested range without inventing the silicon's threshold, and `failureWatch`'s 3 s and
+5 failures.
 
 ## 1. The N8 side, in `packages/n8`
 
 1. **Paging.** `Edio::listDir` reads in pages of 32 records. `FakeN8` (`packages/n8/native/test/FakeN8.hpp`) answers a
    `DIR_GET` for the start and amount asked, not the whole list, so a fake directory over 32 entries frames the next
-   command right. Tests: an `Edio.test.cpp` case pinning the 32-record split, an `Ops.test.cpp` `readFile` in a
-   40-entry directory, a `test-native` `n8-session` `--ls` of 40 entries. `edio-golden.json` stays byte-identical (its
-   three listings are of one or two records).
+   command right. Tests: an `Edio.test.cpp` case pinning the 32-record split, an `Ops.test.cpp` `readFile` in a 40-entry
+   directory, a `test-native` `n8-session` `--ls` of 40 entries. `edio-golden.json` stays byte-identical (its three
+   listings are of one or two records).
 2. **One `pickN8Port` and a `romName` guard** in `packages/n8/ts/index.ts`, replacing the three copies in `bridge.ts`,
    `cli/n8Load.ts` and `cli/n8Play.ts`.
-3. **Resync in `N8Rpc::Session`** (`packages/n8/native/src/n8/desktop/N8Rpc.cpp`). A failed call marks the session dirty;
-   the next call drains the line and re-handshakes before it runs (up to about 0.4 s and 0.3 s), so every CLI session and
-   bridge recovers from a hiccup. Tests in `N8Provider.test.cpp`: a line model with late bytes, and a dead port, each
-   shown red by removing what it guards.
+3. **Resync in `N8Rpc::Session`** (`packages/n8/native/src/n8/desktop/N8Rpc.cpp`). A failed call marks the session
+   dirty; the next call drains the line and re-handshakes before it runs (up to about 0.4 s and 0.3 s), so every CLI
+   session and bridge recovers from a hiccup. Tests in `N8Provider.test.cpp`: a line model with late bytes, and a dead
+   port, each shown red by removing what it guards.
 4. **`@retroplug/n8/device`**, a new `exports` entry of the n8 package: `openN8Device` over `createN8Client`, with the
    branch's surface (`listDir`, `readFile`, `writeFile`, `makeDir`, `deleteFile`, `load`, `sniffRaw`, `writeFifo`,
-   `close`, and `port`) and a closed-device guard in the wrapper's own words ("N8Device.<method>: the device is closed"),
-   which also covers the zero-byte writes the client never sends. Tested over a fake `call`.
+   `close`, and `port`) and a closed-device guard in the wrapper's own words ("N8Device.<method>: the device is
+   closed"), which also covers the zero-byte writes the client never sends. Tested over a fake `call`.
 5. **The bridge's `failureWatch`** in `packages/n8/ts/bridge.ts`, shared by `n8-bridge` and risa's `n8-sync`: 3 s and 5
    failures, as the branch had them. Test: `bridgeWatch.test.ts`.
 
@@ -63,11 +63,11 @@ against `FakeN8`.
    background task, which case a timer throw is blamed on. Then all four `pnpm test*` suites; a latent stray they
    surface is fixed in this task.
 8. **The launcher** (`packages/native/cli/main.cpp`): `pumpOnce` checks for a pending exception after every pump in the
-   bounded and the keep-alive loops, takes over txiki's stop request, and clears the exception the failed `tjs.exit`
-   set leaves; a thrown session exits 1 with its error printed. It lands after 7 and 5, or test files with stray
-   rejections would die with no TAP and `n8-bridge`, `n8-sync` and `launchpad-probe` would exit on their first timer
-   throw. New `run-cli-ts-tests.sh` sections: a keep-alive throw through `run` and through `test`, a plain throw printing
-   its text, a timer throw exiting 1; the whole `pnpm test:cli-ts` (its kit, render and Ctrl-C legs) still passes.
+   bounded and the keep-alive loops, takes over txiki's stop request, and clears the exception the failed `tjs.exit` set
+   leaves; a thrown session exits 1 with its error printed. It lands after 7 and 5, or test files with stray rejections
+   would die with no TAP and `n8-bridge`, `n8-sync` and `launchpad-probe` would exit on their first timer throw. New
+   `run-cli-ts-tests.sh` sections: a keep-alive throw through `run` and through `test`, a plain throw printing its text,
+   a timer throw exiting 1; the whole `pnpm test:cli-ts` (its kit, render and Ctrl-C legs) still passes.
 
 ## 3. Docs, process, and retiring the branch
 
