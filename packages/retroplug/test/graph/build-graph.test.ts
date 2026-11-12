@@ -571,7 +571,8 @@ test("the sync override is the app's DATA: a node type, a mode, and what counts 
   expect(KIND_DATA.controllerApps["lsdj-midimap"])
     .toEqual({
       syncOverride: {
-        node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off", divisor: "tempoDivisor",
+        node: "rp.lsdj.sync", role: "lsdj-sync", mode: "midiMap", listening: "MidiMap", off: "off",
+        divisor: "tempoDivisor",
       },
     });
   // `driving` is the app's own answer - the mode its launches need is the one the cart runs - and not "the mode is not
@@ -580,6 +581,18 @@ test("the sync override is the app's DATA: a node type, a mode, and what counts 
     .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "midiMap", driving: true });
   expect(controllerSyncOverride([{ id: 7 }], { ...CONTROLLER, cartSync: "Lsdj" }))
     .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "off", driving: false });
+});
+
+test("a stored sync role the system's graph does not place is not driven: no override, whatever the placement asks", () => {
+  // An mGB cart that still stores lsdj-sync after a ROM swap places mgb and leaves the sync node out, so there is no
+  // node of the rule's type to put in a mode. The placer asks its pipeline; the menu asks the view's placed kinds.
+  const driven = { ...CONTROLLER, cartSync: "MidiMap" };
+  expect(controllerSyncOverride([{ id: 7, pipeline: [MGB] }], driven)).toBe(null);
+  expect(controllerSyncOverride([{ id: 7, pipeline: [LSDJ()] }], driven))
+    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "midiMap", driving: true });
+  expect(controllerSyncOverride([{ id: 7, placed: ["sameboy", "mgb"] }], driven)).toBe(null);
+  expect(controllerSyncOverride([{ id: 7, placed: ["sameboy", "lsdj-sync", "lsdj-assets"] }], driven))
+    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "midiMap", driving: true });
 });
 
 test("the override leaves the model's own pipeline as it was", () => {

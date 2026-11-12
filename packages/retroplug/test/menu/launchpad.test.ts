@@ -539,13 +539,39 @@ test("the cart-sync row reads the app's own rule, not a mode string", () => {
       .toBe("Cart: LSDj MI.MAP - not driving it: its SYNC is Lsdj");
   });
   withHost(() => {}, (_h, stores, be) => {
-    // No battery the reader understands: nothing has been polled, so the row says what it does not know rather than
-    // guessing that the cart is willing.
+    // An LSDj cart with no battery the reader understands: nothing has been polled, so the row says what it does not
+    // know rather than guessing that the cart is willing.
+    be.seed("/roms/cart.gb", lsdjRom());
+    stores.project.systems.addSystem("/roms/cart.gb");
+    stores.project.setSection(CONTROLLER_SECTION, { enabled: true, target: "system" });
+    stores.project.pollServices();
+    expect(findItem(submenu(stores, be), "lp-cart-sync")?.label).toBe("Cart: LSDj MI.MAP - driving it (SYNC unread)");
+  });
+  withHost(() => {}, (_h, stores, be) => {
+    // A ROM that is no tracker's places no sync node, so there is nothing for the controller to drive or to claim.
     be.seed("/roms/plain.gb", gbRom());
     stores.project.systems.addSystem("/roms/plain.gb");
     stores.project.setSection(CONTROLLER_SECTION, { enabled: true, target: "system" });
     stores.project.pollServices();
-    expect(findItem(submenu(stores, be), "lp-cart-sync")?.label).toBe("Cart: LSDj MI.MAP - driving it (SYNC unread)");
+    expect(findItem(submenu(stores, be), "lp-cart-sync")).toBe(undefined);
+  });
+});
+
+test("the cart-sync row is not shown for a cart whose sync role is stored but not placed", () => {
+  // An mGB ROM that still stores the lsdj-sync it carried before a ROM swap: the graph places mgb, so there is no sync
+  // node to put in MidiMap and the row must not claim the cart is driven.
+  withHost(() => {}, (_h, stores, be) => {
+    be.seed("/roms/mgb.gb", lsdjRom("MGB"));
+    stores.project.systems.adopt({
+      romPath: "/roms/mgb.gb", core: "sameboy",
+      roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode: "midiSync", tempoDivisor: 1 } }],
+    });
+    const view = stores.project.systems.view()[0];
+    expect(view.roles.some((r) => r.kind === "lsdj-sync")).toBe(true);
+    expect(view.placed.includes("lsdj-sync")).toBe(false);
+    stores.project.setSection(CONTROLLER_SECTION, { enabled: true, target: "system" });
+    stores.project.pollServices();
+    expect(findItem(submenu(stores, be), "lp-cart-sync")).toBe(undefined);
   });
 });
 

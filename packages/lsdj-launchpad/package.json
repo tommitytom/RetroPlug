@@ -34,6 +34,7 @@
             "module": "ts/appRuntime.ts",
             "syncOverride": {
               "node": "rp.lsdj.sync",
+              "role": "lsdj-sync",
               "mode": "midiMap",
               "listening": "MidiMap",
               "off": "off",

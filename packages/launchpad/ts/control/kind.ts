@@ -14,10 +14,11 @@ import { defineKind, type KindCheckContext, type KindData } from "@retroplug/cor
 import { controllerApps, type ControllerAppContribution } from "../registry";
 import { setControllerSyncData } from "./placer";
 
-/** The sync override's fields: the node type it applies to, the mode it sets, the polled SYNC value that counts as the
+/** The sync override's fields: the node type it applies to, the kind of the role that node belongs to (what a menu
+ *  asks a view's placed kinds), the mode it sets, the polled SYNC value that counts as the
  *  cart listening, the mode a cart that is not listening is put in, and the name of that node's setting that divides
  *  the clock it sends the cart. */
-const SYNC_KEYS = ["node", "mode", "listening", "off", "divisor"];
+const SYNC_KEYS = ["node", "role", "mode", "listening", "off", "divisor"];
 
 /** One app's `syncOverride`, checked: the data a placer applies and a menu reads. */
 function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext): void {
@@ -35,6 +36,11 @@ function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext):
   }
   if (typeof rule.node !== "string" || rule.node === "") {
     throw new Error(`${where} needs a "node": the cart sync node type its mode is set on`);
+  }
+  if (rule.role !== undefined && (typeof rule.role !== "string" || rule.role === "")) {
+    throw new Error(
+      `${where}'s "role" must be the kind of the role that node belongs to, not ${JSON.stringify(rule.role)}`,
+    );
   }
   if (typeof rule.mode !== "string" || rule.mode === "") {
     throw new Error(`${where} needs a "mode": the mode that node is put in`);

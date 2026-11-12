@@ -481,8 +481,10 @@ The rest of the document follows from those nodes:
   from the cart's battery, on the control plane. The `lsdj-sync` nodes of the cart the MI.MAP app drives
   are forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
   (`controllerSyncOverride`, whose rule is the app's `protocol.kinds.controllerApps` entry `syncOverride` as DATA: the
-  cart sync node type, the mode it forces, the polled SYNC value that counts as the cart listening, the mode not
-  listening means and the name of that node's setting that divides its clock), its `rp.lsdj.serial-out` with its
+  cart sync node type, the kind of the role it belongs to, the mode it forces, the polled SYNC value that counts as the
+  cart listening, the mode not listening means and the name of that node's setting that divides its clock; the placer
+  asks the pipeline for the node and the menu asks the system view's `placed` kinds for the role, so a cart that stores
+  the role and does not place it is not driven and its menu row says nothing), its `rp.lsdj.serial-out` with its
   `rp.lsdj.sync`, so a forced cart sends no host MIDI, and its Game Boy's node captures nothing for them. The
   override is those nodes' settings and that capture alone, so nothing reaches the `.rplg`. The session is handed
   that cart's divisor as `tickDivisor` (the setting the rule's `divisor` names, read off the cart's node in the

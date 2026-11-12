@@ -29,6 +29,9 @@ import { parseAppConfig } from "../registry";
 export interface ControllerSyncRule {
   /** The node type the mode is set on: a system's cart sync node. */
   readonly node: string;
+  /** The kind of the role that node belongs to: what a view's placed kinds can be asked, where the document's pipeline
+   *  (which names the node) is not at hand. Absent: the menu cannot tell a placed cart from a stored one. */
+  readonly role?: string;
   /** The mode that node is put in. */
   readonly mode: string;
   /** The cart's own SYNC value that counts as listening. When it is polled as anything else the cart is put in `off`
@@ -94,9 +97,9 @@ function ruleOfData(data: KindData, app: string): ControllerSyncRule | null {
   if (item === null || typeof item !== "object") return null;
   const rule = (item as { syncOverride?: unknown }).syncOverride;
   if (rule === null || typeof rule !== "object") return null;
-  const { node, mode, listening, off, divisor } = rule as ControllerSyncRule;
+  const { node, role, mode, listening, off, divisor } = rule as ControllerSyncRule;
   if (typeof node !== "string" || node === "" || typeof mode !== "string" || mode === "") return null;
-  return { node, mode, listening, off, divisor };
+  return { node, role, mode, listening, off, divisor };
 }
 
 /** The `lsdj-sync` mode the controller needs the cart it drives to be in, and which system that is.
@@ -116,7 +119,7 @@ function ruleOfData(data: KindData, app: string): ControllerSyncRule | null {
  *  rendering properly. Measured in test-native/lsdj-sync-toggle. Better to send a cart that is not listening
  *  nothing at all. */
 export function controllerSyncOverride(
-  systems: readonly { id: number }[],
+  systems: readonly OverrideSystem[],
   controller: Pick<GraphController, "app" | "target" | "systemId" | "cartSync"> | null | undefined,
 ): { systemId: number; node: string; mode: string; driving: boolean } | null {
   if (!controller) return null;
@@ -128,10 +131,27 @@ function ruleOf(kindData: PlaceContext["kindData"], app: string): ControllerSync
   return ruleOfData(kindData("controllerApps"), app);
 }
 
+/** A system as the override reads it: the placer hands its pipeline (the nodes the document places), the menu the
+ *  system view's `placed` kinds. A caller with neither has no placement to ask, and the system counts as placed. */
+export interface OverrideSystem {
+  readonly id: number;
+  readonly pipeline?: readonly { readonly node: string }[];
+  readonly placed?: readonly string[];
+}
+
+/** Whether the system's graph places the node the rule sets a mode on. A stored sync role it leaves out (an mGB cart
+ *  still carrying lsdj-sync after a ROM swap) has no such node, so nothing is driven and nothing is overridden. */
+function placesRuleNode(rule: ControllerSyncRule, system: OverrideSystem | undefined): boolean {
+  if (!system) return true;
+  if (system.pipeline) return system.pipeline.some((r) => r.node === rule.node);
+  if (system.placed && rule.role !== undefined) return system.placed.includes(rule.role);
+  return true;
+}
+
 /** The override a rule asks for, given the controller and the systems. */
 function overrideWith(
   rule: ControllerSyncRule | null,
-  systems: readonly { id: number }[],
+  systems: readonly OverrideSystem[],
   controller: Pick<GraphController, "target" | "systemId" | "cartSync">,
 ): { systemId: number; node: string; mode: string; driving: boolean } | null {
   if (controller.target !== "system" || !rule) return null;
@@ -139,6 +159,7 @@ function overrideWith(
   // aimed at different systems.
   const systemId = controllerTarget(controller, systems);
   if (systemId === NO_SYSTEM) return null;
+  if (!placesRuleNode(rule, systems.find((s) => s.id === systemId))) return null;
   const mode = syncModeFor(rule, controller.cartSync);
   // Whether that mode is what makes the app's launches WORK, which is the app's rule and not a mode string a caller
   // may compare against: an app whose "send nothing" mode is spelt differently, or that has none, still reads as not

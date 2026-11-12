@@ -30,7 +30,7 @@ test("a syncOverride that is not an object is refused", () => {
 
 test("a syncOverride key nothing reads is refused, naming the keys there are", () => {
   expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", of: "off" }))
-    .toThrow('has "of", which nothing reads (its keys are node, mode, listening, off, divisor)');
+    .toThrow('has "of", which nothing reads (its keys are node, role, mode, listening, off, divisor)');
 });
 
 test("a syncOverride with no node or no mode is refused", () => {
@@ -63,6 +63,12 @@ test("a divisor must name the setting that divides the node's clock: a non-empty
   expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", divisor: 2 }))
     .toThrow('\'s "divisor" must name the setting that divides that node\'s 24-tick clock, not 2');
   expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", divisor: "" })).toThrow('\'s "divisor" must name');
+});
+
+test("a role must name the kind of the role the node belongs to: a non-empty string", () => {
+  expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", role: 3 }))
+    .toThrow('\'s "role" must be the kind of the role that node belongs to, not 3');
+  expect(() => refuse({ node: "rp.lsdj.sync", mode: "midiMap", role: "" })).toThrow('\'s "role" must be the kind');
 });
 
 test("a node type the product wires no protocol node for is refused", () => {

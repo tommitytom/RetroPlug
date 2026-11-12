@@ -434,7 +434,7 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    [launchpad/ts/control/kind.ts](../packages/launchpad/ts/control/kind.ts), with MI.MAP contributing the control-plane
    half from [lsdj-launchpad/ts/app.ts](../packages/lsdj-launchpad/ts/app.ts) and the runtime half and `syncOverride`
    data from its manifest. What an app's launches need the cart to run in travels as `syncOverride` DATA (`node`,
-   `mode`, `listening`, `off`, `divisor`), applied by the launchpad pack's graph placer (`ts/control/placer.ts`),
+   `role`, `mode`, `listening`, `off`, `divisor`), applied by the launchpad pack's graph placer (`ts/control/placer.ts`),
    never as a function a planner's bundle would have to import. The generator and the fixture suite hold the
    mechanism over a fixture kind that is no real pack's (`widgets`); each real kind's own rules are its package's
    test ([kind.test.ts](../packages/launchpad/ts/test/kind.test.ts)).
