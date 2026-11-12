@@ -24,11 +24,13 @@ test("connectN8 finds the fake cart, and the card's calls make, write, list, rea
   }
 });
 
-test("sniffRaw reads the sniffer region, writeFifo reaches the cart, and load boots at the menu", () => {
+test("sniffRaw reads the sniffer region, writeFifo is accepted by the cart, and load boots at the menu", () => {
   const n8 = connectN8({ serial: "fake-n8", timeoutMs: 1000 });
   try {
     expect(n8.sniffRaw().length).toBe(512);
-    n8.writeFifo(new Uint8Array([0x90, 0x3c, 0x7f])); // not a menu command: the menu skips it
+    // Accepted, nothing more: the bytes land in the fake cart's log, which no host call hands to TS (the C++ side holds
+    // them, N8Provider.test.cpp's "fifo:90 3C 7F"), and they are not a menu command, so the menu skips them.
+    n8.writeFifo(new Uint8Array([0x90, 0x3c, 0x7f]));
     const rom = new Uint8Array(16 + 16384);
     rom.set([0x4e, 0x45, 0x53, 0x1a, 1, 0, 0, 0]); // iNES, mapper 0
     expect(n8.load({ romBytes: rom, romName: "sdk-boot.bin" })).toEqual({

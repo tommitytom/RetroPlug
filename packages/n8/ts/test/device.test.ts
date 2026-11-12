@@ -119,3 +119,30 @@ test("every call after close throws the device's own words, a zero-byte write in
   for (const [name, f] of calls) expect(f).toThrow(`N8Device.${name}: the device is closed`);
   expect(sent.map((s) => s[0])).toEqual(["n8ListPorts", "n8Open", "n8Handshake", "n8Close"]);
 });
+
+test("a close that throws on the failed-handshake path leaves the handshake's error the one thrown", () => {
+  const unanswered: Reply = { status: "timeout", deviceStatus: 0, message: "Edio: serial read timeout" };
+  const { call } = fakeHost({ n8Handshake: unanswered });
+  const gone: N8Call = (method, ...params) => {
+    if (method === "n8Close") throw new Error("channel gone");
+    return call(method, ...params);
+  };
+  expect(() => openN8Device(gone)).toThrow("Edio: serial read timeout");
+});
+
+test("a close the host refuses can be retried: the device is closed once the host has released it", () => {
+  const { call, sent } = fakeHost({});
+  let refuse = true;
+  const flaky: N8Call = (method, ...params) => {
+    if (method === "n8Close" && refuse) {
+      refuse = false;
+      throw new Error("channel gone");
+    }
+    return call(method, ...params);
+  };
+  const dev = openN8Device(flaky);
+  expect(() => dev.close()).toThrow("channel gone");
+  dev.close(); // the host never released the session, so this one does
+  expect(sent.filter((s) => s[0] === "n8Close").length).toBe(1);
+  expect(() => dev.listDir("/")).toThrow("N8Device.listDir: the device is closed");
+});

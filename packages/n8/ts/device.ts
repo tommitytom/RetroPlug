@@ -48,15 +48,20 @@ export interface N8Device {
 }
 
 /** Open the N8 on `call` (the explicit port, else the first N8 the host lists) and run the connect handshake. Throws
- *  if there is no N8 or it does not answer, which is also what another process holding the (exclusive) port looks
- *  like; a session whose handshake failed is closed first. */
+ *  if there is no N8, its port cannot be opened (a port another process holds is refused in the transport's own words,
+ *  "the serial port <p> is busy"), or it does not answer the handshake; a session whose handshake failed is closed
+ *  first. */
 export function openN8Device(call: N8Call, opts: N8ConnectOptions = {}): N8Device {
   const client = createN8Client(call);
   const n8 = client.openN8(pickN8Port(client.listPorts(), opts.serial));
   try {
     n8.connect(opts.timeoutMs);
   } catch (e) {
-    n8.close();
+    try {
+      n8.close();
+    } catch {
+      // the handshake's failure is the one worth reporting
+    }
     throw e;
   }
 
@@ -87,8 +92,8 @@ export function openN8Device(call: N8Call, opts: N8ConnectOptions = {}): N8Devic
     writeFifo: (bytes) => guard("writeFifo", () => n8.edio.fifoWR(bytes)),
     close: () => {
       if (closed) return;
+      n8.close(); // set after the host has released the session, so a close it refused can be retried
       closed = true;
-      n8.close();
     },
   };
 }

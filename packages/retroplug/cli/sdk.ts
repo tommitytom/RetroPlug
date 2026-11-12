@@ -6,13 +6,13 @@
 //
 // Keep this the SSOT for what's "public": adding a symbol here widens the SDK; nothing else does.
 
+import { openN8Device, type N8ConnectOptions, type N8Device } from "@retroplug/n8/device";
+import { makeCall } from "../src/rpcClient";
+
 // `runSession` is for a SESSION FILE run by path (`retroplug-cli <file>.js`), which is how the example sessions are
 // written: it boots the control plane, runs the callback and exits with its outcome. A TEST file must not call it - it
 // would exit the process and preempt the harness, reporting a false pass - so a test uses `test()`/`bootSession()`, and
 // runSession refuses outright (exit 1, with a message) when this process has registered a test case.
-import { openN8Device, type N8ConnectOptions, type N8Device } from "@retroplug/n8/device";
-import { makeCall } from "../src/rpcClient";
-
 export { bootSession, hostArgs, runSession } from "./session";
 export type { Session } from "./session";
 
