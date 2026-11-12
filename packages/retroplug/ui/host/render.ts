@@ -69,12 +69,14 @@ export function startSystemRender(
   // renders. So each render's files are its own, named by the job's key (unique across instances, which share the
   // config directory), and they go with the job: the submission lists them as its discardFiles, which the engine's
   // pool deletes however the job ends, and this module deletes them again when the job settles, whichever road it took
-  // (a render the queue held past its bound and the UI cancelled, a submission the RPC threw on, a job the engine
-  // never heard of: none of those reach the pool, and a removal of a file the pool already took is a no-op). A snapshot
-  // that cannot be written refuses the render, listed as an error, rather than leave the field out and boot the sibling
-  // .sav on disk instead of what you hear. The render also says its snapshots must exist when it boots
-  // (RenderOpts.inputsMustExist), so one the startup sweep took from under a live job refuses rather than rendering a
-  // blank boot under the user's name.
+  // (a render the queue held past its bound and the UI cancelled, a submission the RPC threw on, and every job a drain
+  // that threw failed, which native may still be running: a removal of a file the pool already took is a no-op). A
+  // snapshot that cannot be written refuses the render, listed as an error, rather than leave the field out and boot
+  // the sibling .sav on disk instead of what you hear. The render also says its snapshots must exist when it boots
+  // (RenderOpts.inputsMustExist), so one the startup sweep took from under a live job, or one that second delete took
+  // from a job native still has queued, refuses rather than rendering a blank boot under the user's name. A job
+  // already past that check can lose the file before its boot reads it, a window of a handful of calls, and then the
+  // boot finds no sav to put and renders the cart's blank start.
   const dir = backend.configDir();
   const snapshots: string[] = [];
   const prepare = (key: string): object => {
@@ -107,11 +109,11 @@ export function startSystemRender(
     sys.id,
     prepare,
     // The files go with the job however it settles, and here is the second road beside the pool's: a job the queue
-    // never submitted (held past the engine's bound and cancelled, or a drain that threw and failed it) and a
-    // submission the RPC threw on never reach a worker or a JobFiles, so this settles them. `renders.start` runs it
-    // after a spec function that threw too, which is the snapshot whose write failed. What still leaks is an instance
-    // that ends while its job is held here (nothing of this runtime is left to hear it settle) and a crash; the startup
-    // sweep takes those.
+    // never submitted (held past the engine's bound and cancelled, or a submission the RPC threw on) and a job a drain
+    // that threw failed, which native may still hold and run to its end. `renders.start` runs this after a spec
+    // function that threw too, which is the snapshot whose write failed. What still leaks is an instance that ends
+    // while its job is held here (nothing of this runtime is left to hear it settle) and a crash; the startup sweep
+    // takes those.
     () => snapshots.forEach((p) => backend.deleteFile(p)),
     () => snapshots,
   );

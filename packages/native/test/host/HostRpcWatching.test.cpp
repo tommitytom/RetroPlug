@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -98,9 +99,12 @@ TEST_CASE("fileAgeMs measures a file's age on the file clock, and has none where
     // What a UI render's snapshot is aged by when a crash leaves it: the sweep TS runs at startup (spec/07) deletes
     // the ones a day old, and asks here rather than comparing a system clock, which would need C++20's clock_cast
     // between the file clock and the system clock, an operation libc++ and MSVC do not agree on.
+    // The directory carries a random suffix: build/ and build-tsan/'s copies of this binary can run at once, and a
+    // name they share is one case's remove_all running under the other's file.
     namespace fs = std::filesystem;
     std::error_code    ec;
-    const fs::path     dir = fs::temp_directory_path(ec) / "rp-hostrpc-file-age";
+    const fs::path     dir =
+        fs::temp_directory_path(ec) / ("rp-hostrpc-file-age-" + std::to_string(std::random_device{}()));
     fs::remove_all(dir, ec);
     REQUIRE(fs::create_directories(dir, ec));
     REQUIRE_FALSE(ec);

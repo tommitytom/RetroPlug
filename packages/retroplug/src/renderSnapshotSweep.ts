@@ -8,10 +8,12 @@
 //
 // The age is WALL time, not work done, so the rule is not proof that a file's job is gone: a render queued behind the
 // engine's budget while the machine suspends for a day, or a clock that jumps (an NTP correction on an RTC-less Pi or
-// handheld), can age a live job's snapshot past the bound, and another instance starting then deletes it. That costs a
-// refused render, not a wrong one: a render whose snapshot went refuses to boot rather than booting blank
-// (RenderOpts.inputsMustExist). The other side is a file of a job that ended without reaching the pool, which waits up
-// to the bound before this takes it.
+// handheld), can age a live job's snapshot past the bound, and another instance starting then deletes it. That costs
+// the render it belonged to: a render whose snapshot went refuses to boot rather than booting blank
+// (RenderOpts.inputsMustExist), unless it is already past that check, the window ui/host/render.ts names, where the
+// boot finds no sav to put and renders the cart's blank start. The other side is a file nothing of its job is left to
+// delete (an instance that ended while TS still held the job, or a crash), which waits up to the bound before this
+// takes it.
 
 import type { HostBackend } from "./backend";
 

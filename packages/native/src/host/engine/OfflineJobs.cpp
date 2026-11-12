@@ -294,6 +294,9 @@ OfflineSubmit OfflineJobs::enqueue(std::unique_ptr<Job> job) {
             why = "an unknown error";
         }
         if (failed && workers_.empty()) {
+            // The job goes back to `job`, a parameter, which is destroyed after the lock is released: its destructor
+            // unlinks the files the submission owns, and that is not work to do under the pool's lock.
+            job = std::move(queue_.back());
             queue_.pop_back();
             return {0, "no worker thread could be started: " + why};
         }
@@ -423,7 +426,12 @@ void OfflineJobs::workerLoop() {
         // and the caller holds that answer as the job's outcome. A render that finished before its cancel was seen
         // keeps the files it wrote in its outputs: they are whole, and on disk either way.
         const bool cancelled = job->cancelled.load(std::memory_order_acquire);
-        if (stopping_) return;  // the pool is going, and its completions with it
+        if (stopping_) {
+            // The pool is going, and its completions with it. The lock goes before the job does: ~Job is not work a
+            // submission should wait behind, and its files went above.
+            lock.unlock();
+            return;
+        }
         if (job->kind == Kind::Graph) {
             if (cancelled) {
                 done.ok = false;
@@ -441,6 +449,11 @@ void OfflineJobs::workerLoop() {
         // The job's slot is free: a job its kind's limit held back may start now, which this worker takes as it loops
         // if nothing older is runnable; the others re-check in case that leaves one for them.
         if (!queue_.empty()) work_.notify_all();
+        // The finished job is freed with the lock released, as a job a refusal drops from the queue is: a destructor
+        // is not work that a submission, a cancel or a drain should wait behind.
+        lock.unlock();
+        job.reset();
+        lock.lock();
     }
 }
 

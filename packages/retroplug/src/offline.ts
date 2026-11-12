@@ -146,9 +146,10 @@ export interface EngineRunOptions {
   onLog?: (line: EngineLogLine) => void;
   /** Files the submission owns, which the engine's pool deletes however the job ends: on the job's worker once its
    *  body has returned and before its completion is queued, and with the job itself on a road that drops it unrun (a
-   *  refusal, a cancel while it waits in the queue, the pool's teardown). So they are gone by the time the job settles,
-   *  and a caller does not delete them itself. Never a user's own file (a `--sav` handed to a render): a UI render
-   *  lists the snapshots it wrote into the config directory, which every instance shares. */
+   *  refusal, a cancel while it waits in the queue, the pool's teardown). A caller may delete them as well, which is
+   *  how a job the pool never saw is settled, and a removal of a file already gone is a no-op. Never a user's own file
+   *  (a `--sav` handed to a render): a UI render lists the snapshots it wrote into the config directory, which every
+   *  instance shares. */
   discardFiles?: string[];
 }
 

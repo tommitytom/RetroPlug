@@ -48,10 +48,11 @@ export class RenderJobs {
    *  name no other job of any list shares (the caller's files for this job carry it), and a throw from it is listed as
    *  the job's error with nothing submitted. `discardFiles`, when given, answers the files the submission owns once
    *  `spec` has run (the caller's snapshots, which `spec` writes): they ride the record to the engine
-   *  (EngineRunOptions.discardFiles), whose pool deletes them however the job ends, so the caller deletes nothing on
-   *  settle. `onSettled` runs once the job has ended however it ended (listed or dismissed, a throw from `spec`
-   *  included): the engine has let go of the job's files by then, or can no longer report on the job (a broken link to
-   *  it). */
+   *  (EngineRunOptions.discardFiles), whose pool deletes them however the job ends. A caller may delete them too, which
+   *  settles a job the pool never saw, and a removal of a file the pool already took is a no-op. `onSettled` runs once
+   *  the job has ended however it ended (listed or dismissed, a throw from `spec` included): the engine has let go of
+   *  the job's files by then, or can no longer report on the job (a broken link to it, which can leave a job native
+   *  still holds running to its end). */
   start(
     systemId: number,
     spec: object | ((key: string) => object),
