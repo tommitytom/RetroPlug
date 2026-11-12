@@ -604,6 +604,45 @@ app's own flows - the full-window overlays (`overlay.ts` + the close guard, proj
 hooks), the unsaved-changes rows, the interactive save, and the background watchers (song, SRAM auto-save, N8 SD job,
 Launchpad scan).
 
+### Framework gotchas
+
+Two behaviours of lv_binding_js (in the `deps/dpf.js` submodule) shape the UI code, and neither is visible from React.
+
+**`insertChildBefore` always appends.** React reorders children through `insertChildBefore`, and the binding's
+[comp.cpp](../deps/dpf.js/deps/lv_binding_js/src/render/native/core/basic/comp.cpp) ignores `beforeChild`, so a child
+swapped at a stable React position (a tile becoming a menu, a type swap) or a mid-list insert lands at the END of the
+LVGL child list, not at its source position. `appendChild` lands correctly only where the parent has ≤1 child, which is
+what both workarounds use: a stable per-id wrapper whose position never changes, with a single swappable child
+(`StableSlot`, used by the grid and the tile views, [above](#the-grid---screensgrid)), or re-keying the parent on the
+visible set so every child mounts fresh in JSX order ([the menu](#the-menu---screensmenu)). A tile, row or menu that
+renders in a confusingly wrong slot is almost certainly this.
+
+**There is no font-family: the UI face is monospaced by SYMBOL SUBSTITUTION.** A component picks a font by pixel size
+and nothing else: the TS style pipe turns `font-size` into an index
+([text.ts](../deps/dpf.js/deps/lv_binding_js/src/render/react/core/style/pipe/text.ts)), and native maps that index onto
+an `lv_font_montserrat_*` pointer
+([font.hpp](../deps/dpf.js/deps/lv_binding_js/src/render/native/core/style/font/font.hpp)). That table is in a submodule
+and names the symbols literally, so the face is changed by changing what the names POINT AT, not by asking for another
+one. Every `LV_FONT_MONTSERRAT_*` in [lv_conf.h](../packages/native/src/lv_conf.h) is therefore 0, so LVGL compiles none
+of its own; `LV_FONT_CUSTOM_DECLARE` declares the seven sizes the table uses; and
+[`packages/native/src/fonts/lv_font_montserrat_{12,14,16,18,22,24,32}.c`](../packages/native/src/fonts) supply those
+symbols, built from DejaVu Sans Mono. Regenerate them with [tools/gen-mono-fonts.sh](../tools/gen-mono-fonts.sh), which
+also renames each file's uppercase include guard: lv_font_conv derives it from the filename, so it would otherwise be
+the very `LV_FONT_MONTSERRAT_*` macro now set to 0, and the file would preprocess away to a missing symbol. So:
+
+- Turning an `LV_FONT_MONTSERRAT_*` back to 1 is a duplicate-symbol link error, not a font change. Switch faces by
+  regenerating, never in `lv_conf.h`.
+- The generation keeps its FontAwesome pass: the `LV_SYMBOL_*` glyphs live in these same font files (the binding's
+  [dropdownlist.cpp](../deps/dpf.js/deps/lv_binding_js/src/render/native/components/dropdownlist/dropdownlist.cpp) draws
+  them), and without that `--font` they become placeholder boxes.
+- The `.c` files are committed, as LVGL's own are, so a build needs no npm/network. They are added to the `lvgl`
+  target in the root [CMakeLists.txt](../CMakeLists.txt), the archive the objects they replace came from, so nothing
+  depends on static-link order.
+
+The face is monospaced, but layout must not depend on that: the action-cycler row aligns its arrows with real widget
+geometry rather than space-padding ([the menu](#the-menu---screensmenu)), and
+[menu-action-cycler.test.ts](../packages/retroplug/test-ui/menu-action-cycler.test.ts) pins it.
+
 ### Game input - [`ui/input/useGameInput.ts`](../packages/retroplug/ui/input/useGameInput.ts)
 
 Resolves each `"key"` bus code to a Game Boy button via `buildKeyToButton(bindings.keyboard)`

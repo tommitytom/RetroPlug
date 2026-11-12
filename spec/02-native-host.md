@@ -469,12 +469,13 @@ into a fixed table of 8 entries (a name up to 31 characters, an interface id up 
 the `N8CartLink` in every product that starts providers (the plugin, the SDL standalone, the CLI, where it is never
 connected, and the test host, over a fake cart), the Launchpad pack's provider installs its `ControllerLink` in the
 products that name it and install links (the SDL standalone and the CLI, over real ports; the test host starts it for
-its facet but hands the graph a `HarnessSurfaceLink`, so a test stages a press where no port could); and the Node addon
-and the render host install neither. A name it has no device for answers
-null, and the node runs on a stub of its own that is never connected and that drops and counts everything, so a
-document plans and runs in every host. A node keeps its handle across a reactivate and gives it back once in destroy,
-which runs at reclaim on the control thread while the links are still installed: a host tears its plans down first
-(`Engine::clearGraph`), then uninstalls its links.
+its facet but hands the graph a `HarnessSurfaceLink`, so a test stages a press where no port could, and the harness's
+controller seam, `stageControllerIn` and `renderBlocks`' controller field, works only there: a harness-facet host that
+installs no `HarnessSurfaceLink` refuses it); and the Node addon and the render host install neither. A name it has no
+device for answers null, and the node runs on a stub of its own that is never connected and that drops and counts
+everything, so a document plans and runs in every host. A node keeps its handle across a reactivate and gives it back
+once in destroy, which runs at reclaim on the control thread while the links are still installed: a host tears its plans
+down first (`Engine::clearGraph`), then uninstalls its links.
 
 A capability job ([CapabilityJobs.hpp](../packages/native/src/host/engine/CapabilityJobs.hpp)) is what `submitJob`
 takes: a request for a node of the last published plan, answered with an id or a refusal. A system node's job goes to
@@ -526,20 +527,23 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   [lsdj](../packages/lsdj/ts/enums.ts), and the app's own [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)
   for routing and layout), which is its C++ enumerator's name with the first
   letter lowercased (`SameBoyModel::CgbC` is `"cgbC"`, `SameBoyHighpass::RemoveDcOffset` is `"removeDcOffset"`):
-  `knobs::Label<E>`, an `rfl::Literal` generated at compile time from reflect-cpp's enumerator list, reads exactly
-  those strings, lists them in the descriptor's schema and maps one back to its enumerator by position, so native has
-  one spelling of each label and a document and a saved `.rplg` carry the same word. An ordinal, another spelling, or
-  a number out of its range (`lightTemperature` -1 to 1, `apuLatencyMs` 0.25 to 6, NaN included) refuses the settings,
-  and with them the document, never clamped. A field the type does not know is ignored (the settings reader takes
-  extra fields), which is why `BuildGraphGoldens.test.cpp` holds every golden document's system nodes to the fields
-  their types' schemas list. `serialOutCapture` is `off`, `listen` (master sync) or `drive` (MI.OUT). `gain` is dB
-  from -90 to 12, default 0; `expansionVolume` an int param, whole percent of unity from 0 to 200, default 100, as the
-  core takes it. The construct-time fields are the ones the core reads as it boots and has no setter for: NES `sdRoot`
-  (a string), `fifo`, `n8Link` and `channelExportMode` (labels), `fifoDepth`, `fifoBytesPerSecond` and `n8LinkRttUs`
-  (ints in the range the store clamps them to), SMS `enableFm` and `gameGear` (flags). `buildGraph` writes every field
-  the core-config role carries, the node's default where the stored config holds no value the node takes; `gameGear`
-  is the platform's, written `true` for a Game Gear and left out otherwise, and a platform never changes under a live
-  id. So a document never flips a field between absent and present under a system id (the key tells the two apart).
+  `knobs::Label<E>`, an `rfl::Literal` generated at compile time from reflect-cpp's enumerator list, reads exactly those
+  strings, lists them in the descriptor's schema and maps one back to its enumerator by position, so native has one
+  spelling of each label and a document and a saved `.rplg` carry the same word. node.hpp's `enum_param` labels are
+  kebab-case (`"cgb-c"`), though, so the C++ side spells an enum two ways, and a knob moved from a setting to an enum
+  param would change the word a document carries; no enum knob is a param. An ordinal, another spelling, or a number out
+  of its range (`lightTemperature` -1 to 1, `apuLatencyMs` 0.25 to 6, NaN included) refuses the settings, and with them
+  the document, never clamped. A field the type does not know is ignored (the settings reader takes extra fields, as
+  every C++ node's does), so a misspelt knob plans and does nothing (a strict reader would refuse it at plan time); that
+  is why `BuildGraphGoldens.test.cpp` holds every golden document's system nodes to the fields their types' schemas
+  list. `serialOutCapture` is `off`, `listen` (master sync) or `drive` (MI.OUT). `gain` is dB from -90 to 12, default 0;
+  `expansionVolume` an int param, whole percent of unity from 0 to 200, default 100, as the core takes it. The
+  construct-time fields are the ones the core reads as it boots and has no setter for: NES `sdRoot` (a string), `fifo`,
+  `n8Link` and `channelExportMode` (labels), `fifoDepth`, `fifoBytesPerSecond` and `n8LinkRttUs` (ints in the range the
+  store clamps them to), SMS `enableFm` and `gameGear` (flags). `buildGraph` writes every field the core-config role
+  carries, the node's default where the stored config holds no value the node takes; `gameGear` is the platform's,
+  written `true` for a Game Gear and left out otherwise, and a platform never changes under a live id. So a document
+  never flips a field between absent and present under a system id (the key tells the two apart).
 - **Only a new core rebuilds.** The node keys its rebuild on `system`, `romName` and its construct-time fields
   (node.hpp's `rebuild_key`: prepare compares the new settings' key with the key the instance was created with, which
   no commit writes), declares `stateless_prepare`, so every other settings change is a commit that never makes
@@ -573,20 +577,24 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   block lands at its start. A node reads its params only in a block (the host binds its control streams there,
   landing the document's values in them as it adopts the plan), so they reach the core at the node's first block,
   before its first `prepareForBlock`, not in `activate`: a core its node has taken runs nothing before that. That
-  first value is snapped into the core (whose gain smoother starts at 0 dB), so its first sample plays at the
-  document's level; every later gain change is smoothed, as it always is. A document without a param leaves its
+  first value is snapped into the core (whose gain smoother starts at 0 dB), so its first sample plays at the document's
+  level (a node's first block is silent, so that snap is observable only through a savestate seed taken mid-note, which
+  is the case that pins it); every later gain change is smoothed, as it always is. A document without a param leaves its
   stream where it was: at its default, on a new node.
 - **Allocation.** A warmed core's whole block allocates and frees nothing, emulation included: its audio ring and its
   per-block scratches are sized at activation (the block size arrives in the build request, `maxBlockFrames`, and a
   later host growth re-activates the graph quiescently, where `reserveAudio` moves the sizes with no block in flight),
-  and Mesen's per-frame plumbing reuses its buffers. That holds with a block's host input staged into it too: every
-  ingress queue a press, a MIDI run, a serial byte or a raw message lands in is bounded and sized when the core is
-  built, and a push past its bound is dropped and counted (above), so the counted window may carry what a node applies
-  before the core's `prepareForBlock`. The cases that prove it `SKIP` the GBA, counted, where its sibling fixture ROM
-  is not present, as on CI, and cover it where the resources tree is. What still allocates on the block thread is work
-  that makes something: a Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which allocates, as it
-  did on the command ring; a NES's region change resets it, which allocates too; the 0.5 s state-snapshot capture
-  allocates inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its command handlers, in
+  and Mesen's per-frame plumbing reuses its buffers: its notification dispatch iterates a `thread_local` copy, so a
+  console's first frame allocates nothing, and only a thread's first nested notification send allocates (the pool entry
+  for a listener that sends one of its own, `NotificationManager.cpp`). That holds with a block's host input staged into
+  it too: every ingress queue a press, a MIDI run, a serial byte or a raw message lands in is bounded and sized when the
+  core is built, and a push past its bound is dropped and counted (above), so the counted window may carry what a node
+  applies before the core's `prepareForBlock`. The cases that prove it `SKIP` the GBA, counted, where its sibling
+  fixture ROM is not present, as on CI, and cover it where the resources tree is. What still allocates on the block
+  thread is work that makes something: a Game Boy's model change restarts the core (`GB_alloc` / `GB_init`), which
+  allocates, as it did on the command ring; a NES's region change resets it, which allocates too; the 0.5 s
+  state-snapshot capture allocates inside Mesen's streaming serializer; and the N8 firmware's SD path allocates in its
+  command handlers, in
   a bigger directory listing and in an unbounded TX queue ([07-remaining-work.md](07-remaining-work.md)). A Game
   Boy's knobs, the ones it applies in place, a NES's setters but its region, and every param allocate nothing at all.
 - **A freshly built core's first block is the warmed block with one exception.** A Mesen core's controller snapshot, the
@@ -752,9 +760,12 @@ then, when the request names an arm, set that core's tap to its export mode (eit
 core and on every routing change, even when the wanted mode is unchanged, and each run resets the capture streams;
 it rides the plan's swap, so no block runs between the two. `armedTap_` holds the tap's address as well as the id, so a
 duplicate id does not restore onto another core; a NES's tap is the core object, so the address differs from the core
-pointer's by a per-class constant and, within one class, tap equality is core equality. A core allocated where the
-armed tap was freed still matches, which TS cannot reach (design section 12). A param's value from `setParam`
-rides the same ring as a command of the GraphHost's own, not a `DspCommand`, into its param's control stream.
+pointer's by a per-class constant and, within one class, tap equality is core equality. A core allocated where the armed
+tap was freed still matches, since the record survives a drop and a reclaim; TS cannot reach that (its ids only go up,
+and every edit that drops a core re-arms), so it is left as it is and the suite pins only the new-id replacement (design
+section 12). No tap read casts to a console class any more; the tests keep their console-only casts to read a config
+field, `linkPeers_` or a ring counter, which are the core's own business. A param's value from `setParam` rides the same
+ring as a command of the GraphHost's own, not a `DspCommand`, into its param's control stream.
 
 **Ownership handoff.** A displaced or removed core leaves with the plan that last ran it, and is
 freed on the control thread when that plan is reclaimed (`reclaimReleased` → `GraphHost::reclaim`), which a
@@ -888,10 +899,12 @@ per console it runs, each reading its own config out of the request: `rp::mesen:
 `MesenGbaSystem` (empty `biosPath` → HLE boot ROM), and `rp::mesen::buildSmsCore` refuses a ROM that is positively
 another console's (the NES magic, the GBA logo or the Game Boy logo) but accepts a headerless one (TS admits homebrew by
 its extension). Each gate checks its own console's signature alone, so a ROM carrying two consoles' magic is accepted by
-whichever node the document names; the TS side picks the node. The NES and GBA cores take their seeds through the config;
-the SMS takes the `romName` it stages its file under. All three run the same tail, `reserveAudio` then `onActivate` then
-`enableStateSnapshot`, and refuse a boot Mesen's `LoadRom` rejected after the magic gate ("Mesen refused the
-ROM"), so NES/GBA/SMS cores publish a tear-free savestate for the registry / Duplicate just like SameBoy.
+whichever node the document names; the TS side picks the node. The NES and GBA cores take their seeds through the
+config; the SMS takes the `romName` it stages its file under, and a node that sends none stages under `system-<id>`,
+which is unique within a Project but not across the several Projects one process holds, so two projects' unnamed system
+1 would share one battery (TS always sends a real `romName`). All three run the same tail, `reserveAudio` then
+`onActivate` then `enableStateSnapshot`, and refuse a boot Mesen's `LoadRom` rejected after the magic gate ("Mesen
+refused the ROM"), so NES/GBA/SMS cores publish a tear-free savestate for the registry / Duplicate just like SameBoy.
 
 Their audio arrives through [`MesenAudioDevice`](../packages/mesen/native/src/system/mesen/MesenAudioDevice.hpp), a
 fixed-capacity ring of interleaved stereo `int16` sized `maxBlockFrames + kMaxPlayBufferFrames` (32768: the most one
@@ -913,7 +926,9 @@ lock-free). The other batch is the per-console compile-out (`deps/mesen/CMakeLis
 [docs/modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md) section 4): `MESEN_ENABLE_SNES` (the
 Super Nintendo and the Game Boy, which Super Game Boy couples), `-PCE` and `-WS` are ON as upstream builds them and OFF
 in the root's cache defaults, each dropping its `Core/<Dir>/` units and its CPUs' evaluators and guarding the call sites
-into them; NES, GBA and SMS are always built, and 288 of the 426 translation units remain.
+into them; NES, GBA and SMS are always built, and 288 of the 426 translation units remain. Built back in, the consoles
+RetroPlug does not run (PCE, SNES, WS) and Mesen's own Game Boy (`GbPpu`) still copy a frame's controller snapshot once
+more per emulated frame, through `RenderedFrame`'s by-value constructor; the NES, GBA and SMS refill a member instead.
 
 ## `ScriptHost` + `ScriptCompiler`: the script-node runtime
 
@@ -980,7 +995,8 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   within a few frames of the replan; a host with no tick while audio runs (a plugin whose editor is closed, the harness
   hosts) frees it only at those calls, a stop or `drainReleased`
   ([07-remaining-work.md](07-remaining-work.md) section 5). A record the release ring back could not take,
-  leaked rather than freed on the audio thread, keeps its pack for the host's life.
+  leaked rather than freed on the audio thread, keeps its pack for the host's life. It is left as it is, since nothing
+  has filled that ring.
 - **Settings and layout** (control side, the planning thread). `layout_for` and `prepare_settings` run
   the definition's `parseSettings` and its `layout` on the settings alone, so the planner can check a
   whole document before it creates anything. Every script type declares `RP_TYPE_STATELESS_PREPARE`,
@@ -1186,27 +1202,34 @@ the same way, and the dither's `seedFrom` names one too, so a kit-shaped documen
 player's port and the settings ref). A rate change resumes where the output had reached, to within one frame, so a
 fresh r8brain run-in is heard from there rather than a gap. `rp.dsp.normalize` measures its peak over the channels it
 plays (the loudest of each played channel's peak), and `rp.dsp.dpcm` refuses a multi-channel buffer rather than mixing
-one.
+one. `retroplug-r8brain-base`'s statics are why no resampler may outlive its engine: a `rp::dsp::Resampler` destroyed
+after `R8bBase.cpp`'s statics is a use-after-free in r8brain's `unref` (it locks a static mutex and writes into
+cache-owned objects), so a host tears its engines down before exit and the offline pool joins its workers in its own
+teardown (below).
 
 Two of the nodes guard their state, because nothing between a plan and the host output rejects a non-finite sample:
 `rp.dsp.biquad` resets a channel's filter and writes that block as silence when the filter comes out of it non-finite
 (a frequency above the plan rate's Nyquist makes the RBJ poles unstable, and the kernel's output clamp passes a NaN
-straight through), and `rp.dsp.dither` restarts a channel whose state came out non-finite (a non-finite input sample
-would latch its error terms for the rest of the stream). The guards are on state, not on a document's values: a node
-hands its kernel the values it reads, because a clamp would be a different kit byte (the planner and `setParam` clamp
-a document's value into a param's range with no diagnostic, and a wired value is not clamped at all). The param ranges
-cover any sane kit value (gain -100..100, frequency 1 Hz to 96 kHz, Q 0.001 to 1000, -96..96 dB), so a kit's values
-reach the kernels through them whole; the planner cannot see the plan's rate, so a kit compile refuses a frequency at
-or above its source rate's Nyquist itself. Each guard reports into `rp.host.guards/1` when the host offers it: the
-offline job pool does, and counts the reports into its job's completion. Both guards differ from the kernel run
-directly in a way a kit could see, so the compiler refuses the regimes rather than choosing between them: a filter at
-or above its source's Nyquist, a source with a non-finite sample, a pass that records a non-finite sample and a pass a
-guard stepped into each refuse that slot ([modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md)
-section 11). A dither node's channels each draw their own noise, channel `c` from the setting's seed plus `c` times a
-golden-ratio step, so a stereo patch's dither is decorrelated and channel 0 is the setting's own seed (a mono patch is
-unchanged), unless `seedFrom` names a buffer, whose first channel's hash seeds the stream instead; a kit compile is
-byte-identical because it refuses rather than recovers. No kit byte moves either way: the nodes are held to those
-kernels by their own tests.
+straight through; until the guard fires, the unstable filter writes rail-to-rail output, so a held above-Nyquist setting
+is full-scale bursts between the guard's silent blocks, not silence), and `rp.dsp.dither` restarts a channel whose state
+came out non-finite (a non-finite input sample would latch its error terms for the rest of the stream). The guards are
+on state, not on a document's values: a node hands its kernel the values it reads, because a clamp would be a different
+kit byte (the planner and `setParam` clamp a document's value into a param's range with no diagnostic, and a wired value
+is not clamped at all). The param ranges cover any sane kit value (gain -100..100, frequency 1 Hz to 96 kHz, Q 0.001 to
+1000, -96..96 dB), so a kit's values reach the kernels through them whole; the planner cannot see the plan's rate, so a
+kit compile refuses a frequency at or above its source rate's Nyquist itself. Each guard reports into `rp.host.guards/1`
+when the host offers it: the offline job pool does, and counts the reports into its job's completion. Both guards differ
+from the kernel run directly in a way a kit could see, so the compiler refuses the regimes rather than choosing between
+them: a filter at or above its source's Nyquist, a source with a non-finite sample, a pass that records a non-finite
+sample and a pass a guard stepped into each refuse that slot
+([modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md) section 11). A dither node's channels each
+draw their own noise, channel `c` from the setting's seed plus `c` times a golden-ratio step, so a stereo patch's dither
+is decorrelated and channel 0 is the setting's own seed (a mono patch is unchanged), unless `seedFrom` names a buffer,
+whose first channel's hash seeds the stream instead. The step separates one node's channels, not two nodes, so two
+`rp.dsp.dither` nodes with the same settings draw the same noise; each channel's state is 2,560 bytes
+(`sizeof(rp::dsp::Dither)` on a 64-bit build: its own `Mt19937`'s 624 32-bit words and a position, inline). A kit
+compile is byte-identical because it refuses rather than recovers. No kit byte moves either way: the nodes are held to
+those kernels by their own tests.
 
 ### Packages, generated registration and device mode
 
@@ -1232,31 +1255,41 @@ instance owns its `Settings` in the bytes `query_memory` counted, with the resou
 missing one and skips an unknown one; the desktop reads the same blob for a type whose settings are portable, and
 `settingsToMsgpack` converts a node's JSON settings. Settings use `rp::text<N>`, `rp::list<T, N>`, `rp::choice<...>`,
 numbers, bools, numeric `rp::resource_ref`s and enums with a fixed underlying type, no `operator|` and enumerators
-within -256 to 256 (the same limits hold for `enum_param`). A device-capable node source wraps `validate`,
-`adjust_layout` and the helpers only they use in one `#ifndef RP_DEVICE`; the desktop build compiles a
-`<target>-device` object library from every `device: true` target (the `RP_DEVICE` flags, nothing linked) so a missed
-guard, a pointer or non-portable `Settings`, or a `heap` node fails the desktop build. `rp.sdk.settings-json/1` is an
-SDK interface every `node.hpp` type answers, writing an instance's settings as JSON. The device image and the link
-trap are in [06-build-test.md](06-build-test.md).
+within -256 to 256 (the same limits hold for `enum_param`). `rp::choice` stands in for `rfl::Literal`, which a portable
+node does not use, and the device decode reads an enum by its own scan alone, so it does not see a custom
+`rfl::Reflector<E>` and does not honour an `rfl::config::enum_range<E>` override (no node has either). A device-capable
+node source wraps `validate`, `adjust_layout` and the helpers only they use in one `#ifndef RP_DEVICE`; the desktop
+build compiles a `<target>-device` object library from every `device: true` target (the `RP_DEVICE` flags, nothing
+linked) so a missed guard, a pointer or non-portable `Settings`, or a `heap` node fails the desktop build.
+`rp.sdk.settings-json/1` is an SDK interface every `node.hpp` type answers, writing an instance's settings as JSON. The
+device image and the link trap are in [06-build-test.md](06-build-test.md).
 
 **Script packs and package memory (E4).** A package with a `retroplug.script` member is a TypeScript pack whose nodes
 run on MicroQuickJS, in the device-mode script host (`MqjsHost`, `packages/graph-runtime/native/src/script/`), on the
 desktop and on the box alike ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md));
-desktop-only packs stay on QuickJS (the script host above). The engine is `deps/mquickjs`, vendored, behind
-`rp_mqjs_engine.c`, which wraps the fixes (`rp_mqjs_names.h`, force-included, renames its symbols).
+desktop-only packs stay on QuickJS (the script host above). `heapBytes` is the box's 32-bit context: a 64-bit build
+doubles it (`kWidthFactor`) and a desktop host gives the pack twice that again (`kDesktopHeapFactor`), and
+`retroplug_product` registers the pack beside the package's native entries. The engine is `deps/mquickjs`, vendored,
+behind `rp_mqjs_engine.c`, which wraps the fixes (`rp_mqjs_names.h`, force-included, renames its symbols).
 `build-device-pack.mjs` bundles the entry, lowers it to ES5, scans it for library calls the engine lacks, compiles the
-bytecode the generated `pack64.c` / `pack32.c` carry, and runs that bytecode on `retroplug-mqjs-run` (a transcript and
-a heap check), with the type ids a device registers from without running any JavaScript. A pack's memory is one block
-`[host state][a private copy of its bytecode][the context, heapBytes]`, declared by `rp_package`'s `memory` hook
-(`query`, `query_target`, `setup`, `teardown`, with `ctx`), which the loader sizes once at the target's width, places
-before the nodes and sets up before the first is created; a node asks for its package's block through
-`rp.host.packages/1`. Each node's context loads the pack's device runtime bundle (no settings parse, no descriptor),
-the desktop's control context the whole pack. A node's `process` runs under a deadline read from `rp.host.clock/1` (10
-ms and 250 us a message on the box, 500 ms of thread CPU time on the desktop with no clock), a throw, an overrun or a
-dead heap faults the node (`rp.script.fault/1`) and a dead heap every node of its pack, and a definition's `idle:
-"skip"` keeps a block with nothing to do off the interpreter. The block API gains `forward(port, message)`.
-`rp.host.packages/1`, `rp.script.fault/1`, `rp.script.heap/1`, `rp.host.clock/1` and `rp.host.script-log/1` are
-declared in [rp_script.h](../packages/node-sdk/native/src/graph/rp_script.h) and `rp_node.h`.
+bytecode the generated `pack64.c` / `pack32.c` carry, and runs that bytecode on `retroplug-mqjs-run` (a transcript and a
+heap check), with the type ids a device registers from without running any JavaScript. A pack's nodes use the same
+`defineNode`, which refuses an audio port in a device pack (audio stays C++); the scan refuses `async` and `Promise`,
+and the host a promise returned from a hook. A pack's memory is one block `[host state][a private copy of its
+bytecode][the context, heapBytes]`, declared by `rp_package`'s `memory` hook (`query`, `query_target`, `setup`,
+`teardown`, with `ctx`), which the loader sizes once at the target's width, places before the nodes and sets up before
+the first is created; a node asks for its package's block through `rp.host.packages/1`. Each node's context loads the
+pack's device runtime bundle (no settings parse, no descriptor), the desktop's control context the whole pack. A node's
+`process` runs under a deadline read from `rp.host.clock/1` (10 ms and 250 us a message on the box, 500 ms of thread CPU
+time on the desktop with no clock), a throw, an overrun or a dead heap faults the node (`rp.script.fault/1`) and a dead
+heap every node of its pack, and a definition's `idle: "skip"` keeps a block with nothing to do off the interpreter. The
+deadline is polled finer as it nears, and inside the builtins whose one call can run long, so a node overruns it by at
+most 156 units of work on the box (a call, a branch or an allocation each), plus the rest of the one builtin call or
+straight-line run the count ran out in; a collection inside a unit and an `indexOf` at the heap's size are unmeasured,
+the watchdog the backstop ([MqjsHost.hpp](../packages/graph-runtime/native/src/script/MqjsHost.hpp) states the bound).
+The block API gains `forward(port, message)`. `rp.host.packages/1`, `rp.script.fault/1`, `rp.script.heap/1`,
+`rp.host.clock/1` and `rp.host.script-log/1` are declared in
+[rp_script.h](../packages/node-sdk/native/src/graph/rp_script.h) and `rp_node.h`.
 
 **Providers.** A pack's desktop entry may name a `provider` (a function returning an
 [`rp_provider`](../packages/node-sdk/native/src/graph/rp_provider.h): `create`, `restore`, `rpc_service`, `destroy` and,
@@ -1275,8 +1308,10 @@ both an `entry` and a `provider`), so listing a pack is not starting it, and a p
 where it is named: the render host, the Node addon and most test binaries carry none of it. A provider installs its
 links into the engine's device registry through `rp_device_host` (`host/devices/ProviderHost.hpp`), and the ABI at /2
 carries the calls a provider needs from the product that owns the shared MIDI stream (`reserve_midi`,
-`suspend_hardware_inputs`) and the product's callback for the startup rendezvous (`restored`). The configure check
-refuses a provider or an `rpc` on a `device: true` entry.
+`suspend_hardware_inputs`) and the product's callback for the startup rendezvous (`restored`). `reserve_midi` keeps a
+claimed pair out of the shared `MidiStream`, so a reserved pair is refused at every door and never opened, and
+`suspend_hardware_inputs` is the scan's held edge, a real lever on Windows alone, where a MIDI input is exclusive (every
+platform makes the call). The configure check refuses a provider or an `rpc` on a `device: true` entry.
 
 **A pack's facet is mounted whole, in every product that lists it (decided).** `rp_register_package_rpc` makes one
 `registerRpc` call per provider and the manifest's `rpc` is one header and one function, so the N8 facet's 34 methods
@@ -1351,20 +1386,22 @@ frame count is not finite or is past `size_t`'s range fails the job, naming the 
 A job's node registry is the pool's own, filled in its constructor with rp.core, rp.dsp and rp.dsp.resample before any
 worker exists and never changed, so the workers share it read-only; a script, system or host I/O node in a document is
 `unknown-type`, a node fault fails the job, and a guard report does not: the completion carries `guardsFired` and the
-first `guardReason`, each buffer carries `nonFinite`, and a caller decides (a kit compile refuses the pass). The whole
-run is held in the default floating-point environment, with the caller's environment saved before the default is
-pinned and put back after (rounding mode and the flush bits included), so a worker that inherited its submitter's
-flush-to-zero mode still computes what the kernels do. Cancelling completes a queued job unrun and stops a running one
-at its next block boundary, or as it finishes when it is past its last (a job decoding a file finishes that decode
-and stops before its next input; one planning finishes the plan and stops before its first block); tearing the engine
-down abandons every job in flight, joins the workers and discards undrained completions, so no resampler outlives the
-engine (D1's r8brain teardown rule). The TypeScript side
-([`src/offline.ts`](../packages/retroplug/src/offline.ts)) turns submit-and-drain into a promise: the queue joins the
-capability jobs' live set so one pump settles both, the native wait is turned on by `createAudioDriver` for hosts with
-no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused busy. A port call that throws fails
-the runs it belongs to, never the queue: a submit throw rejects that run, a drain throw rejects every run the queue was
-holding, and the poll always clears its flag. The jobs native still holds after a drain threw are no longer counted by
-the queue, so a fan-out past the bound submitted before they are drained is refused busy rather than held.
+first `guardReason`, each buffer carries `nonFinite`, and a caller decides (a kit compile refuses the pass). A graph job
+takes no MIDI (the pool registers no `rp.host.midi-in`) and its transport stays fixed at 120 bpm, ppq 0, not playing; a
+user graph of script nodes run as a job would need a job-side script host. The whole run is held in the default
+floating-point environment, with the caller's environment saved before the default is pinned and put back after
+(rounding mode and the flush bits included), so a worker that inherited its submitter's flush-to-zero mode still
+computes what the kernels do. Cancelling completes a queued job unrun and stops a running one at its next block
+boundary, or as it finishes when it is past its last (a job decoding a file finishes that decode and stops before its
+next input; one planning finishes the plan and stops before its first block); tearing the engine down abandons every job
+in flight, joins the workers and discards undrained completions, so no resampler outlives the engine (D1's r8brain
+teardown rule). The TypeScript side ([`src/offline.ts`](../packages/retroplug/src/offline.ts)) turns submit-and-drain
+into a promise: the queue joins the capability jobs' live set so one pump settles both, the native wait is turned on by
+`createAudioDriver` for hosts with no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused
+busy. A port call that throws fails the runs it belongs to, never the queue: a submit throw rejects that run, a drain
+throw rejects every run the queue was holding, and the poll always clears its flag. The jobs native still holds after a
+drain threw are no longer counted by the queue, so a fan-out past the bound submitted before they are drained is refused
+busy rather than held.
 
 The txiki host `TjsHostRuntime` comes from
 [`deps/dpf.js`](../deps/dpf.js), not the shell's own sources, and the shell compiles it into a library of its own
