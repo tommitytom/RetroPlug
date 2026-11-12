@@ -21,7 +21,7 @@ stands in the fork now:
 
 1. **Count is frozen at construction.** [DistrhoPlugin.cpp:43-59](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPlugin.cpp#L43-L59)
    does `new Parameter[parameterCount]` once. RetroPlug passed `1` (its constructor,
-   [PluginDSP.cpp:137](../packages/native/plugin/PluginDSP.cpp#L137), now declares the fixed pool,
+   [PluginDSP.cpp:135](../packages/native/plugin/PluginDSP.cpp#L135), now declares the fixed pool,
    `kParameterCount`).
 2. **`initParameter` is called exactly once per index**, in the `PluginExporter` constructor
    ([DistrhoPluginInternal.hpp:406](../deps/dpf.js/deps/dpf/distrho/src/DistrhoPluginInternal.hpp#L406)).
@@ -260,23 +260,25 @@ this is a BlipToaster ROM with no tag. Sega still always takes its deep read (sm
 `$3640`); no other NES cart pays one. One read at construct, not on the classify path.
 
 **The seam.** `PluginDSP` polls a new `__rp_parameterMapJson` global in `updateParameterMap()`
-([PluginDSP.cpp:484-513](../packages/native/plugin/PluginDSP.cpp#L484-L513)), called right after
+([PluginDSP.cpp:495-524](../packages/native/plugin/PluginDSP.cpp#L495-L524)), called right after
 `updateLatency()` polls `__rp_syncLatencyMs`
-([PluginDSP.cpp:472-476](../packages/native/plugin/PluginDSP.cpp#L472-L476)) - that is, after
+([PluginDSP.cpp:483-487](../packages/native/plugin/PluginDSP.cpp#L483-L487)) - that is, after
 `setState` and on `activate` - and from the editor's idle (section 9). If the JSON differs from the cached copy it stores the new descriptors
 and calls `requestParameterInfoUpdate()`. `initParameter` then reads from that cached copy, which is
-what makes the DPF re-declare/diff loop work.
+what makes the DPF re-declare/diff loop work. The latency report asks the STORED `lsdj-sync` mode, not one a
+controller app forces: no plugin binary's product list carries `launchpad` or `lsdj-launchpad`, so nothing can force
+one there, and a control surface joining the plugin's list must make the report ask the placed mode.
 
 **Writing values.** A DAW parameter write in `setParameterValue` is stored, and `run()` turns each
 claimed slot whose value moved into a synthesised CC at frame 0, staged into the engine after the
-real MIDI ([PluginDSP.cpp:330-351](../packages/native/plugin/PluginDSP.cpp#L330-L351)). Values
+real MIDI ([PluginDSP.cpp:336-356](../packages/native/plugin/PluginDSP.cpp#L336-L356)). Values
 arrive on the audio thread already, so this is the existing path with a different source.
 
 **Persistence.** Parameter *values* are host-owned and symbol-keyed, so they need nothing from us.
 The map is derived from the project (role + ROM), so it also needs nothing. A **user-editable**
 override would live in the project JSON, and per the config-migration rule that means bumping
-`K_PROJECT` and adding one raw `(obj) => obj` step in
-[migrate.ts](../packages/retroplug/src/migrate.ts). Treat the override as a follow-up.
+`K_PROJECT` and adding one raw `(obj) => obj` step to `PROJECT_MIGRATIONS` in
+[projectConfig.ts](../packages/retroplug/src/projectConfig.ts). Treat the override as a follow-up.
 
 ## 6. Verification
 
@@ -293,16 +295,17 @@ override would live in the project JSON, and per the config-migration rule that 
   lane, and a chip-global custom-patch lane, so a build that silently fell back to the 2A03 table
   fails. Deterministic, no mouse. It is the only coverage of the per-chip tables, which the mGB path
   below never reaches. Point `RP_PARAMS_ROM` at any build to check another.
-- **Real hosts, re-labelling.** `pnpm reaper:params` (VST3) and `pnpm reaper:params-clap` (CLAP) insert RetroPlug
-  with no project, read every parameter name through ReaScript, click-load mGB **through the UI**,
+- **Real hosts, re-labelling.** `pnpm reaper:params` (VST3) and `pnpm reaper:params-clap` (CLAP), both
+  [tools/run-reaper-params.sh](../tools/run-reaper-params.sh) (the CLAP leg sets `RP_PARAMS_FORMAT=clap`), insert
+  RetroPlug with no project, read every parameter name through ReaScript, click-load mGB **through the UI**,
   and re-read: the names must become mGB's map, `"1: CC 1"` must be gone, and the count must not have
   moved. This is the only check that proves a host acts on the flag the plugin raises, and loading
   through the UI also covers the editor idle poll. All three are in
   [run-reaper-suite.sh](../tools/run-reaper-suite.sh) as `params-vst3` / `params-clap` / `params-vrc7`;
   none is in CI (they need a full DAW + X stack).
-- The format is requested by its **prefixed** name (`"CLAPi: RetroPlug"`) and then re-checked against
-  what Reaper actually loaded. A bare `"RetroPlug"` let Reaper pick VST3 for both legs, so the CLAP
-  run was silently a second VST3 run that still reported PASS.
+- Run it per format: the two take different paths in DPF. The format is requested by its **prefixed** name
+  (`"CLAPi: RetroPlug"`) and then re-checked against what Reaper actually loaded. A bare `"RetroPlug"` let Reaper
+  pick VST3 for both legs, so the CLAP run was silently a second VST3 run that still reported PASS.
 - **`tools/run-sanitizer.sh thread`** passes, but note what it does *not* cover: it builds and runs
   `retroplug-host`, which does not link DPF, so it never exercises this code. The guard for the
   `hints` invariant in 3.3 is the Catch2 case above, not TSAN.

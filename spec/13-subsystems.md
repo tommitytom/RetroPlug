@@ -89,19 +89,34 @@ copying 128 KiB and decoding a song every frame is too expensive (see the live-m
 Drives a **real** NES over USB: MIDI in (from a DAW or a controller) is forwarded to a physical
 Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart.
 
-- Code: the workspace package `packages/n8`: natively `native/src/n8/` (the one `Edio`, written once in C++ for the
-  desktop and the Pico box over an abstract transport, with `Menu`, `Ops`, `rp.n8.nes` and `CartLink`) and
-  `native/src/n8/desktop/` (`N8Link`, `N8Host`, the serial transport, the RPC facet and the provider); in TS
-  `packages/n8/ts` (`createN8Client`, the sniffer and the other decoders, the load helpers). The emulated twin is
-  `src/system/mesen/NesEverdriveFifo.hpp`, which every NES ROM gets at `$40F0`/`$40F1`.
+- Code: the workspace package `packages/n8`: natively `native/src/n8/`, the portable target `retroplug-n8`
+  (`device: true`): the one `Edio`, written once in C++ for the desktop and the Pico box over an abstract transport,
+  with no exceptions, beside the menu commands (`Menu`), the operations (`Ops`: `bootRom`, `readFile`,
+  `writeFile`), `rp.n8.nes` and the `CartLink` it drives; and `native/src/n8/desktop/`, the desktop target
+  `retroplug-n8-desktop` (the serial transport, `N8Link`, `N8Host`, the `N8CartLink`, the RPC facet `N8Rpc` and
+  the provider `rp_n8_provider`); in TS `packages/n8/ts` (`createN8Client`, the sniffer and the other decoders, the
+  load helpers). The emulated twin is the mesen package's `native/src/system/mesen/NesEverdriveFifo.hpp`, which every
+  NES ROM gets at `$40F0`/`$40F1`.
 - Every product that lists the pack and includes its generated provider header starts it (the plugin, the SDL
   standalone, the headless host and the CLI, whose sessions use the facet's session half; a product's `PROVIDERS` list
-  says which packs it starts). The Pico box (`pico/n8-host`) is the same Edio on TinyUSB.
+  says which packs it starts). The Pico box (`pico/n8-host`) is the same Edio on TinyUSB. BlipToaster's MIDI policy
+  (`rp.bliptoaster.midi-policy`) is a node of the box's plan; the desktop's N8 graphs do not use the policy node.
+- What the cart allows, and the pack accepts: a cart's battery is reachable only at the N8 menu, through the SD card's
+  save file `EDN8/gamedata/<rom>/bram.srm`, and a dump takes about a minute for 64 KB; a running game refuses the job
+  (a direct cart-memory read wedges it and leaves the menu deaf), and a restore goes before a `rom.upload` so the game
+  loads it at its next boot. `rom.header` / `rom.title` answer for what this host last booted, forgotten at a connect
+  when the running mapper differs; a game of the same mapper, or one started between connects, goes unnoticed, because
+  the cart has no query for the image it runs. A cart job pauses streaming (pushes during it are dropped and counted),
+  and a `rom.upload` leaves streaming stopped until the host reconnects. The CLI's n8 tools keep their own raw serial
+  path (the battery dump among them, the one cart-memory read left); the capabilities deliberately offer no peek,
+  poke, sniffer or FIFO reads.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session`; for the box, `pnpm device:box` and the rig's
-  `loop.sh`, `stress.sh` and `faults.sh`. `retroplug-n8-hwtest` needs the physical console.
+  `loop.sh`, `stress.sh` and `faults.sh`, which boot BlipToaster, never `n8-midi.nes`. `retroplug-n8-hwtest` needs
+  the physical console.
 - Deeper: [docs/n8-bridge-plan.md](../docs/n8-bridge-plan.md),
-  [docs/n8-usb-capabilities.md](../docs/n8-usb-capabilities.md).
+  [docs/n8-usb-capabilities.md](../docs/n8-usb-capabilities.md), and the pack's design,
+  [docs/modular-graph-phase-e2-design.md](../docs/modular-graph-phase-e2-design.md).
 
 ### Launchpad
 
@@ -110,13 +125,24 @@ from the 8x8 grid. Since F3 the whole thing is a pack: the transport and the sca
 [packages/launchpad](../packages/launchpad)'s native halves, the protocol, the port scan and the session are its
 TypeScript, and the behaviour is an app (the controller settings select it) that runs on the audio thread, in the
 controller session node (below). The selection is the user's: `config.json`'s `controlSurface`, which TS owns and
-writes with a re-read, so two processes can share the file.
+writes with a re-read, so two processes can share the file. Its fields (`input`, `output`, `device`, `enabled`)
+are additive, so no migration; and the SDL standalone holds MIDI and audio until TS's `restored()` lands (500 ms at
+most once its audio settings have applied: `retroplug-sdl` below), so a restored pair is never opened by the shared
+stream first. One controller link per process is all the registry holds, one per `rp.host.devices/2` name; more than
+one is a registry change. The plugin has no control surface: its host MIDI out caps a message at 4 bytes, so no SysEx
+reaches a surface, and it names no launchpad provider.
 
 - Code: [packages/launchpad](../packages/launchpad) - the portable target (`retroplug-launchpad`, `device: true`) with
   the two surface nodes, and `retroplug-launchpad-desktop` with the transport (`ControllerLink`, `PortClaim`,
   `MidiPortPool`, `MidiPort`), the provider and the facet (`LaunchpadRpc`) - beside
   [ui/launchpadDevices.ts](../packages/launchpad/ts/ui/launchpadDevices.ts), which drives the
-  facet, and the MI.MAP app in [packages/lsdj-launchpad](../packages/lsdj-launchpad).
+  facet, and the MI.MAP app in [packages/lsdj-launchpad](../packages/lsdj-launchpad), a bridge that depends on
+  `launchpad` and `lsdj` and which `launchpad` never imports. The provider is `rp_launchpad_provider`, and the facet
+  is TS's only door to a port, through `createLaunchpadClient(call)` in `@retroplug/launchpad/client`.
+  `ControllerLink`'s writer thread drains the send ring and a UI queue of its own, so `send()` waits for no write in
+  flight: a push takes a lock the writer holds only for a swap. The pack's portable core is held to MicroQuickJS by the
+  device-pack toolchain's scenario mode (byte-identical transcripts under Node and `retroplug-mqjs-run`), but it
+  declares no `script` member, so the scenarios are the proof and no box image carries it.
 - **Prove a change:** `retroplug-launchpad-test` (one of the fourteen `pnpm test:plugin` binaries),
   `pnpm test:native launchpad` (the facet's cases over the headless host's scripted device, and
   `launchpadDevices.ts`'s over it), `pnpm test launchpad`, `pnpm test:native lsdj-launchpad`,
@@ -136,7 +162,9 @@ MI.MAP cart's sync mode forced), so the chosen app runs on the audio thread as p
 than as UI-thread glue. `appConfig` is deliberately opaque at this level: the chosen app's own schema validates it on
 the control plane (`parseAppConfig`), and the node takes it parsed.
 The apps themselves are contributions (`controllerApps`, in two halves joined by id, F3): MI.MAP is
-[packages/lsdj-launchpad](../packages/lsdj-launchpad)'s, and a tracker with another app adds its own bridge.
+[packages/lsdj-launchpad](../packages/lsdj-launchpad)'s, and a tracker with another app adds its own bridge. The
+control plane's half is `definePackage({ controllerApps })` (`id`, `label`, the app's config schema), which the
+kind's `accept` files in the pack's own `ts/registry.ts` table, the one `parseAppConfig` reads.
 
 - **Prove a change:** `pnpm test controller`, `pnpm test script/nodes/controller-session`,
   `pnpm test graph/build-graph`, and `pnpm test:plugin` (`retroplug-launchpad-test` for the transport the
@@ -166,11 +194,22 @@ runtime and named by the product's `AUDIO_BACKENDS`; RtMidi behind `packages/mid
 
 It is in the default `all` target, so every CI platform compiles and links it and it rides in the
 build artifact, but it is deliberately **not** in any release: `release.yml`'s packaging steps are
-explicit allowlists and it is on none of them.
+explicit allowlists and it is on none of them, and each carries a comment saying so. CI builds `all` on all four
+platforms, and the standalone needs nothing extra installed: SDL2 is already REQUIRED at root scope for every plugin
+variant, and rtmidi and PortAudio are in-tree submodules. On macOS the artifact binary is build-machine-only: the
+`SDL2.framework` embed covers the plugin and app bundles, and `retroplug-sdl` is a bare executable, so shipping it
+would need a framework copy and an `@executable_path` rpath.
+
+At startup it holds MIDI and audio until the UI has reported: the control surface's `restored()` (only when it
+started the launchpad provider) and the `audio` section's apply. The wait is bounded in time, at 2000 ms
+(`kAudioBoundMs`) while the audio apply has not landed and 500 ms once it has, after which it starts on the defaults
+and says so. Render-ahead is a run flag, not a setting: `--audio-backend` / `--block-size` / `--render-ahead`
+override the saved section for that run.
 
 - **Prove a change:** `pnpm sdl:smoke` (headless, no display or audio server — in CI) and
   `pnpm sdl:pipewire` (which output device PortAudio actually opens; not in CI, needs PipeWire).
-- Deeper: [docs/sdl-standalone.md](../docs/sdl-standalone.md).
+- Deeper: [docs/sdl-standalone.md](../docs/sdl-standalone.md), and the audio and MIDI packages' design,
+  [docs/modular-graph-phase-f5b-design.md](../docs/modular-graph-phase-f5b-design.md).
 
 ### `retroplug-node` — the N-API addon
 

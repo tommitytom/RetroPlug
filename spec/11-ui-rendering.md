@@ -109,21 +109,23 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
   plane's, so it outlives the editor and a completion settles through the same queue that submitted the job (nothing
   drains with the editor closed; the WAV is on disk either way, and the badge catches up at the next pump).
 - **`ui/host/render.ts`** - `startSystemRender` snapshots the live `readSram`/`readState` to files of the job's own
-  under `configDir` (`.render-src-<key>.sav` / `.ss0`, `RENDER_SNAPSHOT_PREFIX`) and calls `renders.start` with their
-  list as the submission's own (`EngineRunOptions.discardFiles`): the engine's pool deletes them however the job ends
-  (on the job's worker before the completion is queued, or with the job itself when it is dropped unrun), and
-  `onSettled` deletes them again on whichever road it took: a job the queue held past the 64-job bound and cancelled
-  before it was submitted, a submission the RPC threw on, a spec function that threw, and every job a drain that threw
-  failed, which native may still hold (a second removal is a no-op). Where that last road meets a job native still has
-  queued, the boot refuses (`RenderOpts.inputsMustExist`); a job already past that check can lose the file before its
-  boot reads it, a window of a handful of calls, and then boots the cart's blank start. What is left is an instance
-  that ends with a render held in TS, and a crash, which the startup sweep takes (`src/renderSnapshotSweep.ts`: a
-  snapshot more than a day old). The worker reads the snapshots only when it boots the render, which can be minutes
-  later behind the worker budget, so a shared name would boot a later edit's (or another instance's) state; and the
-  spec says they must exist when it boots (`RenderOpts.inputsMustExist`), so one the sweep took from under a live job
-  refuses rather than booting blank, except in the window above. A snapshot that cannot be written refuses the render,
-  listed as an error, rather than boot the sibling `.sav` on disk. `pickActiveRenderJob` selects a tile's badge job and
-  `renderBadgeLabel` writes its text.
+  under `configDir` (`.render-src-<key>.sav` / `.ss0`, `RENDER_SNAPSHOT_PREFIX`, the twin of native's
+  `kRenderSnapshotPrefix` in `OfflineJobs.hpp`, which keeps a listed path only under that prefix, so the two move
+  together) and calls `renders.start` with their list as the submission's own (`EngineRunOptions.discardFiles`): the
+  engine's pool deletes them however the job ends (on the job's worker before the completion is queued, or with the job
+  itself when it is dropped unrun), and `onSettled` deletes them again on whichever road it took: a job the queue held
+  past the 64-job bound and cancelled before it was submitted, a submission the RPC threw on, a spec function that
+  threw, and every job a drain that threw failed, which native may still hold (a second removal is a no-op). Where that
+  last road meets a job native still has queued, the boot refuses (`RenderOpts.inputsMustExist`); a job already past
+  that check can lose the file before its boot reads it, a window of a handful of calls, and then boots the cart's blank
+  start. What is left is an instance that ends with a render held in TS, and a crash, which the startup sweep takes
+  (`src/renderSnapshotSweep.ts`: a snapshot more than a day old). The worker reads the snapshots only when it boots the
+  render, which can be minutes later behind the worker budget, so a shared name would boot a later edit's (or another
+  instance's) state; and the spec says they must exist when it boots (`RenderOpts.inputsMustExist`, which the UI sets
+  and the CLI does not: its `--sav` is its own to name), so one the sweep took from under a live job refuses rather than
+  booting blank, except in the window above. A snapshot that cannot be written refuses the render, listed as an error,
+  rather than boot the sibling `.sav` on disk. `pickActiveRenderJob` selects a tile's badge job and `renderBadgeLabel`
+  writes its text.
 - **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)
   and `spec.gainDb`. The job boots a fresh core from the ROM on disk, so without them it would take each
   role's schema DEFAULTS and render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit
@@ -161,10 +163,12 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
 - **The render baseline** (`pnpm test:native render-baseline`): 13 renders through engine jobs hashed against
   `test-native/golden/render-baseline.json`, exact on `linux-x64-gnu13` (`RP_RENDER_GOLDEN_REQUIRE_TARGET=1` in CI),
   with `render-chunks` holding the chunk independence and `render-cli` the CLI's tool against the same golden
-  ([06-build-test.md](06-build-test.md)).
+  ([06-build-test.md](06-build-test.md)); `pnpm test:native render` runs every `render-*` file at once.
 - **A manual smoke:** `retroplug-render-host-test` (built by name) - `<job-json>` runs one engine job and is
   `cmp`-identical to `retroplug-cli render` (the same code); `--parallel <j>...` runs jobs concurrently on one pool;
-  `--cancel <j>` cancels mid-render. The coverage CI runs is `[engine-jobs]`; the tool is not a CI step.
+  `--cancel <j>` cancels mid-render. The coverage CI runs is `[engine-jobs]`; the tool is not a CI step. Build it with
+  `cmake --build build --target retroplug-render-host-test -j$(nproc)`, or in `build-tsan/` for a ThreadSanitizer
+  pass.
 - **UI-seam logic:** `pnpm test render` - `startSystemRender` spec/snapshot (two queued renders of one system each
   boot their own snapshot, gone once settled; a render held past the queue's bound and a submission the RPC threw on
   delete theirs; a snapshot that cannot be written refuses the render; a render whose snapshot went refuses to boot),

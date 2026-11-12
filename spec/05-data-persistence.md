@@ -102,7 +102,7 @@ framing happen entirely in TypeScript.
 | `RETROPLUG_AUTOLOAD_PROJECT=path` | `__rp_loadProjectPath(path)` | headless seed (reaper `-renderproject`): load a project FILE from disk via `load()` — a thin `.rplg` or an export `.rplg.zip` |
 
 State is a single `"project"` key, host-readable + host-writable
-([PluginDSP.cpp:240](../packages/native/plugin/PluginDSP.cpp#L240)).
+([PluginDSP.cpp:250](../packages/native/plugin/PluginDSP.cpp#L250)).
 The C++ boundary stays **string-only**: base64 is done in JS
 ([pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts))
 because a DPF state chunk is NUL-terminated UTF-8 while the export archive it
@@ -196,7 +196,12 @@ JSON**, backed by two mechanisms:
 2. **Migrations (raw-JSON, latest-schema-only).** Keep only the LATEST zod schema per
    root — never a per-version copy. On a breaking (non-additive) change, bump the root's
    version constant and add ONE raw `(obj) => obj` step to that root's migrations map,
-   keyed by from-version, in [migrate.ts](../packages/retroplug/src/migrate.ts). On load
+   keyed by from-version, which sits beside the root's schema constant: `PROJECT_MIGRATIONS` in
+   [projectConfig.ts](../packages/retroplug/src/projectConfig.ts), `USER_CONFIG_MIGRATIONS` in
+   [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), `BINDINGS_MIGRATIONS` and
+   `RECENT_MIGRATIONS` in [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) and
+   [recentSerialization.ts](../packages/retroplug/src/recentSerialization.ts)
+   ([migrate.ts](../packages/retroplug/src/migrate.ts) holds the machinery they share). On load
    `migrateRaw` applies the ordered chain from the file's stamp up to current, on the RAW
    object, **before** the (latest) zod schema validates. Steps must be idempotent-safe (an
    unstamped file floors to current). The project **v1→v2** (`PROJECT_MIGRATIONS[1]`)
@@ -219,7 +224,9 @@ them. (1) **The shell's keys are the shell's**: `CORE_CONFIG_KEYS` is derived fr
 `schemaVersion`, and the generated registry refuses a contributor of one. (2) **An absent key is not invented**: a
 section this product contributes but the file has never carried reads its contributor's defaults, and a write of the
 file leaves it absent until `setSection` writes it - which is what lets a pre-section file round-trip byte for byte and
-the plugin (which lists no audio package) write a standalone's `audio` block back instead of erasing it. (3) **A block
+the plugin (which lists no audio package) write a standalone's `audio` block back instead of erasing it (a
+pre-F5b PLUGIN build, whose root schema is strict, still drops a newer standalone's `audio` key at its next write of
+the file: unavoidable, and the cost of releasing that plugin beside a newer standalone). (3) **A block
 this session did not set is written back VERBATIM**: the store keeps each block as the file carried it beside its parsed
 value, and only a key `setSection` set this session is serialized from its parsed form, so an additive field a newer
 build wrote survives this one. A section write is computed inside the store's apply callback over the file AS IT IS ON
@@ -386,7 +393,8 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - [projectStore.ts](../packages/retroplug/src/projectStore.ts) — save/export/load, the missing-scan + relink lifecycle, `exportBytes`/`loadBytes`.
 - [projectBinaries.ts](../packages/retroplug/src/projectBinaries.ts) / [projectPaths.ts](../packages/retroplug/src/projectPaths.ts) — blob-key contract; path rebasing.
 - [pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts) — the `__rp_saveProjectB64`/`__rp_loadProjectB64`/`__rp_loadProjectPath` surface + base64.
-- [PluginDSP.cpp:240](../packages/native/plugin/PluginDSP.cpp#L240) - DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
+- [PluginDSP.cpp:250](../packages/native/plugin/PluginDSP.cpp#L250) - DPF `initState`/`getState`/`setState` +
+  `RETROPLUG_AUTOLOAD_PROJECT`.
 - [userConfig.ts](../packages/retroplug/src/userConfig.ts) / [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), [recentSerialization.ts](../packages/retroplug/src/recentSerialization.ts), [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) — the config models + on-disk codecs.
 - [configSchema.ts](../packages/retroplug/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
 - [migrate.ts](../packages/retroplug/src/migrate.ts) + [projectConfig.ts](../packages/retroplug/src/projectConfig.ts) — the raw-JSON migration framework + the version constants / `checkVersion` / `parseProjectVersion` (TS is the single source of truth; native does no version check).

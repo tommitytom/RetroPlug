@@ -295,7 +295,8 @@ routing node's outputs follow the systems); a system removed and added again get
   and `midiChannelToInstance`: the channel, each modulo the system count), by `routeTarget`'s arithmetic.
   `midiChannelToInstance` hands its target a copy with the channel rewritten to 0, from a buffer made once.
   System order is authoritative: the positional modes route by a system's index in `systems`. Its layout
-  refuses two systems under one id.
+  refuses two systems under one id. `routeBlock`, the pure twin in `midiRouting.ts`, stays as the reference the
+  node's test holds every mode to ([midi-route.test.ts](../packages/core/ts/test/midi-route.test.ts)).
 - **`rp.mgb.midi`** sends each routed message's bytes as one `serialIn` message at its frame, which is all
   mGB listens for (the system node applies a message's bytes in order at its frame).
 - **`rp.n8.midi-to-fifo`** sends each routed message whole to the NES core's `midi` input, which feeds the
@@ -334,7 +335,10 @@ routing node's outputs follow the systems); a system removed and added again get
   from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and pending
   command are kept on the instance across mode changes; master sync's state is dropped outside that mode, so coming
   back opens a fresh run. Its settings are the role's config through the schema `rp.lsdj.sync` takes too
-  ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only `mode`.
+  ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only `mode`. A message's frame is
+  the one SameBoy completes its byte at, and that serial byte timing moves with the block split (it predates the
+  decoder): a SameBoy matter, its own change if wanted
+  ([lsdj-serial-out-design.md](../docs/lsdj-serial-out-design.md) section 11).
 - **`rp.controller.session`** runs a `ControllerSession` ([session.ts](../packages/launchpad/ts/session.ts))
   for the app its settings name, which the generated script bundle registers from the manifests'
   `protocol.kinds.controllerApps` entries ([apps/index.ts](../packages/launchpad/ts/apps/index.ts), the apps' runtime,
@@ -457,7 +461,10 @@ so a ROM swapped back brings its settings back.
 (so the node's settings, the capture its Game Boy's node runs, the menus and a save all see the parsed one), and a
 repair is logged once with the ROM and each repaired value. A config the schema refuses outright falls back to
 what the ROM's providers suggest for the role, then to the schema's defaults. The parse drops a key the schema does
-not read, as an edit already did, and names it in the log.
+not read, as an edit already did, and names it in the log. A system's core config is the exception: it stays as
+written, and a stored value its node would refuse reaches no document, even one the role schema would repair:
+`systemKnobs` leaves it out, so the node's default applies rather than the repaired value (there is no blob to carry
+it), and `adopt` names it in the log (`droppedKnobs`).
 
 The rest of the document follows from those nodes:
 
