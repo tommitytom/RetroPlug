@@ -147,3 +147,54 @@ review; follow-ups as batch 1 ran them. Work files in `.superpowers/kb2des`, `kb
 cases differ from the pre-batch baseline, and only in `midiOut` and `ram`; TSan and ASan; BlipToaster and NESVJ; the
 guarded SDL legs, `sdl:controller` among them since the session changes); the fixture-gated MI.OUT and Launchpad
 cases; the scenario transcripts byte-identical. No run opens an audio or MIDI device outside the guard and the fakes.
+
+## 5. As built
+
+The four tasks landed as planned, each tree identical to the one the plan's author validated, then three follow-up
+passes took the reviews' findings. What differs from sections 1 to 4:
+
+- **Section 1: the readers use `placedKinds`, and `placedRole` is gone.** The shell's readers compute the placed kinds
+  once and test them; the per-kind helper had no caller but its test and was deleted. `placed` on `SystemInfo` lists
+  the kinds the pipeline places AND every present kind with no protocol node (a core's config role, a node-less tracker
+  marker such as `risa`), because `isPlaced` lives in core and cannot ask the shell's table; it answers false when a
+  view carries no `placed`. An LSDj cart storing a stale `mgb` now exposes no DAW lanes (LSDj declares none). Left open
+  in spec/07: node-less tracker markers are still decided by presence, so a NES project storing both `risa` and
+  `bliptoaster` takes the first in product order.
+- **Section 2: the walk and its tests are the session node's.** The divisor tests are in
+  `test/script/nodes/controller-session.test.ts` and `lsdjMidiMap.test.ts` (the session over the real `rp.lsdj.sync`, at
+  divisors 1, 2, 3, 5, 6, 7 and 8, the cued row arriving at clock 96 every time). The real-core case checks the step the
+  cart leaves each row on, not "the predicted row holds the polled row over several bars". The placer passes a value
+  only if it is an integer of at least 1 (the role schema has already rounded and clamped it to 1..8). A divisor changed
+  mid-song gives one block of no ticks, as the cart's own sync node does. `bar` and `beat` quantise still count host
+  bars (spec/07).
+- **Section 2, found reviewing: the controller asks placement too.** `controllerSyncOverride` called a cart driven when
+  its sync role was stored and not placed (and when the controller named no live system), so the menu said "MI.MAP -
+  driving it" while launches reached no node. The sync rule now carries a required `role` (`lsdj-launchpad`: `lsdj-sync`)
+  which the kind check holds to the rule's `node` through the product's `ROLE_NODES`; the placer asks the pipeline for
+  the node and the menu the view's placed kinds for the role. A ROM that is no tracker's shows no cart-sync row (spec/07
+  records the missing "nothing to drive" row).
+- **Section 3: one file per rate, with a shared helper** (`lsdj-midiout.test.ts`, `-48k`, `-96k`, `lsdjMidiOut.ts`).
+  LSDj sends no clock byte of its own in MI.OUT, but N, X and Y send their value unchecked, so an `N7F` puts `$7F` on
+  the wire and the Arduinoboy turns it into `0xF8`, as hardware does; a real-core case pins it. dsp-bench's MI.OUT window
+  decodes about 40 NoteOns, as the serial-out design said: section 3's "about 65 to 70" was wrong (the phrase has eight
+  empty rows; its period is 1.87 s, not 1.06). A fixture-free `HostIo` case puts back a real core's capture reaching the
+  decoder in CI: mGB in Drive capture under a master-sync decoder, one `0xF8` at each captured byte's frame. mGB's first
+  captured byte, `0x66`, is a ROM constant (its boot loads `SB`), not power-on randomness.
+- **Docs beyond section 4's list:** spec/06 (the sync rule's keys, one pinned parity defect left), AGENTS.md (the same
+  count; tracker integrations' order is behaviour for two node-less markers), the B0 design's sections 2 and 9, the
+  serial-out design's sections 4 and 11, and the B3b design's `placedKinds`.
+
+## 6. Execution
+
+- Design 6690c8bc3; plan 6d4251eac (written and validated by an Opus agent against the tree, replayed from its text to
+  the identical tree; the user moved the batch to Anthropic models after the design).
+- Tasks, by Sonnet, each tree checked identical to the validated one and Opus-reviewed: 63cabe651 (placement), 098dd2c11
+  (the divisor), 1e3c96b73 (MI.OUT, with the four-case parity re-record: `midiOut` and `ram` only, no audio hash),
+  4f6f21db0 (docs).
+- Follow-ups (Sonnet): 95da94dce, 9ef3f63bf, 106927c4a, c70ba76c7 (the per-task findings); Opus final review READY;
+  dabc7648f, f19d947c2 (its minors, B6 the controller's placement); an Opus review of those found the optional `role`
+  unchecked: 34d28cc01, 52e534693 (its refusal cases shown failing against the earlier check).
+- Acceptance: the serial kit at c70ba76c7, 45 legs, all exit 0 (strict parity with fixtures and `RP_FAIL_ON_SKIP=1`, no
+  skip; TSan and ASan; BlipToaster 57/57, NESVJ 19/19; `sdl:controller` OK; SDL PipeWire 27/0/0). The parallel kit at
+  f19d947c2: 48 legs exit 0; at the tip, 52e534693: 48 legs exit 0 (BlipToaster 57/57, NESVJ 19/19, SDL PipeWire
+  27/0/0).
