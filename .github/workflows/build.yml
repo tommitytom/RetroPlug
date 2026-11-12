@@ -58,7 +58,7 @@ jobs:
           pnpm install --frozen-lockfile
           # The UI bundle's react/react-reconciler/lvgljs-ui live in
           # lv_binding_js's own workspace (deps/ is excluded from the root
-          # workspace), so it needs its own install (see AGENTS.md).
+          # workspace), so it needs its own install (spec/06-build-test.md, "The dpf.js seam").
           pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
 
       # Platform-independent, so the x86 linux job alone carries it, and it runs BEFORE the build for

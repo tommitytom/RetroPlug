@@ -3,10 +3,11 @@
 //
 //   node scripts/cmake-build.js [target...]
 //
-// No targets => a full build (bare `cmake --build`, what AGENTS.md recommends
-// for UI changes). Assumes `build/` is already configured (run `pnpm configure`
-// once). The Catch2 test binaries are EXCLUDE_FROM_ALL and built by NAME - `pnpm
-// test:plugin` names all eight - so they need no BUILD_TESTING configure.
+// No targets => a full build (bare `cmake --build`, what spec/06's Build gotchas
+// recommends to verify a UI change in the standalone). Assumes `build/` is already
+// configured (run `pnpm configure` once). The Catch2 test binaries are EXCLUDE_FROM_ALL
+// and built by NAME - `pnpm test:plugin` names all fourteen - so they need no
+// BUILD_TESTING configure.
 
 const os = require("os");
 const path = require("path");

@@ -62,7 +62,8 @@ current source: `tools/sync-cli-to-bliptoaster.sh [dest]` (rebuilds `retroplug-c
   `.../host/rpc/DebugRpcService.{hpp,cpp}` + `.../host/rpc/BackendRpcRegistration.hpp` (registration).
 - **TS backend + CLI SDK**: `packages/retroplug/src/{backend.ts,realBackend.ts}`,
   `packages/retroplug/testing/mockBackend.ts`, `packages/retroplug/cli/{sdk-types.d.ts,sdk.ts}`.
-- **Cores**: `deps/mesen` (NES, vendored — edit directly), `deps/sameboy` (GB, tracked patch — see AGENTS.md).
+- **Cores**: `deps/mesen` (NES, vendored: edit directly), `deps/sameboy` (GB, tracked patches: see
+  [spec/06's Build gotchas](../../../spec/06-build-test.md#build-gotchas)).
 
 ## Fix + verify (an exit-zero, not a claim)
 

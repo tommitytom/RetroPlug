@@ -1,6 +1,6 @@
 # retroplug_add_test_binary() — the shape every native test binary shares.
 #
-# There are fourteen of them (eleven run by `pnpm test:plugin`, two by `pnpm test:n8` and the
+# There are seventeen of them (fourteen run by `pnpm test:plugin`, two by `pnpm test:n8` and the
 # hardware-only `retroplug-n8-hwtest`), and each was spelled out in full: the same
 # EXCLUDE_FROM_ALL, the same C++20 pair, the same output directory, the same Catch2 link.
 # Nine tenths of each block was boilerplate, which buried the one or two lines that were

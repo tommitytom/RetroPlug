@@ -17,8 +17,8 @@ and `deps/catch2` (the C++ unit-test framework) are added `EXCLUDE_FROM_ALL`, so
 it. A full build produces the plugin (all formats) + the standalone.
 
 - `build.sh` (Linux/macOS) and `build.bat` (Windows) are the canonical entry points and have
-  **zero build-specific special-casing** — a bare `./build.sh` builds every `ALL` target. See
-  [AGENTS.md](../AGENTS.md) for their flags.
+  **zero build-specific special-casing**: a bare `./build.sh` builds every `ALL` target. Their flags
+  follow.
 - Both run the configure this project needs and build in parallel (`-j$(nproc)`, `sysctl` on macOS). A bare
   `./build.sh` is incremental: it configures only when `build/CMakeCache.txt` is missing or a `-D` / `--tests` is
   given, and `--clean` wipes `build/` first. Either script passes any `-D<var>=<value>` straight through to the
@@ -1183,7 +1183,7 @@ run by hand: no CI or `test:plugin` leg builds that binary there.
   binary `build/bin/retroplug` is produced by `retroplug-jack`. To verify a UI
   change in the standalone, build with a bare `cmake --build build -j$(nproc)` (no `--target`) or
   `--target retroplug-jack` — otherwise the screenshot shows old behaviour against a fresh
-  bundle. (This standalone-vs-umbrella gotcha is also noted in [AGENTS.md](../AGENTS.md).)
+  bundle.
 - **Don't `rm -rf build` to "fix" CMake.** The configured `build/` is load-bearing for the dev loop;
   the sanitizer dirs (`build-tsan/`/`build-asan/`) are the only ones that get reconfigured freely.
 

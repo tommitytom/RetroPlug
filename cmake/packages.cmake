@@ -1983,8 +1983,9 @@ endfunction()
 # which lists the renamed entries in the order PACKAGES does, as a device product's rp_register_packages() lists its
 # own. The binary keeps exceptions in its own translation units (Catch2 is built with them) and reaches the device-mode
 # code through the C ABI alone, as a device's host would. MSVC keeps its /EHsc: a second /EH option on one command line
-# is the D9025 warning AGENTS.md describes, and the GCC and Clang builds are where -fno-exceptions is proved. OWNERS
-# names a variable set to the desktop targets the objects twin, which the binary links for the desktop's build.
+# is the D9025 warning spec/06's Build gotchas describes, and the GCC and Clang builds are where -fno-exceptions is
+# proved. OWNERS names a variable set to the desktop targets the objects twin, which the binary links for the desktop's
+# build.
 #
 # A listed package's script pack (_retroplug_script_targets), and each of SCRIPTS (a test's own, made by
 # retroplug_device_script_pack), is compiled the same way: its registration's source and the MicroQuickJS host it links,

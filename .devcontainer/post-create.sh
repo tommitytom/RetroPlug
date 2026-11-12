@@ -130,5 +130,5 @@ Next steps:
   pnpm smoke                              # smoke-test retroplug-cli end-to-end
   pnpm screenshot                         # capture standalone UI -> /tmp/retroplug.png
 
-Agent tooling docs: see AGENTS.md ("Agent workflows" section).
+Agent docs: AGENTS.md (the rules, and where each topic's detail lives) and spec/README.md.
 EOF

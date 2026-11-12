@@ -1,7 +1,7 @@
 // The tile slots (docs/modular-graph-phase-f4c-design.md section 5.2): every REGISTERED tile view, in product order,
 // each in a StableSlot of its own, always. The slot is why a view that appears late (a flag flipping, a session opening
 // on the next frame) does not land at the END of the tile's child list: lv_binding_js's insertChildBefore always
-// appends (AGENTS.md "Framework gotchas"), so a fixed wrapper with one swappable child is the one way React can place
+// appends (spec/03's "Framework gotchas"), so a fixed wrapper with one swappable child is the one way React can place
 // it. The list is the registry's, which is a module constant, so the slot list never changes length; a `when` that
 // flips under a live tile swaps the slot's child rather than appending a slot over the border and the badge, and a slot
 // with nothing in it is an empty transparent Box (the same shape the dim layer proves passes a click to the tile).
