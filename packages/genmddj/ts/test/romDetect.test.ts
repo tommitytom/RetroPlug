@@ -28,6 +28,8 @@ test("the version string is found wherever the build puts it, not at one offset"
 
 test("either half alone is not genmddj", () => {
   expect(isGenmddjRom(genmddjHeader("V0.27", "GM OTHER  -00"))).toBe(false);
+  // The gate on the version report itself, not only on the predicate: another game's cart carries no genmddj version.
+  expect(identifyGenmddjVersion(genmddjHeader("V0.27", "GM OTHER  -00"))).toBe(null);
   const noVersion = genmddjHeader();
   noVersion.fill(0x00, 0xd1b1, 0xd1c0); // the version string's own bytes, where this fixture puts it
   expect(isGenmddjRom(noVersion)).toBe(false);
@@ -38,6 +40,7 @@ test("a short prefix is not genmddj rather than a throw", () => {
   // The role provider's default prefix is 0x150, which ends before the product code at $180: an md ROM read at that
   // length is not genmddj, which is why the descriptor declares providerHeaderBytes 0x10000.
   expect(isGenmddjRom(genmddjHeader().slice(0, 0x150))).toBe(false);
+  expect(identifyGenmddjVersion(genmddjHeader().slice(0, 0x150))).toBe(null); // a prefix before the product code reports no version either
 });
 
 test("the provider attaches genmddj-sync on md and nothing to anything else", () => {

@@ -1,7 +1,7 @@
-// genmddj's identity, from its ROM header: the product code "GM GENMDDJ-00" at $180 (src/main.asm:596), and the
-// build's own version string, genmddj's `ver_str` ("V0.27", src/main.asm:18493), in the first 64 KiB. Both, because
-// either alone is a guess: a homebrew could fill the product-code field, and a version string is four kinds of other
-// data.
+// genmddj's identity, from its ROM header: the product code's `GM GENMDDJ-` at $180 (the field reads `GM GENMDDJ-00`,
+// src/main.asm:596), and the build's own version string, genmddj's `ver_str` ("V0.27", src/main.asm:18493), in the
+// first 64 KiB. Both, because either alone is a guess: a homebrew could fill the product-code field, and a version
+// string is four kinds of other data.
 //
 // 64 KiB, not 32: in the built ROM the version string is at $D1B1 (53681, proved with `grep -boa
 // 'V[0-9][0-9]*\.[0-9][0-9]*' build/genmddj.bin`, whose FIRST match is that one), which is past the halfway point of a
