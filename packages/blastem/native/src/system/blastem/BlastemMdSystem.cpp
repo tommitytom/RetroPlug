@@ -10,15 +10,6 @@
 
 namespace rp::blastem {
 
-// Whether this core has a battery to read: save_type stays SAVE_NONE for a cart whose header declared no RAM, and
-// save_storage is the buffer romdb calloc'd for the declared range (halved for an odd- or even-byte cart, which is
-// BlastEm's compacted layout and stays BlastEm's: design section 5). The one rule the Sram accessor and the whole-
-// battery dump share. The I2C and NOR carts hold their device state in the same pointer, and both are dumped as they
-// stand, like every other core here.
-static bool hasBattery(const genesis_context* gen) {
-    return gen && gen->save_type != SAVE_NONE && gen->save_storage && gen->save_size != 0;
-}
-
 // BlastEm's own serializer identifier. Its save_to_file writes these 8 bytes ahead of a state (serialize.c's sz_ident);
 // a library build writes the state with genesis_serialize directly and never sees them, so this prefixes the same bytes
 // and loadStateBytes demands them. Everything behind them is BlastEm's section stream, and anything else is a state this
@@ -138,10 +129,12 @@ void BlastemMdSystem::boot() {
     activated_ = true;
     setGainDb(config_.gainDb, true);
     // LAST, as the sibling backends do, and after m68k_reset (a seed laid in before the reset is a pattern the reset
-    // overwrites): the battery first, into the core's own buffer through getMemory, and the savestate over it once this
-    // core can take one.
+    // overwrites): the battery first, and the savestate over it once this core can take one. The two calls are what
+    // SystemBase::seedSramAndState does, except that the battery goes through seedBattery(): that helper writes its seed
+    // through getMemory(Sram), which here is the address-ordered copy, so a 16-bit cart's seed would land nowhere.
     stateRefused_ = false;
-    seedSramAndState(config_.sram, config_.savestate);
+    seedBattery(config_.sram);
+    if (!config_.savestate.empty()) loadStateBytes(config_.savestate);
     if (stateRefused_ && !config_.savestate.empty()) {
         // A refused state: either it was thrown out before it touched the core (the identifier, the section walk) or it
         // latched after writing part of itself in (the serializer's short-field and impossible-field latches). Dropping
@@ -241,24 +234,46 @@ rp::MemoryAccessor BlastemMdSystem::getMemory(rp::MemoryType type, rp::AccessTyp
             workRamView();
             return {type, access, ramView_.data(), ramView_.size()};
         }
-        case rp::MemoryType::ExtWorkRam:  // the Z80's own 8 KiB (genesis.c's Z80_RAM_BYTES, one calloc)
+        case rp::MemoryType::ExtWorkRam:  // the Z80's own 8 KiB (genesis.c's Z80_RAM_BYTES, one calloc), not a copy
             if (!gen_->zram) return {};
             return {type, access, gen_->zram, Z80_RAM_BYTES};
         case rp::MemoryType::Sram:
-            // BlastEm's own battery buffer, in its own layout: an odd- or even-byte cart's is the compacted half of the
-            // declared range, which is what its .sav holds (design section 5).
-            if (!hasBattery(gen_)) return {};
-            return {type, access, gen_->save_storage, gen_->save_size};
+            // The battery in its .sav's order, which is what the registry publishes and what every other emulator's save
+            // holds: an odd- or even-byte cart's is already the compacted range, and a 16-bit one is pair-swapped out of
+            // BlastEm's storage. A copy, so a write through it goes nowhere: sram() is the write half.
+            batteryView();
+            return {type, rp::AccessType::Read, sramView_.data(), sramView_.size()};
         default:
             return {};
     }
 }
 
+std::span<const std::uint8_t> BlastemMdSystem::batteryView() {
+    if (!hasBattery(gen_)) {
+        sramView_.clear();
+        return sramView_;
+    }
+    const std::size_t bytes = gen_->save_size;
+    sramView_.resize(bytes);
+    for (std::size_t i = 0; i < bytes; ++i) sramView_[i] = gen_->save_storage[batteryStorageIndex(gen_, i)];
+    return sramView_;
+}
+
 std::vector<std::uint8_t> BlastemMdSystem::saveSramBytes() const {
-    // The battery is the core's own buffer, so this is the one copy the host takes of it whole. No instance pointer is
-    // set: this reads the context's fields and calls no BlastEm function.
+    // The battery is BlastEm's storage re-ordered, so the host's dump is a copy of the same view the accessor hands out.
+    // No instance pointer is set: this reads the context's fields and calls no BlastEm function.
     if (!hasBattery(gen_)) return {};
-    return {gen_->save_storage, gen_->save_storage + gen_->save_size};
+    std::vector<std::uint8_t> out(gen_->save_size);
+    for (std::size_t i = 0; i < out.size(); ++i) out[i] = gen_->save_storage[batteryStorageIndex(gen_, i)];
+    return out;
+}
+
+void BlastemMdSystem::seedBattery(const std::vector<std::uint8_t>& sram) {
+    if (sram.empty() || !hasBattery(gen_)) return;
+    // The seed is in the caller's order (the .sav's) and BlastEm's storage is the pair-swapped one, so each byte goes to
+    // its own index. A seed longer than the battery is cut to it, as SystemBase::seedSramAndState cuts one.
+    const std::size_t n = std::min(sram.size(), std::size_t(gen_->save_size));
+    for (std::size_t i = 0; i < n; ++i) gen_->save_storage[batteryStorageIndex(gen_, i)] = sram[i];
 }
 
 // The state, as BlastEm writes it, behind the identifier loadStateBytes demands. The capture costs one buffer of its

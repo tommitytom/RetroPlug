@@ -24,6 +24,18 @@ constexpr MemoryCapability::Region kRegions[] = {
 
 }  // namespace
 
+bool hasBattery(const genesis_context* gen) {
+    return gen && gen->save_type != SAVE_NONE && gen->save_storage && gen->save_size != 0;
+}
+
+std::size_t batteryStorageIndex(const genesis_context* gen, std::size_t at) {
+    // A RAM_FLAG_BOTH cart keeps the battery in big-endian word order: the byte at address `a` is save_storage[a ^ 1]
+    // (sega_mapper.c's read_sram_b), and genesis.c's own save path swaps the words around its file write, so the raw
+    // buffer is pair-swapped against the .sav and against every other emulator's. An odd- or even-byte cart is
+    // compacted (byte i is address $200001 + 2i or $200000 + 2i) and its memory is its file, so it needs no swap.
+    return gen && gen->save_type == RAM_FLAG_BOTH ? wordOrder(at) : at;
+}
+
 std::span<const std::uint8_t> WorkRamView::refresh(const std::uint8_t* source, std::size_t size) {
     // The scratch keeps the size it grew to (the region's size is fixed for a core's life), so a refresh is the copy
     // and nothing else: no block thread ever allocates here.
@@ -53,6 +65,22 @@ bool MdMemory::write(std::size_t region, std::uint32_t offset, const std::uint8_
         return true;
     }
     return false;  // no such region: a poke past the listed regions is a caller that read the list wrong
+}
+
+SramCapability::WriteResult MdSram::write(std::uint32_t offset, const std::uint8_t* data, std::size_t size,
+                                          const std::uint8_t* expect) {
+    genesis_context* gen = sys_.core();
+    if (!hasBattery(gen) || !data || size == 0) return WriteResult::OutOfRange;
+    const std::size_t at = offset;
+    if (at > gen->save_size || size > gen->save_size - at) return WriteResult::OutOfRange;
+    std::uint8_t* raw = gen->save_storage;
+    if (expect) {
+        for (std::size_t i = 0; i < size; ++i) {
+            if (raw[batteryStorageIndex(gen, at + i)] != expect[i]) return WriteResult::Changed;
+        }
+    }
+    for (std::size_t i = 0; i < size; ++i) raw[batteryStorageIndex(gen, at + i)] = data[i];
+    return WriteResult::Written;
 }
 
 }  // namespace rp::blastem

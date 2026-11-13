@@ -59,10 +59,12 @@ public:
     // -- The control plane's memory views --------------------------------------
     //
     // Ram is the 68k's 64 KiB in ADDRESS order (a copy: BlastEm's storage is a word array), ExtWorkRam is the Z80's own
-    // 8 KiB, and Sram is the cart's battery as BlastEm stores it. Anything else is the invalid accessor the base returns.
+    // 8 KiB, and Sram is the cart's battery in its .sav's order, which is a copy too (a 16-bit cart's storage is
+    // pair-swapped under it). Anything else is the invalid accessor the base returns.
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
-    // BlastEm's own battery, byte for byte, so an odd-byte cart keeps its compacted layout: byte `i` of the result is
-    // address $200001 + 2i (design section 5). Empty for a cart with no battery.
+    // The battery in its .sav's order, so an odd-byte cart keeps its compacted layout (byte `i` of the result is
+    // address $200001 + 2i) and a 16-bit cart is not rotated against every other emulator's save (design section 5).
+    // Empty for a cart with no battery.
     std::vector<std::uint8_t> saveSramBytes() const override;
 
     // -- The savestate (SystemBase's state plane) --------------------------------
@@ -76,8 +78,8 @@ public:
     // is not one, and the caller decides whether to keep it.
     bool stateRefused() const { return stateRefused_; }
 
-    // The three capabilities (SystemCapabilities.hpp). The memory one is this package's own because of the work RAM's
-    // word order; the battery and the ROM are the generic ones over getMemory and rom_.
+    // The three capabilities (SystemCapabilities.hpp). The memory and battery ones are this package's own because of
+    // the work RAM's word order and the 16-bit battery's pair swap; the ROM's is the generic one over rom_.
     rp::MemoryCapability* memory() override { return &memoryCap_; }
     rp::SramCapability*   sram() override { return &sramCap_; }
     rp::RomCapability*    rom() override { return &romCap_; }
@@ -151,12 +153,19 @@ private:
     // enableStateSnapshot has been called; the build function does that).
     std::size_t stateSnapshotSize() const override;
     bool        captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
-    // The build's state seed (SystemBase seeds it through seedSramAndState, as boot()'s last act). A refusal here is
-    // boot()'s retry, not an error out of a live machine: a state is only ever loaded into a core that was just built.
+    // The build's state seed, as boot()'s last act after seedBattery(). A refusal here is boot()'s retry, not an error
+    // out of a live machine: a state is only ever loaded into a core that was just built.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
     // Refills ramView_ with the 68k's work RAM in address order and returns it: the view every getMemory(Ram) hands out.
     // Empty (so an accessor reports itself invalid) once no core owns a work RAM to read.
     std::span<const std::uint8_t> workRamView();
+    // Refills sramView_ with the battery in its .sav's order and returns it: the view every getMemory(Sram) and
+    // saveSramBytes() hand out, and empty once no core owns a battery.
+    std::span<const std::uint8_t> batteryView();
+    // The build's battery seed, in the .sav's order, written into BlastEm's own storage with the pair swap a 16-bit cart
+    // needs. SystemBase::seedSramAndState writes its seed through getMemory(Sram), which here is the address-ordered
+    // copy, so this class seeds the battery itself and hands the state to loadStateBytes() after it.
+    void seedBattery(const std::vector<std::uint8_t>& sram);
     void run_until(std::uint64_t mclk);
     // Bring the YM2612 and the PSG to the block's end clock (or to where the 68k actually got to, whichever is less)
     // before the block is drained. A stop is only checked at the next sync, so a run can return with the chips short of
@@ -166,13 +175,15 @@ private:
     BlastemMdConfig           config_;
     // The ROM as a capability view; BlastEm gets its own aligned copy (see boot()) and owns it from then on.
     std::vector<std::uint8_t> rom_;
+    MdMemory memoryCap_{*this};
+    MdSram   sramCap_{*this};
     // rom_ never changes after construction, which is what lets romCap_ hand its bytes to any thread. A Mega Drive's
     // title is its 48-byte domestic name at $120.
-    MdMemory     memoryCap_{*this};
-    rp::CoreSram sramCap_{*this};
-    rp::CoreRom  romCap_{rom_, 0x120, 0x30};
-    // The work RAM in address order: one buffer, kept at the region's size, refilled by workRamView() on every ask.
+    rp::CoreRom romCap_{rom_, 0x120, 0x30};
+    // The work RAM in address order, and the battery in its .sav's order: one buffer each, kept at the region's size,
+    // refilled by workRamView() / batteryView() on every ask.
     std::vector<std::uint8_t> ramView_;
+    std::vector<std::uint8_t> sramView_;
     // The sinks must still exist when the context is freed: that free hands the chips' audio sources back through
     // render_free_source. The destructor's own body does it first (destroyCore), before any member is destroyed, so the
     // DECLARATION ORDER below is not what keeps them alive and moving them would change nothing.

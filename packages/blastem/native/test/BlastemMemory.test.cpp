@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -56,6 +57,43 @@ std::vector<std::uint8_t> sramRom() {
     return rom;
 }
 
+// A cart with 64 KiB of 16-bit (BOTH) SRAM: the flags byte $1B2 is $02, so its $18 bits are clear and BlastEm keeps the
+// battery in big-endian word order, pair-swapped against every other emulator's .sav (sega_mapper.c's read_sram_b,
+// and genesis.c's swap around its own file write). This is the common 16-bit SRAM cart, and the one the odd-byte case
+// cannot speak for.
+std::vector<std::uint8_t> sramBothHeader(std::vector<std::uint8_t> rom) {
+    rom[0x1B0] = 'R';
+    rom[0x1B1] = 'A';
+    rom[0x1B2] = 0x02;  // SRAM present, both bytes ($1B2 & $18 == 0)
+    rom[0x1B3] = 0x20;
+    rom[0x1B4] = 0x00; rom[0x1B5] = 0x20; rom[0x1B6] = 0x00; rom[0x1B7] = 0x00;  // start $00200000
+    rom[0x1B8] = 0x00; rom[0x1B9] = 0x20; rom[0x1BA] = 0xFF; rom[0x1BB] = 0xFF;  // end $0020FFFF
+    return rom;
+}
+
+// Writes one byte to each parity of the same word, then reads both back into work RAM at $FF0000 and $FF0001, so the
+// cart's own byte order is visible from the 68k's side as well as from the dump.
+std::vector<std::uint8_t> sramBothRom() {
+    return sramBothHeader(rp::blastem::test::image(
+        {0x13, 0xFC, 0x00, 0xA5, 0x00, 0x20, 0x00, 0x00,  // move.b #$A5,$00200000
+         0x13, 0xFC, 0x00, 0x5A, 0x00, 0x20, 0x00, 0x01,  // move.b #$5A,$00200001
+         0x10, 0x39, 0x00, 0x20, 0x00, 0x00,              // move.b $00200000,d0
+         0x13, 0xC0, 0x00, 0xFF, 0x00, 0x00,              // move.b d0,$FF0000
+         0x10, 0x39, 0x00, 0x20, 0x00, 0x01,              // move.b $00200001,d0
+         0x13, 0xC0, 0x00, 0xFF, 0x00, 0x01},             // move.b d0,$FF0001
+        {}));
+}
+
+// The same cart with a program that only reads both bytes, so a case can see what a battery seed put there.
+std::vector<std::uint8_t> sramBothReadRom() {
+    return sramBothHeader(rp::blastem::test::image(
+        {0x10, 0x39, 0x00, 0x20, 0x00, 0x00,              // move.b $00200000,d0
+         0x13, 0xC0, 0x00, 0xFF, 0x00, 0x00,              // move.b d0,$FF0000
+         0x10, 0x39, 0x00, 0x20, 0x00, 0x01,              // move.b $00200001,d0
+         0x13, 0xC0, 0x00, 0xFF, 0x00, 0x01},             // move.b d0,$FF0001
+        {}));
+}
+
 }  // namespace
 
 TEST_CASE("work RAM reads at 68k addresses, not in BlastEm's word order", "[blastem][memory]") {
@@ -94,6 +132,72 @@ TEST_CASE("the battery keeps BlastEm's odd-byte layout", "[blastem][memory]") {
     CHECK(sram[1] == 0x00);           // byte 1 is $200003
     // And the ROM read its own byte back through the odd lane.
     CHECK((sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read)[0] & 0x5A) == 0x5A);
+}
+
+TEST_CASE("the battery of a 16-bit cart is exported in the .sav's order", "[blastem][memory]") {
+    // BlastEm's storage for a RAM_FLAG_BOTH cart is the file's pairs swapped (the byte at address a is save_storage[a^1]),
+    // and its own save path swaps them back around the write. So a dump of the raw buffer is rotated against every
+    // .sav, and a dump that is not means an exported battery no other emulator can read.
+    auto sys = boot(sramBothRom());
+    for (int i = 0; i < 4; ++i) runBlock(*sys);
+    const std::vector<std::uint8_t> sram = sys->saveSramBytes();
+    REQUIRE(sram.size() == 0x10000);
+    CHECK(sram[0] == 0xA5);  // $200000, which the ROM wrote
+    CHECK(sram[1] == 0x5A);  // $200001
+    // The raw storage really is the other way round, which is why the dump is a copy and not the buffer.
+    const auto* raw = static_cast<const std::uint8_t*>(static_cast<const void*>(sys->core()->save_storage));
+    CHECK(raw[0] == 0x5A);
+    CHECK(raw[1] == 0xA5);
+    // What the registry publishes is the same order as the dump, so a reader and a save agree.
+    const rp::MemoryAccessor battery = sys->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+    REQUIRE(battery.valid());
+    REQUIRE(battery.size() == sram.size());
+    CHECK(std::equal(sram.begin(), sram.end(), battery.data()));
+    // And the 68k read both bytes at the addresses it wrote them to.
+    const rp::MemoryAccessor ram = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+    REQUIRE(ram.valid());
+    CHECK(ram[0] == 0xA5);
+    CHECK(ram[1] == 0x5A);
+}
+
+TEST_CASE("a 16-bit cart's battery seed lands in the .sav's order", "[blastem][memory]") {
+    rp::blastem::BlastemMdConfig cfg;
+    cfg.region = 1;
+    cfg.sram.assign(0x10000, 0x00);
+    cfg.sram[0] = 0x11;  // $200000
+    cfg.sram[1] = 0x22;  // $200001
+    auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, sramBothReadRom());
+    sys->onActivate(kRate);
+    const std::vector<std::uint8_t> sram = sys->saveSramBytes();
+    REQUIRE(sram.size() == 0x10000);
+    CHECK(sram[0] == 0x11);
+    CHECK(sram[1] == 0x22);
+    for (int i = 0; i < 4; ++i) runBlock(*sys);
+    const rp::MemoryAccessor ram = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+    REQUIRE(ram.valid());
+    CHECK(ram[0] == 0x11);  // what the ROM read back from $200000
+    CHECK(ram[1] == 0x22);  // and from $200001
+}
+
+TEST_CASE("a live battery write lands in the .sav's order", "[blastem][memory]") {
+    // rp.system.sram/1's one live write (the host saving a song into a running cart's battery). CoreSram writes through
+    // getMemory(Sram), which here is the address-ordered copy, so this core's capability has to do the pairing itself.
+    auto sys = boot(sramBothReadRom());
+    rp::SramCapability* battery = sys->sram();
+    REQUIRE(battery != nullptr);
+    const std::uint8_t bytes[2] = {0xA5, 0x5A};
+    CHECK(battery->write(0, bytes, 2, nullptr) == rp::SramCapability::WriteResult::Written);
+    const std::vector<std::uint8_t> sram = sys->saveSramBytes();
+    REQUIRE(sram.size() == 0x10000);
+    CHECK(sram[0] == 0xA5);
+    CHECK(sram[1] == 0x5A);
+    // The compare-and-swap half compares in the caller's order too, and a stale expectation writes nothing.
+    CHECK(battery->write(0, bytes, 2, bytes) == rp::SramCapability::WriteResult::Written);
+    const std::uint8_t stale[1] = {0x00};
+    CHECK(battery->write(0, bytes, 1, stale) == rp::SramCapability::WriteResult::Changed);
+    CHECK(sys->saveSramBytes()[0] == 0xA5);
+    // Past the end is refused, as the capability says.
+    CHECK(battery->write(0xFFFE, bytes, 4, nullptr) == rp::SramCapability::WriteResult::OutOfRange);
 }
 
 TEST_CASE("a battery seed reaches the cart", "[blastem][memory]") {
