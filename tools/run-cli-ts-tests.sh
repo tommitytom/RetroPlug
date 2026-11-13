@@ -52,6 +52,25 @@ contains_line() { # contains_line <label> <haystack-file> <exact line> - a resul
 	fi
 }
 
+quiet() { # quiet <label> <stderr-file> - nothing was written to it
+	if [ ! -s "$2" ]; then
+		echo "ok   - $1"
+	else
+		echo "FAIL - $1 (stderr was not empty)"
+		sed 's/^/       | /' "$2" >&2
+		fails=$((fails + 1))
+	fi
+}
+absent() { # absent <label> <haystack-file> <needle> - and it is NOT in there
+	if grep -qF -- "$3" "$2"; then
+		echo "FAIL - $1 (output contained: $3)"
+		sed 's/^/       | /' "$2" >&2
+		fails=$((fails + 1))
+	else
+		echo "ok   - $1"
+	fi
+}
+
 # Each case gets its own build dir so nothing is inherited between them.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -555,6 +574,83 @@ kill -INT "$pid" 2>/dev/null
 wait "$pid"
 check "a throwing interrupt hook ends a kept-alive session with exit 1" 1 $?
 contains "...and prints the error" "$out" "hook threw"
+#     A hook that ENDS the session itself (release the devices, then exit with the code a wrapper expects): the session
+#     ends with the hook's code, and the marker that carried the unwinding out of tjs.exit is not an error to report.
+printf '%s\n' 'globalThis.__rp_keepAlive();' \
+	'globalThis.__rp_onInterrupt(() => {' '  tjs.exit(5);' '});' \
+	'setTimeout(() => console.log("ready"), 0);' >"$UC/ka-exit.js"
+out="$TMP/run-ka-exit.log"
+timeout 20 "$CLI" "$UC/ka-exit.js" >"$out" 2>&1 &
+pid=$!
+wait_ready "$out"
+kill -INT "$pid" 2>/dev/null
+wait "$pid"
+check "an interrupt hook that calls tjs.exit ends the session with its code" 5 $?
+absent "...and never shows the exit's marker" "$out" "taken by the embedder's exit hook"
+
+# 6h. tjs.exit returns to the launcher. txiki's exit called C exit() from inside the JS call, so main's frame (the
+#     Teardown, the providers, the runtime) never unwound on a NORMAL exit - the launchpad a session claimed never got
+#     its close bytes - and an error thrown in the same turn as a tjs.exit(0) was lost with exit 0. With txiki's exit
+#     hook the exit unwinds like a thrown session or a Ctrl-C, so the same teardown runs, and the hook records what was
+#     pending when exit was called. RETROPLUG_TEARDOWN_TRACE=1 makes the teardown say it ran.
+EX="$TMP/exit"
+mkdir -p "$EX"
+printf '%s\n' 'tjs.exit(0);' >"$EX/normal.js"
+out="$TMP/run-exit-normal.log"
+RETROPLUG_TEARDOWN_TRACE=1 timeout 20 "$CLI" "$EX/normal.js" >"$out" 2>&1
+check "a normal tjs.exit(0) still exits 0" 0 $?
+contains "...and runs the launcher's teardown first" "$out" "teardown: graph cleared, providers stopped"
+printf '%s\n' 'tjs.exit(3);' >"$EX/three.js"
+out="$TMP/run-exit-three.log"
+timeout 20 "$CLI" "$EX/three.js" >"$out" 2>&1
+check "tjs.exit(3) still exits 3" 3 $?
+#     Two 0 ms timers in one loop turn: the first throws, the second asks for a clean exit. The hook is told an exception
+#     was already pending, so the session fails with that error's text instead of exiting 0 silently.
+printf '%s\n' 'setTimeout(() => {' '  throw new Error("thrown before the exit");' '}, 0);' \
+	'setTimeout(() => tjs.exit(0), 0);' >"$EX/same-turn.js"
+out="$TMP/run-exit-same-turn.log"
+timeout 20 "$CLI" "$EX/same-turn.js" >"$out" 2>&1
+check "an error thrown in the same turn as tjs.exit(0) exits 1" 1 $?
+contains "...and prints the error" "$out" "thrown before the exit"
+#     An error a SIBLING callback cleared in the same turn: the exception is gone, so the exit is the one place that can
+#     still know something threw. txiki exposes the stop request, and the hook asks it.
+printf '%s\n' 'setTimeout(() => {' '  throw new Error("lost before the exit");' '}, 0);' \
+	'setTimeout(() => {' '  try {' '    JSON.parse("{");' '  } catch {}' '}, 0);' \
+	'setTimeout(() => tjs.exit(0), 0);' >"$EX/same-turn-cleared.js"
+out="$TMP/run-exit-cleared.log"
+timeout 20 "$CLI" "$EX/same-turn-cleared.js" >"$out" 2>&1
+check "an error a sibling cleared in the same turn as tjs.exit(0) exits 1" 1 $?
+contains "...and says why" "$out" "a callback threw, and its error was cleared before it could be reported"
+absent "...and the exit's own marker never reaches the log" "$out" "taken by the embedder's exit hook"
+#     The DISPATCHER's own synchronous exits. cli/cli.ts calls tjs.exit from the module body for --version, the bare
+#     index, an unknown command and a tool's --help, and cli/session.ts's runSession calls it for a synchronous tool
+#     (lsdj-rom info with no argument falls into tjs.exit(1)). With the hook each of those exits unwinds through the
+#     module's promise, and none of them is a failed session: the marker IS the unwinding, not an error.
+timeout 20 "$CLI" --version >"$EX/version.out" 2>"$EX/version.err"
+check "--version exits 0" 0 $?
+quiet "...and says nothing on stderr" "$EX/version.err"
+timeout 20 "$CLI" --help >"$EX/help.out" 2>"$EX/help.err"
+check "--help exits 0" 0 $?
+quiet "...and says nothing on stderr" "$EX/help.err"
+timeout 20 "$CLI" >"$EX/bare.out" 2>"$EX/bare.err"
+check "a bare call exits 2" 2 $?
+absent "...and does not report a failed session" "$EX/bare.err" "session eval failed"
+timeout 20 "$CLI" no-such-command >"$EX/unknown.out" 2>"$EX/unknown.err"
+check "an unknown command exits 2" 2 $?
+absent "...and does not report a failed session" "$EX/unknown.err" "session eval failed"
+timeout 20 "$CLI" lsdj-rom info >"$EX/tool.out" 2>"$EX/tool.err"
+check "a synchronous tool's own exit code stands (lsdj-rom info with no argument: 1)" 1 $?
+contains "...and prints its usage" "$EX/tool.err" "usage: lsdj-rom info"
+absent "...and does not report a failed session" "$EX/tool.err" "session eval failed"
+absent "...and never shows the exit's marker" "$EX/tool.err" "taken by the embedder's exit hook"
+#     An exit with a microtask queued behind it: nothing may run JS once the exit has been taken, so the job never runs
+#     (before the fork honoured that, it did, and its side effects were the session's last word).
+printf '%s\n' 'setTimeout(() => {' '  Promise.resolve().then(() => console.log("ran after exit"));' \
+	'  tjs.exit(0);' '}, 0);' >"$EX/after-exit.js"
+out="$TMP/run-exit-after.log"
+timeout 20 "$CLI" "$EX/after-exit.js" >"$out" 2>&1
+check "a clean exit after a queued microtask still exits 0" 0 $?
+absent "...and the job queued behind it never ran" "$out" "ran after exit"
 
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.

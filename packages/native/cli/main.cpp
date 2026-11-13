@@ -71,26 +71,11 @@ bool endsWithJs(const char* s) {
     return n >= 3 && std::strcmp(s + n - 3, ".js") == 0;
 }
 
-// The exit code a replacement globalThis.tjs.exit() would record. Under txiki that replacement never takes (txiki's
-// `tjs` is frozen, so the set fails and txiki's own exit ends the process), so `set` stays false and the loops below
-// end on their own conditions; it is kept for a host whose `tjs` is not frozen. One host per process,
-// single-threaded, so a TU-local is the right mechanism (mirrors src/main.cpp).
-struct ExitState { int code = 0; bool set = false; };
-ExitState g_exit;
-
 // Set when txiki asks its loop to stop. Every such request on the session runtime is an error path (an exception in a
 // callback the runtime invoked, a job that failed, a rejection nothing cancelled), and the request survives where the
 // exception may not: a sibling callback in the same loop turn that throws and catches anything replaces, and so clears,
 // the pending exception, and the error would be lost with the session running on. host/SessionPump keeps the flag and
 // the check (both hosts run on it); this launcher keeps its own loop around it.
-
-JSValue jsExit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    int code = 0;
-    if (argc >= 1) JS_ToInt32(ctx, &code, argv[0]);
-    g_exit.code = code;
-    g_exit.set = true;
-    return JS_UNDEFINED;
-}
 
 // A long-running session (a live MIDI bridge) calls globalThis.__rp_keepAlive() during setup to opt out of
 // the bounded batch pump: the launcher then pumps until tjs.exit or Ctrl-C, so the session can react to MIDI
@@ -231,6 +216,11 @@ int main(int argc, char** argv) try {
         ~Teardown() {
             engine.clearGraph();
             rp_stop_providers(providers);
+            // RETROPLUG_TEARDOWN_TRACE: say the exit ran. Before the exit hook below, this line was never reached on a
+            // normal exit - tjs.exit() ended the process from inside the JS call, so main's frame never unwound - and a
+            // claimed Launchpad kept its Programmer mode. tools/run-cli-ts-tests.sh's section 6h asserts it.
+            if (std::getenv("RETROPLUG_TEARDOWN_TRACE") != nullptr)
+                std::fprintf(stderr, "teardown: graph cleared, providers stopped\n");
         }
     } teardown{svc.engine, providers};
     // The two facets the plugin and the SDL standalone deliberately do NOT mount, so they are not
@@ -264,25 +254,11 @@ int main(int argc, char** argv) try {
         JS_SetPropertyStr(ctx, ns, "args", args);
     });
 
-    // globalThis.tjs.exit — the session sets the process exit code through it. Override any
-    // txiki-provided exit so we record the code and return it (rather than terminating mid-pump). With txiki present
-    // the override does not take: txiki's `tjs` is frozen, so the set fails and txiki's own exit, which ends the
-    // process with the code, stays in place, and a session exits through it. The failed set leaves an exception
-    // pending, cleared here so the pump's check below does not take it for the session's.
-    {
-        JSValue tjsObj = JS_GetPropertyStr(ctx, global, "tjs");
-        if (JS_IsUndefined(tjsObj) || JS_IsNull(tjsObj)) {
-            JS_FreeValue(ctx, tjsObj);
-            tjsObj = JS_NewObject(ctx);
-            JS_SetPropertyStr(ctx, global, "tjs", JS_DupValue(ctx, tjsObj));
-        }
-        if (JS_SetPropertyStr(ctx, tjsObj, "exit", JS_NewCFunction(ctx, jsExit, "exit", 1)) < 0) {
-            // Under txiki this set never takes (its `tjs` is frozen), and the TypeError it leaves pending is cleared by
-            // the SessionPump's constructor below, not here: one place for both hosts.
-            JS_FreeValue(ctx, JS_GetException(ctx));
-        }
-        JS_FreeValue(ctx, tjsObj);
-    }
+    // globalThis.tjs.exit is txiki's own, and this launcher installs nothing over it: txiki freezes `tjs` before an
+    // embedder can wrap it, and the refused set was a TypeError left pending for the whole run. A session's exit reaches
+    // main through txiki's exit HOOK, which the session pump installs below (host/SessionPump.hpp): the status is
+    // recorded and the JS stack unwinds instead of the process ending inside the call, so the Teardown above - the graph,
+    // the providers, the runtimes - runs on a NORMAL exit as it already did for a thrown session and for Ctrl-C.
 
     // globalThis.__rp_keepAlive — a long-running session (MIDI bridge) calls it to switch the pump from the
     // bounded batch backstop to run-until-exit (see the pump loop below).
@@ -300,6 +276,24 @@ int main(int argc, char** argv) try {
 
     JS_FreeValue(ctx, global);
 
+    // The session pump, BEFORE any session code runs: a `.js` file's body is evaluated below and may call tjs.exit on its
+    // very first line, and the exit HOOK it takes (host/SessionPump.hpp, tjs.h) has to be installed by then. It also
+    // clears a refused `tjs.exit` override's pending TypeError and takes over the loop's stop request.
+    //
+    // Its pumpOnce is one turn of the loop, and the session's end when something threw that nothing caught. txiki turns
+    // such an error (a throw in an async module body, a rejection nothing cancelled, a throw in a timer or another
+    // callback it invoked) into a pending exception and a request to stop ITS loop; this launcher drives the loop itself,
+    // so unless it looks the error is dropped: a plain session would say only that it did not complete, a kept-alive one
+    // would pump for ever (wedging any `retroplug-cli test` run it is part of), and a timer's throw would be lost. A test
+    // file's rejections and timer throws reach its harness first (packages/testing/ts/harness.ts records them and fails
+    // the case); anything else (a throw in a queueMicrotask job, say) ends the file here, with no TAP, and the runner
+    // fails it. This launcher keeps its own SIGINT and keep-alive handling around it.
+    rp::host::SessionPump pump(host);
+    // A Ctrl-C handed to the session's own __rp_onInterrupt hook can throw. tjs_dump_error has already taken that
+    // exception (so the pump sees none pending), and this flag carries the verdict: a hook that throws ends the session,
+    // as an async one that rejects does.
+    bool hookThrew = false;
+
     // A `.js` path is slurped + evaled; otherwise run the compiled-in dispatcher (it reads the command
     // from the args we exposed above and prints help / routes it).
     int rc;
@@ -312,38 +306,25 @@ int main(int argc, char** argv) try {
     } else {
         rc = host.evalModuleBytecode(rp_cli_bundle, rp_cli_bundle_size);
     }
-    if (rc != 0) {
+    // A session that took its exit through the hook has already unwound: an evaluation path that still reports a
+    // failure for it (one this launcher does not know about) must not print "session eval failed" over a clean exit.
+    if (rc != 0 && !pump.exitTaken()) {
         std::fprintf(stderr, "session eval failed\n");
         return 1;
     }
 
     std::signal(SIGINT, onSigint);
 
-    // One turn of the loop, and the session's end when something threw that nothing caught. txiki turns such an error (a
-    // throw in an async module body, a rejection nothing cancelled, a throw in a timer or another callback it invoked)
-    // into a pending exception and a request to stop ITS loop; this launcher drives the loop itself, so unless it looks
-    // the error is dropped: a plain session would say only that it did not complete, a kept-alive one would pump for
-    // ever (wedging any `retroplug-cli test` run it is part of), and a timer's throw would be lost. A test file's
-    // rejections and timer throws reach its harness first (packages/testing/ts/harness.ts records them and fails the
-    // case); anything else (a throw in a queueMicrotask job, say) ends the file here, with no TAP, and the runner fails
-    // it. host/SessionPump owns the stop takeover, the exception check and the uncaught-setup error, and this launcher
-    // keeps its own SIGINT and keep-alive handling around it.
-    rp::host::SessionPump pump(host);
-    // A Ctrl-C handed to the session's own __rp_onInterrupt hook can throw. tjs_dump_error has already taken that
-    // exception (so the pump sees none pending), and this flag carries the verdict: a hook that throws ends the session,
-    // as an async one that rejects does.
-    bool hookThrew = false;
-
     // Drive the job loop. ES modules evaluate async in QuickJS, so the module body (the dispatcher + the tool)
     // runs during these pumps. A normal command runs to completion + calls tjs.exit within the bounded
     // backstop; a long-running session calls __rp_keepAlive() during setup, which drops us into the unbounded
     // loop below so it can react to MIDI until tjs.exit or Ctrl-C.
-    for (int i = 0; i < 20000 && !g_exit.set && !g_sigint && !g_keepAlive && !pump.threw(); ++i) pump.pumpOnce();
+    for (int i = 0; i < 20000 && !pump.exitTaken() && !g_sigint && !g_keepAlive && !pump.threw(); ++i) pump.pumpOnce();
 
     if (g_keepAlive && !pump.threw()) {
         // Long-running session (e.g. a live MIDI bridge): pump until it exits, throws or Ctrl-C. The 250us cadence
         // matches the native bridge loop; the session's own setInterval poll fires as the loop pumps.
-        while (!g_exit.set && !pump.threw() && !hookThrew) {
+        while (!pump.exitTaken() && !pump.threw() && !hookThrew) {
             if (g_sigint) {
                 if (JS_IsUndefined(g_onInterrupt)) break;
                 // Hand the first Ctrl-C to the session; a second one gets the default action.
@@ -351,8 +332,16 @@ int main(int argc, char** argv) try {
                 std::signal(SIGINT, SIG_DFL);
                 JSValue r = JS_Call(ctx, g_onInterrupt, JS_UNDEFINED, 0, nullptr);
                 if (JS_IsException(r)) {
-                    tjs_dump_error(ctx);
-                    hookThrew = true;
+                    // The hook may have ENDED the session itself (a live bridge that releases its devices and then
+                    // calls tjs.exit(130), say): the exception is then the exit hook's uncatchable marker - the
+                    // unwinding, not an error - so it is cleared, no marker is printed, and the process ends with the
+                    // hook's own code. Anything else out of the hook is a throw, and ends the session as one.
+                    if (pump.exitTaken()) {
+                        JS_FreeValue(ctx, JS_GetException(ctx));
+                    } else {
+                        tjs_dump_error(ctx);
+                        hookThrew = true;
+                    }
                 }
                 JS_FreeValue(ctx, r);
                 JS_FreeValue(ctx, g_onInterrupt);
@@ -361,7 +350,7 @@ int main(int argc, char** argv) try {
             pump.pumpOnce();
             std::this_thread::sleep_for(std::chrono::microseconds(250));
         }
-    } else if (!pump.threw() && !hookThrew && !g_exit.set && !g_sigint) {
+    } else if (!pump.threw() && !hookThrew && !pump.exitTaken() && !g_sigint) {
         std::fprintf(stderr, "session did not complete (tjs.exit never called)\n");
         return 1;
     }
@@ -371,7 +360,7 @@ int main(int argc, char** argv) try {
     if (pump.threw() || hookThrew) return 1;
     // A Ctrl-C (g_sigint) without tjs.exit is a clean exit 0 for a session that registered no interrupt hook; one
     // that did ends the process itself (the render tool exits 1).
-    return g_exit.set ? g_exit.code : 0;
+    return pump.exitTaken() ? pump.exitCode() : 0;
 } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());
     return 1;

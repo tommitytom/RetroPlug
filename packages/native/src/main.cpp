@@ -54,20 +54,6 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec
 
 namespace {
 
-// The exit code the harness reports through globalThis.tjs.exit(). One host per process,
-// single-threaded, so a TU-local is the right mechanism (mirrors TestHarness.cpp's
-// g_activeImpl pattern).
-struct ExitState { int code = 0; bool set = false; };
-ExitState g_exit;
-
-JSValue jsExit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    int code = 0;
-    if (argc >= 1) JS_ToInt32(ctx, &code, argv[0]);
-    g_exit.code = code;
-    g_exit.set = true;
-    return JS_UNDEFINED;
-}
-
 // Set by globalThis.__rp_keepAlive(): the test awaits work that outlasts the bounded spin in main().
 bool g_keepAlive = false;
 
@@ -192,6 +178,27 @@ int main(int argc, char** argv) try {
     launchpadRig.outputs = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A", "Midi Through:Midi Through Port-0 14:1",
                             "RetroPlug:RetroPlug Out 128:1", "RetroPlug Launchpad:LPProMK3 MIDI 129:1"};
     launchpadRig.answering = {"LPProMK3 MIDI"};  // the interface's port is listed and answers nothing
+    // RETROPLUG_TEARDOWN_TRACE=1: say what this host's teardown ran. Declared AFTER the rig and BEFORE the providers, so
+    // its destructor runs after theirs (destruction is the reverse of declaration): the close bytes a claimed Launchpad
+    // is owed (exitToLiveMode) have been written by then, and a case can hold them where it could not before - a session
+    // that ended through txiki's own exit() never unwound main's frame, so this ran for nothing
+    // (test-native/session-pump.test.ts's last case).
+    struct ExitTrace {
+        rp::launchpad::test::Rig& rig;
+        ~ExitTrace() {
+            if (std::getenv("RETROPLUG_TEARDOWN_TRACE") == nullptr) return;
+            for (const auto& message : rig.sentTo("LPProMK3 MIDI")) {
+                std::string line = "teardown: launchpad out:";
+                for (const std::uint8_t byte : message) {
+                    char hex[4];
+                    std::snprintf(hex, sizeof(hex), " %02X", byte);
+                    line += hex;
+                }
+                std::fprintf(stderr, "%s\n", line.c_str());
+            }
+            std::fprintf(stderr, "teardown: providers stopped\n");
+        }
+    } exitTrace{launchpadRig};
     rp::host::ProviderHost launchpadHost{svc.engine, launchpadConfigDir.path.string(),
                                          rp::host::ProviderHost::Calls{}, /*installLinks=*/false};
     struct SurfaceProvider {
@@ -267,27 +274,17 @@ int main(int argc, char** argv) try {
         });
     });
 
-    // globalThis.tjs.exit - the harness sets the exit code through it. An override that RECORDS the code and returns
-    // (rather than terminating mid-pump) is installed here; under txiki it does not take (txiki freezes `tjs` before an
-    // embedder can wrap it, so the set fails with a TypeError it leaves pending, and the pump clears that once it is
-    // constructed). Section 8 of docs/known-bugs-batch-3-design.md gives txiki an exit hook that both hosts reach
-    // through, and deletes this attempt.
-    {
-        JSValue tjsObj = JS_GetPropertyStr(ctx, global, "tjs");
-        if (JS_IsUndefined(tjsObj) || JS_IsNull(tjsObj)) {
-            JS_FreeValue(ctx, tjsObj);
-            tjsObj = JS_NewObject(ctx);
-            JS_SetPropertyStr(ctx, global, "tjs", JS_DupValue(ctx, tjsObj));
-        }
-        JS_SetPropertyStr(ctx, tjsObj, "exit", JS_NewCFunction(ctx, jsExit, "exit", 1));
-        JS_FreeValue(ctx, tjsObj);
-    }
+    // globalThis.tjs.exit is txiki's own, and this host installs nothing over it: txiki freezes `tjs` before an embedder
+    // can wrap it, and the refused set was a TypeError left pending for the whole run. A session's exit reaches main
+    // through txiki's exit HOOK, which the session pump installs below (host/SessionPump.hpp): it records the status and
+    // unwinds instead of ending the process inside the JS call, so main's frame - the providers, the engine, the runtime
+    // - is torn down on the way out.
     JS_SetPropertyStr(ctx, global, "__rp_keepAlive", JS_NewCFunction(ctx, jsKeepAlive, "__rp_keepAlive", 0));
 
     JS_FreeValue(ctx, global);
 
-    // The session pump: the stop takeover and txiki's error check, one turn at a time (host/SessionPump.hpp). It also
-    // clears the TypeError the refused `tjs.exit` override above left pending, which is not the session's error.
+    // The session pump: the stop takeover, txiki's error check one turn at a time, and the exit hook that lets a normal
+    // exit unwind (host/SessionPump.hpp).
     rp::host::SessionPump pump(host);
 
     const std::string code = slurp(bundlePath);
@@ -299,26 +296,25 @@ int main(int argc, char** argv) try {
 
     // Drive the job loop until the harness's microtask + tests run and call tjs.exit
     // (ES modules evaluate async in QuickJS, so the module body itself runs here). Bounded, and ended at once by a throw
-    // nothing caught (pumpOnce prints it).
-    for (int i = 0; i < 20000 && !g_exit.set && !pump.threw(); ++i) pump.pumpOnce();
+    // nothing caught (pumpOnce prints it) or by a session's exit (the hook records it; the loop stops).
+    for (int i = 0; i < 20000 && !pump.exitTaken() && !pump.threw(); ++i) pump.pumpOnce();
 
     // A test that awaits real work - a parity recording runs each case alone in a child process - says so
     // with __rp_keepAlive(), and is pumped until it exits, bounded by the wall clock. Asking is required:
     // txiki keeps a handle of its own alive, so "the loop still has work" would also hold a hung test.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(30);
-    while (g_keepAlive && !g_exit.set && !pump.threw() && std::chrono::steady_clock::now() < deadline) {
+    while (g_keepAlive && !pump.exitTaken() && !pump.threw() && std::chrono::steady_clock::now() < deadline) {
         pump.pumpOnce();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    // A session that threw has said what, and fails (the test host's `tjs.exit` override never takes under txiki, so a
-    // thrown file used to run on to the deadline or the bounded spin and say only that it did not complete).
+    // A session that threw has said what and fails; one that exited says with which code.
     if (pump.threw()) return 1;
-    if (!g_exit.set) {
+    if (!pump.exitTaken()) {
         std::fprintf(stderr, "tests did not complete (tjs.exit never called)\n");
         return 1;
     }
-    return g_exit.code;
+    return pump.exitCode();
 } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());
     return 1;

@@ -17,7 +17,14 @@
 //   2. a spawned child REFUSES to spawn: the parent passes RP_SPAWN_DEPTH=1, and spawnChild() throws on sight if it
 //      finds it already set;
 //   3. every child has a watchdog (SIGTERM after a few seconds), so a host that keeps pumping cannot hold the parent.
+//
+// The last case is the exit's own: txiki's tjs.exit used to call C exit() from inside the JS call, so main's stack never
+// unwound and the launchpad provider's disconnect never wrote the close bytes - a pad a CLI session claimed stayed in
+// Programmer mode with its front panel locked (docs/known-bugs-batch-3-design.md section 8).
 import { test, expect } from "@retroplug/testing";
+import { createLaunchpadClient } from "@retroplug/launchpad/client";
+import { exitToLiveMode, PRO_MK3 } from "@retroplug/launchpad";
+import { makeCall } from "../src/rpcClient";
 
 // Just enough of txiki's spawn and a child's pipe, declared locally as midi-facet.test.ts declares them.
 interface ByteStream {
@@ -72,7 +79,9 @@ async function child(what: string, timeoutMs = 20000): Promise<{ status: number;
   if (tjs.env.RP_SPAWN_DEPTH) throw new Error("a spawned child may not spawn children (RP_SPAWN_DEPTH is set)");
   const started = Date.now();
   const proc = tjs.spawn([tjs.exePath, __SELF_BUNDLE__], {
-    env: { ...tjs.env, RP_PUMP_CHILD: what, RP_SPAWN_DEPTH: "1" },
+    // RETROPLUG_TEARDOWN_TRACE: the host says what its teardown ran (packages/native/src/main.cpp's ExitTrace), which is
+    // the only way a parent can see the close bytes a claimed Launchpad got on the way out.
+    env: { ...tjs.env, RP_PUMP_CHILD: what, RP_SPAWN_DEPTH: "1", RETROPLUG_TEARDOWN_TRACE: "1" },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -115,6 +124,13 @@ if (CHILD === "module") {
   // Only reachable if the throw was dropped: the host would then pump to its 30-minute deadline, and this case holds
   // the child to a few seconds by exiting cleanly (a red run says "exit 0", not "hung").
   setTimeout(() => tjs.exit(0), 8000);
+} else if (CHILD === "launchpad") {
+  // A session that CLAIMS the scripted Pro MK3 and then exits normally: the provider's teardown is what writes the
+  // close bytes (exitToLiveMode), and the host prints them under RETROPLUG_TEARDOWN_TRACE.
+  const client = createLaunchpadClient(makeCall());
+  const held = client.claim("LPProMK3 MIDI", "LPProMK3 MIDI", Uint8Array.from(exitToLiveMode(PRO_MK3)));
+  if (!held.connected) throw new Error(`the scripted Launchpad was not claimed: ${held.error}`);
+  tjs.exit(0);
 }
 if (CHILD !== undefined) {
   // Nothing more to do in a child: its cases below are guarded out, and its end is the throw it scheduled or its own
@@ -155,5 +171,15 @@ if (CHILD === undefined) {
     expect(run.err.includes("boom while kept alive")).toBe(true);
     // Not the deadline's 30 minutes, nor the child's own 8-second fallback.
     expect(run.ms < 5000).toBe(true);
+  });
+
+  test("a normal exit runs the teardown: a claimed Launchpad gets its close bytes", async () => {
+    __rp_keepAlive();
+    const run = await child("launchpad", 15000);
+    expect(run.status).toBe(0);
+    // The close bytes the claim recorded, written by the provider's disconnect on the way out, and the line that says the
+    // provider stack stopped: neither ran when tjs.exit ended the process inside the JS call.
+    expect(run.err.includes("teardown: launchpad out: F0 00 20 29 02 0E 0E 00 F7")).toBe(true);
+    expect(run.err.includes("teardown: providers stopped")).toBe(true);
   });
 }
