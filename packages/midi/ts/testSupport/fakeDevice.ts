@@ -1,11 +1,11 @@
 // A fake MIDI stream for the menu and UI tests: the two globals (and the transport trio) the SDL host binds, over port
 // lists the test owns. Nothing opens a port - the real stream is proved by retroplug-midi-test over the fake backend -
 // so a test machine's MIDI gear is never listed or touched (the Zoom L6 rule and the port filter's).
-import type { MidiDescription, MidiSelection, TransportState } from "@retroplug/core/host";
+import type { MidiDescription, MidiSelection, MidiState, TransportState } from "@retroplug/core/host";
 
 interface MidiHooks {
   __rp_midiDescribe?: () => MidiDescription | null;
-  __rp_midiState?: () => Pick<MidiDescription, "openedInputs" | "openedOutputs" | "reserved"> | null;
+  __rp_midiState?: () => MidiState | null;
   __rp_midiApply?: (selection: MidiSelection, mode: "diff" | "reopen") => void;
   __rp_getTransport?: () => Partial<TransportState>;
   __rp_setTransport?: (playing: boolean) => void;

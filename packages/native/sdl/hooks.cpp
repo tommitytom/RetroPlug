@@ -155,16 +155,25 @@ JSValue jsSetClockBpm(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
 
 // ---- the MIDI stream (docs/modular-graph-phase-f5b-design.md section 6.4) -------------------------
 //
-// Two hooks: what the machine lists and what actually OPENED (the rows read the second rather than inferring it from a
-// listing taken at another moment), and the selection a project's `midi` section resolved to. The selection is
-// EXACT port names: matching a stored name to a present one is TypeScript's (midi/ts/portMatch.ts), so native never
-// guesses. Both disappear in the plugin, which takes MIDI from its DAW.
+// Three hooks: what the machine lists and what actually OPENED (the rows read the second rather than inferring it
+// from a listing taken at another moment), the same state as member reads alone (what is open and the pair a control
+// surface holds, with no probe), and the selection a project's `midi` section resolved to. The selection is EXACT port
+// names: matching a stored name to a present one is TypeScript's (midi/ts/portMatch.ts), so native never guesses. All
+// disappear in the plugin, which takes MIDI from its DAW.
 
 void setStringArray(JSContext* ctx, JSValueConst obj, const char* name, const std::vector<std::string>& values) {
     JSValue a = JS_NewArray(ctx);
     for (std::uint32_t i = 0; i < values.size(); ++i)
         JS_SetPropertyUint32(ctx, a, i, JS_NewString(ctx, values[i].c_str()));
     JS_SetPropertyStr(ctx, obj, name, a);
+}
+
+/** The `reserved` pair, the shape `MidiDescription.reserved` has: both hooks answer it, so it is built once. */
+void setReserved(JSContext* ctx, JSValueConst obj, const std::string& in, const std::string& out) {
+    JSValue reserved = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, reserved, "input", JS_NewString(ctx, in.c_str()));
+    JS_SetPropertyStr(ctx, reserved, "output", JS_NewString(ctx, out.c_str()));
+    JS_SetPropertyStr(ctx, obj, "reserved", reserved);
 }
 
 // __rp_midiDescribe(): { inputs, outputs, openedInputs, openedOutputs, supportsVirtual, reserved: { input, output } }.
@@ -176,10 +185,7 @@ JSValue jsMidiDescribe(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     setStringArray(ctx, o, "openedInputs", g_app->midi.openedInputs());
     setStringArray(ctx, o, "openedOutputs", g_app->midi.openedOutputs());
     JS_SetPropertyStr(ctx, o, "supportsVirtual", JS_NewBool(ctx, g_app->midi.supportsVirtual()));
-    JSValue reserved = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, reserved, "input", JS_NewString(ctx, g_app->midi.reservedInput().c_str()));
-    JS_SetPropertyStr(ctx, reserved, "output", JS_NewString(ctx, g_app->midi.reservedOutput().c_str()));
-    JS_SetPropertyStr(ctx, o, "reserved", reserved);
+    setReserved(ctx, o, g_app->midi.reservedInput(), g_app->midi.reservedOutput());
     return o;
 }
 
@@ -187,16 +193,14 @@ JSValue jsMidiDescribe(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 // probe of the machine. jsMidiDescribe above asks the backend for the port lists, which on ALSA creates and destroys an
 // RtMidi client that every other sequencer client sees announced; a poll that runs every frame (Settings > MIDI's rows
 // follow a control surface's claim made while the container is open) may only read members. So the lists stay the last
-// describe's and this answers what moved since.
+// describe's and this answers what moved since. Null when there is no stream to read (a closed one), which is the
+// `MidiDeviceHost.state` contract's other half.
 JSValue jsMidiState(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    if (!g_app || !g_app->midi.isOpen()) return JS_NULL;
     JSValue o = JS_NewObject(ctx);
-    if (!g_app) return o;
     setStringArray(ctx, o, "openedInputs", g_app->midi.openedInputs());
     setStringArray(ctx, o, "openedOutputs", g_app->midi.openedOutputs());
-    JSValue reserved = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, reserved, "input", JS_NewString(ctx, g_app->midi.reservedInput().c_str()));
-    JS_SetPropertyStr(ctx, reserved, "output", JS_NewString(ctx, g_app->midi.reservedOutput().c_str()));
-    JS_SetPropertyStr(ctx, o, "reserved", reserved);
+    setReserved(ctx, o, g_app->midi.reservedInput(), g_app->midi.reservedOutput());
     return o;
 }
 

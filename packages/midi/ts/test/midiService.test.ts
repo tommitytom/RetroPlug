@@ -3,7 +3,7 @@
 // missing, a project switch re-applies, and the clock tempo reaches the host. The device is a fake: no RtMidi, no
 // hardware, nothing opened.
 import { test, expect } from "@retroplug/testing";
-import type { MidiDescription, MidiDeviceHost, MidiSelection } from "@retroplug/core/host";
+import type { MidiDescription, MidiDeviceHost, MidiSelection, MidiState } from "@retroplug/core/host";
 import type { UiHost } from "@retroplug/ui/contribution";
 import type { MenuItem } from "@retroplug/ui/menu";
 import midiUi from "../ui/index";
@@ -37,7 +37,7 @@ function rig(overrides: {
   throwOnApply?: boolean;
   /** The stream's own state read (opened ports and the reserved pair), as the host's `state()` answers it: separate
    *  from `describe`, which probes. */
-  state?: () => Pick<MidiDescription, "openedInputs" | "openedOutputs" | "reserved">;
+  state?: () => MidiState;
   /** What the device does with an apply: a fake whose ports OPEN, so a case can hold what the rows read afterwards. */
   onApply?: (selection: MidiSelection, mode: string) => void;
 } = {}): Rig {
@@ -434,21 +434,54 @@ test("a control surface's claim repaints the checklist with no edge, and reads n
 
   // The claim lands. No edge fires: the poll sees it through the stream's state, repaints once, and asks for no listing.
   opened = ["Arturia KeyStep 32"];
-  reserved = { input: "Launchpad Pro MK3", output: "" };
+  reserved = { input: "Launchpad Pro MK3", output: "Deluge" };
   expect(svc.poll!.run(r.host)).toBe(true);
   expect(r.applied.length).toBe(1); // a claim is not a project change: nothing is re-applied
   expect(describes).toBe(listed);
   const rows = build();
   expect(rows.find((row) => row.id === "midi-reserved-in")!.label).toBe("[ ] Launchpad Pro MK3 (control surface)");
   expect(rows.some((row) => row.id.startsWith("midi-input-") && row.label.includes("Launchpad Pro MK3"))).toBe(false);
+  // The output half of the same pair is the same merge: the held output is a row of its own, never a pick.
+  expect(rows.find((row) => row.id === "midi-reserved-out")!.label).toBe("[ ] Deluge (control surface)");
+  expect(rows.some((row) => row.id.startsWith("midi-output-") && row.label.includes("Deluge"))).toBe(false);
   expect(svc.poll!.run(r.host)).toBe(false); // once, not every frame
 
-  // The release mirrors it: the pick comes back, and the held row goes.
+  // The release mirrors it: the pick comes back, and the held rows go. Still no listing: what the stream holds is a
+  // member read, and a release must not become a describe per frame.
   opened = ["Launchpad Pro MK3", "Arturia KeyStep 32"];
   reserved = { input: "", output: "" };
   expect(svc.poll!.run(r.host)).toBe(true);
+  expect(describes).toBe(listed);
   const after = build();
   expect(after.some((row) => row.id === "midi-reserved-in")).toBe(false);
+  expect(after.some((row) => row.id === "midi-reserved-out")).toBe(false);
   expect(after.find((row) => row.id === "midi-input-0")!.label).toBe("[x] Launchpad Pro MK3");
+  expect(after.find((row) => row.id === "midi-output-0")!.label).toBe("[ ] Deluge");
   expect(svc.poll!.run(r.host)).toBe(false);
+});
+
+test("a claim with no menu on screen costs no native read and no repaint", () => {
+  // The state read is member reads, and the poll runs every frame: what keeps the play view cheap is the GATE, and it
+  // has to hold both ways round. With no menu on screen a moved reserved pair is read by nobody, so there is no call and
+  // no repaint; when the menu comes back, one call reports the claim the rows must show.
+  let reserved = { input: "", output: "" };
+  let reads = 0;
+  const r = rig({
+    state: () => {
+      reads++;
+      return { openedInputs: [], openedOutputs: [], reserved };
+    },
+  });
+  const svc = service();
+  svc.start!(r.host);
+  svc.poll!.run(r.host); // the mount, menu open: the read lands and the rows settle
+  (r.host as { menuOpen?: boolean }).menuOpen = false;
+  svc.poll!.run(r.host); // the key without the transport, so the next poll has nothing else to report
+  reads = 0;
+  reserved = { input: "Launchpad Pro MK3", output: "" };
+  expect(svc.poll!.run(r.host)).toBe(false); // no row prints it: no repaint
+  expect(reads).toBe(0);                     // and no native call: the handheld's frame
+  (r.host as { menuOpen?: boolean }).menuOpen = true;
+  expect(svc.poll!.run(r.host)).toBe(true);  // the menu came back: the rows show the claim
+  expect(reads).toBe(1);
 });

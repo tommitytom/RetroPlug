@@ -78,10 +78,11 @@ across machines by [portMatch.ts](../packages/midi/ts/portMatch.ts) (exact first
 numbers, RtMidi's WinMM trailing index, CoreMIDI's repeated name, spacing - and only on a UNIQUE match), so a
 project saved on one rig finds its ports on another; a name that resolves to nothing stays saved, opens nothing
 and shows `(missing)`. The control surface's claimed pair shows as `(control surface)` and is never opened by the
-stream. The two hooks are `__rp_midiDescribe` / `__rp_midiApply` (bound only in the SDL host, so the plugin -
-which gets MIDI from the DAW - hides the submenu); Rescan re-resolves against a fresh listing, and opening the
-submenu does the same, as does a project load. `RETROPLUG_SDL_MIDI_LIST` dumps the enumerated device names, and
-`RETROPLUG_MIDI_LOG` the bytes.
+stream. The three hooks are `__rp_midiDescribe` / `__rp_midiState` / `__rp_midiApply` (bound only in the SDL host,
+so the plugin - which gets MIDI from the DAW - hides the submenu), the state hook answering what the stream holds
+right now (what is open and the control surface's pair) as member reads alone, so the rows follow a claim with no
+listing of the machine; Rescan re-resolves against a fresh listing, and opening the submenu does the same, as does
+a project load. `RETROPLUG_SDL_MIDI_LIST` dumps the enumerated device names, and `RETROPLUG_MIDI_LOG` the bytes.
 
 ### P3 — File drag-and-drop — ✅ DONE
 `handleEvents` translates SDL's drag-and-drop onto the App's `file-drop` channel (load / cold-boot-replace a
