@@ -87,9 +87,9 @@ inline std::vector<std::uint8_t> psgOnlyRom() {
     return image({0x60, 0xFE}, {{0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
 }
 
-// A YM2612 channel 1 patch plus key-on, then the PSG's tone: the FM and PSG paths both sound, and a case can tell them
-// apart by rendering psgOnlyRom() as well. The registers are the minimum for a note: LFO off, DAC on, operator 1's
-// multiplier/level/attack/decay/sustain, channel 1's frequency and algorithm, stereo both, all operators keyed on.
+// A YM2612 channel 1 patch plus key-on, then the PSG's tone: only the PSG sounds, because the 68k reaches the YM only
+// with the Z80's bus (genesis.c's io_write requires `!z80_enabled || z80_get_busack`) and this image never asserts the
+// bus request. It stays as it is because a case pins its hash; fmOnlyRom is the image that plays the YM.
 inline std::vector<std::uint8_t> fmPsgRom() {
     return image({0x60, 0xFE},
                  {{0xA04000, 0x22}, {0xA04001, 0x00}, {0xA04000, 0x27}, {0xA04001, 0x00},
@@ -101,6 +101,24 @@ inline std::vector<std::uint8_t> fmPsgRom() {
                   {0xA04000, 0xB0}, {0xA04001, 0x06}, {0xA04000, 0xB4}, {0xA04001, 0xC0},
                   {0xA04000, 0x28}, {0xA04001, 0xF0},
                   {0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
+}
+
+// The same patch as fmPsgRom, with two differences that make the YM the ONLY chip that sounds: the 68k asserts the Z80's
+// bus request (so its YM writes are not dropped) and the algorithm is 7, all four operators carriers, because with
+// algorithm 6 operator 1 is a modulator and the patch would be silent. No PSG write at all, so any output is the YM's.
+// The registers are the minimum for a note: LFO off, DAC on, operator 1's multiplier/level/attack/decay/sustain, channel
+// 1's frequency and algorithm, stereo both, all operators keyed on.
+inline std::vector<std::uint8_t> fmOnlyRom() {
+    return image({0x60, 0xFE},
+                 {{0xA11100, 0x01}, {0xA11200, 0x01},
+                  {0xA04000, 0x22}, {0xA04001, 0x00}, {0xA04000, 0x27}, {0xA04001, 0x00},
+                  {0xA04000, 0x2B}, {0xA04001, 0x80}, {0xA04000, 0x30}, {0xA04001, 0x01},
+                  {0xA04000, 0x40}, {0xA04001, 0x00}, {0xA04000, 0x50}, {0xA04001, 0x1F},
+                  {0xA04000, 0x60}, {0xA04001, 0x00}, {0xA04000, 0x70}, {0xA04001, 0x00},
+                  {0xA04000, 0x80}, {0xA04001, 0x0F}, {0xA04000, 0x90}, {0xA04001, 0x00},
+                  {0xA04000, 0xA4}, {0xA04001, 0x22}, {0xA04000, 0xA0}, {0xA04001, 0x69},
+                  {0xA04000, 0xB0}, {0xA04001, 0x07}, {0xA04000, 0xB4}, {0xA04001, 0xC0},
+                  {0xA04000, 0x28}, {0xA04001, 0xF0}});
 }
 
 // `move.b $A10005,d0; move.b d0,$FF0000; bra .`: what the ROM reads off controller port 2, in work RAM's first byte.

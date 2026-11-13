@@ -86,30 +86,37 @@ std::size_t zeroCrossings(const std::vector<float>& interleaved) {
 
 }  // namespace
 
-TEST_CASE("a ROM playing PSG and FM is not silent", "[blastem][audio]") {
+TEST_CASE("an image that writes the PSG is not silent", "[blastem][audio]") {
+    // fmPsgRom's YM writes never land (no Z80 bus request, see its comment), so this is the PSG's level case: the tone
+    // is channel 0 at full volume, and its RMS is the gain path's, which a peak threshold could not pin.
     auto sys = boot(rp::blastem::test::fmPsgRom());
     const std::vector<float> out = render(*sys, 0.5);
     CHECK(out.size() == static_cast<std::size_t>(0.5 * kRate) * 2);
-    CHECK(peak(out) > 0.01);  // about -40 dBFS: a full-volume PSG channel is far louder, the check only rejects silence
+    CHECK(peak(out) > 0.01);  // measured 0.0747: the check rejects silence and nothing subtler
+    // Measured -33.45 dBFS: the PSG's own full-volume square (2,449 in the 16-bit domain) through the 3390 Hz one-pole
+    // and blip's kernel. The windows are a decibel either side, so a gain that is wrong by anything audible fails.
+    CHECK(rms(out) > 0.0189);  // -34.5 dBFS
+    CHECK(rms(out) < 0.0239);  // -32.4 dBFS
     // The sink must never have run dry: a starved sample is a zero nobody's ROM asked for, and its position would be
     // a function of the block partition.
     CHECK(sys->starvedSamples() == 0);
 }
 
-TEST_CASE("the YM2612's writes change the output", "[blastem][audio]") {
-    auto  psg = boot(rp::blastem::test::psgOnlyRom());
-    auto  both = boot(rp::blastem::test::fmPsgRom());
-    const std::vector<float> a = render(*psg, 0.25);
-    const std::vector<float> b = render(*both, 0.25);
-    REQUIRE(a.size() == b.size());
-    // Both halves must be audible on their own, or the inequality below could hold with one of them silent: the
-    // prototype measured the FM patch's own peak at about 435 in the 16-bit source ring against the PSG's 2190, so a
-    // quiet patch is expected and silence is not.
-    CHECK(peak(a) > 0.01);
-    CHECK(peak(b) > 0.01);
-    CHECK(a != b);  // the FM patch is audible: the two renders differ
-    CHECK(psg->starvedSamples() == 0);
-    CHECK(both->starvedSamples() == 0);
+TEST_CASE("the YM2612's own image is what sounds", "[blastem][audio]") {
+    // fmOnlyRom asserts the Z80's bus request before it writes the YM, which is what makes genesis.c's io_write hand
+    // its bytes to the chip (without the busack they are dropped, and fmPsgRom is the image that shows it), and it
+    // writes no PSG register at all. So this render's audio can only be the YM2612's: the four-carrier patch measured
+    // -18.61 dBFS RMS at fnum 617, block 4, algorithm 7, and a sink that dropped, mis-rated or mis-gained the YM source
+    // has nothing else to fall back on.
+    auto sys = boot(rp::blastem::test::fmOnlyRom());
+    const std::vector<float> out = render(*sys, 0.25);
+    CHECK(peak(out) > 0.1);    // measured 0.166: rejects silence and a gain that is 20 dB out alike
+    CHECK(rms(out) > 0.104);   // -19.6 dBFS
+    CHECK(rms(out) < 0.132);   // -17.6 dBFS
+    // The chip's own rate, from its render_audio_source call: 53,693,175 / (7 * 6 * 24) is the YM2612's sample rate.
+    CHECK(sys->audio().sourceNativeRate("YM2612") == 53693175.0 / 1008.0);
+    CHECK(sys->starvedSamples() == 0);
+    CHECK(sys->audio().overrunSamples() == 0);
 }
 
 TEST_CASE("the same input renders the same bytes twice", "[blastem][audio]") {

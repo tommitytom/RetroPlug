@@ -12,6 +12,7 @@
 TEST_CASE("the synthetic images are the bytes later cases boot", "[blastem][roms]") {
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::psgOnlyRom()) == 0x6397D2DFu);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::fmPsgRom()) == 0x0DCF5FCAu);
+    CHECK(rp::blastem::test::fnv1a(rp::blastem::test::fmOnlyRom()) == 0x8F0D759Bu);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::portPollRom()) == 0xB7DE6771u);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::portPollLoopRom()) == 0xCBCC6E6Bu);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::portTimestampRom()) == 0x5EFF37F1u);
@@ -21,6 +22,8 @@ TEST_CASE("the synthetic images are the bytes later cases boot", "[blastem][roms
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::vintHintRom()) == 0x3DC48361u);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::z80TimingRom()) == 0xA3C8A6BFu);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::vintDmaRom()) == 0xBDD1A4BFu);
+    CHECK(rp::blastem::test::fnv1a(rp::blastem::test::dmaLoopRom(true)) == 0x8B7DC850u);
+    CHECK(rp::blastem::test::fnv1a(rp::blastem::test::dmaLoopRom(false)) == 0x78B66710u);
 }
 
 TEST_CASE("an image carries the Mega Drive header and vectors", "[blastem][roms]") {
