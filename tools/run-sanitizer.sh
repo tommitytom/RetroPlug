@@ -94,6 +94,18 @@ if [ "$san" = thread ]; then
         echo "!! retroplug-audio-host-test failed under thread sanitizer" >&2
         rc=1
     fi
+    # The Mega Drive core's two-instance cases: two consoles booted, run and destroyed on separate threads, an instance
+    # migrating between threads, and an interleaved pair. Every one compares against that instance's solo render (audio,
+    # a state hash per block, frames), so the file-scope state BlastEm keeps outside its contexts shows up as a race here
+    # even when the outputs happen to agree. The filter is the [instances] tag: the rest of that binary is single-threaded
+    # and belongs to the ordinary suite.
+    echo "==> building retroplug-blastem-test (instrumented)"
+    cmake --build "$builddir" -j"$(nproc)" --target retroplug-blastem-test
+    echo "==> running the Mega Drive core's instance cases under thread sanitizer"
+    if ! "$repo/$builddir/bin/retroplug-blastem-test" "[instances]"; then
+        echo "!! retroplug-blastem-test [instances] failed under thread sanitizer" >&2
+        rc=1
+    fi
 fi
 
 [ "$rc" -eq 0 ] && echo "==> host passed under $san sanitizer"
