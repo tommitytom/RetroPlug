@@ -151,6 +151,25 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/genmddj:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/smsggdj':
+        specifier: workspace:*
+        version: link:../smsggdj
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/graph-runtime:
     dependencies:
       '@retroplug/node-sdk':
@@ -400,6 +419,9 @@ importers:
       '@retroplug/dsp':
         specifier: workspace:*
         version: link:../dsp
+      '@retroplug/genmddj':
+        specifier: workspace:*
+        version: link:../genmddj
       '@retroplug/host-io':
         specifier: workspace:*
         version: link:../host-io

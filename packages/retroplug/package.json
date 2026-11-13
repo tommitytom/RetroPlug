@@ -24,6 +24,7 @@
     "@retroplug/n8": "workspace:*",
     "@retroplug/risa": "workspace:*",
     "@retroplug/smsggdj": "workspace:*",
+    "@retroplug/genmddj": "workspace:*",
     "@retroplug/launchpad": "workspace:*",
     "@retroplug/host-io": "workspace:*",
     "@retroplug/system": "workspace:*",
