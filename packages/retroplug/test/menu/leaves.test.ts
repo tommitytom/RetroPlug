@@ -14,6 +14,8 @@ import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
 import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
 import { FakeAudioDevice } from "@retroplug/audio/testSupport/fakeDevice";
 import { FakeMidiDevice } from "@retroplug/midi/testSupport/fakeDevice";
+import { DEFAULT_USER_CONFIG } from "../../src/userConfig";
+import { USER_CONFIG_SCHEMA } from "../../src/userConfigSerialization";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -1695,4 +1697,115 @@ test("a muted device keeps Apply live, and the audio service repaints when the s
     fake.uninstall();
     delete g.__rp_isStandalone;
   }
+});
+
+test("Settings -> Audio: an Apply the config refuses leaves the device alone, keeps the draft, and says why", async () => {
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
+  g.__rp_isStandalone = true;
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
+  resetAudioDraft();
+
+  // A config.json a newer RetroPlug wrote: this build loads it read-only (one console line) and must never rewrite it.
+  const be = new MockBackend("/cfg");
+  const newer = JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA + 1, ...DEFAULT_USER_CONFIG });
+  be.seed("/cfg/config.json", newer);
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const audioItems = () =>
+    submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+
+  // A staged block size is a real change, so Apply is live.
+  findItem(audioItems(), "audio-block")!.onCycle!(-1);
+  let items = audioItems();
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+
+  // Apply under the refusing file: the device is not touched, the draft stays (so the rows still show what was asked
+  // and Apply is still live to retry), a row says why, and the file is byte-identical.
+  findItem(items, "audio-apply")!.onSelect!();
+  expect(fake.applied.length).toBe(0);
+  items = audioItems();
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+  expect(findItem(items, "audio-not-saved")!.label).toBe("Not saved: config.json could not be written");
+  expect(be.readText("/cfg/config.json")).toBe(newer);
+
+  // A writable file again: the retry lands, reaches the device, and clears the row.
+  be.seed("/cfg/config.json", JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG }));
+  findItem(items, "audio-apply")!.onSelect!();
+  expect(fake.applied.at(-1)!.blockSize).toBe(256);
+  items = audioItems();
+  expect(findItem(items, "audio-not-saved")).toBe(undefined);
+  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+
+  resetAudioDraft();
+  fake.uninstall();
+  delete g.__rp_isStandalone;
+});
+
+test("Settings -> Audio: an Apply whose write FAILS leaves the device alone, keeps the draft, and says why", async () => {
+  const fake = new FakeAudioDevice().install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
+  g.__rp_isStandalone = true;
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
+  resetAudioDraft();
+
+  // A writable config.json whose WRITE then fails: on Windows another process holding the file open without
+  // FILE_SHARE_DELETE fails the atomic rename, which is the other way the store answers "refused".
+  const be = new MockBackend("/cfg");
+  const saved = JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG });
+  be.seed("/cfg/config.json", saved);
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const audioItems = () =>
+    submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+  findItem(audioItems(), "audio-block")!.onCycle!(-1);
+  const realWrite = be.writeFileAtomic.bind(be);
+  be.writeFileAtomic = () => false; // the rename failed: the change is not on disk
+
+  // The device is not touched (it would run something the next launch will not open), the draft and Apply stay, the
+  // row says why, and the file is byte-identical.
+  findItem(audioItems(), "audio-apply")!.onSelect!();
+  expect(fake.applied.length).toBe(0);
+  let items = audioItems();
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+  expect(findItem(items, "audio-not-saved")!.label).toBe("Not saved: config.json could not be written");
+  expect(be.readText("/cfg/config.json")).toBe(saved);
+
+  // The file takes writes again: the retry lands on it, reaches the device, and clears the row.
+  be.writeFileAtomic = realWrite;
+  findItem(items, "audio-apply")!.onSelect!();
+  expect(fake.applied.at(-1)!.blockSize).toBe(256);
+  items = audioItems();
+  expect(findItem(items, "audio-not-saved")).toBe(undefined);
+  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+
+  resetAudioDraft();
+  fake.uninstall();
+  delete g.__rp_isStandalone;
+});
+
+test("Settings -> Audio: a muted device with a clean draft re-applies, and the no-op write is not a refusal", async () => {
+  const fake = new FakeAudioDevice({ status: { error: "no device" } }).install();
+  const g = globalThis as { __rp_isStandalone?: boolean };
+  g.__rp_isStandalone = true;
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
+  resetAudioDraft();
+
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const audioItems = () =>
+    submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+  resetAudioDraft(); // the saved section, which is what the draft already is: no change staged
+
+  const items = audioItems();
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy(); // enabled while muted, even with a clean draft
+  findItem(items, "audio-apply")!.onSelect!();
+  expect(fake.applied.length).toBe(1); // the retry reached the device
+  expect(fake.applied.at(-1)!.blockSize).toBe(512);
+  expect(findItem(audioItems(), "audio-not-saved")).toBe(undefined);
+
+  resetAudioDraft();
+  fake.uninstall();
+  delete g.__rp_isStandalone;
 });

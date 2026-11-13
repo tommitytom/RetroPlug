@@ -242,8 +242,11 @@ export interface ConfigHost {
    *  refused, not answered. */
   section<T = Record<string, unknown>>(key: string): T;
   /** Apply a patch through the contributor's `merge`, written through a re-read of the file (two processes may share
-   *  it). THROWS when it refuses the patch; does nothing for a section stamped newer than its contributor. */
-  setSection(key: string, patch: Readonly<Record<string, unknown>>): void;
+   *  it), and answer whether the file HOLDS the patch: true for a patch it now carries or already carried, false when
+   *  it refused it (a file a newer build wrote, which reads read-only; a failed write; a block stamped newer than its
+   *  contributor). A caller that changes something outside the file on the strength of a write - a device, a link - goes
+   *  ahead on true and does nothing on false. THROWS when it refuses the patch's shape. */
+  setSection(key: string, patch: Readonly<Record<string, unknown>>): boolean;
 }
 
 /** One choice of the audio device: the `audio` config section, exactly as it is saved - the backend and driver by

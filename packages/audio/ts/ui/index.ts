@@ -11,7 +11,8 @@ import { defineUi, type MenuBuilder, type UiHost, type UiService } from "@retrop
 import { AUDIO_OUT_CHANNELS } from "../configSection";
 import {
   applyAudioDraft, applySavedAudio, audioDescription, audioDevices, audioDraftDirty, audioDriverChoices,
-  fetchMoreDrivers, getAudioDraft, moreDriversAvailable, resetAudioDraft, setAudioDraft, subscribeAudioDraft,
+  audioNotSaved, fetchMoreDrivers, getAudioDraft, moreDriversAvailable, resetAudioDraft, setAudioDraft,
+  subscribeAudioDraft,
 } from "./audioDraft";
 
 export * from "./audioDraft";
@@ -73,6 +74,7 @@ function audioSettingsChildren(host: UiHost): MenuItem[] {
   const devName = (n: number) => (n === 0 ? "" : devices.names[n - 1] ?? cfg.device);
   const dirty = audioDraftDirty(host);
   const muted = described.status.error;
+  const notSaved = audioNotSaved();
   return [
     // The cyclers stage a pending value only: the label tracks the draft, the device is unchanged until Apply. Picking
     // a driver resets the device, because a device name is not valid across backends.
@@ -107,6 +109,9 @@ function audioSettingsChildren(host: UiHost): MenuItem[] {
     ...(muted
       ? [separator("audio-sep-status"), infoRow("audio-status", `Muted: ${muted}`)]
       : []),
+    // An Apply the file refused: the rows still show the staged choice (nothing was applied), and this says why the
+    // device did not move. Cleared by the next Apply that lands, or the next visit.
+    ...(notSaved ? [infoRow("audio-not-saved", notSaved)] : []),
     // A run's flags win over the saved section (E12), so the rows say which choice is NOT the one running rather than
     // showing a saved value the device is not using.
     ...(runOverride(described)

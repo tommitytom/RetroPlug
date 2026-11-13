@@ -136,15 +136,28 @@ export class UserConfigStore {
   }
 
   /** Apply a patch to a section through its contributor's `merge`, written through a re-read of the file (two
-   *  processes may share it). THROWS when the package has no such section or the contributor refuses the patch, and
-   *  does nothing for a block stamped newer than its contributor (one warning, and the block stays byte-identical).
-   *  The stamp check and the merge run over the RE-READ block, inside the store's apply callback: the block's truth is
-   *  the file, and another process may have moved it since this one read it. */
+   *  processes may share it), and answer whether the file HOLDS it. THROWS when the package has no such section or the
+   *  contributor refuses the patch; a block stamped newer than its contributor is a refusal (one warning, and the block
+   *  stays byte-identical). This is `writeSection(...) === "written"`: a caller that only distinguishes saved from not
+   *  saved wants `writeSection`, because "unchanged" is a satisfied patch, not a failure. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): boolean {
+    return this.writeSection(key, patch) === "written";
+  }
+
+  /** Apply a patch to a section through its contributor's `merge`, written through a re-read of the file (two
+   *  processes may share it), and say how it landed - three answers, because a caller cannot act on two: `"written"`
+   *  is a patch the file now holds, `"unchanged"` is a patch that changes nothing (a row re-sending the saved choice: a
+   *  caller that gates something on the file, such as a device, must do it), and `"refused"` is a file that would not
+   *  take it (the read-only latch a newer build's file sets, a failed atomic write, a block stamped newer than its
+   *  contributor). THROWS when the package has no such section or the contributor refuses the patch. The stamp check
+   *  and the merge run over the RE-READ block, inside the store's apply callback: the block's truth is the file, and
+   *  another process may have moved it since this one read it. */
+  writeSection(key: string, patch: Readonly<Record<string, unknown>>): "written" | "unchanged" | "refused" {
     assertConfigSectionKey(key);
     const entry = configSectionEntryOf(key, this.configSections);
     if (!entry) throw new Error(`${key} is not a config section this product's packages contribute`);
-    return this.apply((model) => {
+    let stampedNewer = false;
+    const answer = this.apply((model) => {
       const stored = model.sections[key];
       const version = entry.section.version;
       const stamped = version !== undefined && isObject(stored) ? readSectionVersion(stored) : 0;
@@ -156,6 +169,7 @@ export class UserConfigStore {
               "untouched. A newer build wrote it.",
           );
         }
+        stampedNewer = true;
         return model; // unchanged, so the commit writes nothing and the newer block stays byte-identical
       }
       const current = stored === undefined ? configSectionDefaults(entry) : stored;
@@ -166,6 +180,7 @@ export class UserConfigStore {
       putConfigSection(sections, key, next);
       return { ...model, sections, written: [...(model.written ?? []), key] };
     });
+    return stampedNewer ? "refused" : answer;
   }
   defaultZoom(): number {
     return this.current.defaultZoom;
@@ -275,7 +290,7 @@ export class UserConfigStore {
    *  session wrote - because serialising a contributed block from its parsed value drops every field this build does not
    *  know, and config.json is shared with builds of other ages (the verbatim-keep rule). */
   private update(fn: (cfg: UserConfig) => UserConfig): boolean {
-    return this.apply((model) => ({ ...model, core: fn(model.core) }));
+    return this.apply((model) => ({ ...model, core: fn(model.core) })) === "written";
   }
 
   /** Apply `fn` to the config AS IT IS ON DISK, then commit. The file is shared - the DAW plugin, another standalone -
@@ -283,7 +298,7 @@ export class UserConfigStore {
    *  copy wrote that whole stale copy back: one Connect here reverted every setting the plugin had changed since, and
    *  the plugin's own watcher then adopted the reverts live. This is why a section is patched over the re-read copy
    *  too: a package's block and the shell's fields come from the one file. */
-  private apply(fn: (model: ConfigModel) => ConfigModel): boolean {
+  private apply(fn: (model: ConfigModel) => ConfigModel): "written" | "unchanged" | "refused" {
     this.syncFromDisk();
     return this.commit(fn(this.model()));
   }
@@ -329,16 +344,17 @@ export class UserConfigStore {
     return `${this.backend.configDir()}/${CONFIG_FILE}`;
   }
 
-  // Adopt `next` if it differs from the current config: persist atomically + notify.
-  private commit(next: ConfigModel): boolean {
-    if (this.readOnly) return false; // a newer build wrote this file; ours is not the version that gets to edit it
+  // Adopt `next` if it differs from the current config: persist atomically, notify, and say how it landed.
+  private commit(next: ConfigModel): "written" | "unchanged" | "refused" {
+    // A newer build wrote this file; ours is not the version that gets to edit it.
+    if (this.readOnly) return "refused";
     const after = this.serialize(next);
-    if (after === this.serialize()) return false; // genuine no-op
+    if (after === this.serialize()) return "unchanged"; // genuine no-op: the file already holds it
     // Adopted only once it is on disk. A failed write (on Windows, another process holding the file open without
     // FILE_SHARE_DELETE fails the rename) must not show the change all session and lose it at the next launch.
-    if (!this.backend.writeFileAtomic(this.filePath(), enc.encode(after))) return false;
+    if (!this.backend.writeFileAtomic(this.filePath(), enc.encode(after))) return "refused";
     this.adopt(next);
     this.onChange();
-    return true;
+    return "written";
   }
 }

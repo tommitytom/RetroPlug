@@ -179,8 +179,9 @@ test("a section stamped newer reads its defaults, refuses a patch once, and is w
     store.load();
     // A reader gets what it can honestly type: the contributor's defaults, not a block it could not parse.
     expect(store.section("versioned")).toEqual({ knob: "a", size: 0 });
-    // The writer keeps the block, so two refused patches warn once and change nothing.
-    expect(store.setSection("versioned", { knob: "b" })).toBeFalsy();
+    // The writer keeps the block, so two refused patches warn once and change nothing. A refused patch is a REFUSAL,
+    // not a no-op: a caller that gates a device on the answer must not read it as "already there".
+    expect(store.writeSection("versioned", { knob: "b" })).toBe("refused");
     expect(store.setSection("versioned", { knob: "c" })).toBeFalsy();
     expect(warnings.lines.filter((line) => line.includes("versioned")).length).toBe(1);
     // A change to the shell's own fields still writes the file, and the block goes back exactly as it came.

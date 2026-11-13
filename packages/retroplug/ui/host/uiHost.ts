@@ -81,7 +81,8 @@ export function createUiHost(stores: AppStores, peers: UiHostPeers): UiHost {
     } satisfies ProjectHost,
     config: {
       section: (key) => stores.userConfig.section(key),
-      setSection: (key, patch) => void stores.userConfig.setSection(key, patch),
+      // "Does the file hold it": a patch that changed nothing counts, a refusal does not (see writeSection).
+      setSection: (key, patch) => stores.userConfig.writeSection(key, patch) !== "refused",
     } satisfies ConfigHost,
     // The two device groups exist only where the host binds their hooks (the SDL standalone): a DAW-hosted editor and
     // the UI harness have no audio device or MIDI stream of their own, so their rows are not drawn at all rather than

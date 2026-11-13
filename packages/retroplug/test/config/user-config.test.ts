@@ -276,3 +276,27 @@ test("a write that fails is not reported as saved, and is not adopted", () => {
   be.writeFileAtomic = realWrite;
   expect(store.setSection(CONTROL_SURFACE, { input: "LP in" })).toBeTruthy();
 });
+
+test("writeSection answers written, unchanged or refused, which the boolean setSection cannot", () => {
+  const { be, store } = newStore();
+  store.load();
+  expect(store.writeSection(CONTROL_SURFACE, { input: "LP in" })).toBe("written");
+  // The same patch again changes nothing: not a failure, and not a write either. An Apply that re-sends the saved
+  // choice (the muted device's retry) lands here.
+  expect(store.writeSection(CONTROL_SURFACE, { input: "LP in" })).toBe("unchanged");
+  // A failed atomic write is a refusal: the change is not adopted, and the file is as it was.
+  const before = be.readText(CONFIG);
+  const realWrite = be.writeFileAtomic.bind(be);
+  be.writeFileAtomic = () => false; // e.g. Windows: another process holds config.json open
+  expect(store.writeSection(CONTROL_SURFACE, { input: "LP out" })).toBe("refused");
+  be.writeFileAtomic = realWrite;
+  expect(be.readText(CONFIG)).toBe(before);
+  expect(store.section<{ input: string }>(CONTROL_SURFACE).input).toBe("LP in");
+  // A newer build's file landing mid-session latches the store read-only, and every write is refused.
+  const newer = JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA + 1, ...DEFAULT_USER_CONFIG });
+  be.seed(CONFIG, newer);
+  expect(store.writeSection(CONTROL_SURFACE, { input: "LP out" })).toBe("refused");
+  expect(be.readText(CONFIG)).toBe(newer);
+  // setSection is the one answer a caller that only acts on a real write wants.
+  expect(store.setSection(CONTROL_SURFACE, { input: "LP out" })).toBe(false);
+});

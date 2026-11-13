@@ -17,6 +17,9 @@ import { AUDIO_SECTION_KEY, type AudioSection } from "../configSection";
 export type AudioDraft = AudioDeviceChoice;
 
 let draft: AudioDraft | null = null;
+/** The last Apply the config file refused, for the rows to say why, or "" when none did. Session state beside the
+ *  draft, cleared the same ways (a landed Apply, a new visit). */
+let notSaved = "";
 const notify = createSubscribable();
 const emit = notify.emit;
 export const subscribeAudioDraft = notify.subscribe;
@@ -52,23 +55,39 @@ export function audioDraftDirty(host: Pick<UiHost, "config">): boolean {
   return JSON.stringify(getAudioDraft(host)) !== JSON.stringify(savedAudio(host));
 }
 
-/** Drop any pending edits back to the saved value, and forget the sibling lists fetched for this visit. The audio
- *  menu's `onOpen` runs it, so every visit starts from what the device is running and from a sibling no step of the
- *  new visit has asked about yet. */
+/** Drop any pending edits back to the saved value, forget the sibling lists fetched for this visit, and clear a
+ *  refusal the last visit met. The audio menu's `onOpen` runs it, so every visit starts from what the device is running,
+ *  from a sibling no step of the new visit has asked about yet, and from no stale warning. */
 export function resetAudioDraft(): void {
   draft = null;
+  notSaved = "";
   siblingDrivers.clear();
   askedBackends.clear();
   cachedFor = "";
   emit();
 }
 
+/** The row's text while the last Apply was refused by the config file, or "" (nothing to say). */
+export function audioNotSaved(): string {
+  return notSaved;
+}
+
 /** Commit the draft: write the section (the file, through the contributor's parse) and hand the same choice to the
- *  device, then re-seed from what was saved. The status the host returns is what the muted row shows. */
+ *  device, then re-seed from what was saved. The status the host returns is what the muted row shows. A file that
+ *  REFUSES the write leaves the device alone and the draft where it is: applying it anyway runs something the next
+ *  launch will not open, and the rows would then describe a device that is not the one playing. Keeping the draft keeps
+ *  the rows showing what was asked, with Apply still live to retry once the file takes it. */
 export function applyAudioDraft(host: UiHost): void {
   if (!host.audioDevice) return;
   const choice = getAudioDraft(host);
-  host.config.setSection(AUDIO_SECTION_KEY, { ...choice });
+  // "Holds the patch" is written OR unchanged (a muted device's retry re-sends the saved choice), so a no-op write must
+  // not read as a refusal.
+  if (!host.config.setSection(AUDIO_SECTION_KEY, { ...choice })) {
+    notSaved = "Not saved: config.json could not be written";
+    emit();
+    return;
+  }
+  notSaved = "";
   const status = host.audioDevice.apply(choice);
   // The device may clamp or round (or fall back to the null device); the section keeps the CHOICE, which is what a
   // later launch opens, and the draft follows it rather than what the driver happened to obtain.
