@@ -49,8 +49,12 @@ std::vector<float> render(rp::blastem::BlastemMdSystem& sys, double seconds, std
         sys.prepareForBlock(info);
         while (sys.stepIfBelowTarget(block)) {}
         sys.finishBlock(info, lanes, 2);
-        out.insert(out.end(), left.begin(), left.begin() + info.frames);
-        out.insert(out.end(), right.begin(), right.begin() + info.frames);
+        // Interleaved, not one lane after the other: every case here compares or measures the stream, and a grouped
+        // layout would make the comparison a function of the block size and the RMS a mix of the two lanes.
+        for (std::uint32_t i = 0; i < info.frames; ++i) {
+            out.push_back(left[i]);
+            out.push_back(right[i]);
+        }
     }
     return out;
 }
@@ -189,6 +193,52 @@ TEST_CASE("a block above the reservation is clamped, not written past the mix", 
     CHECK(std::all_of(right.begin() + 256, right.end(), [](float v) { return v == 1.0f; }));
     // The clamp does not silence the block: the frames it could mix are still the core's.
     CHECK(std::any_of(left.begin(), left.begin() + 256, [](float v) { return v != 1.0f; }));
+}
+
+TEST_CASE("a block's partition cannot move a sample through the flush path", "[blastem][audio]") {
+    // blip's time base is a 64-bit accumulator with time_unit at 2^52, so ONE time frame can hold at most 4,096 output
+    // samples' worth of clocks: a block larger than that has to be several frames, and putStereo ends each one. The
+    // small-block cases cannot see a regression there (at kFrames no block reaches the 3,900-sample budget), so this
+    // case includes both ends: one frame a block, where every block is a single sample, and 8,192, where every block
+    // spans several frames and the concatenated stream has to be the same bytes.
+    auto reference = boot(rp::blastem::test::fmOnlyRom());
+    const std::vector<float> expected = render(*reference, 0.25, 1);
+    CHECK(peak(expected) > 0.1);
+    CHECK(reference->starvedSamples() == 0);
+    CHECK(reference->audio().overrunSamples() == 0);
+    for (std::uint32_t block : {64u, 512u, 1024u, 4096u, 8192u}) {
+        auto sys = boot(rp::blastem::test::fmOnlyRom());
+        CHECK(render(*sys, 0.25, block) == expected);
+        CHECK(sys->starvedSamples() == 0);
+        CHECK(sys->audio().overrunSamples() == 0);
+    }
+    // And the same for an image that writes the PSG from its own loop: a VDP status/HV read folded into a volume write,
+    // so this is not only the sink's property. A chip's register write takes effect at the chip's clock, and that clock
+    // must be a function of absolute time, not of where the host cut the block.
+    auto hvReference = boot(rp::blastem::test::hvPsgRom());
+    const std::vector<float> hvExpected = render(*hvReference, 0.25, 1);
+    CHECK(hvReference->starvedSamples() == 0);
+    for (std::uint32_t block : {64u, 1024u, 8192u}) {
+        auto sys = boot(rp::blastem::test::hvPsgRom());
+        CHECK(render(*sys, 0.25, block) == hvExpected);
+        CHECK(sys->starvedSamples() == 0);
+    }
+}
+
+TEST_CASE("a host rate change and a state load's reset keep the sink fed", "[blastem][audio]") {
+    // onSampleRateChanged re-anchors the clock and re-primes every ring at the new rate, and audio().reset() is what a
+    // savestate load needs: the ring, the blips and the filter are the host's state and no state carries them, and
+    // blip_reset alone leaves a blip at its default rate, which is a silent core. Both end in the same per-source
+    // re-rate, so a case that skipped either would starve or overrun.
+    auto sys = boot(rp::blastem::test::fmOnlyRom());
+    CHECK(peak(render(*sys, 0.25)) > 0.1);
+    sys->onSampleRateChanged(44100.0);
+    CHECK(peak(render(*sys, 0.25, kFrames, 44100.0)) > 0.1);
+    CHECK(sys->starvedSamples() == 0);
+    sys->audio().reset();
+    CHECK(peak(render(*sys, 0.25, kFrames, 44100.0)) > 0.1);
+    CHECK(sys->starvedSamples() == 0);
+    CHECK(sys->audio().overrunSamples() == 0);
 }
 
 TEST_CASE("a chip's rate change ends its frame first", "[blastem][audio]") {
