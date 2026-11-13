@@ -168,6 +168,18 @@ TEST_CASE("a source's DMA-sized burst is buffered, not dropped or left behind", 
     CHECK(trickle.overrunSamples() == 0);
 }
 
+TEST_CASE("a DMA that carries the 68k past a block neither starves nor overruns", "[blastem][audio]") {
+    // The end-to-end shape of the case above: a ROM that keeps the 68k inside 64 KiB 68k-to-VRAM DMAs, so every stop is
+    // overshot by the transfer, with a plan's one-block reservation under it. The chips trail the 68k when a run returns
+    // (the stop is only checked at the next sync), so a drain without a sync first reads audio the chips have not made.
+    // Nothing may be starved, nothing dropped, and the PSG tone the ROM wrote must be the output.
+    auto sys = bootAt(rp::blastem::test::dmaLoopRom(true), kRate, kFrames);
+    const std::vector<float> out = render(*sys, 1.0);
+    CHECK(peak(out) > 0.01);
+    CHECK(sys->starvedSamples() == 0);
+    CHECK(sys->audio().overrunSamples() == 0);
+}
+
 TEST_CASE("a chip's rate change ends its frame first", "[blastem][audio]") {
     // The VDP test register's bit 0 moves the PSG's divider from 240 to 112 and calls psg_adjust_master_clock
     // (genesis.c:1146-1148), which is the sink's adjustClock. Writing the test port's register is NOT the same thing:

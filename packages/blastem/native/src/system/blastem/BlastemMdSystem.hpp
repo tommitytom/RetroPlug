@@ -90,6 +90,10 @@ private:
     void boot();
     void destroyCore();
     void run_until(std::uint64_t mclk);
+    // Bring the YM2612 and the PSG to the block's end clock (or to where the 68k actually got to, whichever is less)
+    // before the block is drained. A stop is only checked at the next sync, so a run can return with the chips short of
+    // the 68k: finishBlock would then read audio the chips have not made.
+    void syncSoundTo(std::uint64_t mclk);
 
     BlastemMdConfig           config_;
     // The ROM as a capability view; BlastEm gets its own aligned copy (see boot()) and owns it from then on.

@@ -168,6 +168,11 @@ void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const* outs
         sampleBase_ += info.frames;  // not activated: nothing to drain
         return;
     }
+    // The chips first, to the block's end clock: a run that a DMA carried past the stop returned without any sync at
+    // the block's end (a stop is only checked at a sync), so the chips can be up to the whole transfer behind the 68k
+    // and the drain would read samples they have not made. This is the same absolute clock the grid stops at, so it
+    // moves no stop and no sample.
+    syncSoundTo(masterClockOf(sampleBase_ + info.frames));
     // Drained EVERY time, lanes or none. A lane-less block still ends the sink's frame: blip's buffer is sized for one
     // block plus the prime, so a `return` before the drain would leave the second block's deltas past its end and
     // either corrupt memory or trip blip's own assert (the rebase case and the video case both pass no lanes).
@@ -202,8 +207,27 @@ void BlastemMdSystem::switchPsgClock(bool fast) {
     // comparison is genesis.c's), which is why a case calls this instead. Out of line because it names both
     // psg_adjust_master_clock and gen_->psg, and this header includes no BlastEm header of its own.
     if (!gen_ || !gen_->psg) return;
+    // The callback psg_adjust_master_clock makes belongs to THIS instance's sink. It routes by the source's own sink
+    // (BlastemAudio.hpp), but the instance pointer is what a future callback reached from here would read, and a
+    // switchPsgClock on an instance that is not the last one to run must not name that one.
+    useInstance(this, gen_);
     gen_->psg->clock_inc = fast ? 112u : 240u;
     psg_adjust_master_clock(gen_->psg, gen_->master_clock);
+}
+
+// The chips to an absolute master clock, clamped to where the 68k actually is: a run can stop exactly on its target or
+// past it (a 68k-to-VDP DMA moves the clock to the DMA's end), and the chips can never be asked for more than the
+// machine has run. Both clocks are 32-bit offsets from cycle_base, the domain genesis_sync_sound takes.
+void BlastemMdSystem::syncSoundTo(std::uint64_t mclk) {
+    if (!gen_ || !gen_->psg) return;
+    const std::uint64_t now = mclkNow();
+    const std::uint64_t upto = std::min(mclk, now);
+    if (upto <= gen_->cycle_base) return;
+    const std::uint64_t offset = upto - gen_->cycle_base;
+    if (offset > UINT32_MAX) return;  // unreachable: the rebase keeps the count inside the window
+    if (gen_->psg->cycles >= offset) return;  // every sync so far ran both chips to the same clock
+    useInstance(this, gen_);
+    genesis_sync_sound(gen_, static_cast<std::uint32_t>(offset));
 }
 
 void BlastemMdSystem::run_until(std::uint64_t mclk) {

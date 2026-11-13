@@ -199,6 +199,39 @@ struct Asm {
     }
 };
 
+// A ROM that keeps the 68k inside one 64 KiB 68k-to-VRAM DMA after another: the VDP runs the transfer with the 68k
+// stalled, so the longest stall the bus can produce is how far a run's stop is overshot. Measured at 53,693,175 Hz, one
+// 64K-word transfer costs the 68k 11,980,603 master clocks with the display on in H32 (a fifth of a second, and the
+// slowest grant rate there is), against 2,192,160 with the display off. `h40` is the wider, faster mode the audio cases
+// use; H32 is the worst case the ring's size is derived from.
+//
+//   $200  VDP regs 0, 1, 15, 12: no HINT, display on or off, autoincrement 2, H32 or H40
+//   $218  loop: regs 19-23 = length $FFFF, source $000000, then a VRAM-write command word that starts the DMA
+inline std::vector<std::uint8_t> dmaLoopRom(bool display, bool h40 = true) {
+    Asm a;
+    a.at = 0;
+    a.l(0x00FFFE00);  // SP
+    a.l(0x00000200);  // reset PC
+    std::memcpy(a.rom.data() + 0x100, "SEGA MEGA DRIVE ", 16);
+    a.at = 0x200;
+    a.moveWImmAbs(0x8004, 0xC00004);                         // reg 0: no HINT
+    a.moveWImmAbs(display ? 0x8154 : 0x8114, 0xC00004);     // reg 1: display on/off, VINT, DMA, mode 5
+    a.moveWImmAbs(0x8F02, 0xC00004);                         // reg 15: autoincrement 2
+    a.moveWImmAbs(h40 ? 0x8C81 : 0x8C00, 0xC00004);         // reg 12: H40 or H32
+    a.moveBImmAbs(0x8E, 0xC00011);                          // PSG channel 0: latch, high bits, full volume, so the ROM's
+    a.moveBImmAbs(0x01, 0xC00011);                          // output is a tone a case can see and not just the DMA
+    a.moveBImmAbs(0x90, 0xC00011);
+    const std::uint32_t loop = a.at;
+    a.moveWImmAbs(0x93FF, 0xC00004);                         // DMA length, low
+    a.moveWImmAbs(0x94FF, 0xC00004);                         // DMA length, high ($FFFF = 65,535 words)
+    a.moveWImmAbs(0x9500, 0xC00004);                         // DMA source, low
+    a.moveWImmAbs(0x9600, 0xC00004);                         // DMA source, mid
+    a.moveWImmAbs(0x9700, 0xC00004);                         // DMA source, high (68k memory)
+    a.moveLImmAbs(0x40000080, 0xC00004);                     // VRAM write command: starts the transfer
+    a.braW(loop);
+    return a.rom;
+}
+
 // The timing-observing images: what a real game does that a tight register-write loop does not. Each one's main loop
 // reads the VDP's status and HV counter (which sync the components at points the host did not choose), folds them into
 // a PSG volume write, and spends a data-dependent number of clocks in `mulu`; the flags add the interrupt pairs, a Z80
