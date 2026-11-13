@@ -65,8 +65,12 @@ set(_BLASTEM_SOURCES
     sega_mapper.c multi_game.c jcart.c realtec.c xband.c radica.c megawifi.c sft_mapper.c
     serialize.c gst.c saves.c
     tern.c util.c paths.c config.c backend.c arena.c gen.c mem.c
-    ym2612.c ymf262.c ym_common.c psg.c rf5c164.c wave.c flac.c vgm.c event_log.c render_audio.c
+    ym2612.c ymf262.c ym_common.c psg.c rf5c164.c wave.c flac.c vgm.c event_log.c blip_buf.c
     chd.c zip.c z80inst.c disasm.c 68kinst.c)
+
+# render_audio.c is NOT in that list, and blip_buf.c is: the shell replaces BlastEm's audio sink whole
+# (packages/blastem/.../BlastemAudio.cpp), because render_audio.c is a process-global source registry capped at 8 and
+# resamples linearly, and blip_buf (our mirror's copy of 1.1.0) is what that sink synthesises with.
 
 set(_BLASTEM_ABS "")
 foreach(_src IN LISTS _BLASTEM_SOURCES)

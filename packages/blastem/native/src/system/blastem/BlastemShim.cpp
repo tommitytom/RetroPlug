@@ -2,23 +2,32 @@
 //
 //   1. What every build needs and libblastem.c would otherwise provide: the config tree, the globals genesis.c and
 //      io.c read (current_system, headless, z80_enabled, ...), read_bundled_file() for the ROM database, and the render
-//      callbacks. They stay here because they are extern "C" and so may live in exactly one file; the video ones are
-//      real and delegate to the sink in BlastemVideo.cpp, and the audio ones are defaults until the audio sink lands.
+//      callbacks. They stay here because they are extern "C" and so may live in exactly one file; the video ones and
+//      the audio ones are real and delegate to the sinks in BlastemVideo.cpp and BlastemAudio.cpp.
 //   2. Stubs for the systems this build does not compile. genesis.c, romdb.c and io.c still reference them, but only
 //      behind a field a Mega Drive never sets (gen->mars for the 32X, gen->expansion for the Sega CD, a mapper type
 //      only a Pico, Coleco, LaserActive or SMS cart selects), so no emulated Mega Drive instruction reaches one.
 //      Each group says which field keeps it unreachable.
 #include "system/blastem/BlastemCore.hpp"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
-#include "system/blastem/BlastemMdSystem.hpp"  // the instance whose video() the render callbacks answer for
+#include "system/blastem/BlastemMdSystem.hpp"  // the instance whose video() and audio() the callbacks answer for
 
 namespace rp::blastem {
 
 // The instance the frontend callbacks belong to (declared in BlastemCore.hpp).
 thread_local void* currentInstance = nullptr;
+
+// The audio_source* BlastEm hands back IS the AudioSink::Source* render_audio_source returned: BlastEm never reads the
+// struct's own fields (they are render_audio.c's, which is not compiled) and this host never reads theirs. So the round
+// trip is a cookie, not a conversion, and it is a reinterpret_cast because neither type is related to the other and the
+// sink's is incomplete outside BlastemAudio.cpp.
+static AudioSink::Source* sinkSource(audio_source* source) {
+    return reinterpret_cast<AudioSink::Source*>(source);
+}
 
 }  // namespace rp::blastem
 
@@ -134,21 +143,48 @@ uint32_t render_overscan_top(void) { return 0; }  // the full picture: the sink 
 uint32_t render_overscan_bot(void) { return 0; }
 uint8_t render_should_release_on_exit(void) { return 0; }
 uint8_t render_is_threaded_video(void) { return 0; }
-// The audio *backend* half of render_audio.h. BlastEm's own render_audio.c is compiled at first (its source/registry
-// and its linear resampler); these are what its backend half needs: no sync, no device, one buffer's worth of
-// minimum. The shell's own sink replaces the whole file and these with it.
-uint8_t render_is_audio_sync(void) { return 0; }
-void* render_new_audio_opaque(void) { return nullptr; }
-void render_free_audio_opaque(void*) {}
-void render_lock_audio(void) {}
-void render_unlock_audio(void) {}
-uint32_t render_min_buffered(void) { return 1024; }
-uint32_t render_audio_syncs_per_sec(void) { return 0; }
-void render_audio_created(audio_source*) {}
-void render_do_audio_ready(audio_source*) {}
-void render_source_paused(audio_source*, uint8_t) {}
-void render_source_resumed(audio_source*) {}
-void render_buffer_consumed(audio_source*) {}
+// The audio seam: render_audio.h's SOURCE half (render_audio.c is not compiled, cmake/blastem.cmake says why), so the
+// chips' own registry, filter and resampler are the instance's AudioSink. Every entry point tolerates a null instance,
+// because a chip can be allocated by a context built outside any system (the link test builds one with no system at
+// all), and a null source is something BlastEm's chips already survive: they just stop having somewhere to put samples.
+// render_audio.h's BACKEND half (render_lock_audio, render_min_buffered, render_do_audio_ready, ...) is gone with the
+// file: nothing left in the build calls it.
+audio_source* render_audio_source(const char* name, uint64_t masterClock, uint64_t sampleDivider, uint8_t channels) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (!sys) return nullptr;  // a source-less chip: it runs, silently
+    return reinterpret_cast<audio_source*>(sys->audio().add(name, masterClock, sampleDivider, channels));
+}
+void render_audio_adjust_clock(audio_source* src, uint64_t masterClock, uint64_t sampleDivider) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys && src) sys->audio().adjustClock(rp::blastem::sinkSource(src), masterClock, sampleDivider);
+}
+void render_audio_source_gaindb(audio_source* src, float gain) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys && src) sys->audio().setGainDb(rp::blastem::sinkSource(src), gain);
+}
+void render_put_mono_sample(audio_source* src, int16_t value) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys && src) sys->audio().putMono(rp::blastem::sinkSource(src), value);
+}
+void render_put_stereo_sample(audio_source* src, int16_t left, int16_t right) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys && src) sys->audio().putStereo(rp::blastem::sinkSource(src), left, right);
+}
+void render_free_source(audio_source* src) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys && src) sys->audio().remove(rp::blastem::sinkSource(src));
+}
+// BlastEm pauses a source when the frontend takes its input capture away, and the only two callers of these are
+// behind `gen->header.force_release || render_should_release_on_exit()`, which this host never sets (the callback
+// above returns 0). A source whose chip stopped is a source that stops being fed, so there is nothing to do.
+void render_pause_source(audio_source*) {}
+void render_resume_source(audio_source*) {}
+// render_end_audio is BlastEm's own "the window closed" flush of its audio thread; there is no thread here.
+void render_end_audio(void) {}
+void render_save_audio(char*) {
+    // A WAV dump is BlastEm's debugging feature, not a host one: the shell records what it renders.
+    std::fputs("blastem: a request to dump audio to WAV was ignored (this host has no WAV dump)\n", stderr);
+}
 
 // -- The Sega CD (gen->expansion is NULL for a Mega Drive) ------------------------------------------------
 segacd_context* alloc_configure_segacd(system_media*, uint32_t, uint8_t, rom_info*) { return nullptr; }

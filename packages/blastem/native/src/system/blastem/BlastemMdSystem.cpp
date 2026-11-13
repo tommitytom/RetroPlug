@@ -39,9 +39,16 @@ void BlastemMdSystem::onActivate(double sampleRate) {
     if (activated_) return;
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate_));
+    // Sized for a core built outside a plan (a test, a tool), which reserves nothing: the engine's default plan block.
+    const std::uint32_t frames = blockFrames(SystemBase::kDefaultBlockFrames);
+    mixLeft_.resize(frames);
+    mixRight_.resize(frames);
+    audio_.prepare(frames);
+    audio_.setHostRate(sampleRate_);  // before the chips exist: they ask for their source during alloc_config_genesis
     boot();
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();  // the first value is the node's, not a ramp from unity
+    SystemBase::reserveAudio(frames);    // LAST, per its contract
 }
 
 void BlastemMdSystem::boot() {
@@ -95,7 +102,9 @@ std::uint64_t BlastemMdSystem::mclkNow() const {
 void BlastemMdSystem::destroyCore() {
     if (gen_) {
         currentInstance = this;
-        gen_->header.free_context(&gen_->header);  // frees the aligned ROM copy too
+        // Frees the aligned ROM copy too, and the chips' own frees hand their audio sources back to audio_ through
+        // render_free_source, which is why currentInstance is set before this and the sink outlives the context.
+        gen_->header.free_context(&gen_->header);
         gen_ = nullptr;
         activated_ = false;
     }
@@ -112,12 +121,14 @@ void BlastemMdSystem::onSampleRateChanged(double sampleRate) {
     // Re-anchor at the CURRENT sample, and move the anchor rather than mapping the anchor to itself (which is a no-op
     // and the bug this body exists for): masterClockOf reads sampleAnchor_, so the new anchor's clock has to be taken
     // BEFORE the rate changes, and the sample anchor moves with it so the next sample maps from here at the new rate.
-    // The sink's own rate change is the audio sink's line (audio_.setHostRate), added there beside this one.
     const std::uint64_t at = masterClockOf(sampleBase_);
     sampleAnchor_ = sampleBase_;
     mclkAnchor_ = at;
     sampleRate_ = sampleRate;
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate_));
+    // After the re-anchor, so the ring's 16 primed samples are silence at the NEW rate and every blip resamples from
+    // the native rate to this one (which is also what restates each blip frame's budget in native clocks).
+    audio_.setHostRate(sampleRate_);
 }
 
 void BlastemMdSystem::setGainDb(float dB, bool immediate) {
@@ -143,13 +154,48 @@ bool BlastemMdSystem::stepIfBelowTarget(std::uint32_t /*framesNeeded*/) {
     return false;
 }
 
-void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const*, std::size_t) {
-    // A block's end is its counter and nothing else: the lanes stay untouched because the audio sink that fills them
-    // is not here yet, so there is nothing to drain them from.
+void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
+    if (!gen_) {
+        sampleBase_ += info.frames;  // not activated: nothing to drain
+        return;
+    }
+    // Drained EVERY time, lanes or none. A lane-less block still ends the sink's frame: blip's buffer is sized for one
+    // block plus the prime, so a `return` before the drain would leave the second block's deltas past its end and
+    // either corrupt memory or trip blip's own assert (the rebase case and the video case both pass no lanes).
+    audio_.drain(info.frames, mixLeft_.data(), mixRight_.data());
+    const bool wired = laneCount >= 2 && outs && outs[0] && outs[1];
+    if (wired) {
+        // The block's samples are sized at activation and at every growth (reserveAudio), never here: the engine's
+        // [alloc] cases count a block's allocations, emulation included.
+        for (std::uint32_t i = 0; i < info.frames; ++i) {
+            const float gain = gainSmoother_.next();
+            outs[0][i] += mixLeft_[i] * gain;  // added, not written: SystemBase's contract
+            outs[1][i] += mixRight_[i] * gain;
+        }
+    }
     sampleBase_ += info.frames;
 }
 
-void BlastemMdSystem::reserveAudio(std::uint32_t maxBlockFrames) { SystemBase::reserveAudio(maxBlockFrames); }
+void BlastemMdSystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    const std::uint32_t frames = std::max(maxBlockFrames, blockFrames(0));
+    if (frames > mixLeft_.size()) {
+        mixLeft_.resize(frames);
+        mixRight_.resize(frames);
+        audio_.prepare(frames);
+    }
+    SystemBase::reserveAudio(maxBlockFrames);  // LAST: the maximum moves only once the sizing has succeeded
+}
+
+void BlastemMdSystem::switchPsgClock(bool fast) {
+    // The two lines genesis.c runs around vdp_test_port_write when the VDP test register's bit 0 changes its mind about
+    // the Z80's clock source: the PSG's divider becomes MCLKS_PER_YM * 16 (112) or MCLKS_PER_PSG (240), and
+    // psg_adjust_master_clock tells the sink. Writing the test register directly does NOT do this (the before/after
+    // comparison is genesis.c's), which is why a case calls this instead. Out of line because it names both
+    // psg_adjust_master_clock and gen_->psg, and this header includes no BlastEm header of its own.
+    if (!gen_ || !gen_->psg) return;
+    gen_->psg->clock_inc = fast ? 112u : 240u;
+    psg_adjust_master_clock(gen_->psg, gen_->master_clock);
+}
 
 void BlastemMdSystem::run_until(std::uint64_t mclk) {
     if (!gen_ || mclk <= mclkNow()) return;

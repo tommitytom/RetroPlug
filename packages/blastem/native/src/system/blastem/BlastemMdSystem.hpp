@@ -8,6 +8,7 @@
 
 #include "system/SystemBase.hpp"
 #include "system/SystemCapabilities.hpp"
+#include "system/blastem/BlastemAudio.hpp"
 #include "system/blastem/BlastemMdConfig.hpp"
 #include "system/blastem/BlastemVideo.hpp"  // VideoSink (a member here), pixel_t and vdp_context
 #include "transport/FrameBufferTriple.hpp"
@@ -68,6 +69,15 @@ public:
     vdp_context* vdp() const { return gen_ ? gen_->vdp : nullptr; }
     // The instance's framebuffer sink: the render callbacks hand it the buffer the VDP drew into (BlastemShim.cpp).
     VideoSink& video() { return video_; }
+    // The instance's audio sink: render_audio.h's source entry points feed it (BlastemShim.cpp) and finishBlock drains
+    // it.
+    AudioSink& audio() { return audio_; }
+    // Host samples the sink ran dry on since activation: 0 on a driven core, and the audio cases assert it.
+    std::uint64_t starvedSamples() const { return audio_.starvedSamples(); }
+
+    // Runs the two lines genesis.c runs around vdp_test_port_write when the VDP test register's bit 0 changes the Z80's
+    // clock source, so a case can move a chip's native rate without a register write whose handler is genesis.c's.
+    void switchPsgClock(bool fast);
 
     // The absolute master clock of host sample `sample`, in this instance's time base.
     std::uint64_t masterClockOf(std::uint64_t sample) const;
@@ -84,9 +94,11 @@ private:
     BlastemMdConfig           config_;
     // The ROM as a capability view; BlastEm gets its own aligned copy (see boot()) and owns it from then on.
     std::vector<std::uint8_t> rom_;
-    // Declared before gen_ because the VDP holds raw pointers into its buffers: declared first, the sink is destroyed
-    // after the context is freed, and a context freed first never reads them.
+    // Declared before gen_ because the VDP holds raw pointers into its buffers, and the YM2612 and the PSG hold raw
+    // pointers to their audio sources: declared first, a sink is destroyed after the context is freed, and a context
+    // freed first never reads them (freeing it reaches the sink through render_free_source).
     VideoSink                 video_;
+    AudioSink                 audio_;
     genesis_context*          gen_ = nullptr;
     bool                      activated_ = false;
     bool                      stateRefused_ = false;  // a seed state the serializer refused
@@ -99,6 +111,11 @@ private:
     std::uint64_t sampleAnchor_ = 0;
     std::uint64_t mclkAnchor_ = 0;
     std::uint32_t blockFrames_ = 0;  // the block prepareForBlock was told about
+
+    // The block's drained mix, before the gain: sized at activation and at every reserveAudio growth, never reallocated
+    // on the block thread (the engine's [alloc] cases count a block's allocations, emulation included).
+    std::vector<float> mixLeft_;
+    std::vector<float> mixRight_;
 };
 
 }  // namespace rp::blastem
