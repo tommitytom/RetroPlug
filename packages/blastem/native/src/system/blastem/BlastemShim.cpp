@@ -149,30 +149,37 @@ uint8_t render_is_threaded_video(void) { return 0; }
 // all), and a null source is something BlastEm's chips already survive: they just stop having somewhere to put samples.
 // render_audio.h's BACKEND half (render_lock_audio, render_min_buffered, render_do_audio_ready, ...) is gone with the
 // file: nothing left in the build calls it.
+//
+// Only render_audio_source routes by the current instance, because a chip asking for a source has no source yet. Every
+// other entry point names its source, and a source carries its own sink: routing those by the instance would hand one
+// instance's callback to whichever instance ran last on the thread (a state load's config_updated, for instance).
 audio_source* render_audio_source(const char* name, uint64_t masterClock, uint64_t sampleDivider, uint8_t channels) {
     auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
     if (!sys) return nullptr;  // a source-less chip: it runs, silently
     return reinterpret_cast<audio_source*>(sys->audio().add(name, masterClock, sampleDivider, channels));
 }
 void render_audio_adjust_clock(audio_source* src, uint64_t masterClock, uint64_t sampleDivider) {
-    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    if (sys && src) sys->audio().adjustClock(rp::blastem::sinkSource(src), masterClock, sampleDivider);
+    if (auto* sink = rp::blastem::AudioSink::owner(rp::blastem::sinkSource(src))) {
+        sink->adjustClock(rp::blastem::sinkSource(src), masterClock, sampleDivider);
+    }
 }
 void render_audio_source_gaindb(audio_source* src, float gain) {
-    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    if (sys && src) sys->audio().setGainDb(rp::blastem::sinkSource(src), gain);
+    if (auto* sink = rp::blastem::AudioSink::owner(rp::blastem::sinkSource(src))) {
+        sink->setGainDb(rp::blastem::sinkSource(src), gain);
+    }
 }
 void render_put_mono_sample(audio_source* src, int16_t value) {
-    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    if (sys && src) sys->audio().putMono(rp::blastem::sinkSource(src), value);
+    if (auto* sink = rp::blastem::AudioSink::owner(rp::blastem::sinkSource(src))) {
+        sink->putMono(rp::blastem::sinkSource(src), value);
+    }
 }
 void render_put_stereo_sample(audio_source* src, int16_t left, int16_t right) {
-    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    if (sys && src) sys->audio().putStereo(rp::blastem::sinkSource(src), left, right);
+    if (auto* sink = rp::blastem::AudioSink::owner(rp::blastem::sinkSource(src))) {
+        sink->putStereo(rp::blastem::sinkSource(src), left, right);
+    }
 }
 void render_free_source(audio_source* src) {
-    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    if (sys && src) sys->audio().remove(rp::blastem::sinkSource(src));
+    if (auto* sink = rp::blastem::AudioSink::owner(rp::blastem::sinkSource(src))) sink->remove(rp::blastem::sinkSource(src));
 }
 // BlastEm pauses a source when the frontend takes its input capture away, and the only two callers of these are
 // behind `gen->header.force_release || render_should_release_on_exit()`, which this host never sets (the callback

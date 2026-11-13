@@ -11,6 +11,7 @@
 
 #include "SyntheticRom.hpp"
 #include "system/blastem/BlastemAudio.hpp"
+#include "system/blastem/BlastemCore.hpp"  // genesis_context, for the source a chip holds (the routing case)
 #include "system/blastem/BlastemMdSystem.hpp"
 
 namespace {
@@ -66,22 +67,6 @@ double rms(const std::vector<float>& interleaved) {
     std::size_t n = 0;
     for (std::size_t i = 0; i + 1 < interleaved.size(); i += 2, ++n) sum += double(interleaved[i]) * interleaved[i];
     return n ? std::sqrt(sum / double(n)) : 0.0;
-}
-
-// The left lane's sign changes, which is how a case reads a tone's pitch without a spectrum: a sink that stored a new
-// native rate but never re-rated its blip resamples at the wrong ratio, and the pitch (not the level) is what moves.
-std::size_t zeroCrossings(const std::vector<float>& interleaved) {
-    std::size_t count = 0;
-    bool        have  = false;
-    bool        up    = false;
-    for (std::size_t i = 0; i + 1 < interleaved.size(); i += 2) {
-        if (interleaved[i] == 0.0f) continue;
-        const bool now = interleaved[i] > 0.0f;
-        if (have && now != up) ++count;
-        have = true;
-        up   = now;
-    }
-    return count;
 }
 
 }  // namespace
@@ -189,7 +174,7 @@ TEST_CASE("a DMA that carries the 68k past a block neither starves nor overruns"
 
 TEST_CASE("a chip's rate change ends its frame first", "[blastem][audio]") {
     // The VDP test register's bit 0 moves the PSG's divider from 240 to 112 and calls psg_adjust_master_clock
-    // (genesis.c:1146-1148), which is the sink's adjustClock. Writing the test port's register is NOT the same thing:
+    // (genesis.c:1161-1163), which is the sink's adjustClock. Writing the test port's register is NOT the same thing:
     // the comparison before and after the write is genesis.c's, so vdp_test_port_write alone changes no clock and this
     // case would pass without exercising a line of the sink. switchPsgClock runs those two lines, and the native rate
     // the sink recorded is what the case reads, so a sink that ignored the call fails here.
@@ -199,8 +184,39 @@ TEST_CASE("a chip's rate change ends its frame first", "[blastem][audio]") {
     sys->switchPsgClock(true);
     // 53,693,175 / 112 = 479,403.35: the divider really moved, and the sink took the new one.
     CHECK(sys->audio().sourceNativeRate("PSG") == 53693175.0 / 112.0);
-    const std::vector<float> after = render(*sys, 0.1);
+    const std::vector<float> after = render(*sys, 0.5);  // long enough for a wrong rate to fill the ring and drop
     CHECK(peak(before) > 0.01);
     CHECK(peak(after) > 0.01);
+    // The chip now emits twice as many samples per second of emulated time. A sink that recorded the new rate but never
+    // re-rated blip would hand the ring 2.14 host samples for every one the block drains, so the ring would fill and
+    // start dropping: the counter sees it, while a peak threshold (and the tone's own pitch, which really does rise,
+    // because the PSG's clock really changed) would not.
     CHECK(sys->starvedSamples() == 0);
+    CHECK(sys->audio().overrunSamples() == 0);
+}
+
+TEST_CASE("two instances keep their own chips' audio", "[blastem][audio]") {
+    // A chip's callback names the source it holds, and the source names its sink, so a call reaches the right instance
+    // even when another one is current on the thread. Routing by the current instance sent A's re-rate to B's sink,
+    // which re-rated A's blips with B's HOST rate, and A then starved its next block by that ratio.
+    auto a = bootAt(rp::blastem::test::fmPsgRom(), 48000.0);
+    auto b = bootAt(rp::blastem::test::fmPsgRom(), 44100.0);  // B's boot leaves its instance current
+    REQUIRE(a->core() != nullptr);
+    REQUIRE(a->core()->psg != nullptr);
+    REQUIRE(a->core()->psg->audio != nullptr);
+    // render_audio.h's own entry point, as a state load's config_updated (or setHostRate) would call it. The values are
+    // A's own, so only the routing decides which sink takes them.
+    render_audio_adjust_clock(a->core()->psg->audio, a->core()->master_clock, 240);
+    const std::vector<float> after = render(*a, 0.25);
+    CHECK(peak(after) > 0.01);
+    CHECK(a->starvedSamples() == 0);
+    CHECK(b->audio().sourceNativeRate("PSG") == 53693175.0 / 240.0);
+    // And after B is destroyed, which leaves the thread with no instance at all, a rate change on A still reaches A.
+    b.reset();
+    a->switchPsgClock(true);
+    CHECK(a->audio().sourceNativeRate("PSG") == 53693175.0 / 112.0);
+    const std::vector<float> fast = render(*a, 0.25);
+    CHECK(peak(fast) > 0.01);
+    CHECK(a->starvedSamples() == 0);
+    CHECK(a->audio().overrunSamples() == 0);
 }
