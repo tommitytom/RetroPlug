@@ -52,7 +52,9 @@ export function audioDraftDirty(host: Pick<UiHost, "config">): boolean {
   return JSON.stringify(getAudioDraft(host)) !== JSON.stringify(savedAudio(host));
 }
 
-/** Drop any pending edits back to the saved value, and forget the sibling lists fetched for this visit. */
+/** Drop any pending edits back to the saved value, and forget the sibling lists fetched for this visit. The audio
+ *  menu's `onOpen` runs it, so every visit starts from what the device is running and from a sibling no step of the
+ *  new visit has asked about yet. */
 export function resetAudioDraft(): void {
   draft = null;
   siblingDrivers.clear();
@@ -90,8 +92,9 @@ export interface AudioDriverChoice {
   readonly driver: string;
 }
 
-/** Sibling backends' drivers, fetched only by an explicit step on the Driver row, and for this visit: the cache is
- *  dropped whenever the backend in force moves (the user applied another one), so a later visit asks afresh. */
+/** Sibling backends' drivers, fetched only by an explicit step on the Driver row, and for this visit: resetAudioDraft
+ *  (the menu's open hook) drops the cache, and so does a move of the backend in force (the user applied another one),
+ *  so a later visit asks afresh. */
 const siblingDrivers = new Map<string, readonly AudioDriverDescription[]>();
 /** The siblings this visit has ASKED about, separately from what each answered: a backend with no usable driver (a
  *  pinned run, where the hook refuses; a library with nothing to list) answers `[]`, and that answer is final - counting

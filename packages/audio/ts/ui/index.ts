@@ -11,7 +11,7 @@ import { defineUi, type MenuBuilder, type UiHost, type UiService } from "@retrop
 import { AUDIO_OUT_CHANNELS } from "../configSection";
 import {
   applyAudioDraft, applySavedAudio, audioDescription, audioDevices, audioDraftDirty, audioDriverChoices,
-  fetchMoreDrivers, getAudioDraft, moreDriversAvailable, setAudioDraft, subscribeAudioDraft,
+  fetchMoreDrivers, getAudioDraft, moreDriversAvailable, resetAudioDraft, setAudioDraft, subscribeAudioDraft,
 } from "./audioDraft";
 
 export * from "./audioDraft";
@@ -115,10 +115,14 @@ function audioSettingsChildren(host: UiHost): MenuItem[] {
   ];
 }
 
-/** The Settings > Audio rows, in the shell's Audio container. */
+/** The Settings > Audio rows, in the shell's Audio container. Opening that container begins a VISIT, which is what the
+ *  draft and the sibling cache are scoped to: an unapplied draft is discarded, and a sibling that answered nothing is
+ *  asked again. The shell's open hook is the only moment a package hears that the user asked for the rows, and a
+ *  render is the wrong moment to reset anything a row is showing. */
 const audioMenu: MenuBuilder = {
   placement: "settings.audio",
   build: (host) => audioSettingsChildren(host),
+  onOpen: () => resetAudioDraft(),
 };
 
 /** What the service has done this mount: the first apply (the startup rendezvous's word), and the status it last
