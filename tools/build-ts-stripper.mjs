@@ -98,9 +98,10 @@ globalThis.__stripTypes = (source, filename) => {
 buildSync({
   entryPoints: [entry],
   bundle: true,
-  // The alias below resolves its value from here, as every bare import does once the entry is outside the repository
-  // (tools/build-ui.js sets the same): the working directory is the build directory (CMake runs this from the
-  // package's own, under whatever build tree it is), so without one a build outside the repository finds neither.
+  // The alias below resolves its value from HERE, not from the importer: an alias is the one specifier esbuild takes
+  // from absWorkingDir, and that is the repository whatever directory CMake runs this in (a build tree's native/
+  // directory need not be inside the repository, and has no node_modules above it). Without this a build outside the
+  // repository cannot resolve "typescript-5".
   absWorkingDir: REPO,
   // The entry with the output has no node_modules above it, so ts-blank-space, which it imports by name, is looked for
   // here as well.
@@ -109,8 +110,9 @@ buildSync({
   platform: "neutral",
   mainFields: ["module", "main"],
   target: "es2020",
-  // Pinned rather than discovered (tools/ts-options.js). The entry is generated under build/, so nothing above it names
-  // a tsconfig today and the bundle carries no "use strict" directive; keep it that way whatever tsconfig appears.
+  // Pinned rather than discovered (tools/ts-options.js): the entry is generated beside the output, so above a build
+  // directory outside the repository there may be a tsconfig.json that is not ours, and this is what keeps the
+  // bundle's "use strict" and class-field lowering independent of it.
   tsconfigRaw: tsOptions(),
   minify: true,
   outfile: outFile,

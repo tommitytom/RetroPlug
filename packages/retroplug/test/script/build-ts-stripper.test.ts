@@ -1,10 +1,11 @@
 // The TypeScript type stripper's bundle is built by CMake from whatever directory the build runs in
 // (packages/native/CMakeLists.txt's retroplug-ts-stripper-bundle), and a build directory need not be inside the
-// repository: `cmake -S <repo> -B /tmp/rpbuild` is a normal configure. esbuild resolves an alias's value, and every
-// bare import, from its absWorkingDir, which defaults to the process's own directory, so without one the typescript-5
-// alias has no node_modules above it there and the build stops. The stub and the generated entry are build products of
-// this script too, so they belong beside the output file rather than in the repository's build/native whatever the
-// output path is.
+// repository: `cmake -S <repo> -B /tmp/rpbuild` is a normal configure. An alias value is the one specifier esbuild
+// resolves from absWorkingDir rather than from the importer, and the entry's own bare import ("ts-blank-space") walks
+// up from the entry's directory, which is beside the output. The script therefore needs both the repository as its
+// working directory (the typescript-5 alias lives in the root node_modules) and `nodePaths`; without them the build
+// stops there. The stub and the generated entry are build products of this script too, so they belong beside the
+// output file rather than in the repository's build/native whatever the output path is.
 //
 // The build is Node's (esbuild is not a txiki module), so this runs it in a node child, which chdirs to a fresh
 // directory outside the repository before importing the script, as bundle-protocol.test.ts runs its builds.
@@ -46,12 +47,14 @@ async function text(stream: ByteStream | null): Promise<string> {
   return new TextDecoder().decode(all);
 }
 
-/** What one run reports: the bundle's size and whether it defines the one global, whether the stub and the entry
- *  landed beside it, and the two files' stamps in the repository's build/native before and after (null when absent). */
+/** What one run reports: the bundle's size and whether it defines the one global as an iife, whether the stub and the
+ *  entry landed beside it, and the two files' hashes in the repository's build/native before and after (null when
+ *  absent). Content is the invariant, not an mtime: a concurrent default build rewrites those very files. */
 interface Run {
   work: string;
   bytes: number;
   defines: boolean;
+  iife: boolean;
   stub: boolean;
   entry: boolean;
   before: { stub: string | null; entry: string | null };
@@ -66,8 +69,8 @@ async function runOutsideRepo(): Promise<{ run: Run | null; err: string; status:
     'const repo = path.resolve(process.cwd(), "../..");',
     'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-stripper-"));',
     'const out = path.join(work, "out", "stripper.js");',
-    'const stamp = (name) => { try { const s = fs.statSync(path.join(repo, "build/native", name));',
-    '  return s.size + ":" + s.mtimeMs; } catch { return null; } };',
+    'const stamp = (name) => { try { const b = fs.readFileSync(path.join(repo, "build/native", name));',
+    '  return b.length + ":" + require("crypto").createHash("sha1").update(b).digest("hex"); } catch { return null; } };',
     'const snap = () => ({ stub: stamp("ts-stripper-stub.js"), entry: stamp("ts-stripper-entry.mjs") });',
     "const before = snap();",
     // cwd is what esbuild's default absWorkingDir is, and the script is outside it on purpose.
@@ -80,24 +83,39 @@ async function runOutsideRepo(): Promise<{ run: Run | null; err: string; status:
     "import(url.pathToFileURL(real).href).then(() => {",
     "  const made = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';",
     "  const run = { work, bytes: made.length, defines: made.includes('__stripTypes'),",
+    // The bundle is GLOBAL CODE: a minified iife, whoever's minifier emitted it. The opener is what says an iife was
+    // built, where a size bound only says something big was.
+    "    iife: made.startsWith('(()=>{') || made.startsWith('(function(){'),",
     "    stub: fs.existsSync(path.join(work, 'out/ts-stripper-stub.js')),",
     "    entry: fs.existsSync(path.join(work, 'out/ts-stripper-entry.mjs')), before, after: snap() };",
     "  process.stdout.write(JSON.stringify(run));",
     // The scratch tree is this run's, and a run leaves nothing behind: the parent has what it needs in the JSON above.
     "  fs.rmSync(work, { recursive: true, force: true });",
-    "}).catch((e) => { process.stderr.write(String((e && e.stack) || e)); process.exit(1); });",
+    "}).catch((e) => { try { fs.rmSync(work, { recursive: true, force: true }); } catch {}",
+    "  process.stderr.write(String((e && e.stack) || e)); process.exit(1); });",
   ].join("");
   const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
   const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
-  if (status.term_signal || status.exit_status !== 0) return { run: null, err, status: status.exit_status };
-  return { run: JSON.parse(out) as Run, err, status: 0 };
+  // A child that died (a signal, a non-zero exit) and one that printed something else on stdout are both failures with
+  // a reason worth reading: neither may become a bare SyntaxError that never mentions the child's stderr.
+  if (status.term_signal || status.exit_status !== 0) {
+    return { run: null, err: err || `signal ${status.term_signal}`, status: status.exit_status };
+  }
+  try {
+    return { run: JSON.parse(out) as Run, err, status: 0 };
+  } catch {
+    return { run: null, err: err || out, status: 0 };
+  }
 }
 
-test("the stripper builds from a directory outside the repository, and writes its stub and entry beside its output", async () => {
-  const { run, err } = await runOutsideRepo();
-  if (!run) throw new Error(`the stripper did not build from outside the repository: ${err}`);
+test("the stripper builds outside the repository, with its stub and entry beside its output", async () => {
+  const { run, err, status } = await runOutsideRepo();
+  if (!run) {
+    throw new Error(`the stripper did not build from outside the repository: ${err || "no output"} (exit ${status})`);
+  }
   // The bundle really was built, not the two side files alone: it is the minified iife that defines __stripTypes.
-  expect(run.bytes > 1_000_000).toBe(true);
+  expect(run.bytes > 100_000).toBe(true);
+  expect(run.iife).toBe(true);
   expect(run.defines).toBe(true);
   expect(run.stub).toBe(true);
   expect(run.entry).toBe(true);

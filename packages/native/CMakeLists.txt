@@ -213,6 +213,7 @@ set(TS_STRIPPER_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/ts-stripper-bundle_data.c"
 set_source_files_properties(${TS_STRIPPER_BUNDLE_C} PROPERTIES GENERATED TRUE)
 add_custom_target(retroplug-ts-stripper-bundle
     BYPRODUCTS ${TS_STRIPPER_BUNDLE_JS} ${TS_STRIPPER_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C}.new
+      ${CMAKE_BINARY_DIR}/native/ts-stripper-stub.js ${CMAKE_BINARY_DIR}/native/ts-stripper-entry.mjs
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ts-stripper.mjs ${TS_STRIPPER_BUNDLE_JS}
     COMMAND ${_TJSC_COMMAND} -s -p rp_ -o ${TS_STRIPPER_BUNDLE_C}.new ${TS_STRIPPER_BUNDLE_JS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TS_STRIPPER_BUNDLE_C}.new ${TS_STRIPPER_BUNDLE_C}
