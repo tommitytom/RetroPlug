@@ -65,6 +65,7 @@ std::uint8_t ramByte(rp::blastem::BlastemMdSystem& sys) {
 // serialize.h's section ids, for the two cases that reach one field of a real state without assuming the layout of the
 // rest of it.
 constexpr std::size_t kSectionMainRam = 10;   // SECTION_MAIN_RAM
+constexpr std::size_t kSectionVdp     = 3;    // SECTION_VDP
 constexpr std::size_t kNoSection      = ~std::size_t(0);
 
 // The offset of section `id`'s first payload byte in a whole state (identifier included), or kNoSection. The same
@@ -206,4 +207,23 @@ TEST_CASE("a cart the database maps past the end of its own image is refused, no
     CHECK_FALSE(refused->activated());
     auto ok = boot(rp::blastem::test::fmPsgRom());
     CHECK(ok->activated());  // the refusal returned instead of exiting
+}
+
+TEST_CASE("a state whose VDP VRAM size runs past the section is refused", "[blastem][saves]") {
+    // The VDP section's second byte is the VRAM size in KiB (vdp_serialize's version byte, then vramk). A size above
+    // 64 KiB makes vdp_deserialize skip the excess before it reads the rest of the section, and that skip used to be
+    // unbounded: the section buffer's position moved past its own size, every later length check wrapped to a huge
+    // size_t and passed, and the section's bytes beyond it were read out of the caller's buffer. 130 KiB keeps the
+    // misread inside that buffer, so this case fails on the refusal and not on a crash (a 255 KiB size reaches about
+    // 120 KB past it, which the review's sanitizer build caught as a heap read and a release build silently accepted).
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    std::vector<std::uint8_t> state = sys->saveStateBytes();
+    const std::size_t         vdp   = sectionPayload(state, kSectionVdp);
+    REQUIRE(vdp != kNoSection);
+    state[vdp + 1] = 130;  // the VRAM size: 130 KiB, more than twice what this machine has
+    auto restored = boot(rp::blastem::test::fmPsgRom(), state);
+    CHECK(restored->stateRefused());
+    CHECK(restored->activated());
+    CHECK(peak(run(*restored, 4)) > 0.01);  // from power-on, not from the misread section
 }
