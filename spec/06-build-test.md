@@ -637,11 +637,11 @@ The `reaper:*` tiers are parallel too, by a different mechanism — see
 ### The parity baseline (`test-native/parity/`)
 
 Exact output, not levels. Every other audio test asserts RMS, peaks or timing tolerances, which a
-refactor can move without failing one. The parity suite renders 197 scripted cases in 26 groups on the
+refactor can move without failing one. The parity suite renders 204 scripted cases in 27 groups on the
 real engine and records, per case, a hash of every output lane of every segment, the host MIDI out, and
 each system's SRAM and work RAM at the end; one changed bit fails it. It is the gate Phase B of the
 modular graph engine is held to ([docs/modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md)).
-The suite is 30 files: a file per group, and four with no baseline of their own (`comparator`,
+The suite is 31 files: a file per group, and four with no baseline of their own (`comparator`,
 `determinism`, `host-midi-order` and `render-blocks`).
 
 - **Cases are driven through the stores**, as the UI drives them, so they survive the engine moving
@@ -736,9 +736,9 @@ The suite is 30 files: a file per group, and four with no baseline of their own 
   the 1-frame splits and for one message of 85, a clock, in each master-sync `fl256` case, whose byte the core
   completed at its block's first frame.
 - LSDj, risa, nanoloop and the controller cases need the sibling fixtures (`RETROPLUG_RESOURCES_DIR`), so
-  those groups skip in CI, counted in the skip baseline. CI therefore runs only the 152 fixture-free cases
+  those groups skip in CI, counted in the skip baseline. CI therefore runs only the 159 fixture-free cases
   (every MIDI-out, controller, LSDj, risa and GBA case is fixture-only, LSDj's link-cable cases among
-  them: 45 of the 197 skip without the fixtures, and one `render-blocks` case besides), so a Phase B step is
+  them: 45 of the 204 skip without the fixtures, and one `render-blocks` case besides), so a Phase B step is
   accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`
   (`RP_FAIL_ON_SKIP=1 RETROPLUG_RESOURCES_DIR=<resources> pnpm test:native parity`).
 

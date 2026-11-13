@@ -6,8 +6,6 @@ import {
   fmPsgRom, psgOnlyRom, fmOnlyRom, hvPsgRom, vintHintRom, z80TimingRom, vintDmaRom, fnv1a, MD_ROM_SIZE,
 } from "../fixtures";
 
-const hex = (n: number): string => `0x${n.toString(16).toUpperCase().padStart(8, "0")}`;
-
 const charsAt = (bytes: Uint8Array, offset: number, text: string): boolean => {
   for (let i = 0; i < text.length; i++) if (bytes[offset + i] !== text.charCodeAt(i)) return false;
   return true;
@@ -28,7 +26,7 @@ for (const [name, make, want] of HASHES) {
   test(`${name} is the bytes the native cases boot`, () => {
     const rom = make();
     expect(rom.length).toBe(MD_ROM_SIZE);
-    expect(hex(fnv1a(rom))).toBe(hex(want));
+    expect(fnv1a(rom)).toBe(want);
   });
 }
 

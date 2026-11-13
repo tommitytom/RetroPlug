@@ -9,7 +9,7 @@
 // $200, and a program after them ended by a `bra .` spin. The native header carries the encodings, the reason a program
 // must start word-aligned, and what each image is for; both sides refuse an image that would overrun its spin.
 
-/** One cart: the largest the ROM gate takes without a mapper, and the size every image here fills. */
+/** One cart: 64 KiB, one Sega bank, the size every image here fills and small enough to hash. */
 export const MD_ROM_SIZE = 0x10000;
 
 /** `move.b #value,(address).L`: one chip-register write, the layout's only write form. */
