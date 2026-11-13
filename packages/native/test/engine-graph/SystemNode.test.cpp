@@ -967,6 +967,48 @@ TEST_CASE("a message staged at a Mega Drive node is refused while port 2 stands 
     }
 }
 
+TEST_CASE("a document that drops the node claiming port 2 closes it on that same system id",
+          "[engine-graph][system-node][inputs][blastem-md]") {
+    // The claim is a live knob (buildGraph writes it on every Mega Drive node, on and off), so re-setting the document
+    // under the system id an older plan still runs must not rebuild the core: the port opens or closes at the next
+    // prepare, before that block's inputs, and closing it takes the held level with it.
+    NodeRig rig(kRate);
+    const auto doc = [&](bool claimed) {
+        return fedDocument("rp.blastem.md",
+                           mdNode(rig, 1, claimed ? R"("coreBytesIn":true)" : R"("coreBytesIn":false)"),
+                           {"bytes"});
+    };
+    REQUIRE(rig.set(doc(true)).ok);
+    auto* const core = static_cast<rp::blastem::BlastemMdSystem*>(rig.builtCore(1));
+    REQUIRE(core != nullptr);
+    CHECK(core->hasCoreBytesIn());
+    Feed& feed = rig.node<Feed>("feed");
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    Lanes graph(2);
+    feed.next[Feed::Bytes] = {{0, {0x20}}};
+    rig.host->processBlock(64, t, graph.ptrs.data(), 2);
+    CHECK(core->levelsAccepted() == 1);
+    CHECK(core->portDevice().lastApplied() == 0x20);
+
+    // The role's node goes: the same document re-set, same id, the same core.
+    REQUIRE(rig.set(doc(false)).ok);
+    CHECK(rig.builtCore(1) == core);
+    CHECK(rig.built.size() == 1);
+    feed.next[Feed::Bytes] = {{0, {0x00}}};
+    rig.host->processBlock(64, t, graph.ptrs.data(), 2);
+    CHECK_FALSE(core->hasCoreBytesIn());
+    CHECK(core->levelsAccepted() == 1);               // the level fed past the drop was refused at the door
+    CHECK(core->portDevice().lastApplied() == 0x60);  // and the level the closed port held went with it
+
+    // And it claims again on the same id: nothing about the port needs a new core either way.
+    REQUIRE(rig.set(doc(true)).ok);
+    feed.next[Feed::Bytes] = {{0, {0x40}}};
+    rig.host->processBlock(64, t, graph.ptrs.data(), 2);
+    CHECK(core->hasCoreBytesIn());
+    CHECK(core->levelsAccepted() == 2);
+    CHECK(core->portDevice().lastApplied() == 0x40);
+}
+
 // ---- settings ----------------------------------------------------------------------------------------------------
 // A system node's knobs (docs/modular-graph-phase-c2-design.md sections 3 and 4) are its settings beside the `system`
 // it names: each reaches the core at the start of the first block of the plan that carries it, as the call the command

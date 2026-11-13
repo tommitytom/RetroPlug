@@ -1,5 +1,5 @@
-// The feature roles that have a protocol node, for a registry a test builds by hand: every one is its package's own now,
-// in the order the app's list always registered them (mgb, nes-n8-midi, risa-sync, sms-sync, genmddj-sync, lsdj-sync). Same as
+// The feature roles that have a protocol node, for a registry a test builds by hand: every one is its package's own
+// now, in the order the app registers them (mgb, nes-n8-midi, risa-sync, sms-sync, genmddj-sync, lsdj-sync). Same as
 // test/_coreRoles.ts: a helper for the test tree, not an app module, so a test that needs "a registry with the feature
 // roles" keeps one list while the carts' roles live in their packages. lsdj-assets, risa-assets and bliptoaster's two
 // have no protocol node and a test registers them by name (registerLsdjAssetsRole, registerRisaAssetsRole,

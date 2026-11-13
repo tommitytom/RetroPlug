@@ -681,10 +681,6 @@ bool BlastemMdSystem::padDown(std::uint8_t button) const {
     return (port->input[kPadState[button]] & kPadBit[button]) != 0;
 }
 
-// Port 2's host device (BlastemPortDevice.hpp): every byte of the block's feed becomes one level held from the host
-// sample of this block's `frame`-th sample on, so a level reaches the pins when the stop grid gets to its own sample
-// rather than at the block boundary. The sample is absolute, so a level staged past this block's end is still on time
-// for the block that reaches it: nothing rebases the schedule, and the host's block size chooses nothing.
 void BlastemMdSystem::setPort2Claimed(bool claimed) {
     if (port2Claimed_ == claimed) return;
     port2Claimed_ = claimed;
@@ -692,6 +688,10 @@ void BlastemMdSystem::setPort2Claimed(bool claimed) {
     if (!claimed) port_.clear();
 }
 
+// Port 2's host device (BlastemPortDevice.hpp): every byte of the block's feed becomes one level held from the host
+// sample of this block's `frame`-th sample on, so a level reaches the pins when the stop grid gets to its own sample
+// rather than at the block boundary. The sample is absolute, so a level staged past this block's end is still on time
+// for the block that reaches it: nothing rebases the schedule, and the host's block size chooses nothing.
 void BlastemMdSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool /*flush*/) {
     // An unclaimed port 2 is every other cart's player 2: the bytes a MIDI run or a staged knob carries are not levels
     // for it to hold, and refusing them is what keeps phantom presses off a pad the cart is polling.

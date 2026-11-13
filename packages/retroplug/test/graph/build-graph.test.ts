@@ -12,6 +12,7 @@ import {
   buildGraph,
   drivesRealCartOf,
   exportModeOf,
+  rebuildKeyOf,
   type GraphModel,
   type GraphSystem,
   type HostShape,
@@ -720,6 +721,11 @@ test("a Mega Drive node opens controller port 2 only for a system whose pipeline
   expect(absent(built([nes(2, 0, [N8])]).node("sys-2"))).toBe(undefined);
   expect(absent(built([sms(3, [SMS])]).node("sys-3"))).toBe(undefined);
   expect(absent(built([gb(4, 0, [MGB])]).node("sys-4"))).toBe(undefined);
+  // The claim is a live knob, not a construct-time field: onboarding or dropping the role's node is a settings change
+  // the core takes at its next prepare, so it must not rebuild the core under a system id an older plan still runs.
+  const key = (claimed: boolean) =>
+    rebuildKeyOf({ type: "rp.blastem.md", settings: { system: 1, rom: "res:1", coreBytesIn: claimed } });
+  expect(key(true)).toEqual(key(false));
 });
 
 test("a cart the controller drives in MI.MAP captures nothing, whatever its stored mode, and its peers keep their own", () => {
