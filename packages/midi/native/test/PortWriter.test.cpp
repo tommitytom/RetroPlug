@@ -138,17 +138,26 @@ TEST_CASE("a push that lands as the writer goes idle is not lost: 50k single mes
     // sendOne() for the idle path - the window between its empty-ring check and its sleep that a counter snapshot taken
     // AFTER the check can miss. Nothing calls stop() in between: a stop's own notify would wake the writer and hide the
     // lost one, and a lost wake is exactly the Note Off a burst ends with, held until the next message arrives.
+    //
+    // It does catch one on this machine, which is what a soak is for: the pre-fix wait lost the race about once in
+    // fifty thousand rounds here (a spinning producer, a woken writer that had not reached the kernel yet), and this
+    // case found it before the wait moved onto the flag word. Under `tools/run-sanitizer.sh thread` the window is wider
+    // still, so that leg runs it too.
     constexpr int kRounds = 50000;
     int           lost    = -1;
-    for (int i = 1; i <= kRounds && lost < 0; ++i) {
+    int           refused = -1;
+    for (int i = 1; i <= kRounds && lost < 0 && refused < 0; ++i) {
         while (backend.sendsFinished.load(std::memory_order_acquire) < i - 1) std::this_thread::yield();
         if (!writer->push(note.data(), note.size())) {
-            lost = i;  // the ring holds one message and the writer drains it: a refusal is not the case being tested
+            refused = i;  // a ring refusal (the writer drains it), not the case being tested here
             break;
         }
         // A writer that noticed the push delivers it at once; one that went to sleep with it queued delivers it only
-        // on the NEXT push or on stop(), so the round's own bound is what tells them apart.
-        const auto deadline = Clock::now() + std::chrono::milliseconds(250);
+        // on the NEXT push or on stop(), so the round's own bound is what tells them apart. It is the file's 5 s
+        // policy, not the round's healthy microseconds: a lost record is held for ever (nothing stops the writer in the
+        // loop), so the bound catches it just as surely, while a runner that deschedules this thread mid-round must not
+        // be a lost wake.
+        const auto deadline = Clock::now() + std::chrono::milliseconds(5000);
         int        spins    = 0;
         while (backend.sendsFinished.load(std::memory_order_acquire) < i) {
             if ((++spins & 0x3FF) == 0 && Clock::now() >= deadline) break;
@@ -157,9 +166,10 @@ TEST_CASE("a push that lands as the writer goes idle is not lost: 50k single mes
         if (backend.sendsFinished.load(std::memory_order_acquire) < i) lost = i;
     }
     writer->stop();
+    CHECK(refused == -1);  // the round whose push the ring refused, -1 when it refused none
     CHECK(lost == -1);  // the round whose message the writer held, -1 when it held none
     // Nothing was dropped and nothing was abandoned: every message reached the port, in order, whatever the scheduling.
-    if (lost < 0) CHECK(backend.sentTo("Synth out").size() == kRounds);
+    if (lost < 0 && refused < 0) CHECK(backend.sentTo("Synth out").size() == kRounds);
 }
 
 // ---- Inline, the mode the CLI's facet and the test host use ---------------------------------------------------

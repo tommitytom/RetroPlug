@@ -15,18 +15,20 @@
 //
 // The wake is a C++20 atomic wait (futex on Linux, WakeByAddressSingle on Windows, __ulock_wait on macOS, which libc++
 // provides from macOS 11 and this repository pins no older deployment target: the release build's runner is
-// macos-15). The producer bumps a counter and, ONLY when the writer has said it is sleeping, notifies it, exchanging
-// `sleeping_` for false as it does (a notify per message would be a syscall per message for a writer that is usually
-// awake anyway, and the exchange is what makes a block's worth of messages cost one wake). The four operations on the
-// counter and `sleeping_` are seq_cst for the reason MidiStream::retire gives for its own two: this is the
-// store-buffering (Dekker) shape, the writer writes `sleeping_` and then re-reads the counter while the producer bumps
-// the counter and then reads `sleeping_`, and under acquire/release both store-load pairs may be reordered - the writer
-// would then sleep with a record queued, which x86 hides and AArch64 (the handheld and Pi builds) does not. In the one
-// total order either the exchange sees the writer's `true` and notifies, or the writer's re-read sees the bumped
-// counter. The snapshot that re-read compares against is taken at the TOP of each pass, before the writer looks at the
-// ring: one taken after that look does not cover the push that lands in between, which is a lost wake in the same shape
-// and the same failure. stop() bumps the counter seq_cst and notifies all as well, so a writer waiting with an empty
-// ring is still joined.
+// macos-15). The writer waits on the FLAG word, not on the counter, and the producer's exchange of that flag for 0 is
+// both the question "is a writer asleep?" and the wake itself: a notify the writer never used (it had not reached the
+// kernel yet) cannot then be left spent, because the clear is the value its wait compares against, and it has to
+// publish the flag again to sleep again. The counter is what says a push landed while the writer was deciding: the
+// producer bumps it before it looks at the flag, and the writer publishes the flag and then re-reads the counter, so a
+// push from that window is caught by the re-read rather than by a notify (a notify per message would be a syscall per
+// message for a writer that is usually awake). The four operations are seq_cst for the reason MidiStream::retire gives
+// for its own two: this is the store-buffering (Dekker) shape, the writer writes the flag and then reads the counter
+// while the producer bumps the counter and then exchanges the flag, and under acquire/release both store-load pairs may
+// be reordered - the writer would then sleep with a record queued, which x86 hides and AArch64 (the handheld and Pi
+// builds) does not. In the one total order either the exchange sees the writer's flag and wakes it, or the writer's
+// re-read sees the bumped counter. The snapshot that re-read compares against is taken at the TOP of each pass, before
+// the writer looks at the ring: one taken after that look does not cover the push that lands in between. stop() clears
+// the flag and notifies all as well, so a writer waiting with an empty ring is still joined.
 //
 // STOPPING. A port that leaves the selection, or the stream closing, stops its writer with a FLUSH: what a push has
 // queued is sent before the port goes, because a dropped Note Off is a stuck note. The flush is bounded by
@@ -126,9 +128,11 @@ private:
     std::atomic<std::uint64_t> read_{0};
     std::atomic<std::uint64_t> dropped_{0};
 
-    // The wake (see the header comment).
+    // The wake (see the header comment). The writer waits on `sleeping_`, which the producer clears to wake it; `wake_`
+    // counts pushes, so the writer can tell that one landed while it was deciding to sleep. Both are four bytes so the
+    // flag takes the platform's own wait (libstdc++'s futex path needs a word the size of an int).
     std::atomic<std::uint32_t> wake_{0};
-    std::atomic<bool>          sleeping_{false};
+    std::atomic<std::uint32_t> sleeping_{0};  // 1: the writer published that it is going to sleep; 0: it is not
     std::atomic<bool>          stopping_{false};
     // When the flush runs out, taken by stop() before it sets `stopping_` and read by the writer after it sees it.
     std::chrono::steady_clock::time_point flushDeadline_{};

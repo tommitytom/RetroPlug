@@ -44,15 +44,12 @@ bool PortWriter::push(const std::uint8_t* data, std::size_t n) {
     copyIn(reinterpret_cast<const std::uint8_t*>(&length), kHeader, w);
     copyIn(data, n, w + kHeader);
     write_.store(w + need, std::memory_order_release);
-    // The wake is the store-buffering (Dekker) shape MidiStream::retire describes: the producer bumps the counter and
-    // then reads `sleeping_`, while the writer writes `sleeping_` and then re-reads the counter. Under acquire/release
-    // both store-load pairs may be reordered, and the writer then sleeps with a record queued - a Note Off delayed until
-    // the next message - which x86 hides and AArch64 (the handheld and Pi builds) does not. The four operations on the
-    // two locations are therefore seq_cst, which is free on x86. `exchange` rather than `load` is what bounds the
-    // syscalls: only the push that finds the writer still asleep notifies it, so a block of messages costs at most one
-    // futex wake, where a load that sees a writer awake-but-not-yet-running would notify once per message.
+    // The wake (the header comment has the whole shape). `exchange` rather than `load` is what bounds the syscalls:
+    // only the push that finds the writer still asleep notifies it, so a block of messages costs at most one futex
+    // wake, where a load that sees a writer awake-but-not-yet-running would notify once per message. The clear is the
+    // wake's own compare value, so a notify that arrives before the writer's wait is not spent (see the header).
     wake_.fetch_add(1, std::memory_order_seq_cst);
-    if (sleeping_.exchange(false, std::memory_order_seq_cst)) wake_.notify_one();
+    if (sleeping_.exchange(0, std::memory_order_seq_cst)) sleeping_.notify_one();
     return true;
 }
 
@@ -65,8 +62,10 @@ void PortWriter::stop() {
     flushDeadline_ = std::chrono::steady_clock::now() + kFlushDeadline;
     stopping_.store(true, std::memory_order_release);
     if (worker_.joinable()) {
-        wake_.fetch_add(1, std::memory_order_seq_cst);
-        wake_.notify_all();
+        // The clear is what the writer's wait compares against, so it is not enough to notify: a writer that has not
+        // reached the kernel yet must find the flag already cleared (the header comment).
+        sleeping_.store(0, std::memory_order_seq_cst);
+        sleeping_.notify_all();
         worker_.join();  // the writer flushes to flushDeadline_ and returns
     }
     port_.reset();  // closed now, and no push can reach it: the stream unpublishes and waits sends out before stopping
@@ -78,9 +77,9 @@ void PortWriter::run() {
     for (;;) {
         // The counter snapshot is taken FIRST, before this pass looks at the ring or at the stop: a push that the ring
         // check below misses has bumped the counter after this load, so either the re-read further down sees the bump
-        // or the push's exchange saw `sleeping_` and notified. Taken after the ring check it does not cover the push
-        // that lands between the two, and the writer then sleeps with that record queued - a Note Off at a burst's end,
-        // held until the next message or a stop.
+        // or the push's exchange found the flag set and cleared it, which is the wake (see the header). Taken after the
+        // ring check it does not cover the push that lands between the two, and the writer then sleeps with that record
+        // queued - a Note Off at a burst's end, held until the next message or a stop.
         const std::uint32_t seen = wake_.load(std::memory_order_seq_cst);
         if (stopping_.load(std::memory_order_acquire) && !flushing) {
             flushing = true;
@@ -88,7 +87,8 @@ void PortWriter::run() {
         }
         if (queued()) {
             if (flushing && std::chrono::steady_clock::now() >= deadline) {
-                abandon();  // the rest is dropped whole and counted, so a stuck note the flush gave up on leaves a trace
+                // The rest is dropped whole and counted, so a stuck note the flush gave up on leaves a trace.
+                abandon();
                 return;
             }
             sendOne();
@@ -96,11 +96,11 @@ void PortWriter::run() {
         }
         if (flushing) return;  // the flush has nothing left to send
         // Nothing to do: publish that this thread is going to sleep, then look once more, so a push that lands after
-        // the snapshot above is not missed, and wait for the next one.
-        sleeping_.store(true, std::memory_order_seq_cst);
+        // the snapshot above is not missed, and wait for the flag to be cleared.
+        sleeping_.store(1, std::memory_order_seq_cst);
         if (wake_.load(std::memory_order_seq_cst) == seen && !stopping_.load(std::memory_order_acquire))
-            wake_.wait(seen, std::memory_order_seq_cst);
-        sleeping_.store(false, std::memory_order_seq_cst);
+            sleeping_.wait(1, std::memory_order_seq_cst);
+        sleeping_.store(0, std::memory_order_seq_cst);
     }
 }
 
