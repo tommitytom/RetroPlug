@@ -482,13 +482,22 @@ TEST_CASE("a state whose component clocks are far from the 68k's is refused", "[
 
 TEST_CASE("a state saved after a 64K-word DMA is still accepted", "[blastem][saves]") {
     // The one gap the clocks legitimately have: a 68k-to-VDP DMA moves the 68k's count to the transfer's end while the
-    // sound chips wait for the block-end sync, and the longest transfer is a fifth of a second. A bound that refused
-    // this would refuse a real ROM's state after every big DMA.
-    auto sys = boot(rp::blastem::test::dmaLoopRom(false));
-    run(*sys, 8);  // several transfers, so the state is saved with the gap
-    auto restored = boot(rp::blastem::test::dmaLoopRom(false), sys->saveStateBytes());
-    CHECK_FALSE(restored->stateRefused());
-    CHECK(restored->activated());
+    // sound chips wait for the block-end syncs that catch them up, and the longest transfer is a fifth of a second. A
+    // bound that refused this would refuse a real ROM's state after every big DMA, so the case saves and reloads across
+    // the catch-up window (the gap shrinks over the tens of blocks the grid takes to reach the 68k again).
+    // The slowest grant rate there is: the display on in H32, which is the image the sink's ring is sized from.
+    auto sys = boot(rp::blastem::test::dmaLoopRom(true, false));
+    REQUIRE(sys->activated());
+    for (int blocks = 1; blocks <= 40; ++blocks) {
+        run(*sys, 1);
+        CHECK(sys->mclkNow() > 0);  // the image really ran, or an empty state would pass this case
+        if (blocks != 1 && blocks % 5 != 0) continue;
+        const std::vector<std::uint8_t> state = sys->saveStateBytes();
+        REQUIRE(state.size() > 8);
+        auto restored = boot(rp::blastem::test::dmaLoopRom(true, false), state);
+        CHECK_FALSE(restored->stateRefused());
+        CHECK(restored->activated());
+    }
 }
 
 namespace {
