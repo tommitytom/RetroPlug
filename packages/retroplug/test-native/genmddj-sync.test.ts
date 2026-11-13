@@ -31,7 +31,8 @@ const GENMDDJ_ROM = __RESOURCES_DIR__ + "/roms/genmddj_v0_27.bin";
 //
 //   sync_last   (main.asm:219) the 2-bit counter the ROM read on its last frame's poll
 //   sync_wait   (main.asm:220) 1 from the arm until the first external clock, which is the WAIT the cart shows on screen
-//   live_bar    (main.asm:288) the master 16-row bar counter, one step per ROW ADVANCE (main.asm:9586)
+//   live_bar    (main.asm:288) the master bar counter, one step per ROW ADVANCE (main.asm:9586) and 4 bits wide
+//               (`andi.b #15, live_bar`, main.asm:9587), so it wraps: only a change shorter than 16 steps is readable
 //   playing     (main.asm:115) 0 stopped, 1 playing: the cart's own transport
 //   opt_sync    (main.asm:245) the OPTIONS sync mode; 5 is IN24
 //   proj_tmpo   (main.asm:253) the project tempo in BPM
@@ -44,6 +45,7 @@ const SYNC_LAST = 0xd425;
 const SYNC_WAIT = 0xd426;
 const LIVE_BAR = 0xd3cb;
 const PLAYING = 0xe20a;
+const PLAY_ROW = 0xe20e;
 const OPT_SYNC = 0xe3e5;
 const PROJ_TEMPO = 0xe3e7;
 const SYNC_IN24 = 5;
@@ -93,25 +95,36 @@ test("the DAW clocks genmddj through port 2", () => {
   expect(ram()[PLAYING]).toBe(1);
   expect(ram()[SYNC_WAIT]).toBe(1);
   expect(ram()[SYNC_LAST]).toBe(3);
+  // Why the rows are read through live_bar, asserted rather than only argued in prose: on SONG get_playrow answers
+  // $FF, so play_row carries no count to check here. A cart that made play_row meaningful again would fail this case
+  // instead of leaving the comment quietly wrong.
+  expect(ram()[PLAY_ROW]).toBe(0xff);
   // Nothing has advanced, and nothing could have: the transport is stopped, so the node sent no level, and IN24 gives
   // the cart no clock of its own.
   expect(ram()[LIVE_BAR]).toBe(0);
 
-  audio.setTransport(true);
+  // Tempo first, then the transport: TickClock reads the block's tempo per block (clock.ts), so the block in which
+  // the transport starts would otherwise walk at whatever tempo the store held.
   audio.setBpm(BPM);
-  const renderedMs = 1000;
-  audio.renderAudio(renderedMs);
+  audio.setTransport(true);
 
   // The clocks are derived from the TRANSPORT, not from the ROM's counter: BPM at 24 PPQN for one second of audio
   // (renderAudio takes milliseconds) is 48 clocks, and the ROM counts `(read - last) & 3` per frame, so its counter
-  // value cannot carry the count at all (48 is 0 mod 4). The rows can: the head start plays row 0 on the first clock
-  // and one row follows per 6 clocks, so 48 clocks are 1 + floor(47 / 6) = 8 advances, plus or minus the frames at the
-  // transport's two edges. Asserting the count is what makes this a tempo check as well: a node clocking at the wrong
-  // PPQN would still move the playhead, just not by this much.
-  const ticks = Math.round((BPM / 60) * PPQN * (renderedMs / 1000));
-  const expectedRows = 1 + Math.floor((ticks - 1) / CLOCKS_PER_ROW);
+  // value cannot carry the count at all (48 is 0 mod 4). The rows can, but only half a second at a time: live_bar
+  // wraps at 16, so a full second's 8 advances and a clock three times too fast (24) both read as 8, which is the very
+  // failure the check exists to catch. Each half is 24 clocks: the first is 1 + floor(23 / 6) = 4 rows (the head start
+  // plays row 0 on the first clock), the second floor(24 / 6) = 4, plus or minus the frames at the edges; a clock three
+  // times too fast is 12 rows a half and cannot pass both.
+  const halfMs = 500;
+  const ticksPerHalf = Math.round((BPM / 60) * PPQN * (halfMs / 1000));
+  const expectedRowsPerHalf = 1 + Math.floor((ticksPerHalf - 1) / CLOCKS_PER_ROW);
+  audio.renderAudio(halfMs);
+  const firstHalfRows = ram()[LIVE_BAR];
+  audio.renderAudio(halfMs);
+  const secondHalfRows = (ram()[LIVE_BAR] - firstHalfRows) & 0xf; // 4 bits, so the difference wraps
   expect(ram()[SYNC_WAIT]).toBe(0); // WAIT cleared by the first clock, so the cart is running
-  expect(Math.abs(ram()[LIVE_BAR] - expectedRows)).toBeLessThanOrEqual(1);
+  expect(Math.abs(firstHalfRows - expectedRowsPerHalf)).toBeLessThanOrEqual(1);
+  expect(Math.abs(secondHalfRows - expectedRowsPerHalf)).toBeLessThanOrEqual(1);
 
   // Stopping the clocks stops the song: IN24 carries no stop message, the delta simply goes to 0, and with it every
   // row advance. The last block's queued levels still land, so the cart settles by one row before it freezes.
