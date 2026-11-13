@@ -66,6 +66,8 @@ std::uint8_t ramByte(rp::blastem::BlastemMdSystem& sys) {
 // rest of it.
 constexpr std::size_t kSectionMainRam = 10;   // SECTION_MAIN_RAM
 constexpr std::size_t kSectionVdp     = 3;    // SECTION_VDP
+constexpr std::size_t kSectionYm      = 4;    // SECTION_YM2612
+constexpr std::size_t kSectionPsg     = 5;    // SECTION_PSG
 constexpr std::size_t kNoSection      = ~std::size_t(0);
 
 // The offset of section `id`'s first payload byte in a whole state (identifier included), or kNoSection. The same
@@ -226,4 +228,83 @@ TEST_CASE("a state whose VDP VRAM size runs past the section is refused", "[blas
     CHECK(restored->stateRefused());
     CHECK(restored->activated());
     CHECK(peak(run(*restored, 4)) > 0.01);  // from power-on, not from the misread section
+}
+
+TEST_CASE("a state's PSG volume is clamped to the channel's four bits", "[blastem][saves]") {
+    // psg_deserialize loads the four volume bytes raw, and psg_run indexes volume_table with them: a state's byte above
+    // 0xF is a read past that table. The mirror masks each one, as psg_write does, so the state loads (the volume is a
+    // value, not an address) and the channel plays its masked level.
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    std::vector<std::uint8_t> state = sys->saveStateBytes();
+    const std::size_t         psg   = sectionPayload(state, kSectionPsg);
+    REQUIRE(psg != kNoSection);
+    // psg_serialize writes the noise LFSR, four counter loads, four counters, then the four volumes.
+    const std::size_t volume = psg + 2 + 4 * 2 + 4 * 2;
+    state[volume] = 0xF0;
+    auto restored = boot(rp::blastem::test::fmPsgRom(), state);
+    CHECK_FALSE(restored->stateRefused());
+    REQUIRE(restored->activated());
+    CHECK((restored->core()->psg->volume[0] & 0xF0) == 0);  // masked, so the table index is in range
+    CHECK(peak(run(*restored, 4)) > 0.01);
+}
+
+TEST_CASE("a state's YM block and fnum are clamped to the register's bits", "[blastem][saves]") {
+    // ym_deserialize loads block and fnum raw and turns them into a keycode, which is an index into detune_table at run
+    // time; ym_data_write produces block & 7 and fnum & 0x7FF, so the mirror masks a loaded state the same way. The
+    // image is fmOnlyRom because it is the one that really plays the YM.
+    auto sys = boot(rp::blastem::test::fmOnlyRom());
+    run(*sys, 20);
+    std::vector<std::uint8_t> state = sys->saveStateBytes();
+    const std::size_t         ym    = sectionPayload(state, kSectionYm);
+    REQUIRE(ym != kNoSection);
+    // ym_serialize writes the part 1 registers, the part 2 registers, the 24 operators, then each channel's output,
+    // op1_old, block (u8), fnum (u16) and keyon.
+    const std::size_t channels = ym + (0xB8 - 0x21) + (0xB8 - 0x30) + 24 * (4 + 2 + 2 + 1 + 1);
+    state[channels + 4] = 0xFF;       // channel 0's block
+    state[channels + 5] = 0xFF;       // its fnum's high byte
+    state[channels + 6] = 0xFF;       // its fnum's low byte
+    auto restored = boot(rp::blastem::test::fmOnlyRom(), state);
+    CHECK_FALSE(restored->stateRefused());
+    REQUIRE(restored->activated());
+    CHECK(restored->core()->ym->channels[0].block <= 7);
+    CHECK(restored->core()->ym->channels[0].fnum <= 0x7FF);
+    CHECK(peak(run(*restored, 20)) > 0.01);  // the detune table is indexed inside its bounds
+}
+
+namespace {
+
+// vdp_serialize's payload up to the FIFO's size byte and up to the four sprite counters, in vdp.h's constants: the
+// version and VRAM-size bytes, 64 KiB of VRAM, CRAM, VSRAM, the SAT cache, the 24 registers, the two addresses and cd,
+// then the FIFO size byte and its entries (12 bytes each), flags, frame, vcounter, hslot, hv_latch, state, the scroll
+// and colour latches, the two 32-byte scroll buffers and their two offsets.
+constexpr std::size_t kVdpFifoSizeAt = 2 + 64 * 1024 + 128 + 128 + 320 + 24 + 2 * 4 + 1;
+constexpr std::size_t kVdpAfterFifo  = 2 + 4 + 2 + 1 + 2 + 1 + 2 + 2 + 4 + 2 + 2 + 2 + 32 + 32 + 1 + 1;
+
+std::size_t vdpSpriteCounters(const std::vector<std::uint8_t>& state, std::size_t vdp) {
+    const std::size_t fifo = state[vdp + kVdpFifoSizeAt];
+    return vdp + kVdpFifoSizeAt + 1 + 12 * fifo + kVdpAfterFifo;
+}
+
+}  // namespace
+
+TEST_CASE("a state whose VDP sprite counters index past their tables is refused", "[blastem][saves]") {
+    // The four counters are loaded raw: the draw list is MAX_SPRITES_LINE entries inside the VDP context, and an index
+    // past it is a write into the neighbouring fields (which a sanitizer cannot see, because it is inside one struct).
+    // Each of the three counters is held to the range the renderer itself produces: sprite_draws to the line's sprites,
+    // slot_counter to the sprite-info slots, cur_slot to the draw list plus its -1 empty value.
+    auto sys = boot(rp::blastem::test::vintDmaRom());
+    run(*sys, 2);
+    const std::vector<std::uint8_t> base    = sys->saveStateBytes();
+    const std::size_t               vdp     = sectionPayload(base, kSectionVdp);
+    REQUIRE(vdp != kNoSection);
+    const std::size_t counters = vdpSpriteCounters(base, vdp);
+    REQUIRE(base[counters + 1] <= 20);  // MAX_SPRITES_LINE, so the offsets above are the fields they claim to be
+    for (std::size_t field = 1; field <= 3; ++field) {  // sprite_draws, slot_counter and cur_slot, not sprite_index
+        std::vector<std::uint8_t> state = base;
+        state[counters + field]         = 21;
+        auto restored                   = boot(rp::blastem::test::vintDmaRom(), state);
+        CHECK(restored->stateRefused());
+        CHECK(restored->activated());
+    }
 }
