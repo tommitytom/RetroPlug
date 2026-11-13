@@ -887,7 +887,7 @@ for the YM, which already interpolates), which a hardware recording settles alon
 The design's estimate is weak: about 1.2x realtime, about 0.7x with Nuked, extrapolated from x86 through Mesen's
 x86-to-device ratio ([design](../docs/megadrive-blastem-design.md) section 7). No A53 ran it, and this branch could not
 try (the board was unavailable), so it is still an estimate, and the stop grid is why it may be optimistic: the grid
-costs about 15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x realtime, the per-VINT DMA image 19.2 to 16.2,
+costs about 15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x realtime, the per-VINT DMA image 19.2 to 16.3,
 Release, 8192-frame blocks), and the device's interpreter has smaller caches for the generated 68k core. What this
 branch measured on x86 is in [spec/08](08-profiling.md): 26 to 28x for the three chip-register images, 15.6 to 18.7x for
 the four timing images, and 17.7x for a real genmddj song clocked through port 2. The start is the spike's arm64 builds

@@ -90,7 +90,7 @@ setting.
   by the refresh and interrupt-latency syncs BlastEm charges where it syncs, so a 1-frame and a 4096-frame render of the
   same 2 s disagreed (27 of the invariance case's 36 audio and state checks did, before the grid). The grid is absolute
   time, so every partition hits the same stops, and a sample the core has overrun costs nothing. It is not free: about
-  15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x real time, the per-VINT DMA image 19.2 to 16.2), measured in
+  15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x real time, the per-VINT DMA image 19.2 to 16.3), measured in
   the core's own invariance work and, through the engine, in [spec/08](08-profiling.md).
 - **Port 2** is the host's device. The mirror's `io.c` names the instance (`io_port.device.custom.host`), the port stays
   `IO_CUSTOM`, and `PortDevice` holds (host sample, level byte) entries, one packed word each. A level is on the pins

@@ -326,11 +326,10 @@ past `renderAudio`'s 1024-frame block).
   synthetic line and then skips, counted, and the profile guard comes before any console boots, so the default host's
   sweep pays a skip rather than a boot. Only the genmddj window holds a zero, because it is the only window whose graph
   plan holds a script node (`rp.genmddj.sync`, the role's clock words on their way to the port device), and what says
-  something ran
-  there is the cart's own row counter read after the window: `readRam` copies into a fresh array in the counted runtime,
-  so a read inside the loop would land in the census. The synthetic windows run no node, so their counts print and no
-  zero is claimed for them. Env knobs `RP_BENCH_{BLOCKS,WARMUP}`; the headline is one `md: <xRT>x realtime (<window>)`
-  line per window.
+  something ran there is the cart's own row counter, read after the window: `readRam` copies into a fresh array in the
+  counted runtime, so a read inside the loop would land in the census. The synthetic windows run no node, so their counts
+  print and no zero is claimed for them. Env knobs `RP_BENCH_{BLOCKS,WARMUP}`; the headline is one
+  `md: <xRT>x realtime (<window>)` line per window.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors
   `RETROPLUG_SANITIZE`), `tools/run-profile.sh [stats|trace|unit|dhat|callgrind|massif]` (separate
   `build-prof/` RelWithDebInfo dir), and `pnpm profile`.

@@ -91,8 +91,8 @@ test("md-bench: a Mega Drive's xRT on the synthetic images and on a playing genm
 
   // One system, one window, then it is gone: the figure is a console's cost, so no window pays for another's instance.
   // `check` runs once the window's numbers are read and before the system goes, so a workload can hold them and still
-  // read its cart's own state; anything it renders is outside the timed window and outside the counted one.
-  const headline: [string, number][] = [];
+  // read its cart's own state; anything it renders is outside the timed window and outside the counted one. The window's
+  // console is removed in a `finally`, so a failing assertion or check cannot leave it in the shared engine.
   const benchWindow = (name: string, id: number, check?: (s: DspAllocStats) => void): void => {
     for (let b = 0; b < warmup; b++) audio.renderAudio(blockMs);
 
@@ -125,12 +125,17 @@ test("md-bench: a Mega Drive's xRT on the synthetic images and on a playing genm
           usPerBlock: wallMs > 0 ? round((wallMs * 1000) / s.blockCount) : 0,
         }),
     );
-    expect(s.blockCount, `${name}: blocks measured`).toBeGreaterThan(0);
-    expect(xRT, `${name}: the window measured something`).toBeGreaterThan(0);
-    headline.push([name, xRT]);
+    // The headline prints beside the line it summarises, inside the window: the genmddj window is fixture-gated, so a
+    // box without the ROM leaves the test through `skip()` before any trailing loop would print the synthetic ones.
+    console.log(`md: ${xRT}x realtime (${name})`);
 
-    check?.(s);
-    project.systems.removeSystem(id);
+    try {
+      expect(s.blockCount, `${name}: blocks measured`).toBeGreaterThan(0);
+      expect(xRT, `${name}: the window measured something`).toBeGreaterThan(0);
+      check?.(s);
+    } finally {
+      project.systems.removeSystem(id);
+    }
   };
 
   // The synthetic images: written into this file's own directory, since a console opens its ROM by path and classifies
@@ -141,7 +146,9 @@ test("md-bench: a Mega Drive's xRT on the synthetic images and on a playing genm
     const id = project.systems.addSystem(path);
     expect(typeof id === "number", `${name}: the image built a Mega Drive`).toBeTruthy();
     const md = id as number;
-    expect(project.systems.view().find((v) => v.id === md)!.platform).toBe("md");
+    const view = project.systems.view().find((v) => v.id === md);
+    expect(view !== undefined, `${name}: the image is in the view`).toBeTruthy();
+    expect(view?.platform).toBe("md");
     audio.renderAudio(1500); // the image's own boot: its chip-register writes land in the first instructions after reset
     benchWindow(name, md);
   }
@@ -157,9 +164,10 @@ test("md-bench: a Mega Drive's xRT on the synthetic images and on a playing genm
   const genmddj = (project.systems.loadRom(local) as { system: number }).system;
   // The role the ROM provider attached is what makes the window the shipped sync path rather than a cart reading a
   // pad's idle lines, and the clock stream the window measures comes from it.
-  const view = project.systems.view().find((v) => v.id === genmddj)!;
-  expect(view.platform).toBe("md");
-  expect(view.roles.map((r) => r.kind).includes("genmddj-sync")).toBeTruthy();
+  const cartView = project.systems.view().find((v) => v.id === genmddj);
+  expect(cartView !== undefined, "genmddj: the cart is in the view").toBeTruthy();
+  expect(cartView?.platform).toBe("md");
+  expect(cartView?.roles.map((r) => r.kind).includes("genmddj-sync")).toBeTruthy();
 
   audio.renderAudio(2000); // boot: the cart clears RAM, sets its VDP up and draws its UI
   const ram = () => project.systems.readRam(genmddj)!;
@@ -188,13 +196,14 @@ test("md-bench: a Mega Drive's xRT on the synthetic images and on a playing genm
     }
     // The window measured a SONG, not a paused cart: live_bar advances while the clock stream lands. Read after the
     // window because readRam copies into a fresh array and the counted runtime is the one this bundle runs in, so a
-    // read inside the loop would land in the census. 64 blocks is about 1.5 s, and at 8 rows a second the count cannot
-    // wrap the 4 bits the counter holds, so the difference is the row count itself.
+    // read inside the loop would land in the census. 32 blocks is about 0.7 s, and at 8 rows a second the count cannot
+    // wrap the 4 bits the counter holds, so the difference is the row count itself; a clock stream even twice too fast
+    // counts about 12 rows, still short of the wrap and past the upper bound below.
     expect(ram()[PLAYING], "genmddj: the cart still played at the window's end").toBe(1);
     const barBefore = ram()[LIVE_BAR];
-    audio.renderAudio(64 * blockMs);
+    audio.renderAudio(32 * blockMs);
     const rows = (ram()[LIVE_BAR] - barBefore) & 0xf;
-    const expectedRows = 64 * (blockMs / 1000) * ROWS_PER_SECOND;
+    const expectedRows = 32 * (blockMs / 1000) * ROWS_PER_SECOND;
     expect(rows, "genmddj: rows the song advanced during the proof render").toBeGreaterThanOrEqual(
       Math.floor(expectedRows) - 3,
     );
@@ -204,5 +213,4 @@ test("md-bench: a Mega Drive's xRT on the synthetic images and on a playing genm
   });
 
   audio.setTransport(false);
-  for (const [name, xRT] of headline) console.log(`md: ${xRT}x realtime (${name})`);
 });

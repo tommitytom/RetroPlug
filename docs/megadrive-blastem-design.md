@@ -94,7 +94,7 @@ is byte-identical. If BlastEm's stops prove not to be transparent, the fallback 
 sample (SameBoy's model), at a few percent of overhead; the test decides, not an assumption. As built, the test decided
 against plain stops (27 of the 36 audio and state checks disagreed with the 4096-frame render), so the one-host-sample
 grid is what ships: one `run_until` per host sample, absolute time, so every partition hits the same stops. Its cost is
-about 15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x realtime, the per-VINT DMA image 19.2 to 16.2), not the
+about 15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x realtime, the per-VINT DMA image 19.2 to 16.3), not the
 few percent estimated here.
 
 **Audio output.** BlastEm's `render_audio.c` is not used: it is a process-global source registry capped at 8 (a ninth
