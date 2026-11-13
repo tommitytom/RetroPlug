@@ -140,10 +140,11 @@ public:
      *  thread stopped draining, and any transport clock in what was lost is simply gone, which downstream reads as a
      *  tempo that is too slow. */
     std::uint64_t droppedCount() const { return dropped_.load(std::memory_order_relaxed); }
-    /** Whole messages a hardware output's writer dropped because its ring was full - always 0 in a healthy run.
-     *  Threaded streams only (an Inline one has no ring): a port that is not draining must not make a lost message
-     *  invisible. Read on the control thread, as droppedCount() is, and the stream itself reads it there: a writer that
-     *  is about to be let go says what it dropped before it goes, since the count lives in the object. */
+    /** Whole messages a hardware output's writer dropped because its ring was full, or because a stop's flush ran out
+     *  its deadline with them queued (a wedged port) - always 0 in a healthy run. Threaded streams only (an Inline one
+     *  has no ring): a port that is not draining must not make a lost message invisible. Read on the control thread, as
+     *  droppedCount() is, and the stream itself reads it there: it stops a writer it is about to let go and only then
+     *  says what it dropped, since the count lives in the object and a flush adds to it. */
     std::uint64_t droppedOutputCount() const {
         std::uint64_t n = 0;
         for (const auto& entry : hwOut_) n += entry.second->dropped();
@@ -172,9 +173,11 @@ private:
     void retire(OutputSet* old);  // waits out a send in flight, then frees the set (never a port: hwOut_'s)
     void pushRing(const std::uint8_t* data, std::size_t len);
     void emit(const std::string& line);  // one log line, prefix included, through sink_ or stderr
-    /** One "MIDI out (...): N message(s) dropped" line for a writer that dropped any, called on the control thread just
-     *  before the writer is let go: its count is all that says a message was lost, and the count dies with the object. */
-    void reportDrops(const PortWriter& writer);
+    /** Stop a writer the stream is letting go, then print one "MIDI out (...): N message(s) dropped" line if it dropped
+     *  any, on the control thread. The stop comes FIRST: a flush the deadline cuts short abandons records, and those
+     *  are counted only once the writer has returned, so reporting before the stop would hide a wedged port's. The
+     *  count is all that says a message was lost, and it dies with the object. */
+    void reportDrops(PortWriter& writer);
 
     MidiBackend* backend_;  // non-const on purpose: a listing probes the system, and listInputs() is const
     OutputMode   mode_ = OutputMode::Inline;  // where a hardware output's send happens (see OutputMode)

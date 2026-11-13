@@ -370,7 +370,8 @@ void MidiStream::send(const std::uint8_t* data, std::size_t n) {
     epoch_.fetch_add(1, std::memory_order_seq_cst);  // even: done, and everything above happens-before a retire
 }
 
-void MidiStream::reportDrops(const PortWriter& writer) {
+void MidiStream::reportDrops(PortWriter& writer) {
+    writer.stop();
     const std::uint64_t n = writer.dropped();
     if (n == 0) return;
     emit("MIDI out (" + writer.name() + "): " + std::to_string(n) + " message(s) dropped");

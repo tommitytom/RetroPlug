@@ -32,9 +32,10 @@
 // queued is sent before the port goes, because a dropped Note Off is a stuck note. The flush is bounded by
 // kFlushDeadline, which stop() counts from itself; a send that started just before the writer saw the stop runs to
 // completion inside the bound and one that started just before the deadline runs on after it, so a close can take up to
-// two sends on top (WinMM gives no way to cancel a write in progress). Nothing may push after stop() begins: the stream
-// unpublishes the set and waits the send in flight out before it stops a writer, which is the order its epoch handshake
-// already keeps for the ports' lifetime.
+// two sends on top (WinMM gives no way to cancel a write in progress). What the deadline leaves in the ring is dropped
+// whole and counted, as a message a full ring refused is, so a Note Off the flush gave up on still leaves the trace a
+// stuck note needs. Nothing may push after stop() begins: the stream unpublishes the set and waits the send in flight
+// out before it stops a writer, which is the order its epoch handshake already keeps for the ports' lifetime.
 //
 // An Inline writer is the same object with no thread: push() writes to the port on the caller's thread, which is what
 // the CLI's facet and the test host want (their caller is the JS thread, and a script that returns from `midiSend` and
@@ -94,8 +95,9 @@ public:
      *  Idempotent, and safe on a writer whose port never opened (it has no thread to join). */
     void stop();
 
-    /** Whole messages dropped because the ring was full, since this writer opened. Read on the control thread, as
-     *  MidiStream::droppedCount() is. */
+    /** Whole messages dropped because the ring was full, or abandoned when a stop's flush ran out its deadline (a
+     *  wedged port), since this writer opened. Read on the control thread, as MidiStream::droppedCount() is, and after
+     *  the writer's stop when an abandoned record is to be in it. */
     std::uint64_t      dropped() const { return dropped_.load(std::memory_order_relaxed); }
     const std::string& name() const { return name_; }
 
@@ -104,6 +106,7 @@ private:
 
     void run();                                                  // the writer thread, until stop() and an empty ring
     void sendOne();                                              // one queued record: write it and free its space
+    void abandon();                                              // a flush's deadline ran out: drop and count the rest
     bool queued() const;
     void copyIn(const std::uint8_t* from, std::size_t n, std::uint64_t at);
     void copyOut(std::uint8_t* to, std::size_t n, std::uint64_t at) const;

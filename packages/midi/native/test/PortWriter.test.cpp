@@ -240,9 +240,10 @@ TEST_CASE("a wedged port's stop returns by its deadline, and abandons the rest o
     Rig   rig;
     auto& backend       = rig.backend;
     backend.sendDelayMs = 200;  // each write takes 200 ms: the whole backlog would be 4 seconds
-    auto        writer  = rig.open();
-    const Bytes note    = {0x90, 0x3C, 0x7F};
-    for (int i = 0; i < 20; ++i) REQUIRE(writer->push(note.data(), note.size()));
+    auto          writer  = rig.open();
+    const Bytes   note    = {0x90, 0x3C, 0x7F};
+    constexpr int kQueued = 20;
+    for (int i = 0; i < kQueued; ++i) REQUIRE(writer->push(note.data(), note.size()));
     const auto t0 = Clock::now();
     writer->stop();
     const auto elapsed = Clock::now() - t0;
@@ -253,7 +254,9 @@ TEST_CASE("a wedged port's stop returns by its deadline, and abandons the rest o
     // It gave up on the rest: fewer than the twenty, and more than none (the flush sent what it could).
     const std::size_t sent = backend.sentTo("Synth out").size();
     CHECK(sent >= 1);
-    CHECK(sent < 20);
+    CHECK(sent < kQueued);
+    // And what it gave up on is counted, as a full ring's drops are: a Note Off the flush abandoned is not invisible.
+    CHECK(writer->dropped() == kQueued - sent);
 }
 
 // ---- the audio thread allocates nothing -----------------------------------------------------------------------

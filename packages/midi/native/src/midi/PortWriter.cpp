@@ -87,7 +87,10 @@ void PortWriter::run() {
             deadline = flushDeadline_;
         }
         if (queued()) {
-            if (flushing && std::chrono::steady_clock::now() >= deadline) return;  // the rest is discarded
+            if (flushing && std::chrono::steady_clock::now() >= deadline) {
+                abandon();  // the rest is dropped whole and counted, so a stuck note the flush gave up on leaves a trace
+                return;
+            }
             sendOne();
             continue;
         }
@@ -110,6 +113,22 @@ void PortWriter::sendOne() {
     copyOut(scratch_.data(), length, r + kHeader);
     read_.store(r + kHeader + length, std::memory_order_release);
     write(scratch_.data(), length);
+}
+
+void PortWriter::abandon() {
+    // The flush ran out of time with records still queued: they are dropped whole, as a full ring drops the message it
+    // would have refused, and counted the same way, so the Note Off the flush gave up on is not the one lost message
+    // nothing reports. The producer is done (no push may follow stop()) and the walk reads only what it left behind.
+    std::uint64_t       r = read_.load(std::memory_order_relaxed);
+    const std::uint64_t w = write_.load(std::memory_order_relaxed);
+    std::uint64_t       n = 0;
+    while (r < w) {
+        std::uint32_t length = 0;
+        copyOut(reinterpret_cast<std::uint8_t*>(&length), kHeader, r);
+        r += kHeader + length;
+        ++n;
+    }
+    dropped_.fetch_add(n, std::memory_order_relaxed);
 }
 
 void PortWriter::copyIn(const std::uint8_t* from, std::size_t n, std::uint64_t at) {
