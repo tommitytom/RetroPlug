@@ -1,6 +1,7 @@
-// The audio path, at the three points that fail silently: silence (a ROM that plays must not render zeros), the FM
-// chip's contribution (a YM2612 write must change the output), and run-to-run determinism (the same input must give the
-// same bytes, or nothing downstream can be compared).
+// The audio path, at what fails silently: silence (a ROM that plays must not render zeros), the YM2612's own sound (its
+// writes land only with the Z80's bus), determinism and block-size invariance (nothing downstream can be compared
+// otherwise), the sink's two guards (a DMA-sized burst that neither starves nor overruns, a rate change that re-rates
+// the blip), and the routing a chip's callback needs when two instances share a thread.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -115,9 +116,9 @@ TEST_CASE("the same input renders the same bytes twice", "[blastem][audio]") {
 }
 
 TEST_CASE("a source's DMA-sized burst is buffered, not dropped or left behind", "[blastem][audio][sink]") {
-    // The sink alone, fed the way a core feeds it: kDmaOvershoot host samples of one source arrive before the first
-    // drain (a 68k-to-VDP DMA carries the 68k that far past a block's end, and genesis.c's own sync then runs the chip
-    // to it in one go), and then the block drains. The ring is sized for exactly that burst, so nothing may be dropped
+    // The sink alone, fed the way a core feeds it: a DMA's worth of host samples from one source arrives before the
+    // first drain (a 68k-to-VDP DMA carries the 68k that far past a block's end, and genesis.c's own sync then runs the
+    // chip to it in one go), and then the block drains. The ring is sized for exactly that burst, so nothing may be dropped
     // (overrunSamples) or starved, and the drained stream must be the stream a trickle would have produced: a surplus
     // left inside blip instead would surface as latency the block partition chose.
     constexpr std::uint32_t kBurst = 12000;  // the ring's DMA margin at 48 kHz: a quarter second
