@@ -553,3 +553,23 @@ TEST_CASE("a state from a newer VDP section is refused", "[blastem][saves]") {
     CHECK(restored->stateRefused());
     CHECK(restored->activated());
 }
+
+TEST_CASE("a published snapshot is the state the control plane saves", "[blastem][saves]") {
+    // The block thread's capture reuses its buffers (BlastEm's serializer buffer, the battery's scratch and the
+    // destination vector) so a publish does not allocate once it has run a few times, and this is the check that the
+    // reuse keeps producing the same container the control plane's saveStateBytes() hands out: a publish and a save
+    // with nothing run between them are the same bytes, before and after the buffers have been reused.
+    auto sys = boot(batteryRom());
+    run(*sys, 4);
+    REQUIRE(sys->enableStateSnapshot());
+    std::vector<std::uint8_t> slot(sys->stateSnapshotCapacity() + 4);
+    for (int round = 0; round < 3; ++round) {
+        sys->publishStateSnapshot(24000, kRate);  // past the publish interval, so a capture happens
+        const std::size_t len = sys->readStateSnapshot(slot.data(), slot.size());
+        REQUIRE(len > 8);
+        const std::vector<std::uint8_t> published(slot.begin() + 4, slot.begin() + 4 + static_cast<std::ptrdiff_t>(len));
+        const std::vector<std::uint8_t> saved = sys->saveStateBytes();
+        CHECK(published == saved);
+        run(*sys, 1);  // move on, so the next publish is a different state and the buffers are reused for it
+    }
+}

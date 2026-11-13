@@ -118,7 +118,12 @@ static std::uint8_t blastemRegion(std::uint32_t region) {
 BlastemMdSystem::BlastemMdSystem(SystemId id, BlastemMdConfig config, std::vector<std::uint8_t> romBytes)
     : SystemBase(id), config_(std::move(config)), rom_(std::move(romBytes)) {}
 
-BlastemMdSystem::~BlastemMdSystem() { destroyCore(); }
+BlastemMdSystem::~BlastemMdSystem() {
+    destroyCore();
+    // The capture's serializer buffer outlives its core by design (the core is rebuilt on a refused state), so it is
+    // freed here and not in destroyCore.
+    free(stateSerialize_.data);
+}
 
 std::uint32_t BlastemMdSystem::masterClock() const { return gen_ ? gen_->master_clock : 0; }
 
@@ -355,29 +360,49 @@ void BlastemMdSystem::seedBattery(const std::vector<std::uint8_t>& sram) {
 
 // The state, as BlastEm writes it, behind the identifier loadStateBytes demands. The capture costs one buffer of its
 // own: BlastEm grows the one init_serialize gave it, and the caller's vector is the copy out of it.
-std::vector<std::uint8_t> BlastemMdSystem::saveStateBytes() const {
-    if (!gen_) return {};
+bool BlastemMdSystem::captureStateInto(serialize_buffer& buf, std::vector<std::uint8_t>& battery,
+                                       std::vector<std::uint8_t>& out) const {
+    if (!gen_) {
+        out.clear();
+        return false;
+    }
     useInstance(const_cast<BlastemMdSystem*>(this));  // the serializer's own callbacks are frontend calls
-    serialize_buffer buf;
-    init_serialize(&buf);
+    // A reused buffer starts at its beginning again; its storage (and the ROM's own rows) are what it keeps.
+    buf.size                 = 0;
+    buf.failed               = 0;
+    buf.current_section_start = 0;
     // The pc the 68k will resume at is the address sync_components is handed at a block boundary (genesis.c passes
     // gen->m68k->pc there), so a state taken between blocks resumes on the next instruction rather than mid-one.
     genesis_serialize(gen_, &buf, gen_->m68k->pc, 1);
     if (hasBattery(gen_)) {
-        const std::vector<std::uint8_t> battery = saveSramBytes();  // the .sav's order, which is what a load reads back
+        // The .sav's order, which is what a load reads back: this is the same copy saveSramBytes() returns, in the
+        // caller's buffer so a snapshot does not allocate one.
+        battery.resize(gen_->save_size);
+        for (std::size_t i = 0; i < battery.size(); ++i) battery[i] = gen_->save_storage[batteryStorageIndex(gen_, i)];
         start_section(&buf, kSectionBattery);
-        save_buffer8(&buf, const_cast<std::uint8_t*>(battery.data()), battery.size());
+        save_buffer8(&buf, battery.data(), battery.size());
         end_section(&buf);
     }
     if (buf.failed) {  // the capture could not grow: no state is better than half a state
-        free(buf.data);
-        return {};
+        out.clear();
+        return false;
     }
-    std::vector<std::uint8_t> out(sizeof(kStateIdent) - 1 + buf.size);
+    out.resize(sizeof(kStateIdent) - 1 + buf.size);
     std::memcpy(out.data(), kStateIdent, sizeof(kStateIdent) - 1);
     std::memcpy(out.data() + sizeof(kStateIdent) - 1, buf.data, buf.size);
+    return true;
+}
+
+std::vector<std::uint8_t> BlastemMdSystem::saveStateBytes() const {
+    // The control plane's copy: a buffer of its own, because a capture on the block thread owns the member one. The
+    // state is the same bytes either way.
+    serialize_buffer          buf;
+    std::vector<std::uint8_t> battery;
+    std::vector<std::uint8_t> out;
+    init_serialize(&buf);
+    const bool ok = captureStateInto(buf, battery, out);
     free(buf.data);
-    return out;
+    return ok ? std::move(out) : std::vector<std::uint8_t>{};
 }
 
 // A seed state, into a core that was just built and has run nothing. Returns false and latches stateRefused_ on any
@@ -453,11 +478,12 @@ std::size_t BlastemMdSystem::stateSnapshotSize() const {
 }
 
 bool BlastemMdSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
-    // Allocates on the block thread, which is Mesen's precedent (MesenSmsSystem captures a state the same way every
-    // kStateSnapshotIntervalSec); the triple this writes into was pre-sized from the ceiling above, so the state's own
-    // buffer is the only allocation in the publish.
-    dst = saveStateBytes();
-    return !dst.empty();
+    // Runs on the block thread, so the buffers are the members: BlastEm's serializer buffer (allocated at 256 KiB by
+    // the first capture and grown if a battery needs it), the battery's scratch and `dst` itself, which SystemBase
+    // hands back every publish and whose capacity is kept by the resize. The first capture allocates those three and
+    // every later one allocates nothing; Mesen's capture allocates twice every time and this does not.
+    if (!stateSerialize_.data) init_serialize(&stateSerialize_);
+    return captureStateInto(stateSerialize_, batteryScratch_, dst) && !dst.empty();
 }
 
 // The block triad, and the core's stop: one run a block, ended at the block's own master clock rather than at a frame

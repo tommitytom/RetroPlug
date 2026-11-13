@@ -154,6 +154,10 @@ private:
     // enableStateSnapshot has been called; the build function does that).
     std::size_t stateSnapshotSize() const override;
     bool        captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
+    // The whole state container into `out` (resized, so a reused vector keeps its capacity) through `buf`'s storage,
+    // which the caller may keep between captures; `battery` is the scratch the battery section is copied from.
+    bool captureStateInto(serialize_buffer& buf, std::vector<std::uint8_t>& battery,
+                          std::vector<std::uint8_t>& out) const;
     // The build's state seed, as boot()'s last act after seedBattery(). A refusal here is boot()'s retry, not an error
     // out of a live machine: a state is only ever loaded into a core that was just built.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
@@ -214,6 +218,11 @@ private:
     // on the block thread (the engine's [alloc] cases count a block's allocations, emulation included).
     std::vector<float> mixLeft_;
     std::vector<float> mixRight_;
+    // The capture's own buffers, kept between snapshots (captureStateSnapshot): BlastEm's serializer grows the first one
+    // once and the battery the second, so after the first publish a snapshot allocates nothing. Never touched by
+    // saveStateBytes(), which the control plane calls: that one owns a buffer of its own.
+    serialize_buffer          stateSerialize_{};
+    std::vector<std::uint8_t> batteryScratch_;
 };
 
 }  // namespace rp::blastem
