@@ -9,6 +9,7 @@
 // The 68k encodings used, and nothing else, so a reader can check a byte against a manual:
 //   13FC 00vv aaaaaaaa   move.b #vv,(aaaaaaaa).L
 //   1039 aaaaaaaa       move.b (aaaaaaaa).L,d0
+//   3039 aaaaaaaa       move.w (aaaaaaaa).L,d0
 //   13C0 aaaaaaaa       move.b d0,(aaaaaaaa).L
 //   33C1 aaaaaaaa       move.w d1,(aaaaaaaa).L
 //   7200                moveq #0,d1
@@ -127,6 +128,15 @@ inline std::vector<std::uint8_t> portTimestampRom() {
                   0x60, 0xEC,                                     // bra.s  loop
                   0x33, 0xC1, 0x00, 0xFF, 0x00, 0x00,             // move.w d1,$FF0000
                   0x13, 0xC0, 0x00, 0xFF, 0x00, 0x02});           // move.b d0,$FF0002
+}
+
+// A VDP status/HV poll in a tight loop: `move.w $C00004,d0; bra.s .`. Every real game's vblank wait is this loop, and
+// the control port's read handler syncs the components (vdp_port_read -> sync_components), so this is the image a case
+// needs when a stop or a rebase falls on a handler's sync rather than on an instruction boundary. 8 bytes: the read
+// and the branch, whose PC is loop + 8, so its displacement is -8 = 0xF8.
+inline std::vector<std::uint8_t> vdpPollRom() {
+    return image({0x30, 0x39, 0x00, 0xC0, 0x00, 0x04,  // move.w $C00004,d0  <- loop
+                  0x60, 0xF8});                       // bra.s  loop
 }
 
 // Holds PSG channel 0 at full volume, then silences it the first time TR/TH leave their idle level, and records that
