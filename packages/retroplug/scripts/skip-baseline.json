@@ -148,6 +148,10 @@
    "skipped": 1,
    "total": 1
   },
+  "md-bench": {
+   "skipped": 1,
+   "total": 1
+  },
   "mesen-state-ceiling": {
    "skipped": 1,
    "total": 2

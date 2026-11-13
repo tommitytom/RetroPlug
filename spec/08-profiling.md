@@ -317,6 +317,19 @@ past `renderAudio`'s 1024-frame block).
   modes default to it unless it is set: the windows' boots and warmups do not shrink with `RP_BENCH_BLOCKS`, which
   those modes lower to 200, so they would make a run several times longer and put an LSDj's setup in the census
   of the mGB workload. Their zero is the `stats` mode's to hold.
+- **The Mega Drive benchmark** [test-native/md-bench.test.ts](../packages/retroplug/test-native/md-bench.test.ts): the
+  BlastEm twin, at the same 1024-sample partition and the same `DSP-BENCH` line, with a window each on the seven
+  synthetic images the parity group boots (from `@retroplug/blastem/testFixtures`, so the two groups time the same
+  bytes) and one on a real genmddj cart playing a song the DAW clocks through port 2. That last window is the file's
+  fixture-gated half (`genmddj_v0_27.bin` under `RETROPLUG_RESOURCES_DIR`): a box without the tree prints every
+  synthetic line and then skips, counted, and the profile guard comes before any console boots, so the default host's
+  sweep pays a skip rather than a boot. Only the genmddj window holds a zero, because it is the only window whose graph
+  plan holds a script node (`rp.genmddj.sync`, the role's clock words on their way to the port device), and what says
+  something ran
+  there is the cart's own row counter read after the window: `readRam` copies into a fresh array in the counted runtime,
+  so a read inside the loop would land in the census. The synthetic windows run no node, so their counts print and no
+  zero is claimed for them. Env knobs `RP_BENCH_{BLOCKS,WARMUP}`; the headline is one `md: <xRT>x realtime (<window>)`
+  line per window.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors
   `RETROPLUG_SANITIZE`), `tools/run-profile.sh [stats|trace|unit|dhat|callgrind|massif]` (separate
   `build-prof/` RelWithDebInfo dir), and `pnpm profile`.
@@ -379,6 +392,21 @@ modes are out.
   0.00 JS allocations a block in every row, where its MI.OUT rows read 0.23, 15 and 120 at 1, 64 and 512 frames with
   that emit: the script nodes alone take 0.87, 1.03 and 1.83 us a block with the LSDj in MIDI sync, and 0.85, 3.86 and
   23.84 us decoding MI.OUT at a byte every 8 frames.
+- **On the Mega Drive core.** `pnpm run profile md-bench` (the wrapper's `stats` mode; the root script is named
+  `profile`, which pnpm 10 routes to npm's own `profile` command, so the `run` is load-bearing), measured on a desktop
+  box (x86-64, AMD Ryzen 9 9950X 16-Core) in the `build-prof` RelWithDebInfo host: 2000 blocks of 1024 samples at the
+  driver's 44.1 kHz after the default 200-block warmup, one console per window. The three images whose only work is a
+  chip-register write ran at **26 to 28x real time** (that run: fm-psg 27.68, psg 27.83, fm 25.96, at 834 to 894 us a
+  block), and the four that watch their own VDP counters, take HINT and VINT, run a Z80 program and start a 68k-to-VDP
+  DMA at 18.69 (hv-psg), 17.59 (vint-hint), 15.79 (z80-timing) and 15.58 (vint-dma). A real genmddj song, clocked
+  through port 2 by `rp.genmddj.sync`, ran at **17.7x**. Every window read **0 allocs/block**, 0 bytes and
+  `maxBlockAllocs` 0, with a peak heap of 336272 bytes, `liveHeapDelta` 0 and the end-of-window `runGc` freeing 0. Four
+  runs of the file moved each figure by under 3% except the `fm` window, whose readings spread 25.96 to 28.74: the wall
+  figures are the noisy half of these metrics, the counts are exact. The stop grid's own cost, measured natively in the
+  core's invariance work (Release, 20 s of audio, 8192-frame blocks), was hvPsgRom 22.7x -> 19.7x and vintDmaRom
+  19.2x -> 16.3x, so the engine, the resampler and the video path cost the couple of times of real time the two sets
+  differ by, not an order of magnitude. The A53 device figure this line would have been paired with is unmeasured (the
+  board was not available).
 - **Ship path clean:** dsp-bench skips under the default host; the full `pnpm test:native`
   sweep and `pnpm test` stay green; the default `build/` and shipped plugin never
   define `RETROPLUG_PROFILE` (zero overhead).
