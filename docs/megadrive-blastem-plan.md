@@ -28,20 +28,25 @@ state machine, reworked to take its level encoder as a parameter.
 - Never use the emdash character anywhere (code, comments, docs, commit messages).
 - **Every edit under `deps/blastem` is a commit on the mirror's `retroplug` branch, and it is then pushed to the LOCAL
   mirror**: made inside `deps/blastem` (subject line, blank line, body, and a `RetroPlug:` marker comment at the edit
-  site), then
+  site), then pushed from the outer repo:
 
   ```bash
   git -C deps/blastem -c protocol.file.allow=always push \
       /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm retroplug
   ```
 
+  The task steps below write it as `cd deps/blastem`, the commit, then the SAME push WITHOUT the `-C` (inside the
+  submodule, `-C deps/blastem` would name `deps/blastem/deps/blastem`, which does not exist), then `cd ../..`. Either
+  form is right in its own directory; a `cd` followed by a `-C` is not.
+
   and only then the outer repo's pointer commit. The push target is the local mirror repo, never the GitHub URL: the
   local mirror is the single source the user pushes to GitHub from. The mirror is
-  `https://github.com/tommitytom/RetroPlug-BlastEm` and **only the user pushes it**, so ask them, after Task 2c, to
-  push `upstream` and `retroplug` from the local mirror. Until they do, CI cannot resolve `deps/blastem`; that is the
-  one red CI cause this plan tolerates, and only until the push.
+  `https://github.com/tommitytom/RetroPlug-BlastEm` and **only the user pushes it**, so ask them, after the CI-and-gate
+  task, to push `upstream` and `retroplug` from the local mirror. Until they do, CI cannot resolve `deps/blastem`; that
+  is the one red CI cause this plan tolerates, and only until the push.
 - **A mirror commit is not in the local mirror until it is pushed there.** Every task that edits `deps/blastem` ends
-  with the push above and prints `git -C deps/blastem log --oneline -1` and the mirror's
+  with the push above (from `deps/blastem` itself, or with `-C` from the outer repo, never both) and prints
+  `git -C deps/blastem log --oneline -1` and the mirror's
   `git -C /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm log --oneline -1` as its expected result: two
   lines with the same subject means the mirror has it.
 - Never bump `deps/mesen` or `deps/sameboy`: both pointers are managed deliberately. `deps/sameboy` shows as modified
@@ -77,9 +82,11 @@ Copied from the design (section 2, 3, 5); every task's requirements include them
   design's PAL figure (53,203,424) is the hardware nominal; the tree's constant is what the emulated chips actually
   run at, so the tree wins and the mapping reads the field, never a constant.
 - **Sample rates at the chips.** Each source tells the sink its own native rate as `master_clock / sample_divider`
-  (`render_audio_adjust_clock`'s two arguments), and the sink never assumes one: the YM2612's divider is
-  `MCLKS_PER_YM * OPN2_NUM_OPERATORS` = 7 * 24 = 168 master clocks per stereo sample (319,602 Hz NTSC, six times the
-  chip's nominal 53,267 because BlastEm runs 24 operator slots per output sample), and the PSG's is 240 (223,722 Hz).
+  (`render_audio_adjust_clock`'s two arguments), and the sink never assumes one. The YM2612's divider is
+  `MCLKS_PER_YM * 6 * OPN2_NUM_OPERATORS` = 7 * 6 * 24 = 1008 master clocks per stereo sample (`ym2612.c:144-146`: the
+  chip's `clock_inc` is `clock_div * 6` because it runs six slots per operator sample, and the registered divider is
+  `clock_inc * OPN2_NUM_OPERATORS`), which is 53,267 Hz NTSC, the chip's own sample rate. The PSG's is 240 (223,722 Hz),
+  and the VDP test register's Z80 clock select halves it to `MCLKS_PER_YM * 16` = 112 (479,403 Hz).
   BlastEm's 3390 Hz one-pole (`audio.lowpass_cutoff`, `DEFAULT_LOWPASS_CUTOFF` in genesis.c) and its YM/PSG gains (0 dB
   each by default) apply at those native rates, before resampling, exactly as `render_audio.c` applies them.
 - **Video.** `FrameBufferTriple` is 320 wide by 224 lines (NTSC) or 240 (PAL), allocated once at boot: the shell's
@@ -316,7 +323,7 @@ git commit -m "vdp: compile the threaded renderer out of a library build
 The render_thread type and render_create_thread() are the SDL frontend's,
 so a library build that stubs render_is_threaded_video() to 0 cannot
 reference them. RetroPlug links BlastEm as a static library without SDL."
-git -C deps/blastem -c protocol.file.allow=always push \
+git -c protocol.file.allow=always push \
     /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm retroplug
 cd ../..
 ```
@@ -584,7 +591,11 @@ const system_media* current_media(void) { return &kNoMedia; }
 
 void process_events(void) {}
 
-// BlastEm's ROM database is compiled in (rom.db.c), as libblastem.c does it: romdb.c is the only caller.
+// BlastEm's ROM database is compiled in (rom.db.c), as libblastem.c does it. `config.c` is the other caller: it asks
+// for "systems.cfg" and "default.cfg" through here, and BOTH ARE DELIBERATELY NULL. A null leaves
+// get_systems_config()/get_model() on BlastEm's built-in default model name (`get_model`'s "md1va3"), whose values are
+// the ones this console wants: tmss off, fm "discrete 2612", vsram 40, vram 64. Bundling either file would mean a
+// second generated C string for no behaviour change.
 char* read_bundled_file(char* name, uint32_t* sizeret) {
     if (!std::strcmp(name, "rom.db")) {
         *sizeret = static_cast<uint32_t>(std::strlen(rom_db_data));
@@ -848,7 +859,7 @@ build/bin/retroplug-blastem-test
 
 Expected: the configure finds the Python 3 it needs and does not say `deps/blastem is empty`; the build compiles
 `build/blastem-gen/m68k.c` (about 2 minutes at -O2, a 20 MB object) once, then links; the binary exits 0 with
-`All tests passed (5 assertions in 1 test case)`. If the linker names a symbol the shim lacks, add it there and
+`All tests passed (4 assertions in 1 test case)`. If the linker names a symbol the shim lacks, add it there and
 rebuild: every name must come from the shim, never from linking an excluded system's source.
 
 - [ ] **Step 6: Commit 2b**
@@ -963,11 +974,11 @@ Every native case in this plan boots an image built here: hand-assembled 68k byt
   `fmPsgRom()`, `psgOnlyRom()`, `portPollRom()`, `portPollLoopRom()`, `portTimestampRom()`, `syncEdgeRom()`, all
   returning a 64 KiB `std::vector<std::uint8_t>`, and `fnv1a(const std::vector<std::uint8_t>&)`.
 
-**The two rules every image obeys, and why they are stated here:** a branch's displacement is measured from the byte
-AFTER its extension word (a `bra.s`/`beq.s` at address A with displacement d lands at A + 2 + d), and `image()` puts
-the register-write table FIRST (at $200) and the program after it, so a program's first byte is at `$200 + 8 *
-writes.size()`. A wrong either way boots, renders silence and can make a case pass while proving nothing, which is what
-the pinned hashes and the ROM cases' non-silence assertions exist to prevent.
+**The two rules every image obeys, and why they are stated here:** a short branch's displacement is measured from the
+address TWO BYTES PAST THE OPCODE (a `bra.s`/`beq.s` at address A with displacement d lands at A + 2 + d; a `.s` branch
+has no extension word), and `image()` puts the register-write table FIRST (at $200) and the program after it, so a
+program's first byte is at `$200 + 8 * writes.size()`. A wrong either way boots, renders silence and can make a case
+pass while proving nothing, which is what the pinned hashes and the ROM cases' non-silence assertions exist to prevent.
 
 - [ ] **Step 1: Write the generator**
 
@@ -990,7 +1001,7 @@ the pinned hashes and the ROM cases' non-silence assertions exist to prevent.
 //   0200 00mm           andi.b #mm,d0
 //   0C00 00mm           cmpi.b #mm,d0
 //   5241                addq.w #1,d1
-//   67dd / 66dd         beq.s / bne.s (dd is signed, from the byte after the extension word)
+//   67dd / 66dd         beq.s / bne.s (dd is signed, from the address two bytes past the opcode)
 //   60dd                bra.s
 //   60FE                bra.s  -2 (a spin)
 #include <cstddef>
@@ -1072,8 +1083,8 @@ inline std::vector<std::uint8_t> portPollRom() {
 }
 
 // The same read and store, FOREVER: the port device's cases push a level one block and read the byte the next, which
-// one read cannot show. The loop is 12 bytes of instruction plus the branch, so the branch displacement is 0xF2 (its
-// extension word is at loop + 13, and loop + 14 + (-14) is loop).
+// one read cannot show. The loop is 12 bytes of instruction plus the branch, so the `bra.s` at loop + 12 has its PC at
+// loop + 14 and the displacement is -14 = 0xF2.
 inline std::vector<std::uint8_t> portPollLoopRom() {
     return image({0x10, 0x39, 0x00, 0xA1, 0x00, 0x05,             // move.b $A10005,d0   <- loop
                   0x13, 0xC0, 0x00, 0xFF, 0x00, 0x00,             // move.b d0,$FF0000
@@ -1113,7 +1124,7 @@ inline std::vector<std::uint8_t> portTimestampRom() {
 //   $218  move.b $A10005,d0           <- loop
 //   $21E  andi.b #$60,d0
 //   $222  cmpi.b #$60,d0
-//   $226  beq.s  loop                 ($F0: the extension word is at $227, so $228 - 16 = $218)
+//   $226  beq.s  loop                 ($F0: the branch at $226 has its PC at $228, and $218 - $228 is -16)
 //   $228  move.b #$9F,$C00011         channel 0, attenuation 15 (silence)
 //   $230  move.b #$01,$FF0001         the flag
 inline std::vector<std::uint8_t> syncEdgeRom() {
@@ -1696,16 +1707,11 @@ first line after `deduction` is computed:
 			}
 ```
 
-and one more guard, because a type that can hold 80 s of clocks is exactly what makes a huge stop possible: the stop
-is an offset from the base, so a caller that asks for a clock more than 0x40000000 away (about 20 s) is refused rather
-than truncated. Put it beside the stop check above:
-
-```c
-	if (gen->stop_cycle && mclks - gen->cycle_base > 0x40000000u) {
-		/* RetroPlug: a stop beyond a quarter of the 32-bit space cannot be expressed; refuse it rather than wrap. */
-		gen->stop_cycle = 0;
-	}
-```
+and NOTHING ELSE in `genesis.c`. In particular there is no "is this stop too far away" guard: `stop_cycle` is a 32-bit
+offset from `cycle_base`, so comparing it with a 64-bit clock cannot be done in that domain, and a guard that cleared the
+stop when the arithmetic looked large would clear it on every rebased run and leave `resume_genesis` looping forever (a
+32-bit `mclks` minus a 64-bit base wraps as soon as the base is nonzero). The API contract is therefore a 32-bit offset,
+and `run_until` in Step 4 is the only place that keeps it one.
 
 Commit in the submodule:
 
@@ -1720,7 +1726,7 @@ base to name a session's timeline. stop_cycle is an offset from cycle_base;
 the rebase moves the base and the stop with it.
 
 RetroPlug: this is the mirror's, used by packages/blastem's BlastemMdSystem."
-git -C deps/blastem -c protocol.file.allow=always push \
+git -c protocol.file.allow=always push \
     /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm retroplug
 cd ../..
 ```
@@ -1839,18 +1845,22 @@ std::uint64_t BlastemMdSystem::mclkNow() const {
 void BlastemMdSystem::run_until(std::uint64_t mclk) {
     if (!gen_ || mclk <= mclkNow()) return;
     currentInstance = this;
-    // A LOOP, not one call, for two reasons that are the same reason: the stop is an offset from a 32-bit base, and
-    // the core rebases that base about every 80 s. (1) A stop more than 0x40000000 clocks away (about 20 s) cannot be
-    // expressed, and the mirror refuses it rather than wrapping, so a long run is split into windows the base can
-    // address. (2) A rebase inside a window moves cycle_base, so the remaining distance is recomputed from the clock
-    // the loop just read, never from a target computed once.
+    // The stop is a 32-bit OFFSET from gen->m68k->cycles (cycle_base + cycles is the absolute clock), so it is computed
+    // in that domain, never as `mclk - cycle_base` truncated to 32 bits: that difference is a 64-bit quantity and a
+    // `uint32_t` stop would wrap at about 20 s of emulation, putting the target in the past and stopping after one
+    // instruction forever. Three terms cap the step: the clocks still wanted, one quarter of the 32-bit space (which
+    // keeps the arithmetic clear of the top), and UINT32_MAX minus the current count (which is what the rebase's own
+    // window guarantees: a frame end lands within ADJUST_BUFFER of the top, so this third term never binds and the
+    // rebase always happens before the count can wrap).
     constexpr std::uint64_t kWindow = 0x40000000u;
     while (mclkNow() < mclk) {
-        const std::uint64_t distance = mclk - gen_->cycle_base;  // in the base's terms, as mclkNow() is
-        const std::uint64_t window = distance < kWindow ? distance : kWindow;
-        gen_->stop_cycle = static_cast<std::uint32_t>(window);
-        if (!gen_->stop_cycle) break;  // already at the window's edge: the frame end stops this pass
-        gen_->header.resume_context(&gen_->header);  // returns at stop_cycle, or at the frame end if that is sooner
+        const std::uint32_t cyc = gen_->m68k->cycles;
+        const std::uint64_t step = std::min<std::uint64_t>({mclk - mclkNow(), kWindow, UINT32_MAX - cyc - 1});
+        gen_->stop_cycle = cyc + static_cast<std::uint32_t>(step);
+        // resume_context returns at stop_cycle (or at the frame end if that is sooner, and a frame end is where the
+        // rebase happens); the loop then recomputes the step from the clock it just read, so a rebase inside a pass
+        // costs nothing: the rebase moves cycle_base, cycles and stop_cycle together.
+        gen_->header.resume_context(&gen_->header);
         gen_->stop_cycle = 0;
     }
 }
@@ -1886,8 +1896,10 @@ cmake --build build --target retroplug-blastem-test -j$(nproc) && build/bin/retr
 
 Expected: every case passes. The overshoot assertion is the sensitive one: if `mclkNow()` is far past the target, the
 clamp in Step 1 is not being reached (check that `gen->stop_cycle` is set before `resume_context`, and that
-`sync_components`' clamp is before `adjust_int_cycle`), and the rebase case is the one that catches a base left
-32-bit: the 68k's count wraps at about 80 s and a monotonic clock must not.
+`sync_components`' clamp is before `adjust_int_cycle`), and the rebase case is the one that catches a stop left in the
+wrong domain: a `uint32_t(mclk - cycle_base)` stop passes 1G once and then stops after a single instruction on every
+pass, and the run either crawls or (with a "too far" guard) never returns at all, both of which the monotonic-clock
+CHECK catches at about 20 s.
 
 **Three cases in that file are the deliverable**, and the third is the expensive one:
 
@@ -1930,10 +1942,10 @@ commit (the push in Step 1 put it there). **Ask the user to push the mirror befo
 
 **Interfaces:**
 - Consumes: `BlastemMdSystem` (Task 4), `currentInstance` (Task 2b).
-- Produces: `rp::blastem::VideoSink` with `prepare(regionLines)`, `triple()`, `width()`, `height()`,
-  `framesPublished()`, `buffer(which, pitch)` and `publish(which, width, vdp)`; the shim's `render_get_framebuffer` /
-  `render_framebuffer_updated` / `render_overscan_*` become real; and `BlastemMdSystem::framebuffer()` returns the
-  sink's triple.
+- Produces: `rp::blastem::VideoSink` with `prepareBuffers()`, `prepareFrame(regionLines)`, `triple()`, `width()`,
+  `height()`, `framesPublished()`, `buffer(which, pitch)` and `publish(which, width, vdp)`; the shim's
+  `render_get_framebuffer` / `render_framebuffer_updated` / `render_overscan_*` become real; and
+  `BlastemMdSystem::framebuffer()` returns the sink's triple.
 
 - [ ] **Step 1: The pixel facts, proved**
 
@@ -2019,7 +2031,7 @@ TEST_CASE("a PAL machine's frame is 240 lines", "[blastem][video]") {
 cmake --build build --target retroplug-blastem-test -j$(nproc) && build/bin/retroplug-blastem-test "[video]"
 ```
 
-Expected: FAIL: `coreFrameWidth()` returns 0 (not implemented) and the triple never receives a frame.
+Expected: FAIL: `framebuffer()` is null (no sink yet), so the REQUIRE fails before the size checks.
 
 - [ ] **Step 4: Implement the sink**
 
@@ -2032,12 +2044,14 @@ Expected: FAIL: `coreFrameWidth()` returns 0 (not implemented) and the triple ne
 #include <memory>
 #include <vector>
 
-#include "pixel.h"   // pixel_t, FRAMEBUFFER_ODD / FRAMEBUFFER_EVEN
-#include "vdp.h"     // LINEBUF_SIZE, BORDER_LEFT, REG_MODE_4, BIT_H40, vdp_context
+#include "system/blastem/BlastemCore.hpp"  // pixel_t, FRAMEBUFFER_*, LINEBUF_SIZE, BORDER_LEFT, vdp_context
+
+// The shell's frame triple is a GLOBAL class (transport/FrameBufferTriple.hpp), so the forward declaration has to be at
+// global scope too: one declared inside rp::blastem names a different, unrelated type, and the sink's unique_ptr and
+// BlastemMdSystem::framebuffer()'s override would both bind to it instead of the real one.
+class FrameBufferTriple;
 
 namespace rp::blastem {
-
-class FrameBufferTriple;  // transport/FrameBufferTriple.hpp, included by the .cpp
 
 // BlastEm's framebuffer seam: two buffers the VDP draws into (FRAMEBUFFER_ODD / FRAMEBUFFER_EVEN alternate per frame),
 // and a publish that places the active picture inside the FrameBufferTriple the engine reads. BlastEm keeps its own
@@ -2047,9 +2061,15 @@ public:
     VideoSink() = default;
     ~VideoSink();            // out of line: triple_ is an incomplete type here
 
-    // [control, boot only] Allocate the frame once: 320 wide (the widest mode) by `regionLines` (224 NTSC, 240 PAL).
-    // The shell's frame slot is sized at claim and never resized, so this is the only place a size is decided.
-    void prepare(std::uint32_t regionLines);
+    // [control, before the core allocates] Allocate the two buffers the VDP draws into. This has to happen BEFORE
+    // alloc_config_genesis, not after: the VDP asks render_get_framebuffer for a buffer at init (vdp.c:524) and
+    // dereferences it immediately (context->output = fb + pitch * border_top, vdp.c:529-530).
+    void prepareBuffers();
+
+    // [control, boot only, after the core exists] Allocate the frame once: 320 wide (the widest mode) by `regionLines`
+    // (224 NTSC, 240 PAL), from the region the core just chose. The shell's frame slot is sized at claim and never
+    // resized, so this is the only place a size is decided; publish() returns early until it has run.
+    void prepareFrame(std::uint32_t regionLines);
 
     FrameBufferTriple* triple() { return triple_.get(); }
     std::uint32_t      width() const;
@@ -2064,7 +2084,9 @@ public:
     void publish(std::uint8_t which, int width, const vdp_context& vdp);
 
 private:
-    static constexpr std::uint32_t kRows = 320;  // more than any mode's bordered height (PAL's 278 rows)
+    // 512 rows, the size the VDP's own headless allocation uses (vdp.c:525): the bordered frame's picture plus border
+    // is under 280 rows, but the VDP writes at row `output_line`, and 512 is the bound its own code assumes.
+    static constexpr std::uint32_t kRows = 512;
     std::vector<pixel_t>              odd_;
     std::vector<pixel_t>              even_;
     std::unique_ptr<FrameBufferTriple> triple_;
@@ -2079,9 +2101,9 @@ private:
 ```cpp
 #include "system/blastem/BlastemVideo.hpp"
 
+#include <algorithm>
 #include <cstring>
 
-#include "system/blastem/BlastemCore.hpp"
 #include "system/blastem/BlastemMdSystem.hpp"
 #include "transport/FrameBufferTriple.hpp"
 
@@ -2091,13 +2113,16 @@ static_assert(sizeof(pixel_t) == 4, "the frame triple is XRGB8888: BlastEm must 
 
 VideoSink::~VideoSink() = default;
 
-void VideoSink::prepare(std::uint32_t regionLines) {
-    // The VDP's bordered frame is LINEBUF_SIZE wide and up to 278 rows tall (PAL's border_top 38 + 240 lines); kRows
-    // leaves the margin for a game that switches to a taller mode.
+void VideoSink::prepareBuffers() {
+    // The VDP's bordered frame is LINEBUF_SIZE wide and under 280 rows tall; kRows is 512, the size the VDP's headless
+    // allocation uses, and it is a CEILING on the row its own code can write, not a mode's height.
     odd_.assign(static_cast<std::size_t>(LINEBUF_SIZE) * kRows, 0u);
     even_.assign(static_cast<std::size_t>(LINEBUF_SIZE) * kRows, 0u);
-    triple_ = std::make_unique<FrameBufferTriple>(320u, regionLines);
     published_ = 0;
+}
+
+void VideoSink::prepareFrame(std::uint32_t regionLines) {
+    triple_ = std::make_unique<FrameBufferTriple>(320u, regionLines);
 }
 
 std::uint32_t VideoSink::width() const { return triple_ ? triple_->width() : 0u; }
@@ -2109,10 +2134,11 @@ pixel_t* VideoSink::buffer(std::uint8_t which, int* pitch) {
 }
 
 void VideoSink::publish(std::uint8_t which, int /*width*/, const vdp_context& vdp) {
-    if (!triple_) return;
+    if (!triple_ || odd_.empty()) return;
     // The picture is the VDP's own mode, not the pitch BlastEm hands over: 320 in H40, 256 in H32, and the mode's own
-    // visible lines (224 or 240 in mode 5, 192 in mode 4). It is CENTRED in the fixed frame, and the rest of the frame
-    // keeps the backdrop the buffer was cleared to, so a mode change moves the picture instead of resizing the frame.
+    // visible lines (inactive_start: 224 or 240 in mode 5, 192 in mode 4). It is CENTRED in the fixed frame, and the
+    // rest of the frame keeps the backdrop the buffer was cleared to, so a mode change moves the picture instead of
+    // resizing the frame.
     const std::uint32_t w = (vdp.regs[REG_MODE_4] & BIT_H40) ? 320u : 256u;
     const std::uint32_t h = vdp.inactive_start;
     const std::uint32_t frameW = triple_->width();
@@ -2123,6 +2149,14 @@ void VideoSink::publish(std::uint8_t which, int /*width*/, const vdp_context& vd
     std::uint32_t* dst = triple_->writeSlot();
     const std::uint32_t rows = std::min(h, frameH - top);
     const std::uint32_t cols = std::min(w, frameW - left);
+    // The bars a narrower picture leaves are the console's own BACKDROP, not the shell's zeroed slot: BlastEm paints the
+    // border around the active picture, so the pixel just left of BORDER_LEFT is the backdrop colour, and a frame whose
+    // every pixel is opaque is what FrameBufferTriple's XRGB8888 contract means (a zero pixel renders as transparent).
+    const std::uint32_t borderCol = BORDER_LEFT ? BORDER_LEFT - 1 : 0;
+    const pixel_t backdrop = 0xFF000000u | (src[std::uint32_t(vdp.border_top) * LINEBUF_SIZE + borderCol] & 0x00FFFFFFu);
+    for (std::uint32_t y = 0; y < frameH; ++y) {
+        for (std::uint32_t x = 0; x < frameW; ++x) dst[y * frameW + x] = backdrop;
+    }
     for (std::uint32_t y = 0; y < rows; ++y) {
         const pixel_t* row = src + std::uint32_t(vdp.border_top + y) * LINEBUF_SIZE + BORDER_LEFT;
         for (std::uint32_t x = 0; x < cols; ++x) dst[(top + y) * frameW + left + x] = 0xFF000000u | (row[x] & 0x00FFFFFFu);
@@ -2140,12 +2174,18 @@ Then in `BlastemShim.cpp`, replace the stub definitions from Task 2b with the re
 ```cpp
 pixel_t* render_get_framebuffer(uint8_t which, int* pitch) {
     auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    return sys ? sys->video().buffer(which, pitch) : nullptr;
+    if (sys) return sys->video().buffer(which, pitch);
+    // The no-instance fallback STAYS (it is the shim's stub): a context built outside any system, which is exactly what
+    // the link test does, still gets a buffer because the VDP at init points context->output into this pointer and
+    // draws into it. 512 rows is the VDP's own headless allocation (vdp.c:525).
+    static pixel_t kScratch[512 * LINEBUF_SIZE];
+    *pitch = LINEBUF_SIZE * static_cast<int>(sizeof(pixel_t));
+    return kScratch;
 }
 
 void render_framebuffer_updated(uint8_t which, int width) {
     auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    if (!sys) return;
+    if (!sys) return;  // a context outside any system has no frame to publish, and the VDP does not read one back
     sys->video().publish(which, width, *sys->vdp());
     // NO frame end here. A frontend ends the frame from this callback (render_sdl.c and libblastem.c call
     // system_request_exit), and this host must not: a block is longer than a frame, so a stop at the frame boundary
@@ -2164,19 +2204,35 @@ void render_destroy_window(uint8_t) {}
 
 `BlastemMdSystem` needs `video()`, `vdp()` and `framebuffer()` (add to the header: `VideoSink& video() { return video_; }`,
 `vdp_context* vdp() const { return gen_ ? gen_->vdp : nullptr; }`, and
-`FrameBufferTriple* framebuffer() override { return video_.triple(); }`), a `VideoSink video_;` member, and this in
-`boot()` after `m68k_reset`:
+`FrameBufferTriple* framebuffer() override { return video_.triple(); }`), a `VideoSink video_;` member, and the buffer
+allocation BEFORE the allocation (the VDP asks for a buffer inside `alloc_config_genesis` and writes through it
+straight away), the frame after it:
 
 ```cpp
-    // From here the VDP asks the sink for its buffer instead of allocating its own (vdp.c's headless branch), and the
-    // frame is allocated once for the region: 240 lines on a PAL machine, 224 on an NTSC one. `headless` is never
-    // written anywhere else: the shim defines it as 0, and vdp.c reads it at init, at free and at every frame end, so a
-    // value that changed between those three would leak or double-free the buffer.
-    video_.prepare((gen_->version_reg & 0x40) ? 240u : 224u);
+void BlastemMdSystem::boot() {
+    if (!isMdRom(rom_)) return;
+    currentInstance = this;
+    // BEFORE alloc_config_genesis: the VDP asks render_get_framebuffer for its buffer at init (vdp.c:524) and points
+    // context->output into it immediately (vdp.c:529-530), so a sink with no buffers yet is a null write on the first
+    // line. `headless` stays 0 and is never written anywhere: vdp.c reads it at init, at free and at every frame end, so
+    // a value that changed between those three would leak or free a buffer the sink still owns.
+    video_.prepareBuffers();
+    ...
+    m68k_reset(gen_->m68k);
+    // The frame, once, for the region the core just chose: 240 lines on a PAL machine, 224 on an NTSC one. The shell's
+    // frame slot is sized at claim and never resized, so this is the only place its size is decided.
+    video_.prepareFrame((gen_->version_reg & 0x40) ? 240u : 224u);
+    ...
+}
 ```
 
-and `coreFrameWidth()/coreFrameHeight()` return `video_.width()/height()` once the sink exists (before boot they return
-320 and 224, which is what Task 4's cases see).
+and `coreFrameWidth()/coreFrameHeight()` return the sink's frame once it exists, and 320 x 224 before boot (the region
+is unknown until the core is up), which is what Task 4's cases see:
+
+```cpp
+std::uint32_t BlastemMdSystem::coreFrameWidth() const { return video_.triple() ? video_.width() : 320u; }
+std::uint32_t BlastemMdSystem::coreFrameHeight() const { return video_.triple() ? video_.height() : 224u; }
+```
 
 **The shim's audio sources and the video sink both read `currentInstance`, so the only global the video half touches is
 `headless`, which nobody writes**: vdp.c reads it at three points and every instance must see the same value, which is
@@ -2190,7 +2246,7 @@ build/bin/retroplug-blastem-test "[boot]"
 ```
 
 Expected: the `[video]` cases pass at 320x224 and 320x240, and the `[boot]` cases still do. From here
-`coreFrameWidth()/coreFrameHeight()` return `video_.width()/height()` (the frame's, which is the triple's).
+`coreFrameWidth()/coreFrameHeight()` return the sink's frame (the triple's), 320 x 224 before a core exists.
 
 - [ ] **Step 6: Commit**
 
@@ -2209,7 +2265,8 @@ git commit -m "feat(blastem): the VDP draws into the shell's framebuffer triple"
 ### Task 7: The audio sink: blip_buf at the host rate, BlastEm's filter at the native rates
 
 **Files:**
-- Mirror (`deps/blastem`, branch `retroplug`): `blip_buf.c`, `blip_buf.h` (added, upstream 1.1.0)
+- Mirror (`deps/blastem`, branch `retroplug`): `blip_buf.c`, `blip_buf.h` (added: stock blip_buf 1.1.0, copied from
+  `deps/mesen/Utilities/Audio/` and stripped to plain C)
 - Create: `packages/blastem/native/src/system/blastem/BlastemAudio.{hpp,cpp}`,
   `packages/blastem/native/test/BlastemAudio.test.cpp`
 - Modify: `cmake/blastem.cmake` (drop `render_audio.c` from the file set), `BlastemShim.cpp` (drop the audio backend
@@ -2221,11 +2278,14 @@ git commit -m "feat(blastem): the VDP draws into the shell's framebuffer triple"
   `render_audio_adjust_clock`, `render_put_mono_sample`, `render_put_stereo_sample`, `render_pause_source`,
   `render_resume_source`, `render_audio_source_gaindb`, `render_free_source`, `render_end_audio`,
   `render_save_audio`), plus `drain(frames, left, right)`, `prepare(maxBlockFrames)`, `setHostRate(rate)`,
-  `starvedSamples()` and `clear()`; the system's `finishBlock` sums the sink into the block's lanes and applies the gain.
+  `starvedSamples()`, `reset()` and `clear()`; the system's `finishBlock` sums the sink into the block's lanes and
+  applies the gain.
 - Produces also, as documented test seams: `BlastemMdSystem::audio()`, `BlastemMdSystem::starvedSamples()` (forwarding to
-  the sink) and `BlastemMdSystem::writeVdpTest(std::uint8_t port, std::uint8_t value)`, which calls BlastEm's
-  `vdp_test_port_write` on `gen_->vdp` exactly as a ROM's `$C0002A` write does (the rate-change case needs a divider
-  switch no synthetic ROM is set up to make).
+  the sink), `AudioSink::sourceNativeRate(const char* name)` (the rate a chip's own `render_audio_source` /
+  `render_audio_adjust_clock` calls gave it, so a case can see a divider change) and `BlastemMdSystem::switchPsgClock(bool
+  fast)`, which runs the two lines genesis.c runs around `vdp_test_port_write` when the VDP test register's bit 0
+  changes (`gen->psg->clock_inc = fast ? MCLKS_PER_YM * 16 : MCLKS_PER_PSG; psg_adjust_master_clock(gen->psg,
+  gen->master_clock);`).
 
 **The sink's latency budget, which is what makes the block partition irrelevant.** A chip that has emitted
 `floor((T - phase) / divider)` native samples by the clock `T` gives blip `floor(c * R / native)` host samples: at a
@@ -2236,26 +2296,64 @@ at activation, after a rate change and after a state load, and the block's outpu
 samples: a function of absolute time alone. `drain` counts a starvation as a bug (`starvedSamples()`), and the audio,
 invariance and parity cases assert it is 0.
 
+**A block is also longer than blip can take in ONE time frame, which is why the sink flushes mid-block.** blip's time
+base is `time_unit = 2^52` in a 64-bit accumulator, so `t * factor` overflows once a frame would produce more than 4096
+output samples (that is what `blip_max_frame = 4000` encodes). An 8192-frame block at 48 kHz from a 223,721 Hz source is
+8192 output samples' worth of clocks, so one `blip_end_frame` per block wraps the accumulator and blip then reports
+nonsense: a scratch run of exactly this shape starved 90,097 of its 96,000 samples at 4,096- and 8,192-frame blocks (and
+was fine at 1, 64 and 1,024, which is why the small-block cases would never have caught it). So `putStereo` ends the frame
+whenever `pendingClocks` reaches `flushClocks` (3,900 output samples' worth, under the 4,096 cliff) and moves what blip
+produced into the ring, and `drain` flushes once more before it consumes the block. The frame boundary is then an
+internal detail: the concatenated stream is the same at every block size (checked at 1, 64, 1024, 4096 and 8192 frames
+with nothing starved), which is exactly what block-size invariance needs.
+
 The native rates are BlastEm's own, from the `render_audio_source`/`render_audio_adjust_clock` arguments, never a
-constant: the YM2612's divider is `MCLKS_PER_YM * OPN2_NUM_OPERATORS` = 168 master clocks per stereo sample (319,602 Hz
-NTSC, six times the chip's nominal 53,267 because BlastEm runs 24 operator slots per output sample), and the PSG's is
-240 (223,722 Hz). Both are above any host rate, so blip resamples downward and its ring is never the bottleneck.
+constant: the YM2612's divider is `MCLKS_PER_YM * 6 * OPN2_NUM_OPERATORS` = 7 * 6 * 24 = 1008 master clocks per stereo
+sample (`ym2612.c:144-146`), which is 53,267 Hz NTSC, the chip's own sample rate; the PSG's is 240 (223,722 Hz), and
+its Z80-clock-select mode changes it to 112 (479,403 Hz). Both 44.1 and 48 kHz hosts therefore resample downward, and
+blip handles the other ratios too (it interpolates up when a host rate is above the source's, as an 88.2 or 96 kHz
+host is for the YM).
 
 - [ ] **Step 1: The mirror commit: blip_buf 1.1.0**
 
-BlastEm has no band-limited resampler of its own. Take blip_buf 1.1.0 (Shay Green, LGPL-2.1+, the version Mesen and
-Genesis Plus GX carry) from the copy this repository's own test tree already has,
-`deps/mesen/Utilities/Audio/blip_buf.cpp` is C++ and patched, so take the plain C one from the spike's GPGX tree:
-`/workspaces/Megadrive/.superpowers/mdspike/arm/gpgx/core/sound/blip_buf.{c,h}`. Copy both into `deps/blastem`, and
-add at the top of each:
+BlastEm has no band-limited resampler of its own (its `render_audio.c` interpolates linearly). Take the copy this
+repository already carries: **`deps/mesen/Utilities/Audio/blip_buf.{cpp,h}`**, whose header is `blip_buf 1.1.0` and
+whose API is the stock mono one this task's code calls (`blip_add_delta(blip, time, delta)` and
+`blip_read_samples(blip, out, count, stereo)`, the last argument selecting interleaved output). Do NOT take Genesis
+Plus GX's fork from the spike tree: its `blip_add_delta` is STEREO (`delta_l, delta_r`), its `blip_read_samples` takes
+three arguments, and it clamps a read to what is available only under `BLIP_ASSERT`, so the calls below would either
+not compile or read past the samples it has.
+
+Copy the two files into `deps/blastem` as `blip_buf.c` and `blip_buf.h`, with three edits, all mechanical and all
+named in the marker:
+
+- drop `#include "pch.h"` from each (Mesen's precompiled header, which BlastEm does not have);
+- define `EXPORT` empty instead of `__declspec(dllexport)` (the library is static; a dllexport on a static symbol is a
+  warning MSVC turns into an error at /W4 /WX);
+- keep Mesen's added `blip_reset(blip_t*, int sample_count)` (its own in-place re-initialisation, which the sink's
+  `reset()` uses so a state load re-primes without allocating); it is NOT stock 1.1.0, and the marker says so.
+
+At the top of each file:
 
 ```c
-/* RetroPlug: blip_buf 1.1.0 (Shay Green, LGPL-2.1 or later), copied verbatim from Genesis Plus GX's
- * core/sound/blip_buf.c at the same version. BlastEm has no band-limited resampler of its own: its render_audio.c
- * interpolates linearly. packages/blastem links this instead. */
+/* RetroPlug: blip_buf 1.1.0 (Shay Green, LGPL-2.1 or later), copied from deps/mesen/Utilities/Audio/blip_buf.{cpp,h}
+ * in this repository. Three edits, mechanical: pch.h dropped (BlastEm has no precompiled header), EXPORT defined empty
+ * (this is a static library, not a DLL), and Mesen's own blip_reset() kept, which is not stock 1.1.0. BlastEm has no
+ * band-limited resampler of its own: its render_audio.c interpolates linearly. packages/blastem links this instead. */
 ```
 
-Verify both files are unmodified apart from that header, then commit:
+Then check the API the sink is written against, before committing:
+
+```bash
+grep -n "blip_add_delta(\|blip_read_samples(\|blip_reset(\|blip_max_frame" deps/blastem/blip_buf.h
+```
+
+Expected: `blip_add_delta( blip_t*, unsigned int clock_time, int delta )` (three arguments, mono),
+`blip_read_samples( blip_t*, short out [], int count, int stereo )` (four), `blip_reset( blip_t*, int sample_count )`,
+and `blip_max_frame = 4000`, whose comment says it bounds ONE time frame's output, not a buffer's. Both matter: the
+sink ends a frame every 3,900 output samples' worth of clocks (under that bound, because the accumulator overflows past
+4,096), and the BUFFER is sized in output samples, so an 8192-frame block at 48 kHz needs 8192 + prime + slack entries,
+not 4000. Then commit:
 
 ```bash
 cd deps/blastem
@@ -2264,13 +2362,13 @@ git commit -m "blip_buf: band-limited step synthesis, 1.1.0
 
 BlastEm resamples linearly in render_audio.c. A host that wants Mesen's
 audio quality needs blip_buf, which both Mesen and Genesis Plus GX use."
-git -C deps/blastem -c protocol.file.allow=always push \
+git -c protocol.file.allow=always push \
     /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm retroplug
 cd ../..
 ```
 
-Expected: the commit's subject is in both `deps/blastem` and the mirror, and `diff` against the spike's copies shows
-only the added header.
+Expected: the commit's subject is in both `deps/blastem` and the mirror, and
+`diff deps/blastem/blip_buf.c deps/mesen/Utilities/Audio/blip_buf.cpp` shows the `pch.h` line and nothing else.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -2363,13 +2461,17 @@ TEST_CASE("the same input renders the same bytes twice", "[blastem][audio]") {
 }
 
 TEST_CASE("a chip's rate change ends its frame first", "[blastem][audio]") {
-    // The VDP test register switches the PSG's divider from 240 to 112 mid-run (genesis.c:1129-1130). blip cannot
-    // change rates with a partial frame in hand, so the sink closes the frame first; the audible check is that the
-    // render after the switch is still non-silent and starves nothing.
+    // The VDP test register's bit 0 moves the PSG's divider from 240 to 112 and calls psg_adjust_master_clock
+    // (genesis.c:1128-1132), which is the sink's adjustClock. Writing the test port's register is NOT the same thing:
+    // the comparison before and after the write is genesis.c's, so vdp_test_port_write alone changes no clock and this
+    // case would pass without exercising a line of the sink. switchPsgClock runs those two lines, and the native rate
+    // the sink recorded is what the case reads, so a sink that ignored the call fails here.
     auto sys = boot(rp::blastem::test::psgOnlyRom());
+    REQUIRE(sys->audio().sourceNativeRate("PSG") == 53693175.0 / 240.0);
     const std::vector<float> before = render(*sys, 0.1);
-    const std::uint8_t clock = 0x2A;  // $C0002A's test register: bit 0 of test_regs[1] is the Z80 clock select
-    sys->writeVdpTest(0x2A, clock);
+    sys->switchPsgClock(true);
+    // 53,693,175 / 112 = 479,403.35: the divider really moved, and the sink took the new one.
+    CHECK(sys->audio().sourceNativeRate("PSG") == 53693175.0 / 112.0);
     const std::vector<float> after = render(*sys, 0.1);
     CHECK(peak(before) > 0.01);
     CHECK(peak(after) > 0.01);
@@ -2429,6 +2531,11 @@ public:
     // native-to-host resample leaves a block one host sample short now and then, and this is what absorbs it.
     static constexpr std::uint32_t kPrime = 16;
 
+    // The native rate the named source's own render_audio_source / render_audio_adjust_clock call gave it, or 0. A test
+    // seam: it is how a case sees that a divider change really reached the sink. Double, not integer: the chip emits one
+    // sample every `divider` master clocks, and 53,693,175 / 240 is 223,721.5625.
+    double sourceNativeRate(const char* name) const;
+
     // Called by the render_audio.h entry points below.
     struct Source;
     Source* add(const char* name, std::uint64_t masterClock, std::uint64_t sampleDivider, std::uint8_t channels);
@@ -2447,6 +2554,10 @@ public:
 
 private:
     void prime(Source& source);
+    // Ends the current blip frame and moves what it produced into the ring. The ONLY place a frame is ended: putStereo
+    // calls it when the frame's clock budget is spent (putStereo has no other way to stay inside blip's 64-bit
+    // accumulator), and drain calls it for the block's tail.
+    void flush(Source& source);
     // The ring's scratch for one blip read: a MEMBER, not a local, because a block runs on the audio thread and 16 KiB
     // of stack there is not a thing to spend (drain's scratch was a local array in the first draft).
     std::vector<std::int16_t> scratchLeft_;
@@ -2465,17 +2576,19 @@ The source's state and the per-sample arithmetic, which is the whole design of t
 
 ```cpp
 struct AudioSink::Source {
+    const char*   name = nullptr;    // the chip's own label from render_audio_source ("PSG", "YM2612"); the seam's key
     blip_t*       left = nullptr;    // one blip per side, both clocked at the chip's native rate
     blip_t*       right = nullptr;
     std::vector<std::int16_t> ringLeft;   // host-rate samples read from blip, drained by the block
     std::vector<std::int16_t> ringRight;
     std::uint32_t ringRead = 0, ringFill = 0;
-    std::uint64_t nativeRate = 0;    // master clocks / sample_divider, from the chip's own call
+    double        nativeRate = 0.0;  // master clocks / sample_divider, from the chip's own call, as a real rate
     double        dt = 0.0;          // seconds per native sample: 1 / nativeRate
     std::uint32_t lowpassAlpha = 0;  // BlastEm's one-pole coefficient, 16.16
     std::int16_t  lastLeft = 0, lastRight = 0;  // the low-pass state, as render_audio.c kept it
     float         gain = 1.0f;       // the chip's own gain (audio.fm_gain / audio.psg_gain, 0 dB by default)
     std::uint32_t pendingClocks = 0; // native samples added since the last end_frame: blip's time base
+    std::uint32_t flushClocks = 0;   // the most native clocks ONE blip frame may hold: 3900 * nativeRate / hostRate
 };
 
 // BlastEm's filter, from render_audio.c:339: alpha = dt / (dt + rc) with rc = (1 / cutoff) / 2pi and cutoff 3390 Hz,
@@ -2487,6 +2600,9 @@ static std::int16_t lowpass(std::uint32_t alpha, std::int16_t last, std::int16_t
 
 void AudioSink::putStereo(Source* s, std::int16_t left, std::int16_t right) {
     if (!s) return;
+    // A frame's worth of clocks is a fixed budget (see flushClocks), so a block spans several blip frames and every one
+    // of them is moved into the ring as soon as it closes. That is why the ring, not blip, is what the block drains.
+    if (s->pendingClocks >= s->flushClocks) flush(*s);
     left = lowpass(s->lowpassAlpha, s->lastLeft, left);
     right = lowpass(s->lowpassAlpha, s->lastRight, right);
     // A band-limited step per native sample: the delta from the previous filtered sample, at this sample's clock.
@@ -2495,6 +2611,32 @@ void AudioSink::putStereo(Source* s, std::int16_t left, std::int16_t right) {
     s->lastLeft = left;
     s->lastRight = right;
     ++s->pendingClocks;
+}
+
+// Ends the current blip frame and moves everything it produced into the ring. Called from putStereo (a block is more
+// than one blip frame can hold) and from drain (the block's tail), so it is the only place a frame is ended.
+void AudioSink::flush(Source& s) {
+    blip_end_frame(s.left, s.pendingClocks);
+    blip_end_frame(s.right, s.pendingClocks);
+    s.pendingClocks = 0;
+    std::uint32_t room = capacity_ - s.ringFill;
+    std::uint32_t done = 0;
+    while (done < room) {
+        const std::uint32_t chunk = std::min<std::uint32_t>(room - done, static_cast<std::uint32_t>(scratchLeft_.size()));
+        const int got = blip_read_samples(s.left, scratchLeft_.data(), int(chunk), 0);
+        const int gotRight = blip_read_samples(s.right, scratchRight_.data(), int(chunk), 0);
+        // Both sides are fed the same clocks at the same rates, so their avail is identical; a mismatch is a bug (and
+        // counting it beats writing one side's zeros into the other's slot).
+        if (got != gotRight) { ++starved_; return; }
+        if (got <= 0) return;
+        for (int k = 0; k < got; ++k) {
+            const std::uint32_t at = (s.ringRead + s.ringFill + std::uint32_t(k)) % capacity_;
+            s.ringLeft[at] = scratchLeft_[std::size_t(k)];
+            s.ringRight[at] = scratchRight_[std::size_t(k)];
+        }
+        s.ringFill += std::uint32_t(got);
+        done += std::uint32_t(got);
+    }
 }
 ```
 
@@ -2509,15 +2651,23 @@ void AudioSink::adjustClock(Source* s, std::uint64_t masterClock, std::uint64_t 
     blip_end_frame(s->left, s->pendingClocks);
     blip_end_frame(s->right, s->pendingClocks);
     s->pendingClocks = 0;
-    const std::uint64_t native = masterClock / (sampleDivider ? sampleDivider : 1u);
+    // The chip emits one sample every `sampleDivider` master clocks, so its rate is a rational number and it is kept as
+    // one: 53,693,175 / 240 is 223,721.5625, and a truncated integer would put the resampler a hair out, which the ring
+    // would collect as latency (about 7 host samples a minute).
+    const double native = static_cast<double>(masterClock) / static_cast<double>(sampleDivider ? sampleDivider : 1u);
     s->nativeRate = native;
-    s->dt = 1.0 / static_cast<double>(native);
+    s->dt = 1.0 / native;
+    // blip's time base is a 64-bit accumulator with `time_unit` at 2^52, so ONE frame can hold at most 4096 output
+    // samples' worth of clocks before t*factor overflows (`blip_max_frame = 4000` is the same cliff). 3900 leaves a
+    // margin, and the count is in native clocks: 3900 host samples = 3900 * native / host clocks.
+    s->flushClocks = static_cast<std::uint32_t>(3900.0 * native / hostRate_);
+    if (!s->flushClocks) s->flushClocks = 1;
     // BlastEm's cutoff, from config (audio.lowpass_cutoff, DEFAULT_LOWPASS_CUTOFF 3390 in genesis.c):
     // alpha = dt / (dt + rc), rc = (1 / cutoff) / (2 pi), held as 16.16.
     const double rc = (1.0 / 3390.0) / (2.0 * 3.14159265358979323846);
     s->lowpassAlpha = static_cast<std::uint32_t>(0x10000 * (s->dt / (s->dt + rc)));
-    blip_set_rates(s->left, static_cast<double>(native), hostRate_);
-    blip_set_rates(s->right, static_cast<double>(native), hostRate_);
+    blip_set_rates(s->left, native, hostRate_);
+    blip_set_rates(s->right, native, hostRate_);
 }
 ```
 
@@ -2527,27 +2677,8 @@ void AudioSink::adjustClock(Source* s, std::uint64_t masterClock, std::uint64_t 
 void AudioSink::drain(std::uint32_t frames, float* left, float* right) {
     for (std::uint32_t i = 0; i < frames; ++i) { left[i] = 0.0f; right[i] = 0.0f; }
     for (Source* s : sources_) {
-        blip_end_frame(s->left, s->pendingClocks);
-        blip_end_frame(s->right, s->pendingClocks);
-        s->pendingClocks = 0;
-        // Everything blip has, into the ring: the ring decouples the fractional native-to-host ratio from the block
-        // size, so the sample stream depends on absolute time alone. The ring is sized for a block PLUS the prime and
-        // slack, so this loop cannot overrun it.
-        const std::uint32_t room = capacity_ - s->ringFill;
-        std::uint32_t done = 0;
-        while (done < room) {
-            const std::uint32_t chunk = std::min<std::uint32_t>(room - done, static_cast<std::uint32_t>(scratchLeft_.size()));
-            const int got = blip_read_samples(s->left, scratchLeft_.data(), int(chunk), 0);
-            blip_read_samples(s->right, scratchRight_.data(), int(chunk), 0);
-            if (got <= 0) break;
-            for (int k = 0; k < got; ++k) {
-                const std::uint32_t at = (s->ringRead + s->ringFill + std::uint32_t(k)) % capacity_;
-                s->ringLeft[at] = scratchLeft_[std::size_t(k)];
-                s->ringRight[at] = scratchRight_[std::size_t(k)];
-            }
-            s->ringFill += std::uint32_t(got);
-            done += std::uint32_t(got);
-        }
+        // The block's tail: putStereo has already flushed every full blip frame, so this closes the last partial one.
+        flush(*s);
         const float scale = s->gain / 32768.0f;
         for (std::uint32_t i = 0; i < frames; ++i) {
             if (s->ringFill == 0) { ++starved_; continue; }
@@ -2560,21 +2691,73 @@ void AudioSink::drain(std::uint32_t frames, float* left, float* right) {
 }
 ```
 
+The ring is what decouples the fractional native-to-host ratio (`floor(c * R / native)` at a block end is `n` or `n - 1`)
+from the block size, so the stream depends on absolute time alone, and it is sized for a block PLUS the prime and slack,
+so `flush` cannot overrun it.
+
 `prepare(maxBlockFrames)` sizes `capacity_ = maxBlockFrames + kPrime + 64` (the prime, the block, and the slack a
 resample can deliver in one drain), allocates `scratchLeft_/scratchRight_` at 4096 entries, gives every source a ring of
 that capacity and two blips of `maxBlockFrames + kPrime + 64` samples (`blip_new(int(capacity_))`, `blip_clear`), and
 calls `prime()`/`adjustClock` on each. `prime(Source&)` fills the ring's first `kPrime` entries with zeros and
 `ringFill = kPrime`, once at activation, once after every `setHostRate`, and once after a state load. `setHostRate`
-stores the rate, re-primes every ring and re-runs `adjustClock` with each source's last clock. `add` and `remove` are
-the registry (a `std::vector<Source*>`, 8 is no longer a limit). `putMono` duplicates into both sides.
+stores the rate, re-primes every ring and re-runs `adjustClock` with each source's last clock (which is also what
+recomputes `flushClocks` for the new host rate). `add` and `remove` are
+the registry (a `std::vector<Source*>`, 8 is no longer a limit), and **`add` sizes the new source at the current
+`capacity_` and primes it**: the chips call `render_audio_source` inside `alloc_config_genesis`, which is after
+`prepare` and after `setHostRate`, so a source that waited for the next `prepare` would have no ring for the first
+block. `prepare` growing `capacity_` re-primes every source, which the boot path does not depend on (it runs before any
+source exists) but a runtime growth does; that is a quiescent control-thread operation, and the one audible cost is that
+re-prime. `putMono` duplicates into both sides. `reset()` calls `blip_reset(blip, int(capacity_))` on both sides of
+every source and re-primes, which is `clear()`'s ring reset without dropping the registry.
 
-`render_audio_source`/`render_audio_free_source`/... in `BlastemShim.cpp` forward to the instance's sink:
-`currentInstance` → `static_cast<BlastemMdSystem*>(currentInstance)->audio()` (add `AudioSink& audio() { return audio_; }`
-and an `AudioSink audio_;` member to the system). `render_end_audio` is a no-op and `render_save_audio` warns: a WAV dump
-is not a host feature.
+`render_audio_source`/`render_free_source`/... in `BlastemShim.cpp` forward to the instance's sink. **Every one of them
+tolerates a null instance**, because the sink's entry points are also called by a context built outside a system (Task
+2b's link test allocates one with no system at all, and a thread that ran another case first has a destroyed
+`currentInstance` in the pointer):
+
+```cpp
+audio_source* render_audio_source(const char* name, uint64_t masterClock, uint64_t sampleDivider, uint8_t channels) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    return sys ? sys->audio().add(name, masterClock, sampleDivider, channels) : nullptr;  // a source-less chip
+}
+void render_free_source(audio_source* src) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys && src) sys->audio().remove(static_cast<rp::blastem::AudioSink::Source*>(src));
+}
+void render_put_stereo_sample(audio_source* src, int16_t left, int16_t right) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys) sys->audio().putStereo(static_cast<rp::blastem::AudioSink::Source*>(src), left, right);
+}
+// render_audio_adjust_clock, render_put_mono_sample, render_pause_source, render_resume_source and
+// render_audio_source_gaindb are the same shape: a null system or a null source is a no-op.
+```
+
+(the sink's `add` returns `nullptr` when it has no capacity yet, and every sink entry point is already null-safe, so a
+chip that got a null source still runs, silently). `render_end_audio` is a no-op and `render_save_audio` warns: a WAV
+dump is not a host feature. **`destroyCore()` and the destructor end with `currentInstance = nullptr`**, or a callback
+that runs after a teardown (a context built on this thread with no system) would dereference a destroyed system; Task
+2b's `BlastemShim.cpp` therefore starts with a null pointer and every entry point above reads it as "no audio".
 
 Then `BlastemMdSystem` (whose `onSampleRateChanged` gains its audio line here, which is why Task 4's body does not
-name `audio_`):
+name `audio_`). Its header gains, in the public section beside `core()`: `AudioSink& audio() { return audio_; }`,
+`std::uint64_t starvedSamples() const { return audio_.starvedSamples(); }` and a declared (not inline) test seam,
+`void switchPsgClock(bool fast);`, whose body goes in `BlastemMdSystem.cpp` because it names `psg_adjust_master_clock`
+and `gen_->psg`, and the header deliberately includes no BlastEm header (it forward-declares `genesis_context`):
+
+```cpp
+void BlastemMdSystem::switchPsgClock(bool fast) {
+    // The two lines genesis.c runs around vdp_test_port_write when the VDP test register's bit 0 changes its mind about
+    // the Z80's clock source: the PSG's divider becomes MCLKS_PER_YM * 16 (112) or MCLKS_PER_PSG (240), and
+    // psg_adjust_master_clock tells the sink. Writing the test register directly does NOT do this (the before/after
+    // comparison is genesis.c's), which is why a case calls this instead.
+    if (!gen_ || !gen_->psg) return;
+    gen_->psg->clock_inc = fast ? 112u : 240u;
+    psg_adjust_master_clock(gen_->psg, gen_->master_clock);
+}
+```
+
+and a private `AudioSink audio_;` member (so the header includes `system/blastem/BlastemAudio.hpp`).
+
 - `onActivate` sizes the mix and the sink FIRST, at `blockFrames(SystemBase::kDefaultBlockFrames)` (8192 when no node has
   reserved anything, which is the case for every core a case builds directly), then calls `audio_.setHostRate(sampleRate_)`
   **before** `alloc_config_genesis` (the chips ask for their source during it), then boots, and calls
@@ -2613,29 +2796,25 @@ void BlastemMdSystem::reserveAudio(std::uint32_t maxBlockFrames) {
 }
 
 void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
-    if (!gen_ || laneCount < 2 || !outs || !outs[0] || !outs[1]) {
-        sampleBase_ += info.frames;
-        return;  // a plan that wires no audio still advances the clock
+    if (!gen_) {
+        sampleBase_ += info.frames;  // not activated: nothing to drain
+        return;
     }
-    // The block's samples are sized at activation and at every growth (reserveAudio), never here: the engine's [alloc]
-    // cases count a block's allocations, emulation included.
+    // Drained EVERY time, lanes or none. A lane-less block still ends the sink's frame: blip's buffer is sized for one
+    // block plus the prime, so a `return` before the drain would leave the second block's deltas past its end and
+    // either corrupt memory or trip blip's own assert (the rebase case and the video case both pass no lanes).
     audio_.drain(info.frames, mixLeft_.data(), mixRight_.data());
-    for (std::uint32_t i = 0; i < info.frames; ++i) {
-        const float gain = gainSmoother_.next();
-        outs[0][i] += mixLeft_[i] * gain;   // added, not written: SystemBase's contract
-        outs[1][i] += mixRight_[i] * gain;
+    const bool wired = laneCount >= 2 && outs && outs[0] && outs[1];
+    if (wired) {
+        // The block's samples are sized at activation and at every growth (reserveAudio), never here: the engine's
+        // [alloc] cases count a block's allocations, emulation included.
+        for (std::uint32_t i = 0; i < info.frames; ++i) {
+            const float gain = gainSmoother_.next();
+            outs[0][i] += mixLeft_[i] * gain;   // added, not written: SystemBase's contract
+            outs[1][i] += mixRight_[i] * gain;
+        }
     }
     sampleBase_ += info.frames;
-}
-
-void BlastemMdSystem::reserveAudio(std::uint32_t maxBlockFrames) {
-    SystemBase::reserveAudio(maxBlockFrames);
-    const std::uint32_t frames = blockFrames(1024);
-    if (frames > mixLeft_.size()) {
-        mixLeft_.resize(frames);
-        mixRight_.resize(frames);
-        audio_.prepare(frames);
-    }
 }
 ```
 
@@ -2691,8 +2870,9 @@ Expected: the commit carries the mirror move too. **Ask the user to push the mir
   intra-block sample offset), `hasCoreBytesIn()` (true, as `MesenSmsSystem`'s is: the queue exists whether or not a role
   is wired, and an unwired port simply never has anything in it), `levelsAccepted()`, and test seams
   `writePortControl(value)` / `writePortData(value)` (BlastEm's own `io_control_write` / `io_data_write` on
-  `gen->io.ports[1]` at `mclkNow()`). This task's commit also lands spec/13's port-2 and clock-model paragraphs: the
-  device's timing rule is what they describe, and the design asks for the docs in the same commit as the code.
+  `gen->io.ports[1]` at `mclkNow()`). (spec/13's port-2 and clock-model paragraphs are the docs task's, with the rest of
+  the spec text: the spec describes the finished shape, and this task's own comments are where the device's timing rule
+  lives until then.)
 
 - [ ] **Step 1: The mirror commit: `IO_CUSTOM`**
 
@@ -2748,7 +2928,7 @@ Every other device answers from its own state. A host-driven device answers
 from a schedule, so it needs the read's exact cycle. It supplies only the pins
 it drives: io_data_read's tail keeps the direction rule, the ROM's own output
 latch and the pull-ups on everything else."
-git -C deps/blastem -c protocol.file.allow=always push \
+git -c protocol.file.allow=always push \
     /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm retroplug
 cd ../..
 ```
@@ -2843,7 +3023,12 @@ TEST_CASE("a level staged past the block's end keeps its timing", "[blastem][por
     std::vector<float> l(kFrames), r(kFrames);
     for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
     sys->pushCoreBytes(0, &kIdle, 1);
-    sys->pushCoreBytes(kFrames, &kLevel, 1);  // the next block's first frame, one block further on
+    // Four frames INTO the next block, not at its first frame: a stop lands at or past its target by up to two 68k
+    // instructions (about 2000 master clocks, under half a host sample here), so a level due exactly at the boundary
+    // could be applied by the last poll the first block runs past the target. Four frames (about 4,474 clocks) is past
+    // that overshoot by design, which is what makes "this block still sees idle" an assertion about the queue's timing
+    // and not about where the instruction boundary fell.
+    sys->pushCoreBytes(kFrames + 4, &kLevel, 1);
     runBlock(*sys, l, r);
     CHECK((ramByte(*sys, 0x0000) & 0x60) == kIdle);          // this block still sees the idle level
     runBlock(*sys, l, r);
@@ -3007,56 +3192,65 @@ in host samples) and WHICH master clock the mapping gave it (the poll ROM's coun
 mid-session rate change).
 
 ```cpp
-TEST_CASE("a level's audio edge lands at the frame it was staged for", "[blastem][port]") {
-    // syncEdgeRom holds PSG channel 0 at full volume and silences it the first time TR/TH leave idle, so the first
-    // sample whose magnitude drops IS the level's own sample.
-    rp::blastem::BlastemMdConfig cfg;
-    cfg.region = 1;
-    auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, rp::blastem::test::syncEdgeRom());
-    sys->onActivate(kRate);
-    std::vector<float> l(kFrames), r(kFrames), mixed;
-    float* lanes[2] = {l.data(), r.data()};
-    AudioBlockInfo info{};
-    info.frames = kFrames;
-    const std::uint32_t at = 9000;  // inside the 18th 512-frame block (9000 / 512 = 17.6)
-    for (std::uint32_t base = 0; base <= at + 2 * kFrames; base += kFrames) {
-        if (base <= at && at < base + kFrames) {
+// A render of syncEdgeRom's left lane at `blocks` blocks of `kFrames`, with a level staged at absolute frame `at` when
+// `staged`, and nothing staged when not. Two runs of the same ROM differ only in whether the level reached the port, so
+// their first differing sample IS the level's own sample, which is what the edge case measures.
+std::vector<float> renderEdge(std::uint32_t at, bool staged, int blocks) {
+    auto sys = boot(rp::blastem::test::syncEdgeRom());
+    std::vector<float> l(kFrames), r(kFrames), out;
+    std::uint32_t base = 0;
+    for (int i = 0; i < blocks; ++i) {
+        if (staged && base <= at && at < base + kFrames) {
             const std::uint8_t level = 0x00;
             sys->pushCoreBytes(at - base, &level, 1);
         }
-        std::fill(l.begin(), l.end(), 0.0f);
-        std::fill(r.begin(), r.end(), 0.0f);
-        sys->prepareForBlock(info);
-        while (sys->stepIfBelowTarget(kFrames)) {}
-        sys->finishBlock(info, lanes, 2);
-        mixed.insert(mixed.end(), l.begin(), l.end());
+        runBlock(*sys, l, r);
+        out.insert(out.end(), l.begin(), l.end());
+        base += kFrames;
     }
-    REQUIRE(mixed.size() > at + 64);
-    REQUIRE(peak(mixed) > 0.01);  // the tone before the edge: silence before it would make the search vacuous
-    // Search from the staged frame FORWARD, and fail when nothing is found rather than passing with `edge == at`.
-    std::size_t edge = mixed.size();
-    for (std::size_t i = at; i + 1 < mixed.size(); ++i) {
-        if (std::fabs(mixed[i]) < 0.001f && std::fabs(mixed[i + 1]) < 0.001f) { edge = i; break; }
+    REQUIRE(sys->starvedSamples() == 0);
+    return out;
+}
+
+TEST_CASE("a level's audio edge lands at the frame it was staged for", "[blastem][port]") {
+    // The detector is a DIFF against the same ROM with no level staged, not a magnitude threshold: blip high-passes its
+    // output (bass_shift 9, a time constant of about 512 samples) and BlastEm's PSG is unipolar (0 or the volume), so
+    // silencing the tone leaves a decaying DC tail of about 0.035 for thousands of samples. A "two samples under
+    // 0.001" search therefore either fires thousands of samples late, or never.
+    const std::uint32_t at = 9000;  // inside the 18th 512-frame block (9000 / 512 = 17.6)
+    const std::vector<float> reference = renderEdge(at, false, 40);
+    const std::vector<float> staged = renderEdge(at, true, 40);
+    REQUIRE(reference.size() == staged.size());
+    REQUIRE(peak(reference) > 0.01);  // the tone plays: silence would make the search vacuous
+    std::size_t edge = staged.size();
+    for (std::size_t i = 0; i < staged.size(); ++i) {
+        if (staged[i] != reference[i]) { edge = i; break; }
     }
-    INFO("staged at " << at << ", edge at " << edge);
-    REQUIRE(edge < mixed.size());   // found at all
-    CHECK(edge >= at);              // never before the level arrived
-    // Two host samples: the level lands at its own cycle, the ROM's poll is ~0.34 of a host sample, and the PSG applies
-    // the attenuation at its next 240-clock sample. A block-boundary application would be up to 511 samples late.
-    CHECK(edge - at < 4);
-    CHECK(sys->starvedSamples() == 0);
+    INFO("staged at " << at << ", first difference at " << edge);
+    REQUIRE(edge < staged.size());       // found at all, never `edge == at` by default
+    // The sink delays every sample by its 16-sample prime, and blip's kernel reaches up to 8 samples AHEAD of the delta
+    // it belongs to (`half_width`, blip_buf.c), so the first sample the level can touch is at or after `at` (the prime
+    // more than covers the lead) and its own sample is around at + 16. The ROM's poll (~0.34 of a host sample) and the
+    // PSG's next 240-clock sample add under one sample. A level applied at the block boundary instead would land up to
+    // 511 samples late.
+    CHECK(edge >= at);
+    CHECK(edge <= at + rp::blastem::AudioSink::kPrime + 16u);
 }
 
 TEST_CASE("a mid-session rate change maps the same sample to the clock the anchor predicts", "[blastem][port]") {
     // portTimestampRom counts its own polls and stores the count when the level changes, so the count IS the master
-    // clock at which the level was applied, in units of one poll loop (~383.5 master clocks, BlastEm's own timing).
-    // The prediction is built from the core, not from a constant: a long constant-rate run measures the poll period,
-    // and a run that changes rate mid-session must move the count by exactly the clocks the change adds. A mapping that
-    // ignored the change (or re-anchored wrongly) moves it by nothing, or by the wrong sign, which no tolerance hides.
+    // clock at which the level was applied, in units of one poll loop (~191.6 master clocks, measured on this core).
+    // The prediction is built from the core, not from a constant: a run measures the poll period at one rate, and a run
+    // that changes rate mid-session must move the count by exactly the clocks the change adds. A mapping that ignored
+    // the change (or re-anchored wrongly) moves it by nothing, or by the wrong sign, which no tolerance hides.
+    //
+    // Both stage points are early on purpose: the ROM counts into a WORD, and 300-8000 host samples keep every count
+    // under 65536 polls (one poll is about 191.6 master clocks, so the word wraps after about 11,000 samples at 48 kHz).
     constexpr std::uint64_t kMclk = 53693175ull;
     const auto count = [](std::uint64_t stageAt, std::uint64_t changeAt, double newRate) {
         auto sys = boot(rp::blastem::test::portTimestampRom());
         std::vector<float> l(kFrames), r(kFrames);
+        float* lanes[2] = {l.data(), r.data()};
         std::uint64_t base = 0;
         std::uint16_t last = 0;
         AudioBlockInfo info{};
@@ -3077,26 +3271,27 @@ TEST_CASE("a mid-session rate change maps the same sample to the clock the ancho
             last = ramWord(*sys, 0x0000);
             base += kFrames;
         }
-        return last;
+        return std::uint32_t(last);
     };
-    const std::uint64_t s1 = 6000, s2 = 16000;  // two staged levels, 10000 samples apart, at 48 kHz throughout
+    const std::uint64_t s1 = 3000, s2 = 8000;  // two staged levels, 5000 samples apart, at 48 kHz throughout
     const std::uint32_t c1 = count(s1, 0, 0.0);
     const std::uint32_t c2 = count(s2, 0, 0.0);
     REQUIRE(c1 > 0);
     REQUIRE(c2 > c1);
     const double perPoll = (double(s2 - s1) * double(kMclk) / kRate) / double(c2 - c1);
-    const std::uint64_t changeAt = 8000;  // between s1 and s2
+    const std::uint64_t changeAt = 5000;  // between s1 and s2
     const std::uint32_t c3 = count(s2, changeAt, 44100.0);
-    // The clocks the change adds over the samples between it and s2, in polls.
+    // The clocks the change adds over the samples between it and s2, in polls. Same staged sample both times, so the
+    // comparison is c3 against c2, never against c1 (which staged a different sample).
     const double expected = double(s2 - changeAt) * (double(kMclk) / 44100.0 - double(kMclk) / kRate) / perPoll;
     INFO("polls " << c1 << " " << c2 << " " << c3 << ", per poll " << perPoll << ", expected shift " << expected);
-    CHECK(std::llabs(std::llabs(std::int64_t(c3) - std::int64_t(c1)) - std::int64_t(std::llround(expected))) <= 3);
+    CHECK(std::llabs((std::int64_t(c3) - std::int64_t(c2)) - std::int64_t(std::llround(expected))) <= 3);
 }
 ```
 
-The second case's tolerance is three polls, which is about one host sample at 48 kHz: a mapping error smaller than a
-sample cannot be resolved by any ROM, and the failure this catches (a no-op or a wrongly anchored rate change) moves the
-count by about 2000 polls. `ramWord` is the helper above; `peak` is the audio case's own.
+The second case's tolerance is three polls, which is about half a host sample at 48 kHz: a mapping error smaller than
+that cannot be resolved by any ROM, and the failure this catches (a no-op or a wrongly anchored rate change) moves the
+count by the whole shift, about 1500 polls. `ramWord` is the helper above; `peak` is the audio case's own.
 
 Note the includes these two cases add to the file: `<cmath>` (`fabs`) and `<cstdlib>` (`llabs`, `llround` is `<cmath>`).
 
@@ -3108,9 +3303,10 @@ cmake --build build --target retroplug-blastem-test -j$(nproc) && build/bin/retr
 
 Expected: all five cases pass. What each proves, and what it does not: the first two prove delivery and the queue's
 timing (a level staged mid-block, and one staged past the block's end), the third the direction rule, the fourth the
-level's own sample (within 4 host samples, and it FAILS when no edge is found rather than passing with `edge == at`),
-and the fifth the master clock the mapping gives a sample across a rate change, in the core's own poll units. Only the
-fourth and fifth are sample-level, and Task 9 then holds them to a partition.
+level's own sample (the first sample that differs from a no-level render, inside a 32-sample window after the staged
+frame, and it FAILS when no sample differs instead of passing with `edge == at`), and the fifth the master clock the
+mapping gives a sample across a rate change, in the core's own poll units. Only the fourth and fifth are sample-level,
+and Task 9 then holds them to a partition.
 
 - [ ] **Step 7: Commit**
 
@@ -3144,7 +3340,8 @@ git commit -m "feat(blastem): controller port 2 is the host device, one cycle-ex
 // compares bytes: an output that moves with the partition makes both meaningless.
 //
 // The stimulus is a sync level staged at a fixed absolute frame, so the level's sample lands inside blocks of every
-// size, and the ROM answers it with an audio edge.
+// size, and the ROM answers it with an audio edge. That the stimulus really produces the edge (a diff against a run
+// with no level) is the second case's job.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -3168,62 +3365,93 @@ double peak(const std::vector<float>& samples) {
     return p;
 }
 
-std::vector<float> renderAt(std::uint32_t block) {
+// A render of the whole 2 s, as two lanes INDEXED BY FRAME (not interleaved, and not concatenated a block at a time:
+// block = 1 would make a per-block `left`-then-`right` vector frame-interleaved, so index kLevelFrame would address
+// frame 20500 and the "after" window would still contain the tone). `staged` writes the level at kLevelFrame.
+struct Render {
+    std::vector<float> left, right;
+    bool               starved = false;
+};
+
+Render renderAt(std::uint32_t block, bool staged = true) {
     rp::blastem::BlastemMdConfig cfg;
     cfg.region = 1;
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, rp::blastem::test::syncEdgeRom());
     sys->onActivate(kRate);
-    std::vector<float> out;
-    out.reserve(kTotal * 2);
+    Render out;
+    out.left.reserve(kTotal);
+    out.right.reserve(kTotal);
     std::vector<float> left(block), right(block);
     float* lanes[2] = {left.data(), right.data()};
     std::uint64_t at = 0;
-    bool staged = false;
+    bool sent = false;
     AudioBlockInfo info{};
     while (at < kTotal) {
         info.frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(block, kTotal - at));
-        if (!staged && at + info.frames > kLevelFrame) {
+        if (staged && !sent && at + info.frames > kLevelFrame) {
             const std::uint8_t level = 0x00;
             sys->pushCoreBytes(static_cast<std::uint32_t>(kLevelFrame - at), &level, 1);
-            staged = true;
+            sent = true;
         }
         std::fill(left.begin(), left.end(), 0.0f);
         std::fill(right.begin(), right.end(), 0.0f);
         sys->prepareForBlock(info);
         while (sys->stepIfBelowTarget(info.frames)) {}
         sys->finishBlock(info, lanes, 2);
-        out.insert(out.end(), left.begin(), left.begin() + info.frames);
-        out.insert(out.end(), right.begin(), right.begin() + info.frames);
+        out.left.insert(out.left.end(), left.begin(), left.begin() + info.frames);
+        out.right.insert(out.right.end(), right.begin(), right.begin() + info.frames);
         at += info.frames;
     }
+    out.starved = sys->starvedSamples() != 0;
     return out;
 }
 
 }  // namespace
 
 TEST_CASE("1, 64, 1024 and 4096 frame blocks render identical bytes", "[blastem][invariance]") {
-    const std::vector<float> one = renderAt(1);
-    const std::vector<float> sixtyFour = renderAt(64);
-    const std::vector<float> thousand = renderAt(1024);
-    const std::vector<float> fourThousand = renderAt(4096);
-    REQUIRE(one.size() == kTotal * 2);
+    const Render one = renderAt(1);
+    const Render sixtyFour = renderAt(64);
+    const Render thousand = renderAt(1024);
+    const Render fourThousand = renderAt(4096);
+    REQUIRE(one.left.size() == kTotal);
+    REQUIRE(one.right.size() == kTotal);
     // Before the comparison, the case has to be ABOUT something: a render that is silent (a broken ROM, a starved
     // sink) is identical at every partition and would pass this test while proving nothing.
-    REQUIRE(peak(one) > 0.01);
-    CHECK(one == sixtyFour);
-    CHECK(one == thousand);
-    CHECK(one == fourThousand);
+    REQUIRE(peak(one.left) > 0.01);
+    // A starved sink's zeros are placed by the partition, so it is the sink failing this case, not the stop model: the
+    // audio and invariance cases assert it is 0, and the parity group's recorded bytes are where a stray zero would show
+    // up as a digest change.
+    CHECK_FALSE(one.starved);
+    CHECK_FALSE(sixtyFour.starved);
+    CHECK_FALSE(thousand.starved);
+    CHECK_FALSE(fourThousand.starved);
+    CHECK(one.left == sixtyFour.left);
+    CHECK(one.left == thousand.left);
+    CHECK(one.left == fourThousand.left);
+    CHECK(one.right == sixtyFour.right);
+    CHECK(one.right == thousand.right);
+    CHECK(one.right == fourThousand.right);
 }
 
 TEST_CASE("the invariance case's stimulus really produces its edge", "[blastem][invariance]") {
-    // The level staged at kLevelFrame silences syncEdgeRom's tone, so the render must go quiet after it. With a dead
-    // stimulus (a ROM that never leaves its loop, a sink that starves before the edge) every render would be silent and
-    // the equality above would hold vacuously.
-    const std::vector<float> one = renderAt(1);
-    const double before = peak(std::vector<float>(one.begin(), one.begin() + std::ptrdiff_t(kLevelFrame)));
-    const double after = peak(std::vector<float>(one.begin() + std::ptrdiff_t(kLevelFrame + 64), one.end()));
-    CHECK(before > 0.01);
-    CHECK(after < 0.001);
+    // The level staged at kLevelFrame silences syncEdgeRom's tone. The proof is a DIFF against the same render with no
+    // level, not a magnitude threshold: blip's high-pass leaves a decaying DC tail (about 0.035 for thousands of
+    // samples) after the tone stops, so "the peak after the level is under 0.001" is false for thousands of samples and
+    // a window that skipped straight to a quiet stretch would be a different, weaker claim.
+    const Render staged = renderAt(1);
+    const Render reference = renderAt(1, false);
+    REQUIRE(peak(reference.left) > 0.01);  // the tone really plays all the way through when nothing is staged
+    std::size_t edge = staged.left.size();
+    for (std::size_t i = 0; i < staged.left.size(); ++i) {
+        if (staged.left[i] != reference.left[i]) { edge = i; break; }
+    }
+    INFO("level staged at " << kLevelFrame << ", first difference at " << edge);
+    REQUIRE(edge < staged.left.size());
+    // The same window the port case uses: at or after the staged frame (the 16-sample prime covers the kernel's
+    // 8-sample lead), and no later than the prime plus 16. Anything later is a level applied at a block boundary (up to
+    // 511 samples at 512-frame blocks).
+    CHECK(edge >= kLevelFrame);
+    CHECK(edge <= kLevelFrame + rp::blastem::AudioSink::kPrime + 16u);
 }
 ```
 
@@ -3430,13 +3658,14 @@ Two more globals, both worse than the DMA one because neither is a one-line sign
   with `memmap_chunk *z80_map;` in `genesis_context`, the template (the five entries, unchanged) a file-scope `static
   const memmap_chunk kZ80MapTemplate[5]`, and `free(gen->z80_map)` in `free_genesis` beside `free(gen->zram)`.
 
-- **Allocation is not reentrant.** `m68k_util.c:222-254` passes `sync_components` and `int_ack` through the file statics
-  `sync_comp_tmp`/`int_ack_tmp` and NULLs them after, `ym_common.c:52-57` sets `did_tbl_init` BEFORE filling the tables,
-  and `vdp.c:174`'s table init is the same shape. Two instances building concurrently can get a NULL `sync_components`
-  or half-built YM tables. Fix the three (pass the values, initialise then set the flag, or fill into a local and copy
-  under a one-time init), or serialise the whole allocation path in the host. **Do both**, because they are different
-  failures: the three fixes are correctness, and the mutex is a cheap guarantee that nothing else in this file list is
-  reentrant yet:
+- **Allocation is not reentrant, and this plan does not touch that.** `m68k_util.c:222-254` passes `sync_components` and
+  `int_ack` through the file statics `sync_comp_tmp`/`int_ack_tmp` and NULLs them after, `ym_common.c:52-57` sets
+  `did_tbl_init` BEFORE filling the tables, and `vdp.c:174`'s table init is the same shape. Two instances building
+  CONCURRENTLY can get a NULL `sync_components` or half-built YM tables. The fix this plan takes is the mutex below, not
+  the three internals: with every `alloc_config_genesis` and `free_context` under one lock, no two allocations overlap,
+  so the statics are not shared state in practice. Editing those three would mean three more mirror hunks that the plan
+  could not test beyond "the mutex already serialised them", which is why they stay out (and why the commit below
+  touches only `genesis.c`, `genesis.h`, `vdp.c`, `vdp.h` and `gdb_remote.c`).
 
   ```cpp
   // BlastemShim.cpp. BlastEm's allocation path (alloc_config_genesis / free_context) still touches file-scope state this
@@ -3449,7 +3678,8 @@ Two more globals, both worse than the DMA one because neither is a one-line sign
   ```
 
   and `boot()`/`destroyCore()` take `std::lock_guard<std::mutex> lock(coreLifecycleMutex());` around
-  `alloc_config_genesis` / `free_context`.
+  `alloc_config_genesis` / `free_context` ONLY (never around the rest of `boot()`, so the seed-and-retry path below can
+  reallocate without deadlocking on a lock the outer call still holds).
 
 Commit in the submodule:
 
@@ -3463,11 +3693,12 @@ a second console in one process would DMA out of the first one's RAM; the VDP
 the call belongs to is the console. The Z80's memory map was a function-local
 static holding one console's zram pointer, so a state load re-resolved the
 wrong console's Z80. MCLKS_PER_68K was a writable global every allocation set;
-it is 7 on every Mega Drive. The 68k options and the YM/VDP tables no longer
-pass through file statics.
+it is 7 on every Mega Drive. Allocation is serialised by the host instead
+(see the plan's coreLifecycleMutex), so the file statics that path uses are
+not shared between two builds.
 
 RetroPlug runs several consoles in one process."
-git -C deps/blastem -c protocol.file.allow=always push \
+git -c protocol.file.allow=always push \
     /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm retroplug
 cd ../..
 ```
@@ -3547,8 +3778,9 @@ TEST_CASE("two instances interleaved on one thread render what each renders alon
 
 TEST_CASE("two instances on two threads render what each renders alone", "[blastem][instances]") {
     const std::vector<float> alone = solo(rp::blastem::test::fmPsgRom(), 40);
+    const std::vector<float> aloneB = solo(rp::blastem::test::psgOnlyRom(), 40);
     auto a = boot(rp::blastem::test::fmPsgRom(), 1);
-    auto b = boot(rp::blastem::test::portPollRom(), 2);
+    auto b = boot(rp::blastem::test::psgOnlyRom(), 2);  // a different ROM, and one that also makes sound
     std::vector<float> outA, outB;
     // Creation is serialised (the host builds cores on one thread); only the blocks run concurrently, which is the
     // engine's contract for a system that migrates between threads.
@@ -3571,6 +3803,10 @@ TEST_CASE("two instances on two threads render what each renders alone", "[blast
     first.join();
     second.join();
     CHECK(outA == alone);
+    // B against ITS OWN solo render, which is what makes the pair a test: a comparison against A's render would pass
+    // with both instances broken in the same way, and a cross-read (A's globals reaching B's audio) shows up here as
+    // B's tone in A's lanes or A's in B's.
+    CHECK(outB == aloneB);
 }
 ```
 
@@ -3589,24 +3825,27 @@ TEST_CASE("a console's DMA reads its own work RAM", "[blastem][instances]") {
     // read_dma_value and vdp_dma_started reached their console through the process global current_system, which the
     // shim left NULL: with two instances the read belongs to whichever console was allocated last (or to nothing at
     // all, which dereferences NULL here). Each instance's RAM holds a different word, so the read cannot be right twice.
+    // The address is a WORD address: read_dma_value multiplies by two (genesis.c:312), so reading 68k $FF0000 is
+    // 0xFF0000 >> 1. Passing the byte address only works by mirror accident.
     auto a = boot(rp::blastem::test::portPollRom(), 1);
     auto b = boot(rp::blastem::test::portPollRom(), 2);
     static_cast<std::uint16_t*>(static_cast<void*>(a->core()->work_ram))[0] = 0xAAAA;
     static_cast<std::uint16_t*>(static_cast<void*>(b->core()->work_ram))[0] = 0x5555;
-    CHECK(read_dma_value(a->core()->vdp, 0xFF0000) == 0xAAAA);
-    CHECK(read_dma_value(b->core()->vdp, 0xFF0000) == 0x5555);
+    CHECK(read_dma_value(a->core()->vdp, 0xFF0000 >> 1) == 0xAAAA);
+    CHECK(read_dma_value(b->core()->vdp, 0xFF0000 >> 1) == 0x5555);
 }
 
-TEST_CASE("a console's Z80 runs on its own RAM after the other loads a state", "[blastem][instances]") {
+TEST_CASE("a console's Z80 re-resolves through its own RAM", "[blastem][instances]") {
     // z80_map was a function-local static whose [0].buffer every allocation overwrote (and init_z80_opts keeps it), so
     // the FIRST console's Z80 re-resolved through the LAST one's zram on every invalidate: a savestate load in one
-    // console pointed the other's Z80 at freed memory once that one was gone. Writing through the map is the check.
+    // console pointed the other's Z80 at freed memory once that one was gone. fastread/fastwrite are what the
+    // re-resolution writes (z80_util.c:180-198), and [0] covers Z80 addresses 0..1023.
     auto a = boot(rp::blastem::test::portPollRom(), 1);
-    auto b = boot(rp::blastem::test::portPollRom(), 2);
+    auto b = boot(rp::blastem::test::portPollRom(), 2);  // allocated LAST: the instance the static map would point at
     z80_invalidate_code_range(a->core()->z80, 0, 0x4000);  // what a state load and a Z80 code write do
-    a->core()->z80->mem_pointers[0][0x100] = 0x5A;        // through A's own map
-    CHECK(a->core()->zram[0x100] == 0x5A);
-    CHECK(b->core()->zram[0x100] == 0x00);                 // and NOT through B's
+    CHECK(a->core()->z80->fastwrite[0] == a->core()->zram);
+    CHECK(b->core()->z80->fastwrite[0] == b->core()->zram);
+    CHECK(a->core()->zram != b->core()->zram);
 }
 ```
 
@@ -3924,8 +4163,8 @@ git commit -m "feat(blastem): work RAM in the 68k's address order, the Z80's RAM
 **Files:**
 - Modify: `packages/blastem/native/src/system/blastem/BlastemMdSystem.{hpp,cpp}` (the state, the refusals, the sink's
   re-prime)
-- Mirror (`deps/blastem`, branch `retroplug`): `serialize.c`, `serialize.h`, `genesis.c` (a bad state is refused, not
-  fatal)
+- Mirror (`deps/blastem`, branch `retroplug`): `serialize.c`, `serialize.h`, `genesis.c`, `vdp.c` (a bad state is
+  refused, not fatal)
 - Create: `packages/blastem/native/test/BlastemSaves.test.cpp`
 - Modify: `packages/blastem/native/CMakeLists.txt`
 
@@ -3944,9 +4183,13 @@ a mirror commit turns every one of those into a latch on the buffer, and the hos
 `packages/blastem/native/test/BlastemSaves.test.cpp`:
 
 ```cpp
-// Savestates (design section 2): a state saved, run from, loaded and run again renders what the uninterrupted run
-// renders; and a state whose serializer identifier is not BlastEm's 1.0 one is refused rather than misread.
+// Savestates (design section 2): two instances seeded with one state render identical bytes, a restored render is not
+// silent, and a state whose serializer identifier is not BlastEm's 1.0 one (or whose body is truncated) is refused
+// rather than misread.
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -3958,6 +4201,13 @@ namespace {
 
 constexpr double        kRate   = 48000.0;
 constexpr std::uint32_t kFrames = 512;
+
+// The largest |sample| in a render: a restored render has to be audible, or "the state reached the core" is unproven.
+double peak(const std::vector<float>& samples) {
+    double p = 0.0;
+    for (float s : samples) p = std::max(p, std::fabs(static_cast<double>(s)));
+    return p;
+}
 
 std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom,
                                                    std::vector<std::uint8_t> state = {}) {
@@ -4043,10 +4293,11 @@ Expected: FAIL: `saveStateBytes()` is empty.
 
 - [ ] **Step 3: The mirror commit: a bad state is refused, not fatal**
 
-Four edits in `deps/blastem`, each with the marker:
+Five edits in `deps/blastem`, each with the marker:
 
 1. `serialize.h`'s `deserialize_buffer` gains `uint8_t failed;` ("RetroPlug: a short read is a REFUSAL a caller can see,
-   not an exit: a plugin handed a truncated state must return an error"), and `init_deserialize` zeroes it.
+   not an exit: a plugin handed a truncated state must return an error"), and `init_deserialize` zeroes it; `serialize_buffer`
+   gains the same field for the growth latch below, zeroed by `init_serialize`.
 2. `serialize.c`'s `load_int8/16/32`, `load_buffer8/16/32` and `load_section` replace each `fatal_error(...)` with
    `buf->failed = 1; buf->cur_pos = buf->size; return ...;` (cur_pos at the end so every later load in the same buffer
    fails immediately too), and `load_section` propagates a section's latch: after the handler call,
@@ -4055,16 +4306,47 @@ Four edits in `deps/blastem`, each with the marker:
    (`buf->failed = 1; return;`), and `genesis_deserialize`'s caller can then see it.
 4. `genesis.c`'s 68k write to an unhandled Z80 address (:1327, `fatal_error`) becomes a `warning` and a dropped write: a
    malformed ROM must not take the host process with it.
+5. `vdp.c`'s `vdp_deserialize` (:6617) refuses an out-of-range FIFO size out of a loaded state the same way
+   (`buf->failed = 1; return;`), which is another field a corrupt state controls.
 
 and, because a state can also fail to *grow* (`serialize.c`'s `reserve` reallocs without a check, so an out-of-memory
 capture writes through NULL): `reserve` returns a `uint8_t` that latches `buf->failed` on a failed `realloc`, and every
 `save_*` checks it and returns without writing.
 
+**The rest of the `fatal_error` calls, classified rather than guessed.** Find them with the file set the library
+compiles:
+
+```bash
+cd deps/blastem && grep -n fatal_error system.c genesis.c vdp.c io.c romdb.c i2c.c serialize.c gst.c saves.c \
+    ym2612.c psg.c config.c tern.c util.c paths.c gen.c event_log.c | grep -v "void fatal_error"
+```
+
+(Run it before the edits above; afterwards, only the entries marked "not reachable" should remain in those files.) Each
+one falls in one of three groups:
+
+- **Converted here** (a state or a ROM can reach it): `serialize.c:102, 144, 157, 168, 177, 186, 197, 211, 216`,
+  `genesis.c:177, 188` (a state's RAM sizes), `genesis.c:1327` (a 68k write to an unhandled Z80 address, which a
+  cart's own code can cause) and `vdp.c:6617` (a state's FIFO size, in `vdp_deserialize`).
+- **File loading only, and this host never loads a file**: `system.c:104, 219` (the frontend's `load_media`), and
+  `genesis.c:2147` (`load_state`'s file path; this plan calls `genesis_serialize`/`genesis_deserialize` directly).
+  The host hands `alloc_config_genesis` a memory buffer and its own state bytes, so none of those three is on any path a
+  plugin takes.
+- **Built-in data only, which is ours and static**: `romdb.c`'s fifteen and `i2c.c`'s four fire on a malformed ROM DATABASE
+  or a missing EEPROM map, and the database is compiled in from `deps/blastem/rom.db` (a bad row fails Task 3's build
+  test, not a user's session); `config.c`, `tern.c`, `paths.c`, `gen.c` and `event_log.c` are the frontend's
+  configuration, asset and code-generation paths, which a library build never enters; `genesis.c:3035,
+  3042, 3069, 3117` are the TMSS model's ROM and remap, reachable only when the config tree selects a TMSS model, and
+  this shim builds no config tree (`config` stays NULL, and `get_model` returns the default model, which has no TMSS).
+
+Any one of the last two groups that a later task finds reachable gets converted in that task and deleted here; the ones
+that stay are recorded as known process-exits in Task 24's spec/07 entry, so the knowledge lives in the spec and not in a
+comment.
+
 Commit in the submodule, and push to the local mirror (the rules block has the form):
 
 ```bash
 cd deps/blastem
-git add serialize.c serialize.h genesis.c
+git add serialize.c serialize.h genesis.c vdp.c
 git commit -m "serialize: a bad state is refused, not fatal
 
 load_section and the load_* helpers called fatal_error, which exits the
@@ -4073,7 +4355,7 @@ They latch the buffer instead, a section propagates its own latch, the RAM
 size checks do the same, and a growth failure is a latch too.
 
 RetroPlug: a host must be able to refuse a state and keep running."
-git -C deps/blastem -c protocol.file.allow=always push \
+git -c protocol.file.allow=always push \
     /workspaces/Megadrive/.superpowers/megadrive/RetroPlug-BlastEm retroplug
 cd ../..
 ```
@@ -4141,13 +4423,13 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     init_deserialize(&buf, const_cast<std::uint8_t*>(bytes.data()) + kIdent, bytes.size() - kIdent);
     genesis_deserialize(&buf, gen_);
     if (buf.failed) {
-        // A well-formed section whose payload is short or impossible: the core is now partly loaded, so undo it by
-        // rebooting from power-on with the refused seed dropped. (config_.savestate is cleared first, or boot() would
-        // seed the same state again.)
+        // A well-formed section whose payload is short or impossible: the core is now PARTLY loaded, so it has to be
+        // rebuilt. That is boot()'s job, not this function's: loadStateBytes runs inside seedSramAndState, which boot()
+        // calls as its LAST act, so rebooting from here would recurse through a half-built boot. It only flags the
+        // refusal and drops the seed; boot()'s tail sees the flag, destroys the core and boots once more from power-on
+        // (and the second boot has no state to seed, so it cannot recurse again).
         stateRefused_ = true;
         config_.savestate.clear();
-        destroyCore();
-        boot();
         return false;
     }
     // The state carries the 68k's 32-bit cycle count, not this host's 64-bit clock: re-anchor so masterClockOf maps the
@@ -4175,9 +4457,39 @@ bool BlastemMdSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
 ```
 
 `loadStateBytes` is a private virtual in `SystemBase` (SystemBase.hpp:388), so the override goes in the class's private
-section beside `boot()`. Its caller is `seedSramAndState` (SystemBase), which `boot()` ends with:
-`seedSramAndState(config_.sram, config_.savestate);` after `m68k_reset`. `genesis_deserialize` calls
-`adjust_int_cycle` itself (genesis.c:279), so the next `run_until` resumes from the loaded pc.
+section beside `boot()`. Its caller is `seedSramAndState` (SystemBase), and **`boot()` ends with it**, after
+`m68k_reset`, the anchors and `setGainDb`, as its LAST act:
+
+```cpp
+void BlastemMdSystem::boot() {
+    ...  // gate, currentInstance, video_.prepareBuffers(), the alloc under the mutex, m68k_reset, video_.prepareFrame,
+         // the anchors, the smoothed gain
+    stateRefused_ = false;
+    seedSramAndState(config_.sram, config_.savestate);  // LAST: the battery, then the state over it
+    if (stateRefused_ && !config_.savestate.empty()) {
+        // A refused state: either it was thrown out before it touched the core (the identifier, the section walk) or it
+        // latched after writing part of itself in (the serializer's short-field latch). Dropping the seed and rebuilding
+        // ONCE from power-on is the one path that leaves no half-loaded core behind in either case.
+        // Safe only because this is boot()'s last act and the mutex is not held here (the retry's alloc takes it itself),
+        // and because the second boot has an empty savestate, so it cannot recurse again.
+        config_.savestate.clear();
+        destroyCore();
+        boot();
+        stateRefused_ = true;  // the refusal is still this instance's answer to the build request
+    }
+}
+```
+
+(`boot()`'s `stateRefused_ = false` before the seed is what makes the retry terminate: the nested boot clears it, seeds
+nothing, and returns. `destroyCore()` and the allocated core's `free_context` both run under the lifecycle mutex, in
+separate scopes, never nested. `genesis_deserialize` calls `adjust_int_cycle` itself (genesis.c:279), so the next
+`run_until` resumes from the loaded pc.)
+
+The class also gains a public accessor for that field, beside `activated()`: `bool stateRefused() const { return
+stateRefused_; }`, and a public `std::vector<std::uint8_t> saveSramBytes() const` (Task 12) is the other half of the
+build-request contract. `saveStateBytes()` is `const` because the snapshot capture and the control plane both call it on
+a const system; `genesis_serialize` takes the context's non-const pointer, not the member, so no cast of the member is
+needed.
 
 `AudioSink::reset()` (a new member beside `clear()`) drops every source's ring and blip and re-primes, which is what a
 state load needs and what a rate change needs: it is `clear()` plus `prime()`.
@@ -4222,10 +4534,12 @@ re-primes the audio sink, which the state does not carry."
 - Modify: `packages/native/package.json` (devDependency `@retroplug/blastem`), `packages/native/cmake/tests.cmake`
   (the include path), `packages/native/test/engine-graph/GraphDocs.hpp` (`romFor`), 
   `packages/native/test/engine-graph/SystemNode.test.cpp` (three cases),
-  `packages/native/test/engine-graph/golden/product-registrations.json` (re-recorded)
+  `packages/native/test/engine-graph/golden/product-registrations.json` (re-recorded),
+  `packages/retroplug/test/systems/store-graph.test.ts` (`NATIVE_TYPES` gains `rp.blastem.md`, the first list this
+  node type breaks; its `be.seed("/roms/genmddj.bin", ...)` fixture is Task 20's, when the node it builds lands)
 
 **Interfaces:**
-- Consumes: `BlastemMdSystem`, `BlastemMdConfig`, `BlastemMdRegion` labels, `rp::blastem::test::*`.
+- Consumes: `BlastemMdSystem`, `BlastemMdConfig`, `rp::blastem::MdRegion`'s labels, `rp::blastem::test::*`.
 - Produces: `rp::blastem::buildMdCore(SystemId, SystemBuildRequest&&, double, std::string*)`, the node type
   `rp.blastem.md` with settings `{system, rom, sram, state, romName, region}` and `kBuild = rp::blastem::buildMdCore`;
   `RP_MD_ROM_PATH` is **not** needed (the image is generated in the test).
@@ -4465,6 +4779,21 @@ TEST_CASE("a warmed Mega Drive block allocates nothing", "[alloc][engine-graph][
 already includes, and count because `retroplug-engine-graph-test` already links `retroplug-testing-allocator`;
 `Lanes` and `rp_transport` are the file's own.)
 
+And the store's list of the C++ node types, which is the first place the new node type is missing
+(`packages/retroplug/test/systems/store-graph.test.ts`'s `NATIVE_TYPES`, "The C++ node types buildGraph places"):
+
+```ts
+const NATIVE_TYPES = new Set([
+  "rp.host.midi-in", "rp.host.midi-out", "rp.host.audio-out", "rp.core.split", "rp.core.add",
+  "rp.launchpad.surface-in", "rp.launchpad.surface-out", "rp.n8.nes",
+  "rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms", "rp.blastem.md",
+]);
+```
+
+Its failure mode is the one this list exists for: a document that builds `rp.blastem.md` is refused as an unknown type,
+so `pnpm test systems/store-graph` fails until the type is named here. (The store-graph's `be.seed` for a Mega Drive
+ROM comes with the script node in Task 20, which is the first case that boots one through the store.)
+
 Re-record the registration golden:
 
 ```bash
@@ -4488,6 +4817,7 @@ build/bin/retroplug-engine-graph-test "[packages]"
 ```
 
 Expected: the three new cases pass, `[packages]` passes against the re-recorded golden, and no other case changed.
+`pnpm test systems/store-graph` exits 0 too (its `NATIVE_TYPES` list now names the type).
 
 - [ ] **Step 5: Commit**
 
@@ -4495,7 +4825,8 @@ Expected: the three new cases pass, `[packages]` passes against the re-recorded 
 git add packages/blastem/native packages/native/package.json packages/native/cmake/tests.cmake \
         packages/native/test/engine-graph/GraphDocs.hpp \
         packages/native/test/engine-graph/SystemNode.test.cpp \
-        packages/native/test/engine-graph/golden/product-registrations.json pnpm-lock.yaml
+        packages/native/test/engine-graph/golden/product-registrations.json \
+        packages/retroplug/test/systems/store-graph.test.ts pnpm-lock.yaml
 git commit -m "feat(blastem): rp.blastem.md, its build function, and the engine's Mega Drive cases"
 ```
 
@@ -4507,13 +4838,16 @@ git commit -m "feat(blastem): rp.blastem.md, its build function, and the engine'
 - Create: `packages/blastem/ts/consoles.ts`, `packages/blastem/ts/app.ts`, `packages/blastem/ts/enums.ts`,
   `packages/blastem/tsconfig.json` (and add `typecheck` to its manifest)
 - Modify: `packages/blastem/package.json` (exports, app, consoles, typecheck),
-  `packages/retroplug/test/consoles/{cases.ts,recorded.ts}`,
-  `packages/retroplug/package.json` (already declares the package from Task 2b)
+  `packages/retroplug/src/systemsStore.ts` (the battery prefix), `packages/retroplug/test/paths/rom-format.test.ts`,
+  `packages/retroplug/test/systems/battery.test.ts`, `packages/retroplug/test/consoles/registry.test.ts`,
+  `packages/retroplug/test/system-settings/registry.test.ts` (its role-kind list gains `blastem`, the first list the
+  new role breaks), `packages/retroplug/package.json` (already declares the package from Task 2b). The recorded
+  `test/consoles/{cases.ts,recorded.ts}` tables are NOT touched (this plan adds no case to them).
 
 **Interfaces:**
 - Consumes: `@retroplug/core/consoles`'s contract, `@retroplug/core/systemRoles`.
-- Produces: `MD` (`ConsoleDescriptor` id `blastem.md`, platforms `[md, gen]`), `BLASTEM_ROLE` (kind `blastem`,
-  category `system`), and the generated registries' entries for both.
+- Produces: `MD` (`ConsoleDescriptor` id `blastem.md`, one platform `md` for the extensions `.md`, `.bin` and `.gen`),
+  `BLASTEM_ROLE` (kind `blastem`, category `system`), and the generated registries' entries for both.
 
 - [ ] **Step 1: The enums and the descriptor**
 
@@ -4529,10 +4863,10 @@ export const REGION_VALUES = ["auto", "ntscUs", "ntscJp", "pal"] as const;
 `packages/blastem/ts/consoles.ts`:
 
 ```ts
-// The Mega Drive's descriptor (docs/mega-drive-blastem-design.md section 1): what the shell needs to classify a Mega
+// The Mega Drive's descriptor (docs/megadrive-blastem-design.md section 1): what the shell needs to classify a Mega
 // Drive ROM, place the node that runs it, and wire its knobs, without naming the console. Detection is the header at
-// $100, never the extension: a Master System `.bin` has no "SEGA MEGA DRIVE" there and stays Mesen's, and a `.md` file
-// that is not one is refused rather than booted as noise.
+// $100, never the extension: a Master System `.bin` has no "SEGA" there and is not this platform, and a `.md` file that
+// is not one is refused rather than booted as noise.
 import { REGION_VALUES } from "./enums";
 import { label, type ConsolesContribution, type ConsoleDescriptor } from "@retroplug/core/consoles";
 // enumField is the role/console contract's clamping enum field (packages/core/ts/configFields.ts:58): a junk value snaps
@@ -4575,11 +4909,15 @@ export const MD: ConsoleDescriptor = {
   providerHeaderBytes: 0x10000,
   // The header's $1B0 region: "RA" and a ROM-DB RAM flag byte mean a battery. $1B0 alone is not enough (a cart may
   // declare RAM it does not keep), so the flag's low nibble must be one of the ROM DB's values (0, 8 or 0x10|0).
+  // A header TOO SHORT to hold the field answers TRUE, the policy romHasBattery documents in src/consoles.ts ("only ever
+  // returns false when we're certain there's no save", so a working cart is never wrongly greyed): the store reads
+  // providerHeaderBytes (0x10000), so this only triggers on a truncated read, and refusing a save the user has is worse
+  // than offering one they do not.
   hasBattery: (header) =>
-    header.length > 0x1B2 &&
-    header[0x1B0] === 0x52 && // 'R'
-    header[0x1B1] === 0x41 && // 'A'
-    (header[0x1B2] & 0x0F) !== 0x0F,
+    header.length <= 0x1B2 ||
+    (header[0x1B0] === 0x52 && // 'R'
+     header[0x1B1] === 0x41 && // 'A'
+     (header[0x1B2] & 0x0F) !== 0x0F),
   settingFields: { region: label(REGION_VALUES) },
   // A region fixes the master clock and the frame height, so a change is a rebuild, not a live knob (the native
   // config is read once at boot).
@@ -4674,10 +5012,12 @@ test("md: the SEGA header at $100, in either name", () => {
 });
 
 test("md: a headerless .bin is not a Mega Drive", () => {
-  // An SMS `.bin` has no $100 magic: the SMS descriptor's extension-only fallback claims it, which is the design's
-  // "an SMS .bin still goes to Mesen". `detectPlatform` with no extension says "unknown", which is the same answer.
-  expect(detectPlatform(new Uint8Array(0x4000), ".bin")).toBe("sms");
-  expect(detectPlatform(new Uint8Array(0x4000))).not.toBe("md");
+  // Nothing claims a headerless `.bin`: the SMS descriptor's `extensionOnly` platforms list only `.sms` and `.gg`
+  // (mesen/ts/consoles.ts:161), and `extensionOnly()` matches only a listed extension (src/consoles.ts:228-234), so the
+  // answer is "unknown", never "md". The design's "an SMS .bin still goes to Mesen" is moot: no console claims `.bin`
+  // by extension, and a `.bin` with the Mega Drive's header is the case above.
+  expect(detectPlatform(new Uint8Array(0x4000), ".bin")).toBe("unknown");
+  expect(detectPlatform(new Uint8Array(0x4000))).toBe("unknown");
 });
 
 test("md: a 32X image is not a Mega Drive", () => {
@@ -4712,6 +5052,12 @@ const header = this.backend.readFilePrefix(romPath, providerHeaderBytes(platform
 return romHasBattery(header, platform);
 ```
 
+The edit names no platform, core or cart, so the shell's boundary rules and source-literal scan accept it. Its one side
+effect is on the SEGA 8-bit consoles, which declare `providerHeaderBytes` too (`SEGA_SNIFF_LEN`): their `detectBattery`
+now reads that many bytes instead of `ROLE_HEADER_LEN`. The ANSWER is unchanged (the SMS descriptor declares no
+`hasBattery`, so `romHasBattery` answers `true` for it either way, `src/consoles.ts:158`); the cost is one longer file
+read per SMS load. No other package's provider runs on `md`, and nothing on the block path touches this.
+
 - [ ] **Step 3: Update the pins the new descriptor moves, then wire the package in**
 
 `packages/retroplug/test/consoles/registry.test.ts` pins three facts that a new console changes, and each is an
@@ -4723,6 +5069,10 @@ which is why they stay valid):
 - `registeredPlatforms()` gains `"md"` after `"gg"` (product order), and `projectConfig`'s two error texts name the new
   core and platform (`unknown core "gambatte" (known: sameboy, mesen, blastem)`).
 
+And `packages/retroplug/test/system-settings/registry.test.ts:75` pins every role KIND, so `"blastem"` joins that list
+here, in the commit that registers the role (a later task's `"genmddj-sync"` joins it there). Nothing else in that file
+moves: the role has no feature-role entry and its schema is one enum field.
+
 Then `package.json` (root): `"blastem"` is already in both product lists from Task 2b, and
 `packages/retroplug/package.json` already declares the package, so the generator finds the module:
 
@@ -4732,25 +5082,27 @@ pnpm typecheck
 pnpm test paths/rom-format
 pnpm test systems/battery
 pnpm test consoles/registry
+pnpm test system-settings
 pnpm test:ui bindings
 ```
 
 Expected: every command exits 0. `pnpm test:ui` is `test:ui` (there is no `test-ui` script) and its `bindings` slug is
-the input-matrix case a new platform could move; if no row appears, it is unchanged by design.
+the input-matrix case a new platform could move; if no row appears, it is unchanged by design. `pnpm test system-settings`
+is the role-kind list's case, which fails before the `"blastem"` edit and passes after it.
 
 - [ ] **Step 4: The `.bin` case the design names**
 
-The design says "an SMS `.bin`, which has no such header, still goes to Mesen". That works only because the SMS
-descriptor declares `extensionOnly` platforms and its fallback runs only when nothing else matched. Step 2's second test
-is that case at the sniffer, and Task 18's provider test holds it again (an SMS `bin` gets no `genmddj-sync` even when
-it carries genmddj's marker).
+The design says "an SMS `.bin`, which has no such header, still goes to Mesen". In this tree no console claims `.bin` by
+extension at all (SMS lists `.sms` and `.gg`, Step 2's test asserts `"unknown"`), so the sentence's intent is the one that
+holds: a `.bin` whose bytes are not a Mega Drive ROM is not classified as one. Task 18's provider test holds the other
+half (an SMS ROM gets no `genmddj-sync` even when it carries genmddj's marker).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add packages/blastem package.json pnpm-lock.yaml packages/retroplug/src/systemsStore.ts \
         packages/retroplug/test/paths/rom-format.test.ts packages/retroplug/test/systems/battery.test.ts \
-        packages/retroplug/test/consoles/registry.test.ts
+        packages/retroplug/test/consoles/registry.test.ts packages/retroplug/test/system-settings/registry.test.ts
 git commit -m "feat(blastem): the Mega Drive console descriptor and the blastem core role"
 ```
 
@@ -4788,7 +5140,8 @@ git commit -m "feat(blastem): the Mega Drive console descriptor and the blastem 
 //   makes unavoidable; the UI labels it per platform.
 //
 // BlastEm's own enum is {BUTTON_INVALID, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, BUTTON_A, BUTTON_B, BUTTON_C,
-// BUTTON_START, BUTTON_X, BUTTON_Y, BUTTON_Z, BUTTON_MODE} (io.h:100), and io_gamepad_down takes that ordering, so
+// BUTTON_START, BUTTON_X, BUTTON_Y, BUTTON_Z, BUTTON_MODE} (io.h:117-130, NUM_GAMEPAD_BUTTONS last), and
+// io_gamepad_down takes that ordering, so
 // BlastemMdSystem maps this table onto it explicitly rather than casting.
 enum class MdButton : std::uint8_t {
     Right  = 0,
@@ -4896,7 +5249,7 @@ Expected: FAIL: `pressButton` is the base's no-op, `padDown` does not exist.
 void BlastemMdSystem::pressButton(std::uint8_t button, bool down) {
     if (!gen_) return;
     currentInstance = this;
-    // The byte is the shared table's; BlastEm's is its own ordering, so the map is explicit (io.h:100).
+    // The byte is the shared table's; BlastEm's is its own ordering, so the map is explicit (io.h:117-130).
     static constexpr std::uint8_t kBlastemButton[] = {
         DPAD_RIGHT, DPAD_LEFT, DPAD_UP, DPAD_DOWN, BUTTON_A, BUTTON_B, BUTTON_C,
         BUTTON_START, BUTTON_X, BUTTON_Y, BUTTON_Z, BUTTON_MODE,
@@ -4966,8 +5319,8 @@ git commit -m "feat(blastem): the 6-button pad on port 1, and Z/X/Y/Mode on the 
 
 **Interfaces:**
 - Consumes: the descriptor (Task 15), the core (all native tasks).
-- Produces: `packages/blastem/ts/fixtures.ts`'s `fmPsgRom(): Uint8Array` and `syncEdgeRom(): Uint8Array` (the TS twins
-  of the C++ images: same bytes, generated independently for the TS tier), and the parity group `md`.
+- Produces: `packages/blastem/ts/fixtures.ts`'s `fmPsgRom(): Uint8Array`, `psgOnlyRom(): Uint8Array` and `fnv1a()`
+  (the TS twins of the C++ images: same bytes, generated independently for the TS tier), and the parity group `md`.
 
 - [ ] **Step 1: The TS image generator and its test**
 
@@ -5008,7 +5361,6 @@ const PSG_WRITES: [number, number][] = [
 /** The PSG tone plus a keyed YM2612 channel: the image the audio and parity cases boot. */
 export function fmPsgRom(): Uint8Array {
   return image([0x60, 0xfe], [
-    ...PSG_WRITES.slice(0, 0),
     [0xa04000, 0x22], [0xa04001, 0x00], [0xa04000, 0x27], [0xa04001, 0x00],
     [0xa04000, 0x2b], [0xa04001, 0x80], [0xa04000, 0x30], [0xa04001, 0x01],
     [0xa04000, 0x40], [0xa04001, 0x00], [0xa04000, 0x50], [0xa04001, 0x1f],
@@ -5037,7 +5389,9 @@ export function fnv1a(bytes: Uint8Array): number {
 }
 ```
 
-`packages/blastem/ts/test/fixtures.test.ts` pins the hashes to the native ones:
+`packages/blastem/ts/test/fixtures.test.ts` pins the hashes to the native ones (0x6397D2DF and 0x0DCF5FCA in
+`SyntheticRom.test.cpp`; the same bytes, so the same two numbers, and a drift on either side fails one of the two
+files):
 
 ```ts
 import { test, expect } from "@retroplug/testing";
@@ -5045,7 +5399,7 @@ import { fmPsgRom, psgOnlyRom, fnv1a } from "../fixtures";
 
 test("the synthetic images are the bytes the native cases boot", () => {
   expect(fnv1a(psgOnlyRom())).toBe(0x6397d2df);
-  expect(fnv1a(fmPsgRom())).toBe(0x82a7496f);
+  expect(fnv1a(fmPsgRom())).toBe(0x0dcf5fca);
 });
 ```
 
@@ -5179,15 +5533,20 @@ git commit -m "test(blastem): the parity baseline's Mega Drive group"
 `ts/romDetect.ts`:
 
 ```ts
-// genmddj's identity, from its ROM header (src/main.asm:577-600): the product code "GM GENMDDJ-00" at $180, and the
-// build's own version string ("V0.27", src/main.asm:18493) somewhere in the first 32 KiB. Both, because either alone is
-// a guess: a homebrew could fill the product-code field, and a version string is four kinds of other data.
+// genmddj's identity, from its ROM header: the product code "GM GENMDDJ-00" at $180 (src/main.asm:577-600), and the
+// build's own version string ("V0.27") in the first 64 KiB. Both, because either alone is a guess: a homebrew could
+// fill the product-code field, and a version string is four kinds of other data.
+//
+// 64 KiB, not 32: in the built ROM the version string is at $D1B1 (53681, proved with `grep -boa 'V[0-9][0-9]*\.[0-9][0-9]*'
+// build/genmddj.bin`, whose FIRST match is that one), which is past the halfway point of a 32 KiB scan and past the
+// 0x150-byte short header the role providers otherwise see. The descriptor's providerHeaderBytes is 0x10000 for exactly
+// this reason, so the scan and the prefix agree.
 //
 // The gate is REQUIRED, not tidy (design section 4): the sync drives controller port 2's TR and TH, which every Mega
 // Drive game reads as player 2, so attaching it to any ROM would inject phantom button presses.
 const PRODUCT_CODE = "GM GENMDDJ-";
 const PRODUCT_CODE_OFFSET = 0x180;
-const VERSION_SCAN_LEN = 0x8000;
+const VERSION_SCAN_LEN = 0x10000;
 
 function matches(rom: Uint8Array, offset: number, text: string): boolean {
   if (rom.length < offset + text.length) return false;
@@ -5195,9 +5554,9 @@ function matches(rom: Uint8Array, offset: number, text: string): boolean {
   return true;
 }
 
-/** The version string ("0.27") a genmddj build carries, or null. */
-export function identifyGenmddjVersion(rom: Uint8Array): string | null {
-  if (!isGenmddjRom(rom)) return null;
+// The scan itself, without the product-code gate: the public version function and the identity predicate both use it,
+// and if it called isGenmddjRom they would recurse.
+function identifyGenmddjVersionUnchecked(rom: Uint8Array): string | null {
   const end = Math.min(rom.length, VERSION_SCAN_LEN);
   for (let i = 0; i < end - 4; i++) {
     if (rom[i] !== 0x56) continue; // 'V'
@@ -5213,6 +5572,12 @@ export function identifyGenmddjVersion(rom: Uint8Array): string | null {
   return null;
 }
 
+/** The version string ("0.27") a genmddj build carries, or null. Gated first, so a ROM that is not genmddj never
+ *  reports a version. */
+export function identifyGenmddjVersion(rom: Uint8Array): string | null {
+  return isGenmddjRom(rom) ? identifyGenmddjVersionUnchecked(rom) : null;
+}
+
 /** True when `rom` is a genmddj build: its product code and one of its version strings. */
 export function isGenmddjRom(rom: Uint8Array): boolean {
   if (!matches(rom, PRODUCT_CODE_OFFSET, PRODUCT_CODE)) return false;
@@ -5220,8 +5585,9 @@ export function isGenmddjRom(rom: Uint8Array): boolean {
 }
 ```
 
-`identifyGenmddjVersionUnchecked` is the scan above without its own `isGenmddjRom` call (the two would recurse);
-name it so, and keep `identifyGenmddjVersion` as the public one that gates first.
+The two functions share one scan (`identifyGenmddjVersionUnchecked`), so the identity predicate and the version report
+can never disagree about where a version string is; the public version function gates on the product code first, which
+is what makes `identifyGenmddjVersion` safe to call on any ROM.
 
 `ts/romProvider.ts`:
 
@@ -5241,15 +5607,17 @@ export const GENMDDJ_ROM_PROVIDER: RomProvider = (rom) => {
 `ts/fixtures.ts` (the synthetic headers the tests build; published as `./testFixtures` per spec/06):
 
 ```ts
-/** A Mega Drive image whose header is a genmddj build's, and whose body carries `version` where a build's would. */
-export function genmddjHeader(version = "V0.27", productCode = "GM GENMDDJ-00"): Uint8Array {
-  const rom = new Uint8Array(0x8000);
+/** A Mega Drive image whose header is a genmddj build's, and whose body carries `version` at `versionOffset`, which
+ *  defaults to the built ROM's own $D1B1. A case can pass another offset, which is how the scan's "not position-pinned"
+ *  claim is tested. */
+export function genmddjHeader(version = "V0.27", productCode = "GM GENMDDJ-00", versionOffset = 0xd1b1): Uint8Array {
+  const rom = new Uint8Array(0x10000);  // the size the provider is shown (providerHeaderBytes): 0xD1B1 fits inside it
   const set = (offset: number, text: string) => {
     for (let i = 0; i < text.length; i++) rom[offset + i] = text.charCodeAt(i);
   };
   set(0x100, "SEGA MEGA DRIVE ");
   set(0x180, productCode);
-  set(0x400, version);
+  set(versionOffset, version);
   return rom;
 }
 ```
@@ -5272,15 +5640,26 @@ test("genmddj is its product code and its version string", () => {
   expect(identifyGenmddjVersion(genmddjHeader("V1.10"))).toBe("1.10");
 });
 
+test("the version string is found wherever the build puts it, not at one offset", () => {
+  // The real ROM has it at $D1B1, past a 32 KiB scan and past the 0x150-byte short header; a build could move it, and
+  // the scan is the whole reason the identity is not pinned to an offset. The old $400 position is the case that would
+  // fail if VERSION_SCAN_LEN went back to 0x8000.
+  expect(identifyGenmddjVersion(genmddjHeader("V0.27", "GM GENMDDJ-00", 0xd1b1))).toBe("0.27");
+  expect(identifyGenmddjVersion(genmddjHeader("V0.27", "GM GENMDDJ-00", 0x400))).toBe("0.27");
+});
+
 test("either half alone is not genmddj", () => {
   expect(isGenmddjRom(genmddjHeader("V0.27", "GM OTHER  -00"))).toBe(false);
   const noVersion = genmddjHeader();
-  noVersion.fill(0x00, 0x400, 0x500);
+  noVersion.fill(0x00, 0xd1b1, 0xd1c0);  // the version string's own bytes, where this fixture puts it
   expect(isGenmddjRom(noVersion)).toBe(false);
 });
 
 test("a short prefix is not genmddj rather than a throw", () => {
   expect(isGenmddjRom(new Uint8Array(0x100))).toBe(false);
+  // The role provider's default prefix is 0x150, which ends before the product code at $180: an md ROM read at that
+  // length is not genmddj, which is why the descriptor declares providerHeaderBytes 0x10000.
+  expect(isGenmddjRom(genmddjHeader().slice(0, 0x150))).toBe(false);
 });
 
 test("the provider attaches genmddj-sync on md and nothing to anything else", () => {
@@ -5411,7 +5790,7 @@ export function counterSyncFor(machine: SmsSyncMachine): CounterSync {
 and `smsSyncNode.ts`'s `create` uses it (its `process` keeps its shape):
 
 ```ts
-import { SMS_SYNC_PPQN, counterSyncFor } from "./smsSync";
+import { SMS_SYNC_PPQN, counterSyncFor, syncLevelsFor } from "./smsSync";
 
   create: ({ settings: initial }) => {
     let machine = initial.machine;
@@ -5441,9 +5820,10 @@ import { SMS_SYNC_PPQN, counterSyncFor } from "./smsSync";
   },
 ```
 
-Keep the `CounterSync` instance in the closure and do not rebuild it per block (its counter is the state): assign it
-once in `create`, and again only on a machine change (`onSettings`). The import of `SMS_SYNC_IDLE_LEVELS` is not needed
-by the node; drop it from the import line. The node's behaviour must be identical to before, which
+Keep the `CounterSync` instance in the closure and do not rebuild it per block (its counter is the state): it is
+created once in `create`, its `use(syncLevelsFor(machine))` swaps only the ENCODER and keeps the counter, and
+`onSettings` therefore only records the new machine. The import of `SMS_SYNC_IDLE_LEVELS` is not needed by the node;
+drop it from the import line. The node's behaviour must be identical to before, which
 `packages/smsggdj/ts/test/smsSync.test.ts` holds without an edit:
 
 ```bash
@@ -5496,9 +5876,9 @@ Expected: all exit 0, and `packages/smsggdj/ts/test/smsSync.test.ts` is unchange
 git add packages/smsggdj packages/genmddj
 git commit -m "refactor(smsggdj): the IN24 counter machine takes its level encoder
 
-genmddj's wire is the same 2-bit counter on the same lines with the opposite
-polarity, so the state machine is shared and the encoder is the parameter.
-genmddj's own words are in mdSync.ts; smsggdj's tests are unchanged."
+genmddj's wire is the same 2-bit counter on this console's pins, so the state
+machine is shared and the encoder is the parameter. genmddj's own words are
+in mdSync.ts; smsggdj's tests are unchanged."
 ```
 
 ---
@@ -5509,7 +5889,10 @@ genmddj's own words are in mdSync.ts; smsggdj's tests are unchanged."
 - Create: `packages/genmddj/ts/genmddjSyncNode.ts`, `packages/genmddj/ts/protocol.ts`, `packages/genmddj/ts/app.ts`,
   `packages/genmddj/ts/test/genmddjSyncNode.test.ts`
 - Modify: `packages/genmddj/package.json` (app, protocol), `packages/retroplug/test/_featureRoles.ts`,
-  `packages/retroplug/test/system-settings/registry.test.ts`, `packages/retroplug/test/systems/store-graph.test.ts`
+  `packages/retroplug/test/system-settings/registry.test.ts` (the `genmddj-sync` kind and the genmddj case, on top of
+  the `blastem` kind the descriptor's task added), `packages/retroplug/test/systems/store-graph.test.ts` (its Mega Drive
+  `be.seed` fixture; `NATIVE_TYPES` gained `rp.blastem.md` in the node's own task),
+  `packages/native/test/engine-graph/ScriptNodes.test.cpp` (the bundle's node list and the span labels)
 
 **Interfaces:**
 - Consumes: `@retroplug/smsggdj/smsSync`'s `CounterSync` (Task 19), `mdSyncLevels`, the `blastem` role (Task 15).
@@ -5524,8 +5907,9 @@ drives its node: `new NodeRig(node, settings)`, `rig.run({ frames, playing, ppq,
 
 ```ts
 // rp.genmddj.sync: the DAW transport at 24 PPQN, one level word per clock on the `bytes` output, at the clock's own
-// frame, with the counter surviving a stopped transport. genmddj's words are the opposite polarity to smsggdj's, so
-// these cases also say the shared machine is fed the right encoder.
+// frame, with the counter surviving a stopped transport. Both carts are active-high with idle = counter 3; the pins are
+// what differ (genmddj's TR and TH are bits 5 and 6 of $A10005, smsggdj's are other bits of another port), so these
+// cases also say the shared machine is fed the right encoder.
 import { test, expect } from "@retroplug/testing";
 import { NodeRig, type Sent } from "@retroplug/testing/rig";
 import { GENMDDJ_SYNC_NODE_TYPE, genmddjSyncNode } from "../genmddjSyncNode";
@@ -5677,21 +6061,23 @@ and the manifest's `retroplug` member gains:
     }
 ```
 
-- [ ] **Step 4: The lists that pin every role, node and label, each in the task that first breaks it**
+- [ ] **Step 4: The lists that pin every role, node and label**
 
-Three of these break BEFORE this task, which is why they are named here and fixed there:
+Each edit is in this task because this task is what breaks it; the two that break EARLIER were made in their own tasks
+(`system-settings/registry.test.ts`'s `"blastem"` kind in the descriptor's task, `store-graph.test.ts`'s `NATIVE_TYPES`
+in the node's task), and an implementer reads only its own task, so neither is a to-do here.
 
-- `packages/retroplug/test/system-settings/registry.test.ts:75` pins every role KIND, so the `blastem` system role from
-  Task 15 breaks it there: Task 15 adds `"blastem"` to that list. This task adds `"genmddj-sync"` to it, plus a case
-  that a genmddj ROM on `md` carries `["blastem", "genmddj-sync"]` (built from `@retroplug/genmddj/testFixtures`'s
-  `genmddjHeader`, as the smsggdj cases use their own fixture).
-- `packages/retroplug/test/systems/store-graph.test.ts:786-790`'s `NATIVE_TYPES` needs `rp.blastem.md` in Task 14 (the
-  node type lands there), and its fixture table needs `be.seed("/roms/genmddj.bin", genmddjHeader())` in this task.
+- `packages/retroplug/test/system-settings/registry.test.ts:75` pins every role KIND: `"genmddj-sync"` joins the list,
+  plus a case that a genmddj ROM on `md` carries `["blastem", "genmddj-sync"]` (built from
+  `@retroplug/genmddj/testFixtures`'s `genmddjHeader`, as the smsggdj cases use their own fixture).
+- `packages/retroplug/test/systems/store-graph.test.ts`'s fixture table needs
+  `be.seed("/roms/genmddj.bin", genmddjHeader())`, because this task's role is the first that makes a store case boot a
+  Mega Drive ROM (the `genmddjHeader` import comes from `@retroplug/genmddj/testFixtures`).
 - `packages/native/test/engine-graph/ScriptNodes.test.cpp:2563-2565` and `:2852-2856` pin the script bundle's node
   types and the span labels 16..23: `rp.genmddj.sync` at label 24 appends `"rp.genmddj.sync"` to both lists and adds
   `CHECK(names[24] == "rp.genmddj.sync")`. That is this task's edit, and `pnpm test:plugin` fails until it is made.
-- `spec/08-profiling.md:268` and `:338` say "16 to 23" where they describe the label range: Task 24 updates both to
-  "16 to 24".
+- `spec/08-profiling.md:268` and `:338` say "16 to 23" where they describe the label range: the docs task updates both
+  to "16 to 24".
 
 `packages/retroplug/test/_featureRoles.ts`: add `"genmddj-sync"` to the app-order list, after `"sms-sync"`.
 
@@ -5709,7 +6095,8 @@ one (Task 14), so it passes without an edit; if it does not, the MD node's input
 
 ```bash
 git add packages/genmddj packages/retroplug/test/_featureRoles.ts \
-        packages/retroplug/test/system-settings/registry.test.ts packages/retroplug/test/systems/store-graph.test.ts
+        packages/retroplug/test/system-settings/registry.test.ts packages/retroplug/test/systems/store-graph.test.ts \
+        packages/native/test/engine-graph/ScriptNodes.test.cpp
 git commit -m "feat(genmddj): the genmddj-sync role and rp.genmddj.sync, span label 24"
 ```
 
@@ -5833,6 +6220,7 @@ genmddj's sync variables are fixed work-RAM addresses (its `src/main.asm` equs),
 import { test, expect, skip } from "@retroplug/testing";
 
 declare const __RESOURCES_DIR__: string;
+declare const __CONFIG_DIR__: string;  // the temp dir run-native-tests.mjs gives each file (the case's own ROM copy)
 
 const GENMDDJ_ROM = __RESOURCES_DIR__ + "/roms/genmddj_v0_27.bin";
 const SYNC_LAST = 0xd425;
@@ -5856,8 +6244,11 @@ The session, in the shape `test-native/app-play-nes.test.ts` builds one (`create
   if (!be.fileExists(GENMDDJ_ROM)) skip(`genmddj-sync: no ROM at ${GENMDDJ_ROM}`);
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
-  // The ROM is copied into the case's own directory first, so its .sav and its battery slot are this case's.
-  const id = (project.systems.loadRom(GENMDDJ_ROM) as { system: number }).system;
+  // The ROM is copied into the case's own directory first, so its .sav and its battery slot are this case's. (There is no
+  // be.copyFile; read and write, as Rig.rom does.)
+  const local = __CONFIG_DIR__ + "/genmddj_v0_27.bin";
+  expect(be.writeFile(local, be.readFile(GENMDDJ_ROM)!)).toBeTruthy();
+  const id = (project.systems.loadRom(local) as { system: number }).system;
   expect(project.systems.view()[0].platform).toBe("md");
   expect(project.systems.view()[0].roles.map((r) => r.kind)).toContain("genmddj-sync");
   audio.renderAudio(2000);  // boot: the cart clears RAM, sets up the VDP and draws its UI
@@ -5875,20 +6266,21 @@ The session, in the shape `test-native/app-play-nes.test.ts` builds one (`create
   audio.pressButton(id, BUTTON_START, false);
   audio.renderAudio(500);
   expect(ram()[SYNC_WAIT]).toBe(1);         // armed, showing WAIT: no clock has arrived yet
-  const syncAtArm = ram()[SYNC_LAST];       // the counter the ROM latched when it armed: every later count is a delta
   audio.setTransport(true);
   audio.setBpm(120);
   audio.renderAudio(1000);
-  // 120 BPM at 24 PPQN is 48 clocks a second, and the ROM counts (read - last) & 3, so the counter value after a second
-  // is the count mod 4 - which 48 makes 0. Assert the COUNT instead of its residue, with a tolerance of one clock: the
-  // engine ticks once a frame, so the number of clocks the cart actually took is 48 plus or minus the frames at the
-  // transport's edges.
+  // The clocks are derived from the TRANSPORT, not from the ROM's counter: 120 BPM at 24 PPQN for one second of audio is
+  // 48 clocks (bpm / 60 * 24 * seconds). The ROM counts `(read - last) & 3`, and 48 is 0 mod 4, so its counter value
+  // cannot carry the count at all; a residue assertion would be about 0 and would prove nothing. What the case can
+  // assert is the ROW the clocks advanced to, to within a row: IN24's head start plays row 0 on the first clock,
+  // then one row per 6 clocks (groove 6), so 48 clocks land on row 1 + floor(47 / 6) = 8, plus or minus one for the
+  // frames at the transport's edges.
   expect(ram()[SYNC_WAIT]).toBe(0);
-  const clocks = (ram()[SYNC_LAST] - syncAtArm) & 3;  // the delta the ROM itself computes
-  expect(clocks).toBeGreaterThan(0);
+  const renderedSeconds = 1000 / 1000;  // renderAudio takes milliseconds
+  const ticks = Math.round((120 / 60) * 24 * renderedSeconds);  // 48
   const row = ram()[PLAY_ROW];
-  expect(row).toBeGreaterThan(0);           // the playhead moved: the clocks advanced the song
-  expect(Math.abs(row - Math.floor(clocks / 6))).toBeLessThanOrEqual(1);  // six clocks a row in IN24
+  expect(row).toBeGreaterThan(0);  // the playhead moved: the clocks advanced the song
+  expect(Math.abs(row - (1 + Math.floor((ticks - 1) / 6)))).toBeLessThanOrEqual(1);
   audio.setTransport(false);
   const frozenLast = ram()[SYNC_LAST];
   const frozenRow = ram()[PLAY_ROW];
@@ -5899,14 +6291,9 @@ The session, in the shape `test-native/app-play-nes.test.ts` builds one (`create
 ```
 
 `SystemsStore.readRam(id)`/`writeRam(id, offset, bytes)` are the store's own, and their offsets are the 68k addresses
-minus `$FF0000` (Task 12), which is why `$FFD425` is `0xD425` and the constants above are used as they stand. The case's
-own copy of the ROM, so its `.sav` is nobody else's: there is no `backend.copyFile`; read and write, as `Rig.rom` does:
-
-```ts
-  const local = __CONFIG_DIR__ + "/genmddj_v0_27.bin";
-  expect(be.writeFile(local, be.readFile(GENMDDJ_ROM)!)).toBeTruthy();
-  const id = (project.systems.loadRom(local) as { system: number }).system;
-```
+minus `$FF0000` (Task 12), which is why `$FFD425` is `0xD425` and the constants above are used as they stand. The
+counter's residue is deliberately NOT an assertion: `(sync_last - armed) & 3` is the clock count mod 4, and 48 clocks
+is 0, so a residue check would compare 0 with 0.
 
 - [ ] **Step 3: Run it, with and without the ROM**
 
@@ -5956,7 +6343,7 @@ git commit -m "test(genmddj): the DAW clocks the real cart through port 2, end t
 ```ts
 // A Mega Drive's speed on this host (design section 5, "Performance"): the synthetic image and, from the fixture tree,
 // the genmddj ROM, rendered and timed through the real engine at 48 kHz. Profile hosts only (the counters are
-// RETROPLUG_PROFILE's), so `pnpm test:native` sweeps it as a counted skip and `pnpm profile stats md-bench` runs it.
+// RETROPLUG_PROFILE's), so `pnpm test:native` sweeps it as a counted skip and `pnpm profile md-bench` runs it.
 import { test, expect, skip } from "@retroplug/testing";
 
 test("a Mega Drive's xRT", () => {
@@ -5973,25 +6360,31 @@ the MD's image from `@retroplug/blastem/testFixtures` and a second, fixture-gate
 
 ```bash
 pnpm test:native md-bench                        # skip, counted
-pnpm profile stats md-bench                      # the numbers, in a build-prof/ host
+pnpm profile md-bench                            # the numbers, in a build-prof/ host
 ```
 
-Expected: the first exits 0 with a skip; the second prints one xRT line per window. `pnpm profile` takes a MODE first
-(`tools/run-profile.sh`'s `mode="${1:-stats}"`, `slug="${2:-dsp-bench}"`), so the slug goes second: `pnpm profile bench`
-would ask for a mode named bench and exit with the script's usage error. Record the synthetic figure in Task 24's
-spec/13 section (one number, with the host it was measured on), and take the baseline with the fixtures absent:
-
-```bash
-RETROPLUG_RESOURCES_DIR=/nonexistent pnpm test:native --update-skip-baseline
-```
+Expected: the first exits 0 with a skip; the second prints one xRT line per window. The root `package.json`'s
+`"profile"` script is already `tools/run-profile.sh stats`, so `run-profile.sh`'s first argument (its MODE, which
+defaults to `stats`) is supplied by the script and everything typed after `pnpm profile` is its second argument, the
+SLUG: `pnpm profile md-bench` is `run-profile.sh stats md-bench`. A word typed before the slug is read AS the slug, so
+only the file's name goes there. Record the synthetic figure in the docs task's spec/13 section (one number, with the
+host it was measured on).
 
 - [ ] **Step 3: Baseline and commit**
 
+The bench's skip is this file's, so the baseline is recorded WITH THE FIXTURES ABSENT, exactly as the end-to-end case's
+is, and in the same command (one recording covers every file's skips, so run it once, from either task):
+
 ```bash
-pnpm test:native --update-skip-baseline
+RETROPLUG_RESOURCES_DIR=/nonexistent pnpm test:native --update-skip-baseline
+git diff packages/retroplug/scripts/skip-baseline.json
 git add packages/retroplug/test-native/md-bench.test.ts packages/retroplug/scripts/skip-baseline.json
 git commit -m "test(blastem): a profile-host bench for a Mega Drive's speed"
 ```
+
+Expected: the bench's entry appears beside `genmddj-sync`'s if the end-to-end case was committed first, and the diff
+shows no reading taken on a box that owns the fixtures. A second `--update-skip-baseline` without
+`RETROPLUG_RESOURCES_DIR=/nonexistent` is what undoes that, so there is only one here and it carries the variable.
 
 ---
 
@@ -6001,14 +6394,15 @@ git commit -m "test(blastem): a profile-host bench for a Mega Drive's speed"
 - Modify: `spec/00-overview.md` (the package table), `spec/06-build-test.md` (Python, the generated cores, the fixture
   script, `test:plugin`'s list, the `.bin` rule), `spec/13-subsystems.md` (a Mega Drive section), `AGENTS.md` (the
   existing vendored-core rule, widened), `spec/08-profiling.md` (the label range and the bench bullet),
-  `spec/07-remaining-work.md` (three entries)
+  `spec/07-remaining-work.md` (four entries)
 
 **Interfaces:**
-- Produces: the documentation the design's section 6 lists, in the same commits as the code they describe. The
-  design asks for that and this plan keeps it where it is cheap: Task 2c's commit carries spec/06's build notes and
-  `test:plugin`'s list (the change is that commit's), Task 8's carries spec/13's port-2 and timing paragraphs, and Task
-  18's carries the fixture script's spec/06 line. This task lands the package table, the sections those commits stubbed
-  out, the label range, the AGENTS.md rule and spec/07's entries.
+- Produces: the documentation the design's section 6 lists, in ONE docs commit at the end. The design asks for each doc
+  beside its code, and this plan deliberately does not: the spec files describe the FINISHED shape (a spec/06 paragraph
+  written in the build task would be rewritten by the audio, port and savestate tasks), and AGENTS.md's own cap (a new
+  rule cuts or moves one) is a single edit that has to be made once. So no code task stages a spec file, and this task
+  lands them all: the package table, spec/06's build notes and test list, spec/13's section, the label range, the
+  AGENTS.md rule and spec/07's entries.
 
 - [ ] **Step 1: spec/00's package table**
 
@@ -6032,6 +6426,13 @@ library, which `cmake/blastem.cmake` builds from `deps/blastem` with `cpu_dsl.py
 alone (no SDL, Nuklear, 32X, Sega CD, SMS, Coleco, LaserActive), and `BlastemShim.cpp` provides the functions the
 remaining sources reference from branches a Mega Drive cannot reach. Add `retroplug-blastem-test` to the `test:plugin`
 row's binary list and to the `test` script's list, and one line to "Hosts -> test tiers" naming the MD cases.
+
+And the design's "`cmake/packages.cmake`'s boundary admits it only to `packages/blastem/native`" line, which the tree
+does not have: `packages.cmake` treats a root target as vendored (there is no per-package allowlist, `packages.cmake:715,
+750, 985`), so nothing enforces that sentence. Say what IS true instead: the `blastem` library is defined in
+`cmake/blastem.cmake` at the root and linked by exactly one target, `retroplug-blastem`; the TS side is held by
+`pnpm check:boundaries`, and the native side by review (a second `target_link_libraries(... blastem)` would be visible in
+one file). Record the deviation from the design's sentence here, and in the commit body.
 
 - [ ] **Step 3: spec/13's Mega Drive section**
 
@@ -6063,9 +6464,9 @@ carry, and the mirror's push:
 and one line to Build gotchas in spec/06: the generated `m68k.c`/`z80.c` live in the build tree only, Python 3 is a
 configure requirement, and the mirror's push is the one CI dependency this branch cannot satisfy locally.
 
-- [ ] **Step 5: spec/07's three entries**
+- [ ] **Step 5: spec/07's four entries**
 
-Add three checklist lines and their detail entries (the file's own rule: open work only, each line linking its
+Add four checklist lines and their detail entries (the file's own rule: open work only, each line linking its
 entry):
 
 - `[ ] [genmddj's tracker integration and MIDI takeover (spec 2)](#genmddjs-tracker-integration-and-midi-takeover-spec-2)`
@@ -6077,6 +6478,15 @@ entry):
 - `[ ] [The A53's Mega Drive speed](#the-a53s-mega-drive-speed)`: the design's estimate is weak (about 1.2x realtime,
   0.7x with Nuked); the spike's arm64 builds and its unrun `device-bench.sh` are the start
   (`docs/megadrive-blastem-design.md` section 7).
+- `[ ] [BlastEm's remaining process-exits](#blastems-remaining-process-exits)`: the `fatal_error` calls the savestate
+  task does not convert, listed by file and line with the condition that makes each one reachable
+  (`system.c:104, 219`, `genesis.c:2147, 3035, 3042, 3069, 3117`, `romdb.c`'s fifteen, `i2c.c`'s four, `tern.c:277`,
+  the config/paths/gen/event_log ones). The task that converts the last of them deletes this entry, per this file's own
+  rule; until then it is the record that a corrupt payload from a path nobody has taken can still exit the DAW.
+
+And `spec/08-profiling.md:268` and `:338`: both say the span label range is "16 to 23", and `rp.genmddj.sync` is 24, so
+both become "16 to 24". Its bench section is prose bullets (no table), so the bench's bullet goes beside `nes-bench`'s
+with the synthetic figure the profile task measured and the host it was measured on.
 
 - [ ] **Step 6: The documentation checks, then the whole suite**
 
@@ -6104,7 +6514,7 @@ docs(megadrive): the console, its device, its audio path, and the work spec 1 le
 
 spec/00's package table, spec/06's build notes and test list, spec/13's
 Mega Drive section, one AGENTS.md rule for the mirror, and spec/07's entries
-for spec 2, spec 3 and the A53 measurement.
+for spec 2, spec 3, the A53 measurement and BlastEm's remaining process-exits.
 EOF
 ```
 
