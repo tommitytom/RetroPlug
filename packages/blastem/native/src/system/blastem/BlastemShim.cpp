@@ -188,9 +188,11 @@ void render_pause_source(audio_source*) {}
 void render_resume_source(audio_source*) {}
 // render_end_audio is BlastEm's own "the window closed" flush of its audio thread; there is no thread here.
 void render_end_audio(void) {}
-void render_save_audio(char*) {
-    // A WAV dump is BlastEm's debugging feature, not a host one: the shell records what it renders.
+void render_save_audio(char* path) {
+    // A WAV dump is BlastEm's debugging feature, not a host one: the shell records what it renders. The contract is that
+    // the callee frees the path (render_audio.c does), so the argument is taken rather than ignored.
     std::fputs("blastem: a request to dump audio to WAV was ignored (this host has no WAV dump)\n", stderr);
+    std::free(path);
 }
 
 // -- The Sega CD (gen->expansion is NULL for a Mega Drive) ------------------------------------------------
