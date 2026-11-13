@@ -320,6 +320,13 @@ const midiService: UiService = {
         lastClock = bpm;
         dev.setClockBpm(bpm);
       }
+      // What moved with no edge: a control surface's claim or release, which the Launchpad's own service makes while
+      // this container is open, closes the claimed input and moves the reserved pair. `state` is the stream's members,
+      // not a listing, so this costs the machine nothing; what is LISTED stays the last describe's, because a claim
+      // changes what is open, not what the machine offers. Read only while the menu is open - the same gate the rows
+      // key is built with below - so a collapsed container pays no native call per frame on a handheld.
+      const state = host.menuOpen !== false ? dev.state?.() ?? null : null;
+      if (state && listing?.dev === dev && listing.value) listing = { dev, value: { ...listing.value, ...state } };
       // The rows follow the listing, the section and the transport: a poll repaints only when one of them moved.
       const rows = rowsKey(listing?.value ?? null, section, dev.transport(), host.menuOpen !== false);
       const moved = rows !== lastRows;

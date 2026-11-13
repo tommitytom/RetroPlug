@@ -61,6 +61,9 @@ export interface RpHooks {
   // The MIDI stream: the ports this machine lists and what actually opened, the selection applied by exact name, and
   // the transport the MIDI Clock submenu drives. The selection is the project's; the stream is the host's.
   __rp_midiDescribe?: () => MidiDescription | null;
+  // The stream's own state (what is open, and the pair a control surface holds): member reads, no probe, so a per-frame
+  // poll may call it.
+  __rp_midiState?: () => Pick<MidiDescription, "openedInputs" | "openedOutputs" | "reserved"> | null;
   __rp_midiApply?: (selection: MidiSelection, mode: "diff" | "reopen") => void;
   __rp_getTransport?: () => Partial<TransportState>;
   __rp_setTransport?: (playing: boolean) => void;

@@ -109,6 +109,8 @@ function midiDeviceHost(): MidiDeviceHost | undefined {
   if (typeof native.__rp_midiDescribe !== "function") return undefined;
   return {
     describe: () => native.__rp_midiDescribe?.() ?? null,
+    // Absent on a host that predates the hook (or has no stream): the service then follows the edges alone.
+    state: native.__rp_midiState ? () => native.__rp_midiState?.() ?? null : undefined,
     apply: (selection, mode = "diff") => native.__rp_midiApply?.(selection, mode),
     transport: () => {
       const t = native.__rp_getTransport?.();

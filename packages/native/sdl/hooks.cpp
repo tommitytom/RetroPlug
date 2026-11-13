@@ -183,6 +183,23 @@ JSValue jsMidiDescribe(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return o;
 }
 
+// __rp_midiState(): { openedInputs, openedOutputs, reserved: { input, output } } - what the stream itself holds, with no
+// probe of the machine. jsMidiDescribe above asks the backend for the port lists, which on ALSA creates and destroys an
+// RtMidi client that every other sequencer client sees announced; a poll that runs every frame (Settings > MIDI's rows
+// follow a control surface's claim made while the container is open) may only read members. So the lists stay the last
+// describe's and this answers what moved since.
+JSValue jsMidiState(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue o = JS_NewObject(ctx);
+    if (!g_app) return o;
+    setStringArray(ctx, o, "openedInputs", g_app->midi.openedInputs());
+    setStringArray(ctx, o, "openedOutputs", g_app->midi.openedOutputs());
+    JSValue reserved = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, reserved, "input", JS_NewString(ctx, g_app->midi.reservedInput().c_str()));
+    JS_SetPropertyStr(ctx, reserved, "output", JS_NewString(ctx, g_app->midi.reservedOutput().c_str()));
+    JS_SetPropertyStr(ctx, o, "reserved", reserved);
+    return o;
+}
+
 /** The selection object's `names` list, as the strings a row wrote. */
 std::vector<std::string> stringListOf(JSContext* ctx, JSValueConst value) {
     std::vector<std::string> out;
@@ -372,6 +389,7 @@ void installWindowHooks(JSContext* ctx) {
     // The MIDI stream (Settings > MIDI and the control surface's claim). RtMidi is compiled into retroplug-sdl, so the
     // seam always exists here; the plugin never binds these, so its rows and its transport are absent.
     bind("__rp_midiDescribe", jsMidiDescribe, 0);
+    bind("__rp_midiState", jsMidiState, 0);
     bind("__rp_midiApply", jsMidiApply, 2);
     // The OS-native file dialog — only where a desktop helper exists (zenity/kdialog/…). Where none does
     // (the muOS handheld, a bare container) we DON'T bind it: useFileBrowser sees no nativeHook and the

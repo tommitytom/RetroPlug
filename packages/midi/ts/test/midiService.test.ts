@@ -35,6 +35,9 @@ interface Rig {
 function rig(overrides: {
   describe?: () => MidiDescription;
   throwOnApply?: boolean;
+  /** The stream's own state read (opened ports and the reserved pair), as the host's `state()` answers it: separate
+   *  from `describe`, which probes. */
+  state?: () => Pick<MidiDescription, "openedInputs" | "openedOutputs" | "reserved">;
   /** What the device does with an apply: a fake whose ports OPEN, so a case can hold what the rows read afterwards. */
   onApply?: (selection: MidiSelection, mode: string) => void;
 } = {}): Rig {
@@ -53,6 +56,7 @@ function rig(overrides: {
     transport: () => ({ playing: false, external: false, bpm: 120, localBpm: mockSection.clockBpm }),
     setTransport: (playing) => transportSet.push(playing),
     setClockBpm: (bpm) => clock.push(bpm),
+    ...(overrides.state ? { state: overrides.state } : {}),
   };
   const host = {
     midiDevice: device,
@@ -407,4 +411,44 @@ test("a host with no MIDI stream (a DAW's editor) contributes no row at all", ()
   const host = { project: { section: () => SECTION, setSection: () => {} } } as unknown as UiHost;
   expect(menu("settings.midi").build(host, null, { systems: [], assetRom: () => null, romPatterns: [] })).toEqual([]);
   expect(menu("instance.clock").build(host, null, { systems: [], assetRom: () => null, romPatterns: [] })).toEqual([]);
+});
+
+test("a control surface's claim repaints the checklist with no edge, and reads no port list to do it", () => {
+  // The Launchpad claims its pair from ITS service's poll: the stream closes the claimed input and its reserved pair
+  // moves, and none of this service's edges does (no section byte, no project revision, no container opening). The
+  // stream's own state answers it every poll - member reads, no probe - so the rows follow a claim, and a release.
+  let opened = ["Launchpad Pro MK3", "Arturia KeyStep 32"];
+  let reserved = { input: "", output: "" };
+  const r = rig({
+    describe: countingDescribe(),
+    state: () => ({ openedInputs: opened, openedOutputs: [], reserved }),
+  });
+  const svc = service();
+  svc.start!(r.host);
+  r.setSection({ inputs: [{ name: "Launchpad Pro MK3" }] }); // the user picked the pad before the claim
+  const build = () => menu("settings.midi").build(r.host, null, { systems: [], assetRom: () => null, romPatterns: [] });
+  describes = 0;
+  svc.poll!.run(r.host); // the mount's apply, against the machine as it is
+  const listed = describes;
+  expect(build().find((row) => row.id === "midi-input-0")!.label).toBe("[x] Launchpad Pro MK3");
+
+  // The claim lands. No edge fires: the poll sees it through the stream's state, repaints once, and asks for no listing.
+  opened = ["Arturia KeyStep 32"];
+  reserved = { input: "Launchpad Pro MK3", output: "" };
+  expect(svc.poll!.run(r.host)).toBe(true);
+  expect(r.applied.length).toBe(1); // a claim is not a project change: nothing is re-applied
+  expect(describes).toBe(listed);
+  const rows = build();
+  expect(rows.find((row) => row.id === "midi-reserved-in")!.label).toBe("[ ] Launchpad Pro MK3 (control surface)");
+  expect(rows.some((row) => row.id.startsWith("midi-input-") && row.label.includes("Launchpad Pro MK3"))).toBe(false);
+  expect(svc.poll!.run(r.host)).toBe(false); // once, not every frame
+
+  // The release mirrors it: the pick comes back, and the held row goes.
+  opened = ["Launchpad Pro MK3", "Arturia KeyStep 32"];
+  reserved = { input: "", output: "" };
+  expect(svc.poll!.run(r.host)).toBe(true);
+  const after = build();
+  expect(after.some((row) => row.id === "midi-reserved-in")).toBe(false);
+  expect(after.find((row) => row.id === "midi-input-0")!.label).toBe("[x] Launchpad Pro MK3");
+  expect(svc.poll!.run(r.host)).toBe(false);
 });

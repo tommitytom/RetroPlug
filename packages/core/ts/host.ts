@@ -351,10 +351,19 @@ export interface TransportState {
   localBpm: number;
 }
 
+/** The stream's own state, as its member reads answer it: the ports it has open and the pair a control surface holds.
+ *  No probe of the machine (that is `describe`), so a poll may read this every frame. The port LISTS stay the last
+ *  describe's, because a claim changes what is open, not what the machine offers. */
+export type MidiState = Pick<MidiDescription, "openedInputs" | "openedOutputs" | "reserved">;
+
 /** The MIDI device the standalone owns: its stream and the transport the clock drives. A host with no MIDI device
  *  (the plugin, whose DAW routes MIDI) does not offer the group. */
 export interface MidiDeviceHost {
   describe(): MidiDescription | null;
+  /** The stream's state right now, or null on a host that cannot say (an older binding, a stream that is closed).
+   *  Member reads only: a control surface's claim or release moves this without raising any of the service's edges (a
+   *  section byte, a project revision, the container opening), which is why the rows read it on every poll. */
+  state?(): MidiState | null;
   /** Apply a selection to the stream. `mode` is the stream's: "diff" keeps the ports an unchanged selection already
    *  holds open (a project load), "reopen" lets every port go before opening it again (the Rescan row and a re-pick,
    *  the one remedy for a port that was unplugged). */

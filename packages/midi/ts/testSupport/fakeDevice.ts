@@ -5,6 +5,7 @@ import type { MidiDescription, MidiSelection, TransportState } from "@retroplug/
 
 interface MidiHooks {
   __rp_midiDescribe?: () => MidiDescription | null;
+  __rp_midiState?: () => Pick<MidiDescription, "openedInputs" | "openedOutputs" | "reserved"> | null;
   __rp_midiApply?: (selection: MidiSelection, mode: "diff" | "reopen") => void;
   __rp_getTransport?: () => Partial<TransportState>;
   __rp_setTransport?: (playing: boolean) => void;
@@ -56,6 +57,15 @@ export class FakeMidiDevice {
 
   install(): this {
     globals.__rp_midiDescribe = () => (this.open ? this.description : null);
+    // What the stream holds, with no listing: the hook a poll reads every frame, which is how a claim made while the
+    // menu is open reaches the rows.
+    globals.__rp_midiState = () => (this.open
+      ? {
+        openedInputs: [...this.description.openedInputs],
+        openedOutputs: [...this.description.openedOutputs],
+        reserved: { ...this.description.reserved },
+      }
+      : null);
     globals.__rp_midiApply = (selection, mode) => {
       this.applied.push({
         selection: { ...selection, inputs: [...selection.inputs], outputs: [...selection.outputs] },
@@ -88,6 +98,7 @@ export class FakeMidiDevice {
 
   uninstall(): void {
     delete globals.__rp_midiDescribe;
+    delete globals.__rp_midiState;
     delete globals.__rp_midiApply;
     delete globals.__rp_getTransport;
     delete globals.__rp_setTransport;
