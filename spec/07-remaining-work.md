@@ -15,7 +15,6 @@ than work.
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
 - [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
 - [ ] [A `release.yml` run](#a-releaseyml-run)
-- [ ] [The BlastEm mirror is pushed and public](#the-blastem-mirror-is-pushed-and-public)
 - [ ] [MSVC has not compiled BlastEm](#msvc-has-not-compiled-blastem)
 
 **Package split**
@@ -163,25 +162,10 @@ only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modul
 with the three Mesen console options off, and no release job has built the branch. ([F2
 design](../docs/modular-graph-phase-f2-design.md) section 11.)
 
-### The BlastEm mirror is pushed and public
-
-`deps/blastem` is a git submodule of our own mirror, `https://github.com/tommitytom/RetroPlug-BlastEm`: `upstream` is
-one commit per imported BlastEm release (1.0 is hg `2b2a182f4522`) and `retroplug` is `upstream` plus this branch's
-Mega Drive edits, each carrying a `RetroPlug:` marker. Every one of those commits is in the local mirror at
-`.superpowers/megadrive/RetroPlug-BlastEm` and in `deps/blastem`, and none is on GitHub: only the user pushes the
-mirror, and the plan asks them to push both branches. The step is the user's push of `upstream` and `retroplug`, and it
-is **two things, not one**: the GitHub repository is also private, and CI initialises submodules over anonymous HTTPS
-("all repos are public", `build.yml` and `release.yml`), so a push alone still leaves every job unable to fetch. The
-user flips it public as well, or CI gains a submodule token instead (the same four jobs, and public is also what GPLv3
-distribution of a BlastEm-linked binary expects). Until both happen a fresh clone or a CI job cannot resolve the
-submodule at the pointer this tree carries, so CI cannot pass at all. The pointer is not bumped before the push, since
-a bump would only move the same missing commits. ([design](../docs/megadrive-blastem-design.md) section 1,
-[spec/06](06-build-test.md#build-gotchas).)
-
 ### MSVC has not compiled BlastEm
 
-BlastEm is GNU C99 and had never been built by cl.exe before this branch, and CI cannot run the windows job until the
-mirror is reachable (the entry above), so **the Windows build of `blastem` is unproven**: everything below is a
+BlastEm is GNU C99 and had never been built by cl.exe before this branch, and no windows job has run this branch yet
+(the mirror is public now, so the next CI run can fetch it), so **the Windows build of `blastem` is unproven**: everything below is a
 reading of the sources, not a green job.
 
 - What the configure now makes impossible rather than guessed at ([cmake/blastem.cmake](../cmake/blastem.cmake)):

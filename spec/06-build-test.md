@@ -1171,10 +1171,10 @@ run by hand: no CI or `test:plugin` leg builds that binary there.
   and `retroplug` is `upstream` plus our edits, each carrying a `RetroPlug:` marker comment. A fix is made inside
   `deps/blastem`, committed on `retroplug`, and pushed to the LOCAL mirror
   (`.superpowers/megadrive/RetroPlug-BlastEm`) before the outer repo's pointer commit; only the user pushes the mirror on
-  to GitHub, so until they do CI cannot resolve `deps/blastem` at all (that push and making the repository public are
-  both owed: CI fetches submodules over anonymous HTTPS, [spec/07](07-remaining-work.md#the-blastem-mirror-is-pushed-and-public)).
+  to GitHub, and a pointer whose commit is not on GitHub breaks every CI job (CI fetches submodules over anonymous
+  HTTPS, so the mirror must also stay public).
   Building it on Windows is a separate open question, not a known-green fact: BlastEm is GNU C99 and had never seen
-  cl.exe, and CI cannot say until it can fetch the mirror, so `cmake/blastem.cmake` makes the failures it could read out
+  cl.exe, and no CI run has built it yet, so `cmake/blastem.cmake` makes the failures it could read out
   of the sources impossible rather than waiting for the job (`mem_win.c` on `WIN32`, `call` dispatch for the Z80 on every
   platform, `megawifi.c` out of the file set, `ws2_32`, `/std:c11` and the `_CRT`/`__STDC_NO_ATOMICS__` defines), and
   [spec/07](07-remaining-work.md#msvc-has-not-compiled-blastem) carries the entry and clang-cl fallback. The configure
