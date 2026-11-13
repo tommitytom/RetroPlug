@@ -176,12 +176,15 @@ void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const* outs
     // Drained EVERY time, lanes or none. A lane-less block still ends the sink's frame: blip's buffer is sized for one
     // block plus the prime, so a `return` before the drain would leave the second block's deltas past its end and
     // either corrupt memory or trip blip's own assert (the rebase case and the video case both pass no lanes).
-    audio_.drain(info.frames, mixLeft_.data(), mixRight_.data());
+    // The mix is sized at activation and at every growth (reserveAudio), never here: the engine's [alloc] cases count a
+    // block's allocations, emulation included. A block larger than it is a breach of the engine's contract, so it is cut
+    // to the reservation and counted rather than read past the end of the mix.
+    const std::uint32_t frames = std::min<std::uint32_t>(info.frames, static_cast<std::uint32_t>(mixLeft_.size()));
+    if (frames < info.frames) ++clampedBlocks_;
+    audio_.drain(frames, mixLeft_.data(), mixRight_.data());
     const bool wired = laneCount >= 2 && outs && outs[0] && outs[1];
     if (wired) {
-        // The block's samples are sized at activation and at every growth (reserveAudio), never here: the engine's
-        // [alloc] cases count a block's allocations, emulation included.
-        for (std::uint32_t i = 0; i < info.frames; ++i) {
+        for (std::uint32_t i = 0; i < frames; ++i) {
             const float gain = gainSmoother_.next();
             outs[0][i] += mixLeft_[i] * gain;  // added, not written: SystemBase's contract
             outs[1][i] += mixRight_[i] * gain;
@@ -193,9 +196,13 @@ void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const* outs
 void BlastemMdSystem::reserveAudio(std::uint32_t maxBlockFrames) {
     const std::uint32_t frames = std::max(maxBlockFrames, blockFrames(0));
     if (frames > mixLeft_.size()) {
+        // The sink first: its sizing builds everything it needs and commits only at the end, so a throw leaves it
+        // exactly as it was. The mix follows, and a throw there leaves a sink larger than the mix, which the drain's
+        // clamp covers. Either way SystemBase's maximum does not move, so a reactivation at it does not retry the
+        // allocation that failed.
+        audio_.prepare(frames);
         mixLeft_.resize(frames);
         mixRight_.resize(frames);
-        audio_.prepare(frames);
     }
     SystemBase::reserveAudio(maxBlockFrames);  // LAST: the maximum moves only once the sizing has succeeded
 }

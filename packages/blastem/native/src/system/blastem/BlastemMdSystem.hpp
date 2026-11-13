@@ -74,6 +74,10 @@ public:
     AudioSink& audio() { return audio_; }
     // Host samples the sink ran dry on since activation: 0 on a driven core, and the audio cases assert it.
     std::uint64_t starvedSamples() const { return audio_.starvedSamples(); }
+    // Blocks the engine handed over larger than the reservation they were sized for, since activation. The contract says
+    // it never does; such a block is mixed up to the reservation and the rest of the lanes are left alone, which is a
+    // short block instead of a read past the mix's end.
+    std::uint64_t clampedBlocks() const { return clampedBlocks_; }
 
     // Runs the two lines genesis.c runs around vdp_test_port_write when the VDP test register's bit 0 changes the Z80's
     // clock source, so a case can move a chip's native rate without a register write whose handler is genesis.c's.
@@ -118,6 +122,8 @@ private:
     // The first host sample of the grid the next stepIfBelowTarget runs: the stop schedule is a fixed one-sample grid
     // (absolute time), so a host block's partition cannot move a stop. See stepIfBelowTarget.
     std::uint64_t nextGridSample_ = 0;
+    // Blocks the engine handed over larger than the reservation: finishBlock cuts them to it and counts them here.
+    std::uint64_t clampedBlocks_ = 0;
 
     // The block's drained mix, before the gain: sized at activation and at every reserveAudio growth, never reallocated
     // on the block thread (the engine's [alloc] cases count a block's allocations, emulation included).

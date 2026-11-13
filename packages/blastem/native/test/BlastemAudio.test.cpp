@@ -172,6 +172,25 @@ TEST_CASE("a DMA that carries the 68k past a block neither starves nor overruns"
     CHECK(sys->audio().overrunSamples() == 0);
 }
 
+TEST_CASE("a block above the reservation is clamped, not written past the mix", "[blastem][audio]") {
+    // The engine promises a block no larger than the reservation, and this is the compare that makes a breach a short
+    // block instead of a read past the end of mixLeft_: the lanes past the reservation are untouched, and the block is
+    // counted so a caller can see it happened.
+    auto sys = bootAt(rp::blastem::test::fmPsgRom(), kRate, 256);
+    std::vector<float> left(1024, 1.0f), right(1024, 1.0f);
+    float* lanes[2] = {left.data(), right.data()};
+    AudioBlockInfo info{};
+    info.frames = 1024;
+    sys->prepareForBlock(info);
+    while (sys->stepIfBelowTarget(1024)) {}
+    sys->finishBlock(info, lanes, 2);
+    CHECK(sys->clampedBlocks() == 1);
+    CHECK(std::all_of(left.begin() + 256, left.end(), [](float v) { return v == 1.0f; }));
+    CHECK(std::all_of(right.begin() + 256, right.end(), [](float v) { return v == 1.0f; }));
+    // The clamp does not silence the block: the frames it could mix are still the core's.
+    CHECK(std::any_of(left.begin(), left.begin() + 256, [](float v) { return v != 1.0f; }));
+}
+
 TEST_CASE("a chip's rate change ends its frame first", "[blastem][audio]") {
     // The VDP test register's bit 0 moves the PSG's divider from 240 to 112 and calls psg_adjust_master_clock
     // (genesis.c:1161-1163), which is the sink's adjustClock. Writing the test port's register is NOT the same thing:
