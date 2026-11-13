@@ -112,18 +112,19 @@ TEST_CASE("a pin the ROM drives as an output reads the ROM's latch", "[blastem][
 }
 
 TEST_CASE("one pin reads the host and the other the ROM's latch", "[blastem][port]") {
-    // $A1000B = $40: TH (bit 6) is an OUTPUT, TR (bit 5) an INPUT. The host drives TR high and TH low, and the ROM's own
-    // data latch holds TH high. A device that answered both pins (or neither) gives $20 or $40 here; the mixed answer is
-    // $60, which needs the direction rule between the two.
+    // $A1000B = $20: TR (bit 5) is an OUTPUT and TH (bit 6) an INPUT. The host drives TH low, the ROM's own data latch
+    // holds TR high, and the read is $20. Three wrong answers are distinguishable here: a host that answered both pins
+    // gives $00 (its TR too), a pad on the port gives $60 (TH floats high and a pad's bit 5 is high), and a device that
+    // answered neither gives $40. The direction rule between the host and the latch is the only way to $20.
     auto               sys = boot(rp::blastem::test::portPollLoopRom());
     std::vector<float> l(kFrames), r(kFrames);
     for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
-    const std::uint8_t host = 0x20;  // TR high, TH low
+    const std::uint8_t host = 0x00;  // TH low, and TR low for the pin the host does not own
     sys->pushCoreBytes(0, &host, 1);
-    sys->writePortControl(0x40);  // $A1000B = $40: TH output, TR input
-    sys->writePortData(0x40);     // $A10005 = $40: the ROM's latch drives TH high
+    sys->writePortControl(0x20);  // $A1000B = $20: TR output, TH input
+    sys->writePortData(0x20);     // $A10005 = $20: the ROM's latch drives TR high
     runBlock(*sys, l, r);
-    CHECK((ramByte(*sys, 0x0000) & 0x60) == 0x60);  // TR from the host, TH from the latch
+    CHECK((ramByte(*sys, 0x0000) & 0x60) == 0x20);  // TH from the host, TR from the latch
 }
 
 TEST_CASE("a ROM that never polls port 2 does not fill the queue", "[blastem][port]") {
