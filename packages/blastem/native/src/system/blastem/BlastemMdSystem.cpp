@@ -354,9 +354,15 @@ bool BlastemMdSystem::stepIfBelowTarget(std::uint32_t /*framesNeeded*/) {
     // case of the round-robin.
     const std::uint64_t end = sampleBase_ + blockFrames_;
     for (std::uint64_t s = nextGridSample_; s < end; ++s) {
+        // The grid's sample is the port device's key: a level queued for sample s is on the pins from this run on, so
+        // which block delivered it changes nothing.
+        port_.setGridSample(s);
         run_until(masterClockOf(s + 1));
         nextGridSample_ = s + 1;
     }
+    // And the levels the grid has passed are retired even when the ROM read nothing this block: a queue that only
+    // drained on a read would fill with levels a non-polling ROM never took, and drop the newest instead.
+    port_.retire();
     return false;
 }
 
@@ -463,13 +469,13 @@ void BlastemMdSystem::run_until(std::uint64_t mclk) {
 // is dropped rather than remembered and applied late.
 void BlastemMdSystem::pressButton(std::uint8_t /*button*/, bool /*down*/) {}
 
-// Port 2's host device (BlastemPortDevice.hpp): every byte of the block's feed becomes one level held from the master
-// clock of this block's `frame`-th sample, so a level reaches the pins at its own sample's clock rather than at the
-// block boundary. The clock is absolute, so a level staged past this block's end is still on time for the next one:
-// nothing rebases the schedule, and the host's block size chooses nothing.
+// Port 2's host device (BlastemPortDevice.hpp): every byte of the block's feed becomes one level held from the host
+// sample of this block's `frame`-th sample on, so a level reaches the pins when the stop grid gets to its own sample
+// rather than at the block boundary. The sample is absolute, so a level staged past this block's end is still on time
+// for the block that reaches it: nothing rebases the schedule, and the host's block size chooses nothing.
 void BlastemMdSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool /*flush*/) {
     if (!gen_ || !data || size == 0) return;
-    const std::uint64_t at = masterClockOf(sampleBase_ + frame);
+    const std::uint64_t at = sampleBase_ + frame;
     for (std::size_t i = 0; i < size; ++i) port_.enqueue(at, data[i]);
 }
 

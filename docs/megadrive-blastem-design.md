@@ -117,11 +117,13 @@ like the other cores.
 A device on controller port 2 that BlastEm's `io.c` calls on every read and write of `$A10005` (data) and `$A1000B`
 (control), with the access's master clock.
 
-- It holds a queue of `(mclk, level byte)` entries. `pushCoreBytes(frame, bytes)` converts the frame offset to a master
-  clock (section 2) and enqueues; `hasCoreBytesIn()` is true while a role claims the port.
-- On each access it first applies every entry due at or before that access's cycle, then answers. So the whole block
-  runs in one call and a level still lands on its exact sample, unlike the SMS role, which releases levels as the
-  emulated position passes their offset.
+- It holds a queue of `(host sample, level byte)` entries. `pushCoreBytes(frame, bytes)` adds the block's first sample
+  to the frame offset and enqueues; `hasCoreBytesIn()` is true while a role claims the port.
+- A level is on the pins once the stop grid reaches its sample, and every access the run for that sample makes then
+  answers with it. The grid is one stop per host sample and it is absolute, so which block delivered the level changes
+  nothing. Keying on the access's own clock instead would: every stop lands at the first instruction boundary at or
+  past its target, so in a large block the next sample's levels are already queued when the 68k crosses the target and
+  in a one-sample block they are not, and the same level would move by a poll with the host's block size.
 - A pin the ROM sets as an output in `$A1000B` reads back the ROM's own data latch, as on hardware; only input pins
   read the host's level. That keeps genmddj's OUT and PULSE modes from fighting the host.
 - Spec 2's MIDI-takeover bridge is a second behaviour of the same device: it answers each TR edge the ROM drives, at its

@@ -32,10 +32,12 @@ namespace {
 constexpr double        kRate  = 48000.0;
 constexpr std::uint64_t kTotal = 96000;  // 2 s: about 120 frames, so every image's VINT, HINT, Z80 and DMA run many times
 
-// The staged-level cases: one level, staged at one absolute host sample, so its offset inside the block differs between
-// every partition this case runs (41000 is a multiple of none of 64, 1024 and 4096). syncEdgeRom holds PSG channel 0 at
-// full volume until TR/TH leave their idle level, so the level is an audio edge a case can time.
-constexpr std::uint64_t kLevelFrame = 41000;
+// The staged-level cases: one level, staged at one absolute host sample, so its offset inside the block differs
+// between every partition this case runs. Three frames, because one is a frame a timing bug can pass by luck: 9000 and
+// 41003 are frames where a level lands inside a stop run's overshoot at one block size and not at another, and 41000 is
+// a multiple of none of 64, 1024 and 4096. syncEdgeRom holds PSG channel 0 at full volume until TR/TH leave their idle
+// level, so the level is an audio edge a case can time.
+constexpr std::uint64_t kLevelFrames[] = {9000, 41000, 41003};
 
 // The largest |sample| in a render: a silent render is invariant for the wrong reason, so the case checks this first.
 double peak(const std::vector<float>& samples) {
@@ -92,7 +94,7 @@ Render renderAt(const std::vector<std::uint8_t>& rom, std::uint32_t block) {
 }
 
 // syncEdgeRom over the whole 2 s, in lanes INDEXED BY FRAME like renderAt's, with both sync lines driven low from
-// kLevelFrame on when `staged`. The offset handed to pushCoreBytes is the level's frame minus this block's first
+// `frame` on when `staged`. The offset handed to pushCoreBytes is the level's frame minus this block's first
 // sample, so the level keeps the absolute sample (and so the absolute master clock) the same case stages at, whichever
 // block delivers it.
 struct Staged {
@@ -100,23 +102,23 @@ struct Staged {
     std::uint64_t      starved = 0;
 };
 
-Staged renderStaged(std::uint32_t block, bool staged) {
+Staged renderStaged(std::uint32_t block, bool staged, std::uint64_t frame, std::uint64_t total) {
     const std::uint8_t level = 0x00;  // TR and TH both low: what makes syncEdgeRom leave its poll loop
     rp::blastem::BlastemMdConfig cfg;
     cfg.region = 1;
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, rp::blastem::test::syncEdgeRom());
     sys->onActivate(kRate);
     Staged out;
-    out.left.reserve(kTotal);
-    out.right.reserve(kTotal);
+    out.left.reserve(total);
+    out.right.reserve(total);
     std::vector<float> left(block), right(block);
     float*             lanes[2] = {left.data(), right.data()};
     bool               sent = false;
     AudioBlockInfo     info{};
-    for (std::uint64_t at = 0; at < kTotal; at += info.frames) {
-        info.frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(block, kTotal - at));
-        if (staged && !sent && at + info.frames > kLevelFrame) {
-            sys->pushCoreBytes(static_cast<std::uint32_t>(kLevelFrame - at), &level, 1);
+    for (std::uint64_t at = 0; at < total; at += info.frames) {
+        info.frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(block, total - at));
+        if (staged && !sent && at + info.frames > frame) {
+            sys->pushCoreBytes(static_cast<std::uint32_t>(frame - at), &level, 1);
             sent = true;
         }
         std::fill(left.begin(), left.end(), 0.0f);
@@ -164,46 +166,57 @@ TEST_CASE("the timing images render the same bytes at 1, 64, 1024 and 4096 frame
 
 TEST_CASE("a staged sync level renders identical bytes at 1, 64, 1024 and 4096 frame blocks",
           "[blastem][invariance]") {
-    const Staged one = renderStaged(1, true);
-    const Staged sixtyFour = renderStaged(64, true);
-    const Staged thousand = renderStaged(1024, true);
-    const Staged fourThousand = renderStaged(4096, true);
-    REQUIRE(one.left.size() == kTotal);
-    REQUIRE(one.right.size() == kTotal);
-    // Same reason as the grid case: a render that is silent (a broken image, a starved sink) is identical at every
-    // partition and would pass this test while proving nothing.
-    REQUIRE(peak(one.left) > 0.01);
-    // A starved sink's zeros are placed by the partition, so a starvation here is the sink failing the case rather than
-    // the level moving: the audio cases pin the counter too.
-    CHECK(one.starved == 0);
-    CHECK(sixtyFour.starved == 0);
-    CHECK(thousand.starved == 0);
-    CHECK(fourThousand.starved == 0);
-    CHECK(one.left == sixtyFour.left);
-    CHECK(one.left == thousand.left);
-    CHECK(one.left == fourThousand.left);
-    CHECK(one.right == sixtyFour.right);
-    CHECK(one.right == thousand.right);
-    CHECK(one.right == fourThousand.right);
+    for (const std::uint64_t frame : kLevelFrames) {
+        INFO("level staged at " << frame);
+        // Past the level by a quarter second of host samples, not the whole 2 s: the claim is the level's placement,
+        // and the grid case above already holds a whole render to a partition.
+        const std::uint64_t total = frame + 2048;
+        const Staged one = renderStaged(1, true, frame, total);
+        const Staged sixtyFour = renderStaged(64, true, frame, total);
+        const Staged thousand = renderStaged(1024, true, frame, total);
+        const Staged fourThousand = renderStaged(4096, true, frame, total);
+        REQUIRE(one.left.size() == total);
+        REQUIRE(one.right.size() == total);
+        // Same reason as the grid case: a render that is silent (a broken image, a starved sink) is identical at every
+        // partition and would pass this test while proving nothing.
+        REQUIRE(peak(one.left) > 0.01);
+        // A starved sink's zeros are placed by the partition, so a starvation here is the sink failing the case rather
+        // than the level moving: the audio cases pin the counter too.
+        CHECK(one.starved == 0);
+        CHECK(sixtyFour.starved == 0);
+        CHECK(thousand.starved == 0);
+        CHECK(fourThousand.starved == 0);
+        CHECK(one.left == sixtyFour.left);
+        CHECK(one.left == thousand.left);
+        CHECK(one.left == fourThousand.left);
+        CHECK(one.right == sixtyFour.right);
+        CHECK(one.right == thousand.right);
+        CHECK(one.right == fourThousand.right);
+    }
 }
 
 TEST_CASE("the invariance case's stimulus really produces its edge", "[blastem][invariance]") {
-    // The level staged at kLevelFrame silences syncEdgeRom's tone. The proof is a DIFF against the same render with no
+    // The level staged at each of kLevelFrames silences syncEdgeRom's tone. The proof is a DIFF against the same render with no
     // level, not a magnitude threshold: blip's high-pass leaves a decaying DC tail (about 0.035 for thousands of
     // samples) after the tone stops, so "the peak after the level is under 0.001" is false for thousands of samples and
     // a window that skipped straight to a quiet stretch would be a different, weaker claim.
-    const Staged staged = renderStaged(1, true);
-    const Staged reference = renderStaged(1, false);
-    REQUIRE(peak(reference.left) > 0.01);  // the tone really plays all the way through when nothing is staged
-    std::size_t edge = staged.left.size();
-    for (std::size_t i = 0; i < staged.left.size(); ++i) {
-        if (staged.left[i] != reference.left[i]) { edge = i; break; }
+    for (const std::uint64_t frame : kLevelFrames) {
+        INFO("level staged at " << frame);
+        const std::uint64_t total = frame + 2048;
+        const Staged staged = renderStaged(1, true, frame, total);
+        const Staged reference = renderStaged(1, false, frame, total);
+        REQUIRE(peak(reference.left) > 0.01);  // the tone really plays all the way through when nothing is staged
+        std::size_t edge = staged.left.size();
+        for (std::size_t i = 0; i < staged.left.size(); ++i) {
+            if (staged.left[i] != reference.left[i]) { edge = i; break; }
+        }
+        INFO("first difference at " << edge);
+        REQUIRE(edge < staged.left.size());
+        // The same window the port case uses: at or after the staged frame (the 16-sample prime covers the kernel's
+        // 8-sample lead), and no later than the prime plus 8, which is the measured leftover plus room (the port case
+        // states the measurement). A bound this tight is what keeps the diff from passing on an edge the level only
+        // reached through a block boundary, and three frames keep it from passing by luck at one of them.
+        CHECK(edge >= frame);
+        CHECK(edge <= frame + rp::blastem::AudioSink::kPrime + 8u);
     }
-    INFO("level staged at " << kLevelFrame << ", first difference at " << edge);
-    REQUIRE(edge < staged.left.size());
-    // The same window the port case uses: at or after the staged frame (the 16-sample prime covers the kernel's
-    // 8-sample lead), and no later than the prime plus 16. The ROM's own poll adds under one sample here, so a bound
-    // this tight is what keeps the diff from passing on an edge the level only reached through a block boundary.
-    CHECK(edge >= kLevelFrame);
-    CHECK(edge <= kLevelFrame + rp::blastem::AudioSink::kPrime + 16u);
 }

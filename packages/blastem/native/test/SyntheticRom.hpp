@@ -22,7 +22,9 @@
 //   7200                moveq #0,d1
 //   0200 00mm           andi.b #mm,d0
 //   0242 vvvv           andi.w #vvvv,d2
+//   0000 00mm           ori.b #mm,d0
 //   0002 00mm           ori.b #mm,d2
+//   E808                lsr.b #4,d0
 //   0C00 00mm           cmpi.b #mm,d0
 //   5241                addq.w #1,d1
 //   D441                add.w d1,d2
@@ -136,6 +138,28 @@ inline std::vector<std::uint8_t> portPollLoopRom() {
                   0x60, 0xF2});                                   // bra.s  loop
 }
 
+// Reads port 2 in a loop and puts the two sync lines straight onto the PSG's channel 0 volume: bits 5 and 6 become
+// attenuation bits 0 and 1, so each of the four levels the host can drive is a different amplitude, and every level a
+// case stages is audible at its own sample (which a one-edge image cannot show). The tone is set up by the write table
+// and the loop rewrites only the volume.
+//
+//   $200  the write table: the PSG's tone latch and its high bits (16 bytes, so the program starts at $210)
+//   $210  move.b $A10005,d0
+//   $216  andi.b #$60,d0
+//   $21A  lsr.b #4,d0           (bits 5 and 6 become bits 0 and 1)
+//   $21C  ori.b #$90,d0         (channel 0's volume latch, attenuation 0 to 3)
+//   $220  move.b d0,$C00011
+//   $226  bra.s  loop           ($E8: $210 - $228 is -24)
+inline std::vector<std::uint8_t> portLevelRom() {
+    return image({0x10, 0x39, 0x00, 0xA1, 0x00, 0x05,             // move.b $A10005,d0   <- loop
+                  0x02, 0x00, 0x00, 0x60,                         // andi.b #$60,d0
+                  0xE8, 0x08,                                     // lsr.b #4,d0
+                  0x00, 0x00, 0x00, 0x90,                         // ori.b #$90,d0
+                  0x13, 0xC0, 0x00, 0xC0, 0x00, 0x11,             // move.b d0,$C00011 (channel 0 volume)
+                  0x60, 0xE8},                                    // bra.s  loop
+                 {{0xC00011, 0x8E}, {0xC00011, 0x01}});
+}
+
 // Polls port 2 in a tight loop, counting its polls, and leaves the loop the first time TR/TH differ from their idle
 // level ($60): it stores the count at $FF0000 (a word) and the masked level it read at $FF0002, which is therefore one
 // of $00, $20, $40, $60. The count is the poll loop's own clock, so a case reads WHEN a level arrived in units the ROM
@@ -162,7 +186,8 @@ inline std::vector<std::uint8_t> portTimestampRom() {
                   0x13, 0xC0, 0x00, 0xFF, 0x00, 0x02});           // move.b d0,$FF0002
 }
 
-// A VDP status/HV poll in a tight loop: `move.w $C00004,d0; bra.s .`. Every real game's vblank wait is this loop, and
+// A VDP status/HV poll in a tight loop, and NO port read: the image for a case that stages levels on a port nobody
+// polls. `move.w $C00004,d0; bra.s .`. Every real game's vblank wait is this loop, and
 // the control port's read handler syncs the components (vdp_port_read -> sync_components), so this is the image a case
 // needs when a stop or a rebase falls on a handler's sync rather than on an instruction boundary. 8 bytes: the read
 // and the branch, whose PC is loop + 8, so its displacement is -8 = 0xF8.

@@ -1,9 +1,11 @@
-// The port-2 device (design section 3): a level lands at its scheduled master clock, not at the block boundary; a level
-// staged past a block's end keeps its timing into the next; a pin the ROM drives as an output reads the ROM's own
-// latch; and the ROM's own poll count pins the sample mapping across a mid-session rate change.
+// The port-2 device (design section 3): a level is on the pins from the stop grid's own sample, at every block size; a
+// level staged past a block's end (and across a rate change) keeps its sample into the block that reaches it; a pin the
+// ROM drives as an output reads the ROM's own latch, and one of each reads what it should; a queue nothing polls does
+// not fill; and the ROM's own poll count pins the sample mapping across a mid-session rate change.
 //
 // Every case boots portPollLoopRom (a read and a store, forever): portPollRom reads ONCE, so after the boot blocks it
 // has nothing left to show and a case that used it would fail whatever the device did (the design's first draft did).
+// The placement case boots portLevelRom, whose PSG volume follows both sync lines, so every level is audible.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -97,9 +99,6 @@ TEST_CASE("a level staged past the block's end keeps its timing", "[blastem][por
 }
 
 TEST_CASE("a pin the ROM drives as an output reads the ROM's latch", "[blastem][port]") {
-    // The direction rule is BlastEm's own tail ($A1000B's bits, then the port's data latch), so this asks the port
-    // directly: the host holds both lines low, the ROM makes both outputs and drives them high, and the read is the
-    // ROM's latch.
     auto             sys = boot(rp::blastem::test::portPollLoopRom());
     std::vector<float> l(kFrames), r(kFrames);
     for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
@@ -109,6 +108,195 @@ TEST_CASE("a pin the ROM drives as an output reads the ROM's latch", "[blastem][
     sys->writePortData(0x60);     // $A10005 = $60: the ROM's own latch is high
     runBlock(*sys, l, r);
     CHECK((ramByte(*sys, 0x0000) & 0x60) == 0x60);  // the ROM's latch, not the host's level
+}
+
+TEST_CASE("one pin reads the host and the other the ROM's latch", "[blastem][port]") {
+    // $A1000B = $40: TH (bit 6) is an OUTPUT, TR (bit 5) an INPUT. The host drives TR high and TH low, and the ROM's own
+    // data latch holds TH high. A device that answered both pins (or neither) gives $20 or $40 here; the mixed answer is
+    // $60, which needs the direction rule between the two.
+    auto               sys = boot(rp::blastem::test::portPollLoopRom());
+    std::vector<float> l(kFrames), r(kFrames);
+    for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
+    const std::uint8_t host = 0x20;  // TR high, TH low
+    sys->pushCoreBytes(0, &host, 1);
+    sys->writePortControl(0x40);  // $A1000B = $40: TH output, TR input
+    sys->writePortData(0x40);     // $A10005 = $40: the ROM's latch drives TH high
+    runBlock(*sys, l, r);
+    CHECK((ramByte(*sys, 0x0000) & 0x60) == 0x60);  // TR from the host, TH from the latch
+}
+
+TEST_CASE("a ROM that never polls port 2 does not fill the queue", "[blastem][port]") {
+    // vdpPollRom reads the VDP and nothing else, so nothing drains the queue but the grid itself. A queue that only
+    // drained on a read would hold a level per sample forever, and its first read (the ROM switching into a mode that
+    // polls, minutes in) would answer with the oldest survivor instead of the current level.
+    auto               sys = boot(rp::blastem::test::vdpPollRom());
+    std::vector<float> l(kFrames), r(kFrames);
+    for (int block = 0; block < 4; ++block) {
+        for (std::uint32_t frame = 0; frame < kFrames; frame += 2) {
+            const std::uint8_t level = std::uint8_t((frame / 2) & 1 ? 0x20 : 0x40);
+            sys->pushCoreBytes(frame, &level, 1);
+        }
+        runBlock(*sys, l, r);
+        INFO("block " << block);
+        CHECK(sys->portDevice().empty());
+        CHECK(sys->portDevice().dropped() == 0);
+        // The held level is the last one the grid passed, which is what a first read in the next block answers with.
+        CHECK(sys->portDevice().lastApplied() == 0x20);
+    }
+}
+
+// A level as a case stages it: the absolute host sample it goes on at, and the byte the host drives.
+struct Stage {
+    std::uint64_t sample;
+    std::uint8_t  level;
+};
+
+struct Placed {
+    std::vector<float>                   left;
+    std::vector<rp::blastem::PortAccess> reads;
+};
+
+// A run of portLevelRom: `total` host frames in `block`-frame blocks, every staged level handed to pushCoreBytes in the
+// block that carries its sample, and the device's own record of every read. Two runs of the same stages differ only in
+// how the host cut the timeline, which is the whole question: a level's placement must not move with it.
+Placed place(const std::vector<Stage>& stages, std::uint32_t block, std::uint64_t total) {
+    auto               sys = boot(rp::blastem::test::portLevelRom());
+    std::vector<float> l(block), r(block);
+    float*             lanes[2] = {l.data(), r.data()};
+    Placed             out;
+    out.left.reserve(total);
+    // About three polls a host sample on this image, and the log refuses rather than grows: four times the frames is
+    // headroom for a slow first frame.
+    std::vector<rp::blastem::PortAccess> reads(static_cast<std::size_t>(total) * 4);
+    sys->portDevice().observe(reads);
+    std::size_t   next = 0;
+    AudioBlockInfo info{};
+    for (std::uint64_t at = 0; at < total; at += info.frames) {
+        info.frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(block, total - at));
+        while (next < stages.size() && stages[next].sample < at + info.frames) {
+            sys->pushCoreBytes(static_cast<std::uint32_t>(stages[next].sample - at), &stages[next].level, 1);
+            ++next;
+        }
+        std::fill(l.begin(), l.end(), 0.0f);
+        std::fill(r.begin(), r.end(), 0.0f);
+        sys->prepareForBlock(info);
+        while (sys->stepIfBelowTarget(info.frames)) {}
+        sys->finishBlock(info, lanes, 2);
+        out.left.insert(out.left.end(), l.begin(), l.begin() + info.frames);
+    }
+    REQUIRE(next == stages.size());  // every level was delivered by a block, or the case is not about placement
+    REQUIRE(sys->starvedSamples() == 0);
+    REQUIRE(sys->portDevice().dropped() == 0);
+    out.reads.assign(reads.begin(), reads.begin() + static_cast<std::ptrdiff_t>(sys->portDevice().recorded()));
+    return out;
+}
+
+// The device's schedule as an independent model: the last staged level whose sample the stop grid had reached. Bits
+// outside the two sync lines are the device's business, and the schedule has no level before the first stage.
+std::uint8_t expectedAt(const std::vector<Stage>& stages, std::uint64_t sample) {
+    std::uint8_t level = kIdle;
+    for (const Stage& s : stages) {
+        if (s.sample > sample) break;
+        level = std::uint8_t(s.level & 0x60);
+    }
+    return level;
+}
+
+TEST_CASE("a level is on the pins at its own sample at every block size", "[blastem][port]") {
+    // The review's evidence in Catch2 form: levels at irregular samples (900 levels, one every 47 or so), including the
+    // three frames a level's sample falls at a block boundary differently (9000, 41000 and 41003), rendered at blocks of
+    // 1, 7, 64, 512 and 4096 frames. Two independent claims, per read: the answer is the last level whose sample the
+    // stop grid had reached (never early, never a level late), and the reads and the audio are the same bytes at every
+    // partition.
+    constexpr std::uint64_t kMclk  = 53693175ull;
+    constexpr std::uint64_t kTotal = 44000;  // past 41003, so every special frame is inside the render
+    std::vector<Stage>      stages;
+    const std::uint8_t      levels[4] = {0x00, 0x20, 0x40, 0x60};
+    for (std::uint64_t s = 1000, k = 0; s < 41000; s += 47 + (k * 13) % 29, ++k) {
+        stages.push_back({s, levels[k & 3]});
+    }
+    for (const std::uint64_t at : {9000ull, 41000ull, 41003ull}) stages.push_back({at, 0x00});
+    std::sort(stages.begin(), stages.end(), [](const Stage& a, const Stage& b) { return a.sample < b.sample; });
+
+    const Placed reference = place(stages, 4096, kTotal);
+    // A silent render is invariant for the wrong reason: the image plays a tone whose volume every level moves.
+    REQUIRE(peak(reference.left) > 0.01);
+    REQUIRE(reference.reads.size() > 80000);
+    REQUIRE(reference.left.size() == kTotal);
+    std::size_t early = 0, late = 0, before = 0;
+    std::size_t firstWrong = reference.reads.size(), firstBefore = reference.reads.size();
+    for (std::size_t i = 0; i < reference.reads.size(); ++i) {
+        const rp::blastem::PortAccess& read = reference.reads[i];
+        if (read.mclk < (read.sample * kMclk) / 48000ull) {  // never before the sample's own clock
+            ++before;
+            if (firstBefore == reference.reads.size()) firstBefore = i;
+        }
+        const std::uint8_t want = expectedAt(stages, read.sample);
+        if ((read.answer & 0x60) == want) continue;
+        if ((read.answer & 0x60) == expectedAt(stages, read.sample + 1)) ++early;  // the next sample's level, early
+        else ++late;
+        if (firstWrong == reference.reads.size()) firstWrong = i;
+    }
+    INFO("block 4096: " << early << " early, " << late << " late of " << reference.reads.size());
+    if (firstWrong < reference.reads.size()) {
+        INFO("first wrong read " << firstWrong << " at sample " << reference.reads[firstWrong].sample << " (wanted "
+                                  << int(expectedAt(stages, reference.reads[firstWrong].sample)) << ", got "
+                                  << int(reference.reads[firstWrong].answer & 0x60) << ")");
+    }
+    if (firstBefore < reference.reads.size()) {
+        INFO("first early-clock read " << firstBefore << " at sample " << reference.reads[firstBefore].sample
+                                       << " mclk " << reference.reads[firstBefore].mclk);
+    }
+    CHECK(early == 0);
+    CHECK(late == 0);
+    CHECK(before == 0);
+    for (const std::uint32_t block : {1u, 7u, 64u, 512u}) {
+        INFO("block " << block);
+        const Placed other = place(stages, block, kTotal);
+        CHECK(other.left == reference.left);
+        REQUIRE(other.reads.size() == reference.reads.size());
+        // The same reads in the same order, answers included: a level that moved by one poll at one size is a
+        // different log, and one applied at a block boundary instead of its sample is a different clock.
+        std::size_t at = other.reads.size();
+        for (std::size_t i = 0; i < other.reads.size(); ++i) {
+            const rp::blastem::PortAccess& a = other.reads[i];
+            const rp::blastem::PortAccess& b = reference.reads[i];
+            if (a.sample != b.sample || a.mclk != b.mclk || a.answer != b.answer) {
+                at = i;
+                break;
+            }
+        }
+        if (at < other.reads.size()) {
+            INFO("read " << at << " is " << other.reads[at].sample << "/" << other.reads[at].mclk << "/"
+                         << int(other.reads[at].answer) << ", the 4096 frame run has " << reference.reads[at].sample
+                         << "/" << reference.reads[at].mclk << "/" << int(reference.reads[at].answer));
+        }
+        CHECK(at == other.reads.size());
+    }
+}
+
+TEST_CASE("a level staged past the block's end keeps its sample across a rate change", "[blastem][port]") {
+    // A level delivered by a block BEFORE the one that reaches its sample (offset 700 of 512-frame blocks: the host may
+    // stage ahead), and a sample-rate change between the two. Its key is the host sample, so the change re-anchors the
+    // mapping under it without moving it: the level is on the pins at sample 700, before the grid reaches 701.
+    auto               sys = boot(rp::blastem::test::portLevelRom());
+    constexpr std::uint64_t kAhead = 700;
+    std::vector<float> l(kFrames), r(kFrames);
+    std::vector<rp::blastem::PortAccess> reads(8192);
+    sys->portDevice().observe(reads);
+    const std::uint8_t low = 0x00;
+    sys->pushCoreBytes(static_cast<std::uint32_t>(kAhead), &low, 1);  // this block is 0..511: it is the next one's
+    CHECK(sys->levelsAccepted() == 1);
+    runBlock(*sys, l, r);
+    sys->onSampleRateChanged(44100.0);  // between blocks, as a host makes it
+    runBlock(*sys, l, r);
+    runBlock(*sys, l, r);
+    // The first read at or past the level's sample answered low, and no read before it did.
+    const auto recorded = reads.begin() + static_cast<std::ptrdiff_t>(sys->portDevice().recorded());
+    const auto first = std::find_if(reads.begin(), recorded, [](const rp::blastem::PortAccess& a) { return (a.answer & 0x60) == 0x00; });
+    REQUIRE(first != recorded);
+    CHECK(first->sample == kAhead);
+    for (auto it = reads.begin(); it != first; ++it) CHECK(it->sample < kAhead);
 }
 
 // A render of syncEdgeRom's left lane at `blocks` blocks of `kFrames`, with a level staged at absolute frame `at` when
@@ -152,11 +340,12 @@ TEST_CASE("a level's audio edge lands at the frame it was staged for", "[blastem
     REQUIRE(edge < staged.size());  // found at all, never `edge == at` by default
     // The sink delays every sample by its kPrime-sample prime, and blip's kernel reaches up to 8 samples AHEAD of the
     // delta it belongs to (`half_width`, blip_buf.c), so the first sample the level can touch is at or after `at` (the
-    // prime more than covers the lead) and its own sample is around at + kPrime. The ROM's poll (a fraction of a host
-    // sample) and the PSG's next 240-clock sample add under one sample. A level applied at the block boundary instead
-    // would land up to 511 samples late.
+    // prime more than covers the lead) and its own sample is around at + kPrime. Measured first differences here are
+    // kPrime + 2 to kPrime + 5, the leftover being the ROM's poll (a fraction of a host sample), the PSG's next
+    // 240-clock sample and the resampler's phase; the 8 is that leftover with room, not a range that could still hold a
+    // level applied at the block boundary, which lands up to 511 samples late and is what this bound excludes.
     CHECK(edge >= at);
-    CHECK(edge <= at + rp::blastem::AudioSink::kPrime + 16u);
+    CHECK(edge <= at + rp::blastem::AudioSink::kPrime + 8u);
 }
 
 TEST_CASE("a mid-session rate change maps the same sample to the clock the anchor predicts", "[blastem][port]") {
@@ -196,6 +385,11 @@ TEST_CASE("a mid-session rate change maps the same sample to the clock the ancho
         }
         return std::uint32_t(last);
     };
+    // An absolute anchor: the level staged at the machine's first sample is due before the first poll, so the ROM sees
+    // it with no poll counted. The comparisons below are differences and a mapping error that moved every sample by
+    // the same amount would cancel out of them; this one would not.
+    const std::uint32_t   c0 = count(0, 0, 0.0);
+    CHECK(c0 == 0);
     const std::uint64_t   s1 = 3000, s2 = 8000;  // two staged levels, 5000 samples apart, at 48 kHz throughout
     const std::uint32_t   c1 = count(s1, 0, 0.0);
     const std::uint32_t   c2 = count(s2, 0, 0.0);
@@ -211,6 +405,7 @@ TEST_CASE("a mid-session rate change maps the same sample to the clock the ancho
     // comparison is c3 against c2, never against c1 (which staged a different sample).
     const double expected =
         double(s2 - changeAt) * (double(kMclk) / 44100.0 - double(kMclk) / kRate) / perPoll;
-    INFO("polls " << c1 << " " << c2 << " " << c3 << ", per poll " << perPoll << ", expected shift " << expected);
+    INFO("polls " << c0 << " " << c1 << " " << c2 << " " << c3 << ", per poll " << perPoll << ", expected shift "
+                  << expected);
     CHECK(std::llabs((std::int64_t(c3) - std::int64_t(c2)) - std::int64_t(std::llround(expected))) <= 3);
 }
