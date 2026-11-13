@@ -56,6 +56,19 @@ importers:
         specifier: workspace:*
         version: link:../audio
 
+  packages/blastem:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
+      '@retroplug/system':
+        specifier: workspace:*
+        version: link:../system
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+
   packages/bliptoaster:
     dependencies:
       '@retroplug/core':
@@ -363,6 +376,9 @@ importers:
       '@retroplug/audio':
         specifier: workspace:*
         version: link:../audio
+      '@retroplug/blastem':
+        specifier: workspace:*
+        version: link:../blastem
       '@retroplug/bliptoaster':
         specifier: workspace:*
         version: link:../bliptoaster

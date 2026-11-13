@@ -17,6 +17,7 @@
     "@retroplug/midi": "workspace:*",
     "@retroplug/lsdj-launchpad": "workspace:*",
     "@retroplug/mesen": "workspace:*",
+    "@retroplug/blastem": "workspace:*",
     "@retroplug/mgb": "workspace:*",
     "@retroplug/sameboy": "workspace:*",
     "@retroplug/tracker": "workspace:*",

@@ -1,0 +1,17 @@
+{
+  "name": "@retroplug/blastem",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The BlastEm core's half of the app: the Sega Mega Drive core, its ROM gate, the build function and the rp.blastem.md node.",
+  "dependencies": {
+    "@retroplug/node-sdk": "workspace:*",
+    "@retroplug/system": "workspace:*"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*"
+  },
+  "retroplug": {
+    "native": { "target": "retroplug-blastem", "entry": "rp_blastem_package", "device": false }
+  }
+}
