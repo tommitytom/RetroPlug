@@ -1173,11 +1173,11 @@ run by hand: no CI or `test:plugin` leg builds that binary there.
   (`.superpowers/megadrive/RetroPlug-BlastEm`) before the outer repo's pointer commit; only the user pushes the mirror on
   to GitHub, and a pointer whose commit is not on GitHub breaks every CI job (CI fetches submodules over anonymous
   HTTPS, so the mirror must also stay public).
-  Building it on Windows is a separate open question, not a known-green fact: BlastEm is GNU C99 and had never seen
-  cl.exe, and no CI run has built it yet, so `cmake/blastem.cmake` makes the failures it could read out
-  of the sources impossible rather than waiting for the job (`mem_win.c` on `WIN32`, `call` dispatch for the Z80 on every
-  platform, `megawifi.c` out of the file set, `ws2_32`, `/std:c11` and the `_CRT`/`__STDC_NO_ATOMICS__` defines), and
-  [spec/07](07-remaining-work.md#msvc-has-not-compiled-blastem) carries the entry and clang-cl fallback. The configure
+  cl.exe builds it: BlastEm is GNU C99 and had never seen cl.exe, so `cmake/blastem.cmake` carries what that took
+  (`mem_win.c` on `WIN32`, `call` dispatch for the Z80 on every platform, `megawifi.c` out of the file set, `ws2_32`,
+  `/std:c11`, `/bigobj`, and the `_CRT`, `__STDC_NO_ATOMICS__` and `_USE_MATH_DEFINES` defines), and the first green
+  four-job run of this tree (run 43525367478) built it and ran `retroplug-blastem-test` on windows. cl.exe's C4333
+  warnings in the generated Z80 are false positives (a `uint8_t` shifted right by 8 after its promotion to `int`). The configure
   needs Python 3 (a hard requirement: `cpu_dsl.py` generates the 68k and Z80 interpreters into `build/blastem-gen/`,
   beside the four generated headers and `rom.db.c`; `build.yml` and `release.yml` both run `setup-python` for it), and
   those generated files are build-tree artifacts that are never committed, never in a source list and never edited.

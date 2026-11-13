@@ -9,13 +9,11 @@ than work.
 ## Checklist
 
 **Before merge**
-- [ ] [A green CI run of the tip](#a-green-ci-run-of-the-tip)
 - [ ] [The Launchpad real-device checklist](#the-launchpad-real-device-checklist)
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
 - [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
 - [ ] [A `release.yml` run](#a-releaseyml-run)
-- [ ] [MSVC has not compiled BlastEm](#msvc-has-not-compiled-blastem)
 
 **Package split**
 - [ ] [A real component view on a host](#a-real-component-view-on-a-host)
@@ -115,16 +113,6 @@ than work.
 
 What `feature/modularize` owes before it merges to main.
 
-### A green CI run of the tip
-
-The last green run of `build.yml` (run 43131974297, all four jobs: windows through `build.bat` at `/W4 /WX` and
-`test.bat`, macos, linux with `device:check` and `device:box`, linux-arm64) built ea2517dc9. The tip owes one too,
-and it is the first to prove three changes only CI can: `test:plugin` running the N8 pack's two binaries on every job
-(the serial test on Linux only), the linux job's Mesen compile-out proof (`tools/build-mesen-all-consoles.sh --off`),
-and `retroplug-sameboy-test` and `retroplug-mesen-test` built at `/W4 /WX` on windows. On this branch CI runs only
-when dispatched (build.yml also runs on a pull request and on main), so the user starts it.
-([F2 design](../docs/modular-graph-phase-f2-design.md) sections 11 and 12.)
-
 ### The Launchpad real-device checklist
 
 Design section 8's ten steps, about ten minutes on the desk with the Pro MK3 and LSDj in a ROM, have never run; they
@@ -161,35 +149,6 @@ only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modul
 `release.yml` last ran on 2026-08-07 (v0.7.4), before F2, so its Windows job has never built `RETROPLUG_MESEN_LTO=ON`
 with the three Mesen console options off, and no release job has built the branch. ([F2
 design](../docs/modular-graph-phase-f2-design.md) section 11.)
-
-### MSVC has not compiled BlastEm
-
-BlastEm is GNU C99 and had never been built by cl.exe before this branch, and no windows job has run this branch yet
-(the mirror is public now, so the next CI run can fetch it), so **the Windows build of `blastem` is unproven**: everything below is a
-reading of the sources, not a green job.
-
-- What the configure now makes impossible rather than guessed at ([cmake/blastem.cmake](../cmake/blastem.cmake)):
-  `mem_win.c` (VirtualAlloc) on `WIN32` instead of `mem.c`, whose `<sys/mman.h>` and `<unistd.h>` cl.exe has neither of;
-  `call` dispatch for the Z80 on every platform, since `goto` dispatch is GCC's labels-as-values (7,516 of them) which
-  cl.exe does not have; `megawifi.c` out of the file set everywhere (a network cart this host does not support, its
-  four entry points stubbed in [BlastemShim.cpp](../packages/blastem/native/src/system/blastem/BlastemShim.cpp));
-  `ws2_32` on the link, because `event_log.c`'s socket half is compiled on Windows; `/std:c11`, which the file set's
-  designated initializers and compound literals need, plus `_CRT_SECURE_NO_WARNINGS`, `_CRT_NONSTDC_NO_WARNINGS` and
-  `__STDC_NO_ATOMICS__` (zlib's crc32.c takes its own no-atomics fallback); and the mirror commit: `util.h`'s
-  `_MSC_VER` block spelling `strcasecmp`/`strncasecmp`/`strdup` the way MSVC's CRT declares them, and one empty struct
-  in `cdd_mcu.h`, a GNU extension cl.exe rejects in C.
-- What the scan of the whole compiled file set found and settled: no statement expressions, `typeof`, case ranges,
-  zero-length arrays, VLAs, labels-as-values or `__builtin_*` anywhere in it, the generated 68k and Z80 cores included;
-  the `__attribute__` and `restrict` hits in `blip_buf.c` are inside a comment; every `<unistd.h>`, `<sys/*.h>`, socket
-  and pthread use is behind an `_WIN32` branch (io.c, util.c, paths.c, event_log.c, and util.c's dirent/stat code) or
-  leaves the file set with megawifi.c; and `strtok_r` and `localtime_r` already have shims in config.c and saves.c.
-- What it cannot settle without cl.exe: everything the compiler itself would say next, including the plain
-  `char *`/`uint8_t *` conversions clang reports under `-Wpointer-sign` (MSVC's C4133, a warning it does not make an
-  error for this target). More is likely, and the reading above is not a substitute for the job.
-- The fallback, if cl.exe's answer is a wall rather than a list: build the one `blastem` target with clang-cl (the
-  [design](../docs/megadrive-blastem-design.md) section 6 already names it), leaving the rest of the tree on MSVC.
-
-Once the mirror is reachable, dispatching `build.yml` is what closes this entry and [the green run](#a-green-ci-run-of-the-tip).
 
 ## Package split
 

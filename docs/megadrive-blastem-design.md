@@ -232,10 +232,10 @@ do, against the paragraph this replaces: one tempo rather than a few; nothing re
 - Windows: BlastEm is code we do not own, so its target is off `/W4 /WX` and suppresses by number; MSVC portability
   fixes (BlastEm is GNU C99) are mirror commits with `RetroPlug:` markers. The plan's first task was to prove the
   generated interpreters (57 MB of 68k C) compile on every CI platform, MSVC included, before anything builds on them.
-  As built that proof is still owed: CI cannot fetch the mirror yet, so the configure makes the failures readable in the
-  sources impossible instead (`mem_win.c`, `call` dispatch for the Z80, MegaWiFi out, `ws2_32`, `/std:c11`) and
-  [spec/07](../spec/07-remaining-work.md#msvc-has-not-compiled-blastem) carries the open entry, with clang-cl for that
-  one target as the fallback.
+  As built the proof came from CI rather than the first task (CI could not fetch the mirror until it was pushed): the
+  configure makes the failures readable in the sources impossible (`mem_win.c`, `call` dispatch for the Z80, MegaWiFi
+  out, `ws2_32`, `/std:c11`, `_USE_MATH_DEFINES`), and run 43525367478 built and tested it on all four jobs, windows
+  included.
 - CI: the Linux, macOS, Windows and arm64 jobs gain Python 3 where missing. As built, `build.yml`'s four jobs run
   `actions/setup-python@v5` (3.12) for it and `release.yml`'s four do the same, so the two workflows agree; the runners
   ship a python3 either way, and the step is what makes the configure's hard requirement explicit.
