@@ -308,3 +308,36 @@ TEST_CASE("a state whose VDP sprite counters index past their tables is refused"
         CHECK(restored->activated());
     }
 }
+
+namespace {
+
+// The energy in a render: what tells a note that kept playing from one that went silent on the restore. A restored
+// FM note's operators can all keep the power-on phase increment, which is silence with a click at the load; the peak
+// alone cannot see that (the click clears the audibility check the round trip uses).
+double rms(const std::vector<float>& samples) {
+    double sum = 0.0;
+    for (float s : samples) sum += double(s) * double(s);
+    return samples.empty() ? 0.0 : std::sqrt(sum / double(samples.size()));
+}
+
+}  // namespace
+
+TEST_CASE("a restored FM note plays the note it was saved in", "[blastem][saves]") {
+    // fmOnlyRom is the image that really plays the YM2612 (the other one's writes never land without the Z80's bus), and
+    // it is the case the review needed: ym_deserialize replays the register writes before it loads block and fnum, and
+    // the write that computes the operators' phase increments is the one it skips, so every operator kept the power-on
+    // increment and the restored note was silent (RMS 0.002 against the original's 0.118). The mirror recomputes them
+    // after the load; a rate comparison is what a sink can honestly check, because the grid phase is the host's and a
+    // restored render is not sample-identical to the original's continuation.
+    auto sys = boot(rp::blastem::test::fmOnlyRom());
+    run(*sys, 20);  // the note is sounding
+    const std::vector<std::uint8_t> state = sys->saveStateBytes();
+    const std::vector<float>        original = run(*sys, 20);
+    auto restored = boot(rp::blastem::test::fmOnlyRom(), state);
+    REQUIRE_FALSE(restored->stateRefused());
+    REQUIRE(restored->activated());
+    const std::vector<float> restoredAudio = run(*restored, 20);
+    const double             before        = rms(original);
+    REQUIRE(before > 0.05);  // the original is playing, or the comparison proves nothing
+    CHECK(rms(restoredAudio) > 0.5 * before);
+}
