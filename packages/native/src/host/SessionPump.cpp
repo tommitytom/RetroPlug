@@ -17,6 +17,9 @@ SessionPump::SessionPump(TjsHostRuntime& host) : host_(&host) {
     // request itself (TJS_StopRequested), which is what catches one made in the turn the loop is already stopping: the
     // async handle is then never serviced.
     JSContext* ctx = host.context();
+    // A host with no context has no runtime to drive, so there is nothing to hook; a pump is harmless then, and the
+    // destructor and stopRequested() guard the same way rather than dereferencing null.
+    if (!ctx) return;
     TJS_GetRuntime(ctx)->stop.async_cb = [](uv_async_t* handle) {
         g_stopRequested = true;
         uv_stop(handle->loop);
@@ -35,8 +38,8 @@ SessionPump::~SessionPump() {
     // The hook's opaque is this object, and the runtime outlives it (both mains declare the pump after the host and
     // before the runtime's teardown): leave a hook that records nothing rather than a pointer to what is being
     // destroyed. A tjs.exit reached from a provider's late callback then still unwinds instead of calling exit() in the
-    // middle of the teardown.
-    TJS_SetExitHook(TJS_GetRuntime(host_->context()), &SessionPump::onExitAbandoned, nullptr);
+    // middle of the teardown. A host that shut its runtime down first has no hook to replace.
+    if (JSContext* ctx = host_->context()) TJS_SetExitHook(TJS_GetRuntime(ctx), &SessionPump::onExitAbandoned, nullptr);
 }
 
 bool SessionPump::onExit(TJSRuntime* qrt, int status, bool errorPending, void* opaque) {
@@ -65,6 +68,7 @@ bool SessionPump::onExitAbandoned(TJSRuntime*, int, bool, void*) { return true; 
 
 bool SessionPump::pumpOnce() {
     JSContext* ctx = host_->context();
+    if (!ctx) return threw_;  // a host that shut its runtime down has no session left to report on
     host_->pump();
     if (exitTaken_ && JS_HasException(ctx)) {
         // The exit's uncatchable error IS the unwinding, not a failure: the hook has already decided (threw_, from what
@@ -84,7 +88,8 @@ bool SessionPump::pumpOnce() {
 }
 
 bool SessionPump::stopRequested() const {
-    return g_stopRequested || TJS_StopRequested(TJS_GetRuntime(host_->context()));
+    JSContext* ctx = host_->context();
+    return g_stopRequested || (ctx && TJS_StopRequested(TJS_GetRuntime(ctx)));
 }
 
 }  // namespace rp::host

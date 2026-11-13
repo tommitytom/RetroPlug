@@ -32,7 +32,8 @@ class SessionPump {
 public:
     /** Install the stop takeover and the exit hook on `host`'s runtime, and clear what a refused `tjs.exit` override
      *  left pending. One pump per session runtime, which is one per process in both hosts. Constructed BEFORE the
-     *  module is evaluated and AFTER the host's globals are installed. */
+     *  module is evaluated and AFTER the host's globals are installed. A host whose runtime is already gone gets no
+     *  hook and a pump that reports nothing, rather than a dereference of its null context. */
     explicit SessionPump(TjsHostRuntime& host);
     /** Leave the runtime a hook that records nothing, so a `tjs.exit` reached during the teardown does not follow a
      *  pointer to this object. */

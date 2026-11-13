@@ -71,12 +71,6 @@ bool endsWithJs(const char* s) {
     return n >= 3 && std::strcmp(s + n - 3, ".js") == 0;
 }
 
-// Set when txiki asks its loop to stop. Every such request on the session runtime is an error path (an exception in a
-// callback the runtime invoked, a job that failed, a rejection nothing cancelled), and the request survives where the
-// exception may not: a sibling callback in the same loop turn that throws and catches anything replaces, and so clears,
-// the pending exception, and the error would be lost with the session running on. host/SessionPump keeps the flag and
-// the check (both hosts run on it); this launcher keeps its own loop around it.
-
 // A long-running session (a live MIDI bridge) calls globalThis.__rp_keepAlive() during setup to opt out of
 // the bounded batch pump: the launcher then pumps until tjs.exit or Ctrl-C, so the session can react to MIDI
 // indefinitely. Set on the single JS thread; read by the pump loop.

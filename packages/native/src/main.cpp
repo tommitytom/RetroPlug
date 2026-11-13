@@ -119,10 +119,11 @@ int main(int argc, char** argv) try {
     // mounted below beside the host's own. Its n8.cfg, which the link half's setters write (test-native/n8-session
     // connects the link), goes to a scratch directory of this process's own, never the user's (the standalone and the
     // plugin read that one) and never another host's (test:native runs its files in parallel, and the authoring tools
-    // run this host too), removed at exit: a static, because the harness ends the process through txiki's own exit
-    // (tjs:os), which runs static destructors and not this frame's. At a return from main the plans go first, while
-    // the link is alive (a node may use its handle in destroy), then the provider: declared before `driver`, so
-    // ~AudioDriverRpcService has stopped any audio thread by then.
+    // run this host too), removed at exit: a static, so the directory outlives every object below it in this frame and
+    // is removed after they have gone, whether main returns (a session's tjs.exit, a throw nothing caught) or a path
+    // out of the process reaches the static destructors. The plans go first, while the link is alive (a node may use its
+    // handle in destroy), then the provider: declared before `driver`, so ~AudioDriverRpcService has stopped any audio
+    // thread by then.
     struct ScratchDir {
         std::filesystem::path path;
         // Only a directory this host MADE is removed: RETROPLUG_LAUNCHPAD_CLAIM_DIR names a directory a caller owns, and a

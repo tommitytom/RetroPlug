@@ -12,11 +12,11 @@
 // WHY THE SPAWN RULES ARE HERE (a run once fork-bombed this machine): a child that reaches this file's test()
 // registrations spawns children of its own, and each of those spawns more, so one run can leave thousands of hosts
 // behind. Three rules, each enforced below:
-//   1. a child NEVER registers a case: every test() in this file is inside `if (CHILD === undefined)`, and the child
-//      branches end the module body (a throw) or the process (tjs.exit, then an unreachable throw);
+//   1. a child NEVER registers a case: every test() in this file is inside `if (CHILD === undefined)`, a child's
+//      RP_PUMP_CHILD never satisfies it, and no other code below the children registers one;
 //   2. a spawned child REFUSES to spawn: the parent passes RP_SPAWN_DEPTH=1, and spawnChild() throws on sight if it
 //      finds it already set;
-//   3. every child has a watchdog (SIGTERM after a few seconds), so a host that keeps pumping cannot hold the parent.
+//   3. every child has a watchdog (SIGTERM after 15-20 s), so a host that keeps pumping cannot hold the parent.
 //
 // The last case is the exit's own: txiki's tjs.exit used to call C exit() from inside the JS call, so main's stack never
 // unwound and the launchpad provider's disconnect never wrote the close bytes - a pad a CLI session claimed stayed in
@@ -94,8 +94,8 @@ async function child(what: string, timeoutMs = 20000): Promise<{ status: number;
 // ---- the children ---------------------------------------------------------------------------------------------
 //
 // Selected by RP_PUMP_CHILD and run BEFORE the first test() below, which is the point: a module body's throw and a
-// timer created here are what the host used to drop. Each branch either throws out of the module body or ends the
-// process, so no case is registered in a child (rule 1 at the top of the file).
+// timer created here are what the host used to drop. A child schedules its throw and then falls off the end of the
+// module body; none of them reaches a test() registration (rule 1 at the top of the file).
 const CHILD = tjs.env.RP_PUMP_CHILD;
 if (CHILD === "module") {
   // A throw in the module body itself, before any test() exists: what a file's top-level setup does when it fails.
@@ -105,12 +105,12 @@ if (CHILD === "module") {
   queueMicrotask(() => {
     throw new Error("boom in a microtask");
   });
-  // The same loop turn's sibling asks for a clean exit, which must NOT hide the error above. A second, not a few
-  // milliseconds: an instrumented build's turn is slower than such a timer's deadline, and the timer would then fire
-  // inside uv_run BEFORE the job drain - the child exiting 0 with the error never having run, which says nothing about
-  // the host. A second is longer than any turn. (While this task is the tree's tip the timer would C-exit(0), which is
-  // why it is already a second here: the child must not race the fix to be its own witness.)
-  setTimeout(() => tjs.exit(0), 1000);
+  // The same loop turn's sibling asks for a clean exit, which must NOT hide the error above. Ten seconds, not a few
+  // milliseconds: txiki's timers run against the loop's CACHED clock, so this deadline is counted from uv_loop_init
+  // rather than from here, and an instrumented build's startup and eval must fit inside it or the timer is already due
+  // on the first uv_run - whose timers phase runs BEFORE the check phase that drains the job, so the child would exit 0
+  // and say nothing about the host. It is still a fallback: with the pump the child ends on its first turn.
+  setTimeout(() => tjs.exit(0), 10000);
 } else if (CHILD === "timer") {
   // Created before this file's first test(), so the harness's own wrappers are not around it yet.
   setTimeout(() => {
@@ -118,12 +118,15 @@ if (CHILD === "module") {
   }, 0);
 } else if (CHILD === "kept-alive") {
   __rp_keepAlive();
+  // Three seconds is after the host's bounded spin, which ends in well under one: the throw lands in the KEEP-ALIVE loop,
+  // which is what the bug was about (it pumped a thrown session to the 30-minute deadline). A throw at 0 is run by the
+  // spin instead, and would only prove that the loop is not entered once the session has already thrown.
   setTimeout(() => {
     throw new Error("boom while kept alive");
-  }, 0);
+  }, 3000);
   // Only reachable if the throw was dropped: the host would then pump to its 30-minute deadline, and this case holds
-  // the child to a few seconds by exiting cleanly (a red run says "exit 0", not "hung").
-  setTimeout(() => tjs.exit(0), 8000);
+  // the child to seconds by exiting cleanly (a red run says "exit 0", not "hung").
+  setTimeout(() => tjs.exit(0), 12000);
 } else if (CHILD === "launchpad") {
   // A session that CLAIMS the scripted Pro MK3 and then exits normally: the provider's teardown is what writes the
   // close bytes (exitToLiveMode), and the host prints them under RETROPLUG_TEARDOWN_TRACE.
@@ -131,10 +134,6 @@ if (CHILD === "module") {
   const held = client.claim("LPProMK3 MIDI", "LPProMK3 MIDI", Uint8Array.from(exitToLiveMode(PRO_MK3)));
   if (!held.connected) throw new Error(`the scripted Launchpad was not claimed: ${held.error}`);
   tjs.exit(0);
-}
-if (CHILD !== undefined) {
-  // Nothing more to do in a child: its cases below are guarded out, and its end is the throw it scheduled or its own
-  // tjs.exit. (This is rule 1's other half: a child never reaches a test() registration.)
 }
 
 // ---- the cases -------------------------------------------------------------------------------------------------
@@ -166,11 +165,12 @@ if (CHILD === undefined) {
 
   test("a kept-alive session that throws ends at once, with its reason", async () => {
     __rp_keepAlive();
-    const run = await child("kept-alive", 15000);
+    const run = await child("kept-alive", 20000);
     expect(run.status).toBe(1);
     expect(run.err.includes("boom while kept alive")).toBe(true);
-    // Not the deadline's 30 minutes, nor the child's own 8-second fallback.
-    expect(run.ms < 5000).toBe(true);
+    // Not the deadline's 30 minutes, nor the child's own 12-second fallback: the throw was at 3 s, and the spawn and the
+    // child's startup are all that is on top of it.
+    expect(run.ms < 10000).toBe(true);
   });
 
   test("a normal exit runs the teardown: a claimed Launchpad gets its close bytes", async () => {
