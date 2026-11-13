@@ -64,8 +64,7 @@ void BlastemMdSystem::boot() {
     }
     // BEFORE alloc_config_genesis: the VDP asks render_get_framebuffer for its buffer at init (vdp.c:524) and points
     // context->output into it immediately (vdp.c:529-530), so a sink with no buffers yet is a null write on the first
-    // line. `headless` stays 0 and is never written anywhere: vdp.c reads it at init, at free and at every frame end, so
-    // a value that changed between those three would leak or free a buffer the sink still owns.
+    // line.
     video_.prepareBuffers();
     gen_ = alloc_config_genesis(cart, static_cast<std::uint32_t>(rom_.size()), nullptr, 0, 0,
                                 blastemRegion(config_.region));

@@ -94,9 +94,9 @@ private:
     BlastemMdConfig           config_;
     // The ROM as a capability view; BlastEm gets its own aligned copy (see boot()) and owns it from then on.
     std::vector<std::uint8_t> rom_;
-    // Declared before gen_ because the VDP holds raw pointers into its buffers, and the YM2612 and the PSG hold raw
-    // pointers to their audio sources: declared first, a sink is destroyed after the context is freed, and a context
-    // freed first never reads them (freeing it reaches the sink through render_free_source).
+    // The sinks must still exist when the context is freed: that free hands the chips' audio sources back through
+    // render_free_source. The destructor's own body does it first (destroyCore), before any member is destroyed, so the
+    // DECLARATION ORDER below is not what keeps them alive and moving them would change nothing.
     VideoSink                 video_;
     AudioSink                 audio_;
     genesis_context*          gen_ = nullptr;

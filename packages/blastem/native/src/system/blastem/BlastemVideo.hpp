@@ -40,10 +40,12 @@ public:
 
     // The buffer `which` names, at BlastEm's pitch. Stable until the instance is destroyed: the VDP asks for one at
     // init and again after every published frame. Null when prepareBuffers() has not run, which lets the caller fall
-    // back to its own landing pad rather than hand the VDP a null to draw through.
+    // back to its own landing pad rather than hand the VDP a null to draw through; and null for BlastEm's debug indices
+    // (>= FRAMEBUFFER_USER_START), which are 1024-wide rows nothing in this build enables, so that a caller cannot
+    // mistake the odd buffer for one of them.
     pixel_t* buffer(std::uint8_t which, int* pitch);
-    // `width` is the pitch the VDP used (LINEBUF_SIZE or 256 + HORIZ_BORDER); it is not the picture's width, which
-    // comes from the VDP's own mode register.
+    // `width` is BlastEm's frame-end hint (vdp.c passes the line width it just finished) and is ignored: the pitch is
+    // always LINEBUF_SIZE, which buffer() sets, and the picture's own width comes from the VDP's mode register.
     void publish(std::uint8_t which, int width, const vdp_context& vdp);
 
 private:
