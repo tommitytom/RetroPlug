@@ -42,10 +42,12 @@ studied both cores' code for stepping, globals and threads.
 
 ## 1. Packages and where things live
 
-**`deps/blastem`**: a git submodule of a mirror we own, `github.com/tommitytom/blastem` (upstream is Mercurial at
-retrodev.com), whose `retroplug` branch sits on the 1.0 release (hg `2b2a182f4522`). Our edits are commits on that
-branch and every one carries a `RetroPlug:` marker comment, the rule `deps/mesen` follows. The user creates and pushes
-the mirror. Upstream 1.0's own library target does not build as shipped; the spike's 62-line fix
+**`deps/blastem`**: a git submodule of our mirror, `https://github.com/tommitytom/RetroPlug-BlastEm` (upstream is
+Mercurial at retrodev.com, so the mirror holds snapshots, not hg history). Its `upstream` branch is one commit per
+imported upstream release, starting with 1.0 (hg `2b2a182f4522`); its `retroplug` branch is `upstream` plus our edits,
+and a later upstream release is a new `upstream` commit merged into `retroplug`. Every edit carries a `RetroPlug:`
+marker comment, the rule `deps/mesen` follows. Only the user pushes to the mirror; until a push, work proceeds on a
+local clone and the submodule URL is the mirror's. Upstream 1.0's own library target does not build as shipped; the spike's 62-line fix
 (`.superpowers/mdspike/blastem-1.0-libbuild.patch`) is the starting point, though our CMake build replaces BlastEm's
 Makefile entirely.
 
