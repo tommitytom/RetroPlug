@@ -8,6 +8,15 @@
 
 namespace rp::blastem {
 
+// Whether this core has a battery to read: save_type stays SAVE_NONE for a cart whose header declared no RAM, and
+// save_storage is the buffer romdb calloc'd for the declared range (halved for an odd- or even-byte cart, which is
+// BlastEm's compacted layout and stays BlastEm's: design section 5). The one rule the Sram accessor and the whole-
+// battery dump share. The I2C and NOR carts hold their device state in the same pointer, and both are dumped as they
+// stand, like every other core here.
+static bool hasBattery(const genesis_context* gen) {
+    return gen && gen->save_type != SAVE_NONE && gen->save_storage && gen->save_size != 0;
+}
+
 static std::uint8_t blastemRegion(std::uint32_t region) {
     switch (static_cast<MdRegion>(region)) {
         case MdRegion::NtscUs: return REGION_U;
@@ -94,6 +103,10 @@ void BlastemMdSystem::boot() {
     port_.clear();  // a queued level's clock belongs to the timeline the four anchors above just restarted
     activated_ = true;
     setGainDb(config_.gainDb, true);
+    // LAST, as the sibling backends do, and after m68k_reset (a seed laid in before the reset is a pattern the reset
+    // overwrites): the battery first, into the core's own buffer through getMemory, and the savestate over it once this
+    // core can take one.
+    seedSramAndState(config_.sram, config_.savestate);
 }
 
 // The frame the sink allocated IS the picture's size from boot on. Before a core exists the region is unknown, so the
@@ -154,6 +167,50 @@ void BlastemMdSystem::setGainDb(float dB, bool immediate) {
     config_.gainDb = dB;  // config() is what a later activation boots from, so the knob is the record
     gainSmoother_.setTargetValue(dbToLin(dB));
     if (immediate) gainSmoother_.clearToTargetValue();
+}
+
+// The work RAM in the 68k's address order. BlastEm's storage is a word array whose byte view pairs each address's two
+// bytes the other way round (BlastemMemory.cpp's wordOrder says why), so an address-ordered view is a copy: refreshed
+// on every ask, into this instance's own buffer, which outlives every accessor it hands out. The registry copies it
+// into its triple in the same block it asked in, and the buffer keeps the size it grew to, so no ask allocates after
+// the first one.
+std::span<const std::uint8_t> BlastemMdSystem::workRamView() {
+    if (!gen_ || !gen_->work_ram) {
+        ramView_.clear();
+        return ramView_;
+    }
+    // WorkRamView owns nothing but the mapping, so it is made on the spot over this buffer.
+    const auto*       raw = reinterpret_cast<const std::uint8_t*>(gen_->work_ram);
+    const std::size_t bytes = sizeof(*gen_->work_ram) * RAM_WORDS;  // gen->work_ram is a word array of RAM_WORDS
+    return WorkRamView(ramView_).refresh(raw, bytes);
+}
+
+rp::MemoryAccessor BlastemMdSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
+    if (!gen_) return {};
+    switch (type) {
+        case rp::MemoryType::Ram: {
+            // The refresh and the view come from one call: a second one could reallocate the buffer the first returned.
+            workRamView();
+            return {type, access, ramView_.data(), ramView_.size()};
+        }
+        case rp::MemoryType::ExtWorkRam:  // the Z80's own 8 KiB (genesis.c's Z80_RAM_BYTES, one calloc)
+            if (!gen_->zram) return {};
+            return {type, access, gen_->zram, Z80_RAM_BYTES};
+        case rp::MemoryType::Sram:
+            // BlastEm's own battery buffer, in its own layout: an odd- or even-byte cart's is the compacted half of the
+            // declared range, which is what its .sav holds (design section 5).
+            if (!hasBattery(gen_)) return {};
+            return {type, access, gen_->save_storage, gen_->save_size};
+        default:
+            return {};
+    }
+}
+
+std::vector<std::uint8_t> BlastemMdSystem::saveSramBytes() const {
+    // The battery is the core's own buffer, so this is the one copy the host takes of it whole. No instance pointer is
+    // set: this reads the context's fields and calls no BlastEm function.
+    if (!hasBattery(gen_)) return {};
+    return {gen_->save_storage, gen_->save_storage + gen_->save_size};
 }
 
 // The block triad, and the core's stop: one run a block, ended at the block's own master clock rather than at a frame

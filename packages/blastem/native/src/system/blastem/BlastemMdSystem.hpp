@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,7 @@
 #include "system/SystemCapabilities.hpp"
 #include "system/blastem/BlastemAudio.hpp"
 #include "system/blastem/BlastemMdConfig.hpp"
+#include "system/blastem/BlastemMemory.hpp"      // MdMemory (a member here), WorkRamView
 #include "system/blastem/BlastemPortDevice.hpp"  // PortDevice (a member here)
 #include "system/blastem/BlastemVideo.hpp"       // VideoSink (a member here), pixel_t and vdp_context
 #include "transport/FrameBufferTriple.hpp"
@@ -53,6 +55,21 @@ public:
 
     // The frame the engine reads: the video sink's triple, allocated at boot, or null before one exists.
     FrameBufferTriple* framebuffer() override { return video_.triple(); }
+
+    // -- The control plane's memory views --------------------------------------
+    //
+    // Ram is the 68k's 64 KiB in ADDRESS order (a copy: BlastEm's storage is a word array), ExtWorkRam is the Z80's own
+    // 8 KiB, and Sram is the cart's battery as BlastEm stores it. Anything else is the invalid accessor the base returns.
+    rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
+    // BlastEm's own battery, byte for byte, so an odd-byte cart keeps its compacted layout: byte `i` of the result is
+    // address $200001 + 2i (design section 5). Empty for a cart with no battery.
+    std::vector<std::uint8_t> saveSramBytes() const override;
+
+    // The three capabilities (SystemCapabilities.hpp). The memory one is this package's own because of the work RAM's
+    // word order; the battery and the ROM are the generic ones over getMemory and rom_.
+    rp::MemoryCapability* memory() override { return &memoryCap_; }
+    rp::SramCapability*   sram() override { return &sramCap_; }
+    rp::RomCapability*    rom() override { return &romCap_; }
 
     // True once onActivate has booted a live core: a ROM the gate accepted can still fail to boot, and the backend
     // then rejects the build rather than adopting a dead system (as MesenSmsSystem::activated).
@@ -118,6 +135,9 @@ public:
 private:
     void boot();
     void destroyCore();
+    // Refills ramView_ with the 68k's work RAM in address order and returns it: the view every getMemory(Ram) hands out.
+    // Empty (so an accessor reports itself invalid) once no core owns a work RAM to read.
+    std::span<const std::uint8_t> workRamView();
     void run_until(std::uint64_t mclk);
     // Bring the YM2612 and the PSG to the block's end clock (or to where the 68k actually got to, whichever is less)
     // before the block is drained. A stop is only checked at the next sync, so a run can return with the chips short of
@@ -127,6 +147,13 @@ private:
     BlastemMdConfig           config_;
     // The ROM as a capability view; BlastEm gets its own aligned copy (see boot()) and owns it from then on.
     std::vector<std::uint8_t> rom_;
+    // rom_ never changes after construction, which is what lets romCap_ hand its bytes to any thread. A Mega Drive's
+    // title is its 48-byte domestic name at $120.
+    MdMemory     memoryCap_{*this};
+    rp::CoreSram sramCap_{*this};
+    rp::CoreRom  romCap_{rom_, 0x120, 0x30};
+    // The work RAM in address order: one buffer, kept at the region's size, refilled by workRamView() on every ask.
+    std::vector<std::uint8_t> ramView_;
     // The sinks must still exist when the context is freed: that free hands the chips' audio sources back through
     // render_free_source. The destructor's own body does it first (destroyCore), before any member is destroyed, so the
     // DECLARATION ORDER below is not what keeps them alive and moving them would change nothing.

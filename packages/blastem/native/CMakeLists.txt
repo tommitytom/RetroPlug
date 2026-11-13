@@ -6,6 +6,7 @@ retroplug_package_library(retroplug-blastem
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemShim.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemAudio.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemMdSystem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemMemory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemPortDevice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemVideo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemNode.cpp)
@@ -25,5 +26,6 @@ retroplug_add_test_binary(
     SOURCES  test/BlastemBuild.test.cpp test/SyntheticRom.test.cpp test/BlastemBoot.test.cpp
              test/BlastemStop.test.cpp test/BlastemVideo.test.cpp test/BlastemAudio.test.cpp
              test/BlastemPort.test.cpp test/BlastemInvariance.test.cpp test/BlastemInstances.test.cpp
+             test/BlastemMemory.test.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test   # SyntheticRom.hpp, a later task's images
     LIBS     retroplug-blastem)                 # blastem is its PUBLIC dependency, and is read after it
