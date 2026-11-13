@@ -199,7 +199,9 @@ struct AppState {
     SDL_Texture*  texture = nullptr;
     rp::audio::AudioHost* audio = nullptr;     // the device, its reconfigure and its muted fallback (main owns it)
     retroplug::GamepadManager gamepad;
-    rp::midi::MidiStream midi{rp::midi::systemMidi()};  // in/out; drained into the Engine on the audio thread each block
+    rp::midi::MidiStream midi{rp::midi::systemMidi(), rp::midi::OutputMode::Threaded};  // in (drained on the audio
+    // thread each block) and out (each hardware port's send on that port's own writer: a WinMM SysEx blocks until the
+    // bytes are on the wire, and this is the audio callback) - midi/PortWriter.hpp
     std::vector<rp::midi::MidiStream::Message> midiScratch;  // reused per block; reserved to the ring size in main()
     std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
     MidiClockSync clockSync;                              // MIDI-clock → BPM/transport (audio thread only)

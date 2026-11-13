@@ -25,6 +25,7 @@ find_package(Threads REQUIRED)
 # --- retroplug-midi: the interface, the RtMidi backend, the port rules and the stream
 retroplug_package_library(retroplug-midi
     ${CMAKE_CURRENT_SOURCE_DIR}/src/midi/MidiStream.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/midi/PortWriter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/midi/RtMidiBackend.cpp)
 target_include_directories(retroplug-midi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-midi
@@ -55,6 +56,7 @@ target_include_directories(retroplug-midi-test-support INTERFACE ${CMAKE_CURRENT
 retroplug_add_test_binary(
     NAME     retroplug-midi-test
     SOURCES  test/MidiPortSelect.test.cpp
+             test/PortWriter.test.cpp
              test/MidiStream.test.cpp
     LIBS     retroplug-midi               # the interface and the stream
              retroplug-midi-test-support)  # midi/FakeMidiBackend.hpp

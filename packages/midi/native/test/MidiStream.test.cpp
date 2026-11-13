@@ -9,18 +9,21 @@
 // been waited out.
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <atomic>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <mutex>
 #include <set>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "AllocationCounter.hpp"  // the global operator new PortWriter.test.cpp defines, and its per-thread count
 #include "midi/FakeMidiBackend.hpp"
 #include "midi/MidiStream.hpp"
 
@@ -107,6 +110,18 @@ std::vector<std::uint8_t> bytes(int a, int b, int c = -1) {
     std::vector<std::uint8_t> out{static_cast<std::uint8_t>(a), static_cast<std::uint8_t>(b)};
     if (c >= 0) out.push_back(static_cast<std::uint8_t>(c));
     return out;
+}
+
+/** Wait until `count` sends have FINISHED: Inline has done them by the time the send returns, and Threaded's writers
+ *  do them after it. Waiting for "as many started as finished" is not enough - that reads 0 == 0 before the writer has
+ *  begun - so the count is the caller's, which is what the case knows it sent. */
+bool settled(const FakeMidiBackend& backend, const int count) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (backend.sendsFinished.load() == count) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return backend.sendsFinished.load() == count;
 }
 
 }  // namespace
@@ -280,10 +295,14 @@ TEST_CASE("an exclusive port: a re-pick must let the port go before it is opened
     // A WinMM port's model, over the fake: a second open of a name this stream still holds is
     // refused. A re-pick that opened before it closed therefore lost the device it meant to heal - the output went
     // silent for good, and the event log says so (a refused open, then a close, then nothing).
+    const rp::midi::OutputMode mode = GENERATE(rp::midi::OutputMode::Inline, rp::midi::OutputMode::Threaded);
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;
     backend.exclusivePorts   = true;
-    MidiStream stream(backend);
+    // The virtual output is inline in both modes and the fake counts its sends too: off, so a send is one hardware
+    // write, which is what this case waits for.
+    backend.virtualPorts = false;
+    MidiStream stream(backend, mode);
     stream.setInputs({"Keys in"}, false);
     stream.setOutputs({"Synth out"});
     REQUIRE(stream.open());
@@ -296,11 +315,13 @@ TEST_CASE("an exclusive port: a re-pick must let the port go before it is opened
     CHECK(backend.listening.count("Keys in") == 1);
     const std::uint8_t note[3] = {0x90, 0x3C, 0x7F};
     stream.send(note, 3);
+    REQUIRE(settled(backend, 1));  // Threaded: the port is read once the writer has written what the push queued
     CHECK(backend.sentTo("Synth out").size() == 1);
     // A diff keeps the port and never asks for it again, so it is not refused either.
     stream.setOutputs({"Synth out", "Interface out"});
     CHECK(stream.openedOutputs() == std::vector<std::string>{"Synth out", "Interface out"});
-    stream.send(note, 3);
+    stream.send(note, 3);  // this one fans out to both ports
+    REQUIRE(settled(backend, 3));
     CHECK(backend.sentTo("Interface out").size() == 1);
 }
 
@@ -344,27 +365,51 @@ TEST_CASE("a close under a send in flight frees no port the send is using, nor t
     // A device loss is one reason a product closes the stream while audio still renders; the close publishes the end of
     // the set and waits the send out, so the ports (and the virtual output, whose sends the same bracket covers) are
     // never freed under a caller still inside one.
+    const rp::midi::OutputMode mode = GENERATE(rp::midi::OutputMode::Inline, rp::midi::OutputMode::Threaded);
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;
-    backend.sendDelayMs      = 1;
-    MidiStream stream(backend);
+    // INLINE: a slow port, so a send is still inside the fake when the close lands, and the virtual output on, because
+    // this case is about the epoch bracket covering its send too. THREADED: no delay, because the pushes only have to
+    // reach the ring (the subject is push against retire and flush, not a slow port) and a millisecond per send is the
+    // platform's sleep granularity off Linux (Windows' is about 15.6 ms), not a millisecond; and the virtual output off,
+    // because its send stays inline there and the fake's delay would pace this caller, leaving the ring holding only a
+    // handful of messages - what this mode has to say is the hardware port's flush.
+    backend.sendDelayMs  = mode == rp::midi::OutputMode::Inline ? 1 : 0;
+    backend.virtualPorts = mode == rp::midi::OutputMode::Inline;
+    MidiStream stream(backend, mode);
     stream.setOutputs({"Synth out"});
     REQUIRE(stream.open());
     constexpr int     kSends = 200;
     std::atomic<bool> started{false};
+    std::atomic<bool> pushed{false};
     std::thread       audio([&] {
         const std::uint8_t note[3] = {0x90, 0x3C, 0x7F};
         started.store(true);
         for (int i = 0; i < kSends; ++i) stream.send(note, 3);
+        pushed.store(true);
     });
     while (!started.load()) std::this_thread::yield();
-    // A few sends in, so one is in flight when the close lands.
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    if (mode == rp::midi::OutputMode::Inline) {
+        // A few sends in, so one is in flight when the close lands.
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    } else {
+        // Every push made before the close, so the count below does not rest on the pushes beating a timer: on a loaded
+        // box (or under the thread sanitizer) 200 pushes, each of which may wake the writer, can outlast any fixed
+        // sleep, and a push after the close goes nowhere. The writer may still be draining the ring when the close
+        // lands.
+        while (!pushed.load()) std::this_thread::yield();
+    }
     stream.close();
     audio.join();
     CHECK(backend.sendsAfterClose() == 0);
-    // Whatever had not been sent by the close went nowhere at all: no port was left published to receive it.
-    CHECK(backend.sendsStarted.load() < kSends);
+    // Inline: whatever had not been sent by the close went nowhere at all, because no port was left published to receive
+    // it. Threaded: the close FLUSHES the ring before the port goes instead (a dropped Note Off is a stuck note), so
+    // every push, all of which had returned when it landed, reaches the port.
+    if (mode == rp::midi::OutputMode::Inline) {
+        CHECK(backend.sendsStarted.load() < kSends);
+    } else {
+        CHECK(backend.sendsStarted.load() == kSends);
+    }
 }
 
 // ---- the reservation and the scan's held edge ------------------------------------------------------------------
@@ -569,16 +614,28 @@ TEST_CASE("an output swap under a send in flight: every send lands on one live p
     // than only a crash - and this case runs in build-tsan/ as well.
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;
-    backend.sendDelayMs   = 1;      // a write that takes a moment, as a WinMM bulk SysEx does
-    backend.virtualPorts  = false;  // the swap is the hardware set's: no virtual output to count as well
-    MidiStream stream(backend);
+    const rp::midi::OutputMode mode = GENERATE(rp::midi::OutputMode::Inline, rp::midi::OutputMode::Threaded);
+    // Inline: a write that takes a moment, as a WinMM bulk SysEx does, so the sender is still inside one under most of
+    // the swaps. Threaded: no delay, because the pushes only have to reach the ring (the subject is push against retire
+    // and flush, not a slow port) and a millisecond per send is the platform's sleep granularity off Linux (Windows' is
+    // about 15.6 ms), not a millisecond there.
+    backend.sendDelayMs  = mode == rp::midi::OutputMode::Inline ? 1 : 0;
+    backend.virtualPorts = false;  // the swap is the hardware set's: no virtual output to count as well
+    MidiStream stream(backend, mode);
     stream.setOutputs({"Synth out"});  // an output is selected before the audio thread starts, as it is in a run
     REQUIRE(stream.open());
     constexpr int kSends = 300;
     std::atomic<bool> done{false};
     std::thread audio([&] {
         const std::uint8_t note[3] = {0x90, 0x3C, 0x7F};
-        for (int i = 0; i < kSends; ++i) stream.send(note, 3);
+        for (int i = 0; i < kSends; ++i) {
+            stream.send(note, 3);
+            // Threaded: the pushes are otherwise microseconds and would all be over before the control thread's second
+            // swap, so the count below would rest on a thread-start race. Pacing the sender makes the swaps land under
+            // it, which is what the case is about; inline, the fake's own write already paces it.
+            if (mode == rp::midi::OutputMode::Threaded)
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+        }
         done.store(true);
     });
     int swaps = 0;
@@ -588,10 +645,13 @@ TEST_CASE("an output swap under a send in flight: every send lands on one live p
         ++swaps;
     }
     audio.join();
+    // Threaded: every push returned before its writer wrote, so the counts are read once the last writer has drained.
+    REQUIRE(settled(backend, kSends));
+    // Both modes: many swaps landed while the sender was sending (inline it is inside a fake write, threaded the pushes
+    // are paced), and every send still reached exactly one live port - no send was lost and none reached a freed one.
     CHECK(swaps > 2);
     CHECK(backend.sendsStarted.load() == kSends);   // every send reached a port: none went to no output at all
     CHECK(backend.sendsFinished.load() == kSends);
-    CHECK(backend.records() >= 2);                  // the swap really opened new ports under the sender
     CHECK(backend.sendsAfterClose() == 0);
     CHECK(backend.totalReceived() == static_cast<std::size_t>(kSends));
 }
@@ -606,7 +666,8 @@ TEST_CASE("a diff closes what it drops before it opens what it adds: a renamed d
     backend.outputs          = {"Synth 1", "Synth 2"};
     backend.exclusivePorts   = true;
     backend.deviceOf         = {{"Synth 1", "synth"}, {"Synth 2", "synth"}};  // one device, two enumerations
-    MidiStream stream(backend);
+    const rp::midi::OutputMode mode = GENERATE(rp::midi::OutputMode::Inline, rp::midi::OutputMode::Threaded);
+    MidiStream stream(backend, mode);
     stream.setOutputs({"Synth 1"});
     REQUIRE(stream.open());
     backend.events.clear();
@@ -620,18 +681,20 @@ TEST_CASE("a diff closes what it drops before it opens what it adds: a renamed d
     CHECK(stream.openedOutputs() == std::vector<std::string>{"Synth 2"});
 }
 
-TEST_CASE("a swap behind back-to-back long sends waits out one send, never the run of them") {
-    // A WinMM bulk SysEx blocks about 170 ms inside send(), and a block may send several. The wait must be bounded by
-    // the ONE send in flight - the set the swap published is what the next send reads - so a reconfigure waits one
-    // send, not the stream of them. Waiting "while the epoch is odd" instead chases every send that follows: this case
-    // measured hundreds of milliseconds on a 32-thread box and never returned under `taskset -c 0` (the swap spins out
-    // the whole run). The bound is a quarter of the run, loose enough for a loaded runner and tight enough to fail that
-    // wait.
+TEST_CASE("a swap behind back-to-back long sends waits a bounded time: one send inline, the flush's deadline threaded") {
+    // A WinMM bulk SysEx blocks about 170 ms inside send(), and a block may send several. INLINE: the wait must be
+    // bounded by the ONE send in flight - the set the swap published is what the next send reads - so a reconfigure
+    // waits one send, not the stream of them. Waiting "while the epoch is odd" instead chases every send that follows:
+    // this case measured hundreds of milliseconds on a 32-thread box and never returned under `taskset -c 0` (the swap
+    // spins out the whole run). The bound is a quarter of the run, loose enough for a loaded runner and tight enough to
+    // fail that wait. THREADED: the wait is the writer's stop, which flushes what the ring holds up to kFlushDeadline and
+    // discards the rest - bounded the same way, by a constant rather than by the backlog's length.
+    const rp::midi::OutputMode mode = GENERATE(rp::midi::OutputMode::Inline, rp::midi::OutputMode::Threaded);
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;
     backend.sendDelayMs      = 20;
     backend.virtualPorts     = false;  // the swap is the hardware set's
-    MidiStream stream(backend);
+    MidiStream stream(backend, mode);
     stream.setOutputs({"Synth out"});
     REQUIRE(stream.open());
     constexpr int kSends = 40;  // 800 ms of unbroken sends
@@ -645,12 +708,18 @@ TEST_CASE("a swap behind back-to-back long sends waits out one send, never the r
     const auto waited =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
     audio.join();
-    // One in-flight send plus slack: a quarter of the run (ten sends' time), because a ThreadSanitizer run inside the
-    // parallel kit, or a loaded macOS runner, stretches a 20 ms send and the scheduling around it (a CI run measured 92
-    // ms against the four sends this was). Chasing the run would wait out most of its 800 ms.
-    CHECK(waited < kSends * backend.sendDelayMs / 4);
+    // Inline: one in-flight send plus slack, a quarter of the run (ten sends' time), because a ThreadSanitizer run inside
+    // the parallel kit, or a loaded macOS runner, stretches a 20 ms send and the scheduling around it (a CI run measured
+    // 92 ms against the four sends this was). Chasing the run would wait out most of its 800 ms. Threaded: the writer's
+    // flush deadline plus the send it was already inside, the same invariant with a constant bound.
+    if (mode == rp::midi::OutputMode::Inline) {
+        CHECK(waited < kSends * backend.sendDelayMs / 4);
+        CHECK(backend.totalReceived() == static_cast<std::size_t>(kSends));
+    } else {
+        CHECK(waited < rp::midi::PortWriter::kFlushDeadline.count() + 500);
+        CHECK(backend.totalReceived() >= 1);  // the flush sent what the deadline allowed, and discarded the rest
+    }
     CHECK(backend.sendsAfterClose() == 0);
-    CHECK(backend.totalReceived() == static_cast<std::size_t>(kSends));
 }
 
 TEST_CASE("every message a delivery thread queued is delivered before its port's destructor returns") {
@@ -801,4 +870,159 @@ TEST_CASE("the allow list hides a port from the stream's list and from its opens
     CHECK(backend.listening.count("RPFake keys") == 1);
     CHECK(backend.listening.count("Zoom L6:1 20:0") == 0);
     CHECK(backend.totalReceived() == 0);  // the filtered output never even opened
+}
+
+// ---- the stream in Threaded mode ------------------------------------------------------------------------------
+//
+// What the audio callback sees when the stream writes from a thread of its own: a send that returns before the port has
+// written, the per-message dump written by the writer rather than the callback, a swap that FLUSHES a backlog before the
+// port goes, and drops counted per port. The cases that pin a contract the two modes share run in BOTH (a GENERATE at
+// the top of each, reading what a port received only once its writer has drained), so the concurrency cases the design
+// asks to hold in both modes - the exclusive port's re-pick, a close under a send in flight, an output swap under a
+// send, the diff that closes before it opens, and a swap behind back-to-back sends - are what the ThreadSanitizer leg
+// runs in Threaded mode too.
+
+TEST_CASE("a threaded send returns while the port is still writing, and every byte arrives in order") {
+    // The SDL standalone's audio callback: it drains the Engine's MIDI out once per block, and a WinMM SysEx write waits
+    // for the bytes to leave the wire (about 170 ms for a 538-byte repaint at DIN rate). The callback queues and moves
+    // on; the writer thread does the waiting.
+    Machine          machine;
+    FakeMidiBackend& backend = machine.backend;
+    backend.sendDelayMs      = 200;
+    // The virtual output is INLINE in both modes, so a delay on it is the caller's: it is not what this case is about.
+    backend.virtualPorts = false;
+    MidiStream stream(backend, rp::midi::OutputMode::Threaded);
+    stream.setOutputs({"Synth out"});
+    REQUIRE(stream.open());
+    const std::vector<std::uint8_t> sysex(538, 0xF0);
+    const std::uint8_t              note[3] = {0x90, 0x3C, 0x7F};
+    const auto                      t0      = std::chrono::steady_clock::now();
+    stream.send(sysex.data(), sysex.size());
+    for (int i = 0; i < 3; ++i) stream.send(note, 3);
+    CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(150));  // it waited for no write at all
+    // And the port receives them whole, in the order the block sent them.
+    REQUIRE(settled(backend, 4));
+    const std::vector<std::vector<std::uint8_t>> sent = backend.sentTo("Synth out");
+    REQUIRE(sent.size() == 4);
+    CHECK(sent[0] == sysex);
+    CHECK(sent[1] == std::vector<std::uint8_t>(note, note + 3));
+    CHECK(stream.droppedOutputCount() == 0);
+    stream.close();
+}
+
+TEST_CASE("a threaded stream's dump is written by the writer, not the audio callback") {
+    // RETROPLUG_MIDI_LOG's per-message line moved with the send: building it is an allocation, and send() runs on the
+    // audio thread. The line still carries the prefix and the bytes a harness greps.
+    Machine          machine;
+    FakeMidiBackend& backend = machine.backend;
+    backend.sendDelayMs      = 0;
+    backend.virtualPorts     = false;
+    // The sink runs on the WRITER's thread (that is the point: send() is the audio callback), so the case's own
+    // collection is guarded: ThreadSanitizer runs this file too.
+    std::mutex               linesMutex;
+    std::vector<std::string> lines;
+    auto                     linesCopy = [&] {
+        std::lock_guard<std::mutex> lk(linesMutex);
+        return lines;
+    };
+    const char*              was = std::getenv("RETROPLUG_MIDI_LOG");
+    std::string              kept;
+    const bool               had = was != nullptr;
+    if (had) kept = was;
+#if defined(_WIN32)
+    _putenv_s("RETROPLUG_MIDI_LOG", "1");
+#else
+    setenv("RETROPLUG_MIDI_LOG", "1", 1);
+#endif
+    {
+        MidiStream stream(backend, rp::midi::OutputMode::Threaded);
+        stream.setLogSink([&](const std::string& line) {
+            if (line.find("MIDI out (Synth out): 90") == std::string::npos) return;
+            std::lock_guard<std::mutex> lk(linesMutex);
+            lines.push_back(line);
+        });
+        stream.setOutputs({"Synth out"});
+        REQUIRE(stream.open());
+        const std::uint8_t note[3] = {0x90, 0x3C, 0x7F};
+        stream.send(note, 3);
+        REQUIRE(settled(backend, 1));
+        // The writer's line, which names the port: a Threaded stream has one writer per output, and two ports sending
+        // the same bytes is not something a dump should hide. The prefix and the bytes are what a harness greps.
+        const std::vector<std::string> got = linesCopy();
+        REQUIRE(got.size() == 1);
+        CHECK(got[0] == "[retroplug-sdl] MIDI out (Synth out): 90 3C 7F ");
+        stream.close();
+    }
+#if defined(_WIN32)
+    _putenv_s("RETROPLUG_MIDI_LOG", had ? kept.c_str() : "");
+#else
+    if (had) setenv("RETROPLUG_MIDI_LOG", kept.c_str(), 1);
+    else unsetenv("RETROPLUG_MIDI_LOG");
+#endif
+}
+
+TEST_CASE("a threaded stream's swap with a backlog flushes it before the port closes, and sends nothing after") {
+    // A port leaving the selection (a project load, a pick, the stream closing) stops its writer with a flush: a dropped
+    // Note Off is a stuck note. Nothing reaches the port after it closes, which is what the stream's epoch handshake and
+    // the writer's stop are ordered to guarantee.
+    Machine          machine;
+    FakeMidiBackend& backend = machine.backend;
+    backend.sendDelayMs      = 20;
+    backend.virtualPorts     = false;  // the hardware set's flush is the subject; the virtual send stays inline
+    MidiStream stream(backend, rp::midi::OutputMode::Threaded);
+    stream.setOutputs({"Synth out"});
+    REQUIRE(stream.open());
+    const std::uint8_t note[3]  = {0x90, 0x3C, 0x7F};
+    constexpr int      kQueued  = 8;
+    for (int i = 0; i < kQueued; ++i) stream.send(note, 3);
+    stream.setOutputs({});  // the port leaves: published away, waited out, flushed, joined, closed
+    CHECK(backend.sentTo("Synth out").size() == kQueued);
+    CHECK(backend.sendsAfterClose() == 0);
+    // The stream is still usable, and no hardware port is left to receive: the next message goes nowhere on the wire.
+    CHECK(stream.openedOutputs().empty());
+    stream.send(note, 3);
+    CHECK(settled(backend, kQueued));  // nothing more is written: the count stands
+    CHECK(backend.sentTo("Synth out").size() == kQueued);
+    stream.close();
+}
+
+TEST_CASE("a Threaded stream's send allocates nothing on the audio callback") {
+    // The design's case is send()'s, not push()'s: the audio callback calls MidiStream::send, so that is where an
+    // allocation would matter (PortWriter.test.cpp counts push's own, and the count is the same global operator new,
+    // armed for this thread alone, so the writer's own allocations are not measured).
+    Machine          machine;
+    FakeMidiBackend& backend = machine.backend;
+    backend.sendDelayMs      = 50;  // the ring is being drained while the block's messages land
+    backend.virtualPorts     = false;
+    MidiStream stream(backend, rp::midi::OutputMode::Threaded);
+    stream.setOutputs({"Synth out"});
+    REQUIRE(stream.open());
+    const std::vector<std::uint8_t> sysex(538, 0xF0);
+    const std::uint8_t              note[3] = {0x90, 0x3C, 0x7F};
+    {
+        rp::midi::test::AllocationCount count;
+        for (int i = 0; i < 64; ++i) {
+            stream.send(sysex.data(), sysex.size());
+            stream.send(note, 3);
+        }
+        const bool quiet = count.value() == 0;
+        CHECK(quiet);
+    }
+    stream.close();
+}
+
+TEST_CASE("a threaded stream counts the messages a full ring drops") {
+    // The count is per port and read on the control thread, as droppedCount() is for the receive ring: a port that is
+    // not draining must not make a lost message invisible.
+    Machine          machine;
+    FakeMidiBackend& backend = machine.backend;
+    backend.sendDelayMs      = 300;
+    backend.virtualPorts     = false;
+    MidiStream stream(backend, rp::midi::OutputMode::Threaded);
+    stream.setOutputs({"Synth out"});
+    REQUIRE(stream.open());
+    const std::vector<std::uint8_t> repaint(1024, 0xF0);  // a big message, so a few fills the ring
+    for (int i = 0; i < 400; ++i) stream.send(repaint.data(), repaint.size());
+    CHECK(stream.droppedOutputCount() > 0);
+    stream.close();
 }

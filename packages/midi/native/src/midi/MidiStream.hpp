@@ -25,14 +25,19 @@
 // a selection change publishes a new set naming the same virtual port without reopening it, so a DAW or an aconnect
 // user connected to "RetroPlug Out" keeps that connection across a Settings > MIDI change. The hardware ports are the
 // CONTROL thread's (hwOut_), and a published set only names them: a port leaving the selection is unpublished, waited
-// out, and only then closed, which is also what lets a name be reopened at all where a port is exclusive (Windows).
+// out, and only then closed, which is also what lets a name be reopened at all where a port is exclusive (Windows). A
+// hardware port lives inside its PortWriter, which in Threaded mode writes from a thread of its own: the swap order
+// above is what makes that safe (the set stops naming the writer and the send in flight is waited out before the writer
+// is STOPPED, which flushes what it queued, joins the thread and closes the port).
 //
 // The filters judge a listing by the backend's FAMILY (MidiBackend::familyName), not by the name this stream publishes
 // under: a session's stream is "RetroPlug N8" and a new name for it would otherwise turn the standalone's virtual output
 // and a claimed Launchpad's link into devices it may open (the E11 "every input" default makes that reachable).
 //
 // Logging: every line the harnesses grep goes through one sink, by default the "[retroplug-sdl] " voice to stderr that
-// the app has always written (the CLI prints it too), so a test asserts the very bytes that reach the console.
+// the app has always written (the CLI prints it too), so a test asserts the very bytes that reach the console. An Inline
+// stream's per-message out dump is written by send() as it always was; a Threaded stream's is written by the writer that
+// actually sends it, because the audio thread must not build it.
 
 #include <array>
 #include <atomic>
@@ -46,6 +51,7 @@
 #include <vector>
 
 #include "midi/MidiBackend.hpp"
+#include "midi/PortWriter.hpp"
 
 namespace rp::midi {
 
@@ -67,7 +73,7 @@ public:
      *  to it, and poll() then never grows a vector on the audio thread. */
     static constexpr std::size_t kCapacity = 256;
 
-    explicit MidiStream(MidiBackend& backend);
+    explicit MidiStream(MidiBackend& backend, OutputMode mode = OutputMode::Inline);
     ~MidiStream();
     MidiStream(const MidiStream&)            = delete;
     MidiStream& operator=(const MidiStream&) = delete;
@@ -134,6 +140,14 @@ public:
      *  thread stopped draining, and any transport clock in what was lost is simply gone, which downstream reads as a
      *  tempo that is too slow. */
     std::uint64_t droppedCount() const { return dropped_.load(std::memory_order_relaxed); }
+    /** Whole messages a hardware output's writer dropped because its ring was full - always 0 in a healthy run.
+     *  Threaded streams only (an Inline one has no ring): a port that is not draining must not make a lost message
+     *  invisible. Read on the control thread, as droppedCount() is. */
+    std::uint64_t droppedOutputCount() const {
+        std::uint64_t n = 0;
+        for (const auto& entry : hwOut_) n += entry.second->dropped();
+        return n;
+    }
 
     /** Test-only: push a message into the input ring as if a port had received it, for a headless self-test that has no
      *  MIDI hardware. Not used in normal operation. */
@@ -142,11 +156,12 @@ public:
 private:
     /** What send() reaches, immutable once published: the hardware outputs this set NAMES, and the virtual output
      *  (owned by open(), carried here only so a send reads ONE pointer and close() can wait sends out before freeing
-     *  it). It owns no port: hwOut_ is the hardware ports' owner, so a port can be unpublished, waited out and closed
-     *  before the same name is opened again. One control-thread allocation per change, nothing on the audio path. */
+     *  it). It owns no port: hwOut_ is the hardware ports' (and their writers') owner, so one can be unpublished,
+     *  waited out and stopped before the same name is opened again. One control-thread allocation per change, nothing
+     *  on the audio path. */
     struct OutputSet {
-        std::vector<MidiPort*> ports;
-        MidiPort*              virtualPort = nullptr;
+        std::vector<PortWriter*> ports;
+        MidiPort*                virtualPort = nullptr;
     };
 
     void applyInputs(Apply mode);
@@ -158,6 +173,7 @@ private:
     void emit(const std::string& line);  // one log line, prefix included, through sink_ or stderr
 
     MidiBackend* backend_;  // non-const on purpose: a listing probes the system, and listInputs() is const
+    OutputMode   mode_ = OutputMode::Inline;  // where a hardware output's send happens (see OutputMode)
     std::string  clientName_ = "RetroPlug";  // copied from the backend at open(): the name this stream PUBLISHES under
     std::string  filterName_ = "RetroPlug";  // the backend's FAMILY, copied at open(): what the filters judge a port by
     LogSink      sink_;                      // empty: stderr
@@ -183,7 +199,10 @@ private:
     // The hardware ports, name and owner together, the CONTROL thread's alone: it opens them, and it closes one only
     // after the published set has stopped naming it and the send in flight has been waited out.
     std::vector<std::pair<std::string, std::unique_ptr<MidiPort>>> hwIn_;
-    std::vector<std::pair<std::string, std::unique_ptr<MidiPort>>> hwOut_;
+    // An output and its writer (which owns the port): the CONTROL thread's, as the inputs above are. In Threaded mode a
+    // writer is a thread, so one is stopped (flushed, joined, closed) only once the published set has stopped naming it
+    // and the send in flight has been waited out.
+    std::vector<std::pair<std::string, std::unique_ptr<PortWriter>>> hwOut_;
     std::atomic<OutputSet*>                                       outputs_{nullptr};  // published for send()
     std::atomic<std::uint32_t>              epoch_{0};          // odd while a send is in flight
 

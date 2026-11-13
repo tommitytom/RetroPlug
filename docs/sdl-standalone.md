@@ -63,7 +63,9 @@ to the selected hardware output port, if any. It sends each message at once, its
 (RtMidi's out takes no timestamp), where the plugin hands the DAW each at its frame; scheduling it is the
 standalone's own work ([07-remaining-work.md](../spec/07-remaining-work.md)). Hardware-verified: LSDj
 Master-Sync clock (`0xF8`) reaches `aseqdump`.
-`RETROPLUG_MIDI_LOG` dumps in + out bytes.
+`RETROPLUG_MIDI_LOG` dumps in + out bytes. Its out line is written where the write happens: inline on
+the caller's thread for a facet whose caller is the JS thread, and by each hardware output's writer in the
+standalone's `Threaded` stream, whose line names the port (two ports sending the same bytes are two lines).
 
 ### MIDI device selection: ✅ DONE (per project, since F5b)
 `Settings > MIDI` edits a PROJECT's `midi` section, not a machine-wide setting: an inputs checklist plus "All

@@ -21,8 +21,8 @@ bool contains(const std::vector<std::string>& names, const std::string& name) {
 
 }  // namespace
 
-MidiStream::MidiStream(MidiBackend& backend)
-    : backend_(&backend), clientName_(backend.clientName()), filterName_(backend.familyName()) {}
+MidiStream::MidiStream(MidiBackend& backend, OutputMode mode)
+    : backend_(&backend), mode_(mode), clientName_(backend.clientName()), filterName_(backend.familyName()) {}
 
 MidiStream::~MidiStream() { close(); }
 
@@ -208,7 +208,16 @@ void MidiStream::applyOutputs(Apply mode) {
         bool opened = false;
         for (int attempt = 0; attempt < 2 && !opened; ++attempt) {
             try {
-                hwOut_.emplace_back(name, backend_->openOutput(name));
+                // The port opens OUTSIDE the writer: an exclusive port that refuses throws before a thread exists, so
+                // the retry below costs no thread start and no flush.
+                PortWriter::Options options;
+                options.mode = mode_;
+                // An Inline stream dumps in send() (one line per message, its destinations together); a Threaded one
+                // cannot build a string on the audio thread, so its dump is the writer's, one line per port.
+                options.log = mode_ == OutputMode::Threaded && log_.load();
+                hwOut_.emplace_back(name, std::make_unique<PortWriter>(
+                                              backend_->openOutput(name), name, options,
+                                              [this](const std::string& line) { emit(line); }));
                 next.push_back(name);
                 emit("MIDI out: connected hardware port '" + name + "'");
                 opened = true;
@@ -327,7 +336,10 @@ void MidiStream::poll(std::vector<Message>& out) {
 
 void MidiStream::send(const std::uint8_t* data, std::size_t n) {
     if (!data || n == 0) return;
-    if (log_.load()) {
+    // The per-message dump: an Inline stream writes it here, as it always has (its caller is the CLI's JS thread, and
+    // one line covers every destination). A THREADED stream's dump is each writer's, because building a string is an
+    // allocation and this is the audio callback.
+    if (log_.load() && mode_ == OutputMode::Inline) {
         std::string line = "MIDI out: ";
         char        hex[4];
         for (std::size_t i = 0; i < n; ++i) {
@@ -347,7 +359,8 @@ void MidiStream::send(const std::uint8_t* data, std::size_t n) {
     OutputSet* set = outputs_.load(std::memory_order_seq_cst);
     if (set) {
         if (set->virtualPort) set->virtualPort->send(data, n);
-        for (auto& port : set->ports) port->send(data, n);
+        // Threaded: a copy into each writer's ring and, at most, one wake. Inline: the port's own send, on this thread.
+        for (PortWriter* writer : set->ports) writer->push(data, n);
     }
     epoch_.fetch_add(1, std::memory_order_seq_cst);  // even: done, and everything above happens-before a retire
 }
