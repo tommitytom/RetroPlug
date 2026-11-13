@@ -7,8 +7,9 @@
 import { BUTTON_VALUE } from "../src/keyCodes";
 import type { Session } from "./session";
 
-/** Named button values (Right=0..Start=7, position-aligned across GB/NES) + the GBA-only L/R wire bytes.
- *  Pass to Timeline.press / Timeline.tap. */
+/** Named button values (Right=0..Start=7, position-aligned across GB/NES) plus the bytes past Start, which are per
+ *  console: the GBA's L/R at 8/9 and the Mega Drive's X/Y/Z/Mode at 8..11, so `Button.X` and `Button.L` are both 8, and
+ *  a press byte is read only by the console it was sent to. Pass to Timeline.press / Timeline.tap. */
 // Typed as a string→number map (not `as const`): spreading BUTTON_VALUE (a Record<string,number>)
 // erases its literal keys, so name access like `Button.A` needs the index signature.
 export const Button: Record<string, number> = { ...BUTTON_VALUE, L: 8, R: 9 };

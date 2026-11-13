@@ -1,7 +1,7 @@
 // The pad reaches the emulated 6-button controller (design section 5): a press lands on port 1's pad and stays there
-// across a block's polls, a release leaves it, and a byte that names no button of this console drives nothing. The read
-// is BlastEm's own port state, so what a case pins is the mapping from the wire byte to the pad's bits, not a copy of
-// the table pressButton applies from.
+// across a block, a release leaves it, and a byte that names no button of this console drives nothing. The read is
+// BlastEm's own port state, so what a case pins is the mapping from the wire byte to the pad's bits, not a copy of the
+// table pressButton applies from.
 #include <cstdint>
 #include <memory>
 #include <vector>

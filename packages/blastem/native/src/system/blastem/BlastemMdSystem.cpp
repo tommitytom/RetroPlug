@@ -674,9 +674,8 @@ void BlastemMdSystem::pressButton(std::uint8_t button, bool down) {
 // register it hands the bus). False before a core exists, for a byte that names no button, and when port 1 holds no pad.
 bool BlastemMdSystem::padDown(std::uint8_t button) const {
     if (!gen_ || button >= std::size(kPadState)) return false;
-    // find_gamepad takes a non-const io (it walks the ports to match a gamepad number), so this reads as the const
-    // lookup it is. Port 1's device is the pad setup_io_devices connected there; boot() replaced only port 2's.
-    io_port* port = find_gamepad(const_cast<sega_io*>(&gen_->io), 1);
+    // Port 1's device is the pad setup_io_devices connected there; boot() replaced only port 2's.
+    io_port* port = find_gamepad(&gen_->io, 1);
     if (!port) return false;
     return (port->input[kPadState[button]] & kPadBit[button]) != 0;
 }

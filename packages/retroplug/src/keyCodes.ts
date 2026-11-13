@@ -10,7 +10,7 @@
 // carries across the bridge, so they must not drift. The bytes past Start belong to whichever console
 // has more than eight buttons on its pad (the GBA's L/R are 8/9 of ITS table, the Mega Drive's
 // X/Y/Z/Mode are 8..11 of its own), so a press byte is only ever read by the console it was sent to.
-// The four Mega Drive extras are named here so a user can bind them; the seeded profile leaves them
+// The four Mega Drive extras are named here for a hand-edited profile: the seeded profile leaves them
 // unbound, so no default binding of any console changes (see bindingMap.ts defaultBindingMap()).
 
 /** Button name → the wire byte native's InputTypes.hpp table of the running console assigns (the shared

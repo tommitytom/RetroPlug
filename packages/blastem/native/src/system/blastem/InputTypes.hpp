@@ -8,7 +8,7 @@
 //
 //   Select (6) is the Mega Drive's C button: the pad has A, B and C, and the shared table's sixth position is a face
 //   button on every console whose pad has a third one. That is a choice, and it is the one the JS bridge's name table
-//   makes unavoidable; the UI labels it per platform.
+//   makes unavoidable: the bindings menu shows that slot under the shared name.
 //
 // BlastEm's own enum is {BUTTON_INVALID, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, BUTTON_A, BUTTON_B, BUTTON_C,
 // BUTTON_START, BUTTON_X, BUTTON_Y, BUTTON_Z, BUTTON_MODE} (io.h:129-142, NUM_GAMEPAD_BUTTONS last), and

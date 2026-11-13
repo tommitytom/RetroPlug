@@ -78,9 +78,9 @@ export function withActionDefaults(map: BindingMap, actions: readonly ActionDefa
  *
  *  Both channels stop at the eight shared button names on purpose: the bytes past Start (keyCodes.ts
  *  BUTTON_VALUE's X/Y/Z/Mode, the Mega Drive 6-button pad's extras) ship unbound, so a host gamepad's
- *  buttons drive no Mega Drive extra until the user binds one and no recorded keyboard/gamepad matrix
- *  moves. A channel with no entry for a name is what the bindings editor shows as "-" and what the input
- *  resolvers skip, so binding one is a user edit, never a default. */
+ *  buttons drive no Mega Drive extra and no recorded keyboard/gamepad matrix moves. Binding one takes a
+ *  hand-edited profile: the bindings menu lists the shared eight only, and the input resolvers skip a
+ *  channel with no entry for a name, so none of the four is ever a default. */
 export function defaultBindingMap(): BindingMap {
   return {
     name: "default",
