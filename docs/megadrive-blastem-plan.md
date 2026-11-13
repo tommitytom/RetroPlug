@@ -6464,8 +6464,9 @@ in; it is a console, so beside the other consoles' notes):
   the native rates, the ring the block drains, and the measured xRT;
 - the video path: the bordered frame cropped into `FrameBufferTriple`;
 - the battery's odd-byte layout and the savestate's identifier;
-- the two "not ours" notes: `deps/blastem` is a mirror with `RetroPlug:` markers, and the threaded renderer and the
-  event log are compiled out.
+- the two "not ours" notes: `deps/blastem` is a mirror with `RetroPlug:` markers, the threaded renderer is compiled
+  out, and the event log is compiled in but never started (its VRAM hooks return before their delta state unless a log
+  is active).
 
 - [ ] **Step 4: one AGENTS.md rule, folded into the existing one**
 

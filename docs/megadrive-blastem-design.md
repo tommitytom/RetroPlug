@@ -108,9 +108,11 @@ serializer version is refused with a message, never misread.
 **Instances and threads.** The mutable globals become per-instance state in mirror commits. The known list, from the
 code study (`.superpowers/mdspike/STEPPING-STUDY.md`): VDP DMA reads the global `current_system` (`genesis.c:309`), so a
 second instance would DMA from the first one's RAM; the rest are about ten smaller ones plus `render_audio.c`, which we
-drop. The threaded VDP renderer and the event log are compiled out and `render_is_threaded_video()` returns 0. An
-instance runs on whatever thread calls it, one call at a time; the control plane reads it through the snapshot path
-like the other cores.
+drop. The threaded VDP renderer is compiled out and `render_is_threaded_video()` returns 0. The event log is not:
+`event_log.c` is in the file set because `vdp.c` calls its VRAM hooks, but nothing in this build ever starts it (no
+caller opens its file, its socket or its memory reader), and the mirror's VRAM hooks return before touching their delta
+state unless a log is active. An instance runs on whatever thread calls it, one call at a time; the control plane reads
+it through the snapshot path like the other cores.
 
 ## 3. The port-2 device
 
