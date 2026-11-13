@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "SyntheticRom.hpp"
+#include "system/blastem/BlastemAudio.hpp"
 #include "system/blastem/BlastemMdSystem.hpp"
 
 namespace {
@@ -17,28 +18,35 @@ namespace {
 constexpr double        kRate   = 48000.0;
 constexpr std::uint32_t kFrames = 512;
 
-std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom) {
+std::unique_ptr<rp::blastem::BlastemMdSystem> bootAt(std::vector<std::uint8_t> rom, double rate = kRate,
+                                                     std::uint32_t reserve = 0) {
     rp::blastem::BlastemMdConfig cfg;
     cfg.region = 1;
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, std::move(rom));
-    sys->onActivate(kRate);
+    // A plan reserves before activation, which is what a node's reservation is: the sink is sized from it instead of
+    // from the engine's default block.
+    if (reserve) sys->reserveAudio(reserve);
+    sys->onActivate(rate);
     return sys;
 }
 
-// `seconds` of interleaved stereo at the host rate, one block of kFrames at a time (the last one short when the
+std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom) { return bootAt(std::move(rom)); }
+
+// `seconds` of interleaved stereo at the host rate, one block of `block` frames at a time (the last one short when the
 // duration is not a whole number of blocks, which is the ordinary case for a duration in seconds).
-std::vector<float> render(rp::blastem::BlastemMdSystem& sys, double seconds) {
-    std::vector<float> out;
-    std::vector<float> left(kFrames), right(kFrames);
-    float*             lanes[2] = {left.data(), right.data()};
-    AudioBlockInfo     info{};
-    const std::uint32_t total = static_cast<std::uint32_t>(seconds * kRate);
-    for (std::uint32_t done = 0; done < total; done += kFrames) {
-        info.frames = std::min(kFrames, total - done);
+std::vector<float> render(rp::blastem::BlastemMdSystem& sys, double seconds, std::uint32_t block = kFrames,
+                          double rate = kRate) {
+    std::vector<float>  out;
+    std::vector<float>  left(block), right(block);
+    float*              lanes[2] = {left.data(), right.data()};
+    AudioBlockInfo      info{};
+    const std::uint32_t total = static_cast<std::uint32_t>(seconds * rate);
+    for (std::uint32_t done = 0; done < total; done += block) {
+        info.frames = std::min(block, total - done);
         std::fill(left.begin(), left.end(), 0.0f);
         std::fill(right.begin(), right.end(), 0.0f);
         sys.prepareForBlock(info);
-        while (sys.stepIfBelowTarget(kFrames)) {}
+        while (sys.stepIfBelowTarget(block)) {}
         sys.finishBlock(info, lanes, 2);
         out.insert(out.end(), left.begin(), left.begin() + info.frames);
         out.insert(out.end(), right.begin(), right.begin() + info.frames);
@@ -50,6 +58,30 @@ double peak(const std::vector<float>& samples) {
     double p = 0.0;
     for (float s : samples) p = std::max(p, std::fabs(static_cast<double>(s)));
     return p;
+}
+
+// The left lane's RMS, which is a level a case can pin: a peak threshold passes a gain error of any size up to it.
+double rms(const std::vector<float>& interleaved) {
+    double sum = 0.0;
+    std::size_t n = 0;
+    for (std::size_t i = 0; i + 1 < interleaved.size(); i += 2, ++n) sum += double(interleaved[i]) * interleaved[i];
+    return n ? std::sqrt(sum / double(n)) : 0.0;
+}
+
+// The left lane's sign changes, which is how a case reads a tone's pitch without a spectrum: a sink that stored a new
+// native rate but never re-rated its blip resamples at the wrong ratio, and the pitch (not the level) is what moves.
+std::size_t zeroCrossings(const std::vector<float>& interleaved) {
+    std::size_t count = 0;
+    bool        have  = false;
+    bool        up    = false;
+    for (std::size_t i = 0; i + 1 < interleaved.size(); i += 2) {
+        if (interleaved[i] == 0.0f) continue;
+        const bool now = interleaved[i] > 0.0f;
+        if (have && now != up) ++count;
+        have = true;
+        up   = now;
+    }
+    return count;
 }
 
 }  // namespace
@@ -84,6 +116,56 @@ TEST_CASE("the same input renders the same bytes twice", "[blastem][audio]") {
     auto  first  = boot(rp::blastem::test::fmPsgRom());
     auto  second = boot(rp::blastem::test::fmPsgRom());
     CHECK(render(*first, 0.25) == render(*second, 0.25));
+}
+
+TEST_CASE("a source's DMA-sized burst is buffered, not dropped or left behind", "[blastem][audio][sink]") {
+    // The sink alone, fed the way a core feeds it: kDmaOvershoot host samples of one source arrive before the first
+    // drain (a 68k-to-VDP DMA carries the 68k that far past a block's end, and genesis.c's own sync then runs the chip
+    // to it in one go), and then the block drains. The ring is sized for exactly that burst, so nothing may be dropped
+    // (overrunSamples) or starved, and the drained stream must be the stream a trickle would have produced: a surplus
+    // left inside blip instead would surface as latency the block partition chose.
+    constexpr std::uint32_t kBurst = 12000;  // the ring's DMA margin at 48 kHz: a quarter second
+    // The source runs at the HOST rate, so one put is one host sample: the burst and the trickle then differ only in
+    // when the samples arrive, which is the question. The resampler has its own cases.
+    constexpr std::uint64_t kEqualRateClock = 48000ull * 240;
+    const auto square = [](std::uint32_t i) -> std::int16_t { return (i / 30) % 2 ? 8191 : -8191; };
+
+    rp::blastem::AudioSink burst;
+    rp::blastem::AudioSink trickle;
+    for (rp::blastem::AudioSink* sink : {&burst, &trickle}) {
+        sink->prepare(kFrames);
+        sink->setHostRate(kRate);
+    }
+    auto* burstSource   = burst.add("TEST", kEqualRateClock, 240, 1);
+    auto* trickleSource = trickle.add("TEST", kEqualRateClock, 240, 1);
+    REQUIRE(burstSource);
+    REQUIRE(trickleSource);
+
+    for (std::uint32_t i = 0; i < kBurst; ++i) burst.putMono(burstSource, square(i));
+
+    std::vector<float> burstOut, trickleOut;
+    std::vector<float> left(kFrames), right(kFrames);
+    const std::uint32_t blocks = kBurst / kFrames;  // whole blocks only: what the burst has beyond them is never drained
+    for (std::uint32_t block = 0; block < blocks; ++block) {
+        for (std::uint32_t i = block * kFrames; i < (block + 1) * kFrames; ++i) {
+            trickle.putMono(trickleSource, square(i));
+        }
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        burst.drain(kFrames, left.data(), right.data());
+        burstOut.insert(burstOut.end(), left.begin(), left.end());
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        trickle.drain(kFrames, left.data(), right.data());
+        trickleOut.insert(trickleOut.end(), left.begin(), left.end());
+    }
+    CHECK(peak(burstOut) > 0.01);
+    CHECK(peak(trickleOut) > 0.01);
+    CHECK(burstOut == trickleOut);
+    CHECK(burst.starvedSamples() == 0);
+    CHECK(trickle.starvedSamples() == 0);
+    CHECK(burst.overrunSamples() == 0);
+    CHECK(trickle.overrunSamples() == 0);
 }
 
 TEST_CASE("a chip's rate change ends its frame first", "[blastem][audio]") {
