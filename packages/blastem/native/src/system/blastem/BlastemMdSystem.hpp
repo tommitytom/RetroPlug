@@ -45,9 +45,9 @@ public:
     void pressButton(std::uint8_t button, bool down) override;
     void setGainDb(float dB, bool immediate = false) override;
 
-    // Controller port 2's host device: one LEVEL per byte of `data`, each held from the absolute master clock of
-    // `frame`'s sample (the intra-block offset) on. `flush` is accepted and ignored, as it is on the SMS's sync role:
-    // a held level has no undelivered-stream hazard to clear, and dropping one on a seek would only leave a stale pin.
+    // Controller port 2's host device: one LEVEL per byte of `data`, each held from the host sample of `frame` (the
+    // intra-block offset) on. `flush` is accepted and ignored, as it is on the SMS's sync role: a held level has no
+    // undelivered-stream hazard to clear, and dropping one on a seek would only leave a stale pin.
     void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush = false) override;
     // True whether or not a role is wired to the port: the queue exists either way, and an unwired port simply never
     // has anything in it (as MesenSmsSystem's answer is).

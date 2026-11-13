@@ -125,7 +125,7 @@ void BlastemMdSystem::boot() {
     sampleAnchor_ = 0;
     mclkAnchor_ = 0;
     nextGridSample_ = 0;
-    port_.clear();  // a queued level's clock belongs to the timeline the four anchors above just restarted
+    port_.clear();  // a queued level's sample belongs to the timeline the four anchors above just restarted
     activated_ = true;
     setGainDb(config_.gainDb, true);
     // LAST, as the sibling backends do, and after m68k_reset (a seed laid in before the reset is a pattern the reset
