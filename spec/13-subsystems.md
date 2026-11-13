@@ -154,7 +154,11 @@ reaches a surface, and it names no launchpad provider.
   `launchpad` and `lsdj` and which `launchpad` never imports. The provider is `rp_launchpad_provider`, and the facet
   is TS's only door to a port, through `createLaunchpadClient(call)` in `@retroplug/launchpad/client`.
   `ControllerLink`'s writer thread drains the send ring and a UI queue of its own, so `send()` waits for no write in
-  flight: a push takes a lock the writer holds only for a swap. The pack's portable core is held to MicroQuickJS by the
+  flight: a push takes a lock the writer holds only for a swap. A session's EXIT is where the close bytes go out: the
+  provider's destroy disconnects the link, which writes the device's `exitToLiveMode` bytes (a pad left in Programmer
+  mode has its front panel locked) before the ports close. That is the CLI's teardown path, so it runs on a normal
+  `tjs.exit` as it does after a thrown session or Ctrl-C ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)).
+  The pack's portable core is held to MicroQuickJS by the
   device-pack toolchain's scenario mode (byte-identical transcripts under Node and `retroplug-mqjs-run`), but it
   declares no `script` member, so the scenarios are the proof and no box image carries it.
 - **Prove a change:** `retroplug-launchpad-test` (one of the sixteen `pnpm test:plugin` binaries),
@@ -213,6 +217,17 @@ installed: SDL2 is already REQUIRED at root scope for every plugin variant, and 
 submodules. On macOS the artifact binary is build-machine-only: the `SDL2.framework` embed covers the plugin and app
 bundles, and `retroplug-sdl` is a bare executable, so shipping it would need a framework copy and an `@executable_path`
 rpath.
+
+MIDI OUT LEAVES THE AUDIO CALLBACK here, and only here: this app drains the Engine's MIDI out from the audio callback
+([audioLoop.cpp](../packages/native/sdl/audioLoop.cpp)), and a port's send can block until the bytes are on the wire
+(WinMM's SysEx path waits for a 538-byte Launchpad repaint, about 170 ms at DIN rate), so its `MidiStream` runs in
+`Threaded` mode. Each selected hardware output then has a `PortWriter` of its own
+([PortWriter.hpp](../packages/midi/native/src/midi/PortWriter.hpp)): `send` copies the message into a preallocated ring
+(all or nothing, so a SysEx is never torn) and wakes a thread that does the blocking write, and a message that does not
+fit is dropped whole and counted (`droppedOutputCount()`). A port leaving the selection, or the stream closing, stops
+its writer with a bounded FLUSH, because a dropped Note Off is a stuck note. The CLI's and the test host's MIDI facet
+stays `Inline` - the caller there is the JS thread, and a script relies on a returned `midiSend` being on the wire - and
+the virtual output is inline in both modes.
 
 At startup it holds MIDI and audio until the UI has reported: the control surface's `restored()` (only when it
 started the launchpad provider) and the `audio` section's apply. The wait is bounded in time, at 2000 ms

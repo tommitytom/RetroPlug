@@ -32,15 +32,7 @@ than work.
 - [ ] [The JACK standalone's control handoff](#the-jack-standalones-control-handoff)
 - [ ] [A cart-node handover can cut a key](#a-cart-node-handover-can-cut-a-key)
 - [ ] [The N8 menu, unverified on a cart](#the-n8-menu-unverified-on-a-cart)
-- [ ] [The stripper bundle outside the repository](#the-stripper-bundle-outside-the-repository)
 - [ ] [A bar or beat quantise counts host bars](#a-bar-or-beat-quantise-counts-host-bars)
-- [ ] [MidiStream::send blocks the audio callback](#midistreamsend-blocks-the-audio-callback)
-- [ ] [A MIDI pick dirties the untitled project](#a-midi-pick-dirties-the-untitled-project)
-- [ ] [Settings > MIDI misses a claim made while open](#settings--midi-misses-a-claim-made-while-open)
-- [ ] [The audio draft's sibling-backend cache](#the-audio-drafts-sibling-backend-cache)
-- [ ] [An Apply past a read-only config](#an-apply-past-a-read-only-config)
-- [ ] [A normal CLI exit skips the teardown](#a-normal-cli-exit-skips-the-teardown)
-- [ ] [The test host drops an uncaught error](#the-test-host-drops-an-uncaught-error)
 
 **Engine**
 - [ ] [DAW automation of node params](#daw-automation-of-node-params)
@@ -271,74 +263,11 @@ And a heavy stream into a menu can starve the probe: the window's 48-frame re-sy
 send, so past about 190 messages a second (48 per 250 ms) no turn is quiet and a submission is refused. ([C5
 design](../docs/modular-graph-phase-c5-design.md) section 11.)
 
-### The stripper bundle outside the repository
-
-`retroplug-ts-stripper-bundle` fails in a build directory outside the repository:
-[tools/build-ts-stripper.mjs](../tools/build-ts-stripper.mjs) runs in the binary directory and sets no esbuild
-`absWorkingDir`, so its `typescript-5` alias resolves from there (unlike [tools/build-ui.js](../tools/build-ui.js),
-which sets it to the repo root). ([B3a design](../docs/modular-graph-phase-b3a-design.md) section 10.)
-
 ### A bar or beat quantise counts host bars
 
 A quantise of `bar` or `beat` still counts the host's bars: at a tempo divisor of 2 a cart's phrase lasts two of them.
 It may be the behaviour wanted; decide, then fix it or state it in [spec/13](13-subsystems.md#the-controller-role).
 ([Known bugs batch 2 design](../docs/known-bugs-batch-2-design.md) section 5.)
-
-### MidiStream::send blocks the audio callback
-
-`MidiStream::send` runs every selected hardware output's send inline on the audio callback, so a WinMM bulk SysEx of
-about 170 ms (a controller app's LED traffic) blocks the audio thread. The fix is a writer thread per hardware output,
-as the Launchpad link has. ([F5b design](../docs/modular-graph-phase-f5b-design.md) section 12.)
-
-### A MIDI pick dirties the untitled project
-
-A MIDI pick on the start screen dirties the empty untitled project (`ProjectStore.setSection` marks it dirty
-unconditionally), so the close guard asks to save a project holding only the pick; exempt a section-only change to an
-empty, pathless project. (Found by the final review that [F5b design](../docs/modular-graph-phase-f5b-design.md) section
-14 summarises; recorded only here.)
-
-### Settings > MIDI misses a claim made while open
-
-The row's reserved pair is a `describe()` snapshot, so Settings > MIDI's checklist does not notice a claim made while
-its container is open; a cheap, no-probe `state()` read on `MidiDeviceHost` would fix it. (Found by the final review
-that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summarises; recorded only here.)
-
-### The audio draft's sibling-backend cache
-
-The audio draft's sibling-backend cache is per backend change, not per visit
-([audioDraft.ts](../packages/audio/ts/ui/audioDraft.ts) caches by the described backend). (Found by the final review
-that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summarises; recorded only here.)
-
-### An Apply past a read-only config
-
-`UserConfigStore.setSection` answers false when it leaves a read-only config alone, but the UI host's
-`config.setSection` drops that answer (`void`, [uiHost.ts](../packages/retroplug/ui/host/uiHost.ts)) and
-`applyAudioDraft` calls `audioDevice.apply` regardless, so an Apply still reaches the device. (Found by the final review
-that [F5b design](../docs/modular-graph-phase-f5b-design.md) section 14 summarises; recorded only here.)
-
-### A normal CLI exit skips the teardown
-
-`retroplug-cli`'s override of `tjs.exit` never takes: txiki's `tjs` is frozen, so the set in
-[cli/main.cpp](../packages/native/cli/main.cpp) fails (the launcher clears the exception it leaves) and a session's
-`tjs.exit` is txiki's own, which ends the process at once. So `g_exit` is never set and the launcher's `Teardown`
-(`engine.clearGraph()`, then `rp_stop_providers`) never runs on a normal exit: the plans are not reclaimed while the
-providers' links are alive, and the providers are not stopped. The fix needs an exit the launcher sees (a `tjs.exit`
-wrapped before txiki freezes `tjs`, or an exit hook) and a look at what each provider's stop does at a process's end.
-The same exit also loses an error: one thrown in the same loop turn as a `tjs.exit(0)` is never reported, since the
-process ends inside txiki's timers phase, before the launcher looks, and exits 0 with nothing printed.
-([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 2.)
-
-### The test host drops an uncaught error
-
-The test host (`retroplug-host`, [src/main.cpp](../packages/native/src/main.cpp)) swallows a top-level throw: it
-pumps txiki's loop without looking for a pending exception or a stop request, so an error nothing caught outside the
-harness's reach (a module body's throw before its first `test()`, a timer created before it) is dropped, and the file
-ends as "tests did not complete (tjs.exit never called)" with no reason, which hides a fixture script's real error (the
-renders' fixtures meet it), or with a kept-alive one only when its 30-minute deadline runs out. Its `tjs.exit` override
-does not take either. The fix is the CLI's `pumpOnce` (which handles this fault), with the failed `tjs.exit` set's
-pending exception cleared as the CLI clears it (`cli/main.cpp`), then a whole `pnpm test:native` run for the strays
-it surfaces. ([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 3; [D3
-design](../docs/modular-graph-phase-d3-design.md) section 10.)
 
 ## Engine
 

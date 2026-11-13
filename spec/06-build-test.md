@@ -74,7 +74,7 @@ CMakeLists of [node-sdk](../packages/node-sdk/native/CMakeLists.txt),
 | `retroplug-cp-bundle` / `-ui-bundle` / `-cli-bundle` / `-ts-stripper-bundle` / `-render-worker-bundle` / `-script-bundle` / `-script-test-bundle` / `-cli-sdk-assets` | custom | `build/native/*bundle_data.c`: control-plane / React-UI / CLI / TS-stripper / render-worker / script-node bytecode (the script nodes every Engine loads, [packages/native/cmake/bundles.cmake](../packages/native/cmake/bundles.cmake); the test twin's toy nodes, embedded in `retroplug-engine-graph-test` alone) and the CLI SDK assets, embedded in their consumers. | cp: yes; rest: via dependents |
 | `retroplug-example-session` | custom | The CLI example sessions under `build/cli/`. | yes |
 | `retroplug-render-host-test` | executable | A manual smoke of engine jobs on `rp::host::OfflineJobs` ([11-ui-rendering.md](11-ui-rendering.md)): `<job-json>` runs one render (and is `cmp`-identical to `retroplug-cli render`), `--parallel <j>...` runs N concurrently on one pool, `--cancel <j>` cancels mid-render. Not a CI step (`[engine-jobs]` carries that coverage). `EXCLUDE_FROM_ALL`. | no |
-| `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test` / `-audio-host-test` | executable | Fourteen of the sixteen Catch2 binaries `pnpm test:plugin` builds and runs (the other two are the N8 pack's, the next row). Each is made by `retroplug_add_test_binary` ([cmake/test-binary.cmake](../cmake/test-binary.cmake)) and links `Catch2::Catch2WithMain`. `EXCLUDE_FROM_ALL`; the console packages', the midi package's and the launchpad pack's are declared in their own `native/CMakeLists.txt` (`retroplug-midi-test` holds `MidiStream` over `FakeMidiBackend`, the port filters and the ring; `retroplug-audio-host-test` holds `AudioHost` over `FakeAudioBackend` and the run-override rule). | no |
+| `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test` / `-audio-host-test` | executable | Fourteen of the sixteen Catch2 binaries `pnpm test:plugin` builds and runs (the other two are the N8 pack's, the next row). Each is made by `retroplug_add_test_binary` ([cmake/test-binary.cmake](../cmake/test-binary.cmake)) and links `Catch2::Catch2WithMain`. `EXCLUDE_FROM_ALL`; the console packages', the midi package's and the launchpad pack's are declared in their own `native/CMakeLists.txt` (`retroplug-midi-test` holds `MidiStream` and `PortWriter` over `FakeMidiBackend`, the port filters and the ring - a slow port's write off the caller's thread, a slow port not delaying a fast one, a full ring dropping whole messages, a stop's flush and its deadline, and neither a push nor a threaded `send` allocating, all of them in the thread sanitizer leg of [run-sanitizer.sh](../tools/run-sanitizer.sh) too, and with the five concurrency cases (the exclusive port's re-pick, a close under a send in flight, an output swap under a send, a diff's close before its open, a swap behind back-to-back sends) run in BOTH output modes through `GENERATE`; `retroplug-audio-host-test` holds `AudioHost` over `FakeAudioBackend` and the run-override rule). | no |
 | `retroplug-n8-test` / `-serial-test` / `-n8-hwtest` | executable | The Everdrive N8 pack's protocol and serial checks (`packages/n8/native/test/`), the first two `pnpm test:n8`'s; `-hwtest` needs the physical console and links no Catch2 (`NO_CATCH2`). `EXCLUDE_FROM_ALL`. | no |
 
 The plugin's identity is vendor-owned (not the DPF example namespace):
@@ -987,6 +987,17 @@ nested `deps/dpf.js` submodule (documented in its own README), consumed through 
 4. **Use of `${DPFJS_PATH}`**: the shell's `retroplug-tjs-runtime` library compiles the shared txiki host `TjsHostRuntime.cpp` and links `tjs`; the backend takes the bare QuickJS headers (`quickjs.h`) and links `qjs`; the plugin embeds the generic `dpf-widgets/generic/LVGL.cpp` and links `dpfjs::core` + `lvgl-js-native` + `retroplug-tjs-runtime`. All in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt).
 5. **React resolution** — the UI ([ui/main.tsx](../packages/retroplug/ui/main.tsx)) is bundled by the shared [tools/build-ui.js](../tools/build-ui.js), which resolves `react`/`react-reconciler`/`lvgljs-ui` from dpf.js's own pnpm workspace under `deps/dpf.js/deps/lv_binding_js/node_modules`.
 
+**The txiki fork's one addition.** The nested `deps/dpf.js/deps/lv_binding_js/deps/txiki` is a fork of `tommitytom/txiki.js`
+(MSVC fixes on top of upstream), and RetroPlug carries one patch of its own there: the embedder exit hook
+(`TJS_SetExitHook` / `TJS_StopRequested` / `TJS_ExitTaken`, `src/tjs.h`, `src/private.h`, `src/mod_os.c`,
+`src/eval.c`, `src/utils.c`, `src/vm.c`), which is what lets a session's `tjs.exit` unwind instead of ending the
+process inside the call ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)); `deps/dpf.js`'s own
+`TjsHostRuntime.cpp` matches it, skipping the bytecode module's `load` event once an exit has been taken (the module
+counts as evaluated, and no JS runs after the exit). A pointer bump reaches all of that in three commits - txiki, then
+`dpf.js/deps/lv_binding_js`, then `deps/dpf.js` - because each nested submodule records the one below it;
+nothing is pushed without the owner's word, and until the fork's commit is pushed CI cannot check out the RetroPlug one.
+With no hook installed (the plugin, the SDL standalone, the stock `tjs`) the exit is upstream's `exit()`.
+
 The shared C++ contract (`SystemBase`, the capabilities, the build request) is `retroplug-system`'s, and each console's
 core is its package's (`retroplug-sameboy`, `retroplug-mesen`); the transport primitives the cores and the host share
 are `system`'s too (`packages/system/native/src/transport/`), while the shell keeps `SampleCache`, `FileSync` and
@@ -1118,6 +1129,31 @@ same options (the C1 design's section 9). Any finding aborts the host → nonzer
 and runs `retroplug-launchpad-test`, `retroplug-midi-test` and `retroplug-audio-host-test` under ThreadSanitizer after
 the native slugs. `retroplug-device-mode-test`'s `[mutation]` bounds checks bite only under `build-asan`, which is
 run by hand: no CI or `test:plugin` leg builds that binary there.
+
+**Address mode under the device guard.** A harness that can reach a device runs under
+[tools/sdl-audio-guard](../tools/sdl-audio-guard) with the guard in `LD_PRELOAD`, and an ASan-instrumented binary refuses
+to start with a preload ahead of its runtime (`ASan runtime does not come first in initial library list`). Two
+consequences: the configure and build steps run OUTSIDE the guard (a build opens no device; the instrumented codegen
+tools it runs trip the same check), and the runs set
+`ASAN_OPTIONS=abort_on_error=1:detect_leaks=1:verify_asan_link_order=0`, which is ASan's own switch for a deliberate
+preload order. The run is still guarded in the sense that matters: the guard's interposers are loaded, and its
+self-test passes before the binary starts. `tools/run-sanitizer.sh address` cannot be used unchanged under the guard for
+that reason: run its two steps by hand.
+
+```
+# 1. configure and build, OUTSIDE the guard (a build opens no device; its instrumented codegen tools trip the check)
+cmake -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON -DRETROPLUG_SANITIZE=address \
+    -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+cmake --build build-asan -j$(nproc) --target retroplug-host
+
+# 2. run guarded, with ASan's link-order check off for the deliberate preload
+TMP="$(mktemp -d)"; REPO_DIR="$PWD"
+. tools/sdl-audio-guard/guard-env.sh "$TMP/guard"          # (it PROVES the guard is live, and exits if not)
+export NOSND_LOG="$TMP/nosnd.log"
+export RETROPLUG_HOST="$PWD/build-asan/bin/retroplug-host"
+export ASAN_OPTIONS="abort_on_error=1:detect_leaks=1:verify_asan_link_order=0"
+node packages/retroplug/scripts/run-native-tests.mjs dsp-lifecycle
+```
 
 ## Build gotchas
 
