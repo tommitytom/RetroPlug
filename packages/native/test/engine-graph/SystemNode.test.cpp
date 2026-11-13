@@ -44,6 +44,7 @@
 #include "graph/Packages.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
+#include "SyntheticRom.hpp"  // rp::blastem::test's images (packages/blastem/native/test)
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/HostIoNodes.hpp"
@@ -4113,7 +4114,7 @@ TEST_CASE("a tap armed live on an activated NES sizes nothing on the block threa
     CHECK(core->audioRingOverflow() == 0);
 }
 
-TEST_CASE("a warmed Mega Drive block allocates nothing", "[engine-graph][system-node][alloc]") {
+TEST_CASE("a warmed Mega Drive block allocates nothing", "[engine-graph][system-node][alloc][blastem-md]") {
     NodeRig rig(kRate);
     REQUIRE(rig.set(R"({"nodes":[{"id":"md","type":"rp.blastem.md","settings":{)" + mdNode(rig, 1) +
                     R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],

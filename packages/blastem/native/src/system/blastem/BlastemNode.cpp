@@ -20,8 +20,6 @@ namespace rp::host {
 
 namespace {
 
-using namespace rp::host::knobs;  // Label and valueOf: the system package's generic knob helpers
-
 // The settings the node reads and nothing else (docs/modular-graph-phase-c2-design.md section 3): the system it builds
 // a core for, the resources that core is built from, and the console's construct-time fields.
 struct MdSettings {
@@ -66,7 +64,7 @@ struct Md : SystemNode<Md, rp::blastem::BlastemMdSystem, MdSettings> {
     // All four, as the Master System's node declares them (MesenNode.cpp): SystemNode::applyInputs reads serialIn,
     // midi, bytes and buttons unconditionally, so a node that names three of them does not compile. `bytes` is where
     // the sync role's levels arrive (the rp.genmddj.sync node writes them); a MIDI run or a staged knob reaches the
-    // port device the same way, which is the gate Task 20's role closes.
+    // port device the same way.
     struct {
         rp::bytes_in  serialIn;
         rp::events_in midi;

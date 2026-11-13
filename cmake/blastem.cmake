@@ -109,11 +109,14 @@ target_compile_definitions(blastem PUBLIC NEW_CORE IS_LIB DISABLE_NUKLEAR)
 
 # BlastEm's copies of two vendored APIs get a package-private spelling, because the names are already taken by another
 # emulator in the same binary. Mesen sits beside BlastEm in every product, and it carries its own blip_buf
-# (deps/mesen/Utilities/Audio/blip_buf.cpp: the 1.2 API, where blip_new takes one argument and blip_read_samples four, and
-# blip_t is a different struct) and LuaSocket's usocket.c (its own socket_close, of a different signature too). All
-# eleven blip entry points and socket_close are defined by both archives, and a static link binds an undefined symbol
-# to whichever of the two objects was pulled first, so BlastEm's sink would silently synthesise on Mesen's blip_buf (and
-# pass the wrong argument counts to it) while the two socket_close definitions fight as one link error.
+# (deps/mesen/Utilities/Audio/blip_buf.cpp) and LuaSocket's usocket.c (its own socket_close). The eleven blip entry
+# points and socket_close are defined by both archives, and a static link binds an undefined symbol to whichever of the
+# two objects was pulled first. The two blip_bufs are the same source today: deps/blastem's is a copy of Mesen's with
+# only the precompiled header and EXPORT removed, both say 1.1.0, blip_new and blip_read_samples have the same arity in
+# each and blip_t is the same five-field struct. So that collision is silent and order-dependent (either archive would
+# do until one copy is edited, and then neither the link nor a test would say so), while only socket_close is a hard
+# multiple-definition error, its signature differing (Mesen's takes no argument, BlastEm's takes the socket). The rename
+# is right either way: it stops the binary depending on that luck and on the two copies staying the same source.
 #
 # So BlastEm's file set is compiled against these renames, and the blastem package's own units that reach the two seams
 # take the same definitions (packages/blastem/native/CMakeLists.txt); nothing else in the tree ever spells the names.
