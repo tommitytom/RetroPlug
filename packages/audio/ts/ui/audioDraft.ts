@@ -129,16 +129,23 @@ const askedBackends = new Set<string>();
 let cachedFor = "";
 
 /** What one backend's drivers are right now: the description's own for the backend in force, the cache's for a sibling
- *  the user has already asked about, and nothing otherwise. Never calls the host. */
-function knownDrivers(described: AudioDescription, backendId: string): readonly AudioDriverDescription[] {
+ *  the user has already asked about, and nothing otherwise. `known` says which of those this is: an empty list a
+ *  backend ANSWERED (the backend in force lists no driver, or an asked sibling answered []) is a known absence, while
+ *  an unasked sibling's empty list is a question not yet put. Never calls the host. */
+function knownDrivers(
+  described: AudioDescription,
+  backendId: string,
+): { drivers: readonly AudioDriverDescription[]; known: boolean } {
   if (described.status.backend !== cachedFor) {
     siblingDrivers.clear();
     askedBackends.clear();
     cachedFor = described.status.backend;
   }
   const inDescription = described.backends.find((b) => b.id === backendId)?.drivers ?? [];
-  if (inDescription.length > 0) return inDescription;
-  return siblingDrivers.get(backendId) ?? [];
+  if (inDescription.length > 0) return { drivers: inDescription, known: true };
+  const asked = siblingDrivers.get(backendId);
+  if (asked) return { drivers: asked, known: true };
+  return { drivers: [], known: described.status.backend === backendId };
 }
 
 /** Whether a sibling backend is still one no step has asked about: what the "More drivers..." row is for. A run that
@@ -178,7 +185,7 @@ export function audioDriverChoices(
   if (auto) choices[0] = { label: `Auto (${auto.backend.label}: ${auto.driver.label})`, backend: "auto", driver: "" };
   for (const backend of described.backends) {
     if (backend.id === "null") continue; // the fallback the host takes by itself, never a choice
-    const drivers = knownDrivers(described, backend.id);
+    const { drivers } = knownDrivers(described, backend.id);
     for (const driver of drivers) {
       choices.push({ label: `${backend.label}: ${driver.label}`, backend: backend.id, driver: driver.id });
     }
@@ -203,30 +210,28 @@ export function autoChoice(
   return null;
 }
 
-/** A backend's drivers as this visit knows them: never a host call (see knownDrivers). */
-function driversOf(described: AudioDescription, backendId: string): readonly AudioDriverDescription[] {
-  return knownDrivers(described, backendId);
-}
-
-/** The devices of the draft's choice, and what "" resolves to on it. Under "Auto" they are the auto-resolved driver's,
- *  so the row names where the sound is actually going. */
+/** The devices of the draft's choice, and what "" resolves to on it, with `known` saying whether the list was
+ *  FETCHED: a driver the backend answered for has a list its devices are absent from, while a sibling nobody has asked
+ *  answers nothing anyone can be missing from. Under "Auto" they are the auto-resolved driver's, so the row names
+ *  where the sound is actually going. */
 export function audioDevices(
   _host: Pick<UiHost, "audioDevice">,
   described: AudioDescription,
   choice: AudioDraft,
-): { names: string[]; defaultName: string } {
+): { names: string[]; defaultName: string; known: boolean } {
   const resolved = choice.backend === "auto" ? autoChoice(described) : null;
   // "Auto" that resolves to nothing has nothing to enumerate: there is no backend by that name to ask.
-  if (choice.backend === "auto" && !resolved) return { names: [], defaultName: "" };
+  if (choice.backend === "auto" && !resolved) return { names: [], defaultName: "", known: false };
   const backendId = resolved ? resolved.backend.id : choice.backend;
   const driverId = resolved ? resolved.driver.id : choice.driver;
-  if (!backendId) return { names: [], defaultName: "" };
+  if (!backendId) return { names: [], defaultName: "", known: false };
+  const { drivers, known } = knownDrivers(described, backendId);
+  const driver = drivers.find((d) => d.id === driverId);
+  if (driver) return { ...driver.devices, known: true };
   // A driver the backend no longer lists (a saved pick from a machine with another interface) still names itself, so
-  // the row shows what is saved rather than silently falling back.
-  const driver =
-    driversOf(described, backendId).find((d) => d.id === driverId) ??
-    (choice.driver ? { id: choice.driver, label: choice.driver, devices: { names: [], defaultName: "" } } : undefined);
-  return driver ? driver.devices : { names: [], defaultName: "" };
+  // the row shows what is saved rather than silently falling back. Its absence is a known one only when the backend
+  // answered - an asked sibling's list, or the backend in force's own; with no driver saved there is no such question.
+  return { names: [], defaultName: "", known: choice.driver !== "" && known };
 }
 
 /** The saved section as the device would take it, with no rows in between (the mount's first apply). */

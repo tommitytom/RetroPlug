@@ -168,3 +168,38 @@ test("an Apply the file refuses leaves the device alone and the draft staged", (
     resetAudioDraft();
   }
 });
+
+/** PortAudio in force, its auto driver enumerating NO device: the driver answered, and the answer is empty. */
+const NO_DEVICES: AudioBackendDescription[] = [
+  {
+    id: "portaudio",
+    label: "PortAudio",
+    autoDriver: "pipewire",
+    drivers: [{ id: "pipewire", label: "PipeWire", devices: { names: [], defaultName: "" } }],
+  },
+  DEFAULT_BACKENDS[1],
+  DEFAULT_BACKENDS[2],
+];
+
+test("a saved device a fetched driver does not list reads 'not present', and an unasked sibling's does not", () => {
+  // The row's mark says the device is GONE, so it may only be printed for a list that was fetched: a driver that
+  // enumerated no device answered, while a sibling nobody has asked is a question not yet put (the re-visit case).
+  const fake = new FakeAudioDevice({ backends: NO_DEVICES }).install();
+  resetAudioDraft();
+  try {
+    const saved = { ...SAVED, backend: "portaudio", driver: "pipewire", device: "Speakers" };
+    const known = hostOver(fake, saved);
+    expect(rowsOf(known).find((row) => row.id === "audio-device")!.label).toBe(
+      "Output Device: Speakers (not present)",
+    );
+
+    // The same saved device under a sibling this visit has not enumerated: nothing to be missing from, no mark. A
+    // fresh visit, so the draft re-seeds from the sibling's own saved choice.
+    resetAudioDraft();
+    const unknown = hostOver(fake, { ...saved, backend: "sdl", driver: "pipewire" });
+    expect(rowsOf(unknown).find((row) => row.id === "audio-device")!.label).toBe("Output Device: Speakers");
+  } finally {
+    fake.uninstall();
+    resetAudioDraft();
+  }
+});
