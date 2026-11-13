@@ -54,6 +54,28 @@ static bool sectionsAreWhole(const std::uint8_t* bytes, std::size_t size, bool b
     return seen[kMapper] == banked;
 }
 
+// The clocks a state may have between its components and the 68k. Every component's cycle count is an offset from the
+// same cycle_base and the machine runs one clock: a sync runs each of them to the 68k's count. The one gap a machine
+// this core writes can have is a 68k-to-VDP DMA, which moves the 68k's count to the transfer's end while the sound chips
+// wait for the block-end sync, and the longest transfer (65,536 words, display on, H32) costs 11,980,603 master clocks,
+// about a fifth of a second (kDmaOvershootSeconds in BlastemAudio.cpp sizes the sink's ring from the same figure). A
+// quarter second of master clocks covers that with room for a frame's worth of sync, and it is what a state has to stay
+// within: past it the components would have to run forward by seconds to catch up, and they do it inside the next block
+// on the block thread (the review's reproducer moved only the 68k's count to 0xF0000000 and the first blocks took 1.8 s
+// instead of 5 ms).
+static constexpr double kStateClockSkewSeconds = 0.25;
+
+static bool clocksAgree(const genesis_context* gen) {
+    const std::uint64_t allowed = static_cast<std::uint64_t>(double(gen->master_clock) * kStateClockSkewSeconds);
+    const std::uint64_t m68k    = gen->m68k->cycles;
+    const std::uint64_t counts[4] = {gen->vdp->cycles, gen->z80->cycles, gen->ym->current_cycle, gen->psg->cycles};
+    for (std::uint64_t count : counts) {
+        const std::uint64_t skew = count > m68k ? count - m68k : m68k - count;
+        if (skew > allowed) return false;
+    }
+    return true;
+}
+
 static std::uint8_t blastemRegion(std::uint32_t region) {
     switch (static_cast<MdRegion>(region)) {
         case MdRegion::NtscUs: return REGION_U;
@@ -346,6 +368,12 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
         // the refusal; boot()'s tail sees the flag, drops the seed, destroys the core and boots once more from
         // power-on. The seed stays in config_ because that tail keys on a non-empty savestate, and clearing it here
         // would only leave the half-loaded core in place.
+        stateRefused_ = true;
+        return false;
+    }
+    if (!clocksAgree(gen_)) {
+        // Every section loaded, so this is the same rebuild path a short field takes: boot()'s tail drops the seed and
+        // starts the machine from power-on.
         stateRefused_ = true;
         return false;
     }

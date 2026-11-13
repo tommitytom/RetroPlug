@@ -65,6 +65,7 @@ std::uint8_t ramByte(rp::blastem::BlastemMdSystem& sys) {
 // serialize.h's section ids, for the two cases that reach one field of a real state without assuming the layout of the
 // rest of it.
 constexpr std::size_t kSectionMainRam = 10;   // SECTION_MAIN_RAM
+constexpr std::size_t kSectionZ80     = 2;    // SECTION_Z80
 constexpr std::size_t kSectionVdp     = 3;    // SECTION_VDP
 constexpr std::size_t kSectionYm      = 4;    // SECTION_YM2612
 constexpr std::size_t kSectionPsg     = 5;    // SECTION_PSG
@@ -442,3 +443,36 @@ TEST_CASE("a state with a repeated or unknown section is refused", "[blastem][sa
     CHECK(unknown->activated());
 }
 
+TEST_CASE("a state whose component clocks are far from the 68k's is refused", "[blastem][saves]") {
+    // Every component's cycle count is an offset from the same cycle_base and the machine runs one clock: a sync runs
+    // each of them to the 68k's count. A state that moves one count far from the others is not a machine this core
+    // writes, and running it makes the components catch up across the gap inside the next block, on the block thread:
+    // the review's reproducer changed only the 68k's count to 0xF0000000 and the first blocks took 1.8 s instead of 5 ms.
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    std::vector<std::uint8_t> state     = sys->saveStateBytes();
+    const std::size_t         m68k      = sectionPayload(state, kSection68000);
+    REQUIRE(m68k != kNoSection);
+    // m68k_serialize writes eight data registers, eight address registers, the other stack pointer, the pc and the status
+    // register before the cycle count.
+    const std::size_t cycles = m68k + 8 * 4 + 8 * 4 + 4 + 4 + 2;
+    state[cycles] = 0xF0;
+    state[cycles + 1] = 0;
+    state[cycles + 2] = 0;
+    state[cycles + 3] = 0;
+    auto restored = boot(rp::blastem::test::fmPsgRom(), state);
+    CHECK(restored->stateRefused());
+    CHECK(restored->activated());
+    CHECK(peak(run(*restored, 4)) > 0.01);
+}
+
+TEST_CASE("a state saved after a 64K-word DMA is still accepted", "[blastem][saves]") {
+    // The one gap the clocks legitimately have: a 68k-to-VDP DMA moves the 68k's count to the transfer's end while the
+    // sound chips wait for the block-end sync, and the longest transfer is a fifth of a second. A bound that refused
+    // this would refuse a real ROM's state after every big DMA.
+    auto sys = boot(rp::blastem::test::dmaLoopRom(false));
+    run(*sys, 8);  // several transfers, so the state is saved with the gap
+    auto restored = boot(rp::blastem::test::dmaLoopRom(false), sys->saveStateBytes());
+    CHECK_FALSE(restored->stateRefused());
+    CHECK(restored->activated());
+}
