@@ -36,7 +36,9 @@ function blockLatencyMs(frames: number, sampleRate: number): string {
 }
 
 /** The row's device labels: "Default" at index 0 (naming the device it resolves to when the host can say), then the
- *  driver's devices. A saved device the driver no longer lists still shows, marked, so the row reflects the choice. */
+ *  driver's devices. A saved device the driver no longer lists still shows, marked, so the row reflects the choice. An
+ *  EMPTY list with no default is not that case: it is a driver this visit has not enumerated (a sibling's library is
+ *  its first use, so nothing is known about it until the user asks), and the saved name is shown unmarked. */
 function deviceNames(
   devices: { names: string[]; defaultName: string },
   selected: string,
@@ -45,7 +47,8 @@ function deviceNames(
   if (selected === "") return { names, index: 0 };
   const i = devices.names.indexOf(selected);
   if (i >= 0) return { names, index: i + 1 };
-  names.push(`${selected} (not present)`);
+  // Nothing to be missing from: a list nobody has fetched yet does not say the saved device is gone.
+  names.push(devices.names.length === 0 && devices.defaultName === "" ? selected : `${selected} (not present)`);
   return { names, index: names.length - 1 };
 }
 

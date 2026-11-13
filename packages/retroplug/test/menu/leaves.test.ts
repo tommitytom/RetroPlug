@@ -1367,6 +1367,43 @@ test("Settings -> Audio > Output Device: lists the driver's devices, resets on a
   delete g.__rp_isStandalone;
 });
 
+test("Settings -> Audio > Output Device: a saved sibling's device is not 'not present' after a re-visit", async () => {
+  const fake = new FakeAudioDevice().install(); // PortAudio in force; the saved choice named SDL
+  const g = globalThis as { __rp_isStandalone?: boolean };
+  g.__rp_isStandalone = true;
+  const { resetAudioDraft } = await import("@retroplug/audio/ui");
+  resetAudioDraft();
+
+  const be = new MockBackend("/cfg");
+  // The three fields the row is about: the contributor's parse fills the rest from the defaults.
+  be.seed("/cfg/config.json", JSON.stringify({
+    schemaVersion: USER_CONFIG_SCHEMA,
+    ...DEFAULT_USER_CONFIG,
+    audio: { backend: "sdl", driver: "pipewire", device: "Speakers" },
+  }));
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const settings = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  const audioItems = () => submenuChildren(settings(), "set-audio");
+
+  // Visit 1: SDL's drivers are its library's first use, so nothing is known about them until the explicit step asks;
+  // the row names the saved choice either way, and the fetched list then confirms it.
+  const items = audioItems();
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Speakers");
+  findItem(items, "audio-drivers-more")!.onSelect!();
+  expect(fake.backendDriversCalls).toEqual(["sdl"]);
+  expect(findItem(audioItems(), "audio-device")!.label).toBe("Output Device: Speakers");
+
+  // The container is collapsed and reopened: the visit forgets the sibling's list, and an unknown list is not a device
+  // that is gone, so the row must not call the saved Speakers absent.
+  findItem(settings(), "set-audio")!.onOpen!();
+  expect(fake.backendDriversCalls).toEqual(["sdl"]);
+  expect(findItem(audioItems(), "audio-device")!.label).toBe("Output Device: Speakers");
+
+  resetAudioDraft();
+  fake.uninstall();
+  delete g.__rp_isStandalone;
+});
+
 test("Settings -> Audio > Block Size: labels carry the block's latency, which follows the draft rate", async () => {
   const fake = new FakeAudioDevice().install();
   const g = globalThis as { __rp_isStandalone?: boolean };
@@ -1639,6 +1676,8 @@ test("building the menus never enumerates a sibling audio backend", async () => 
     // menu's copy.
     const settings = submenuChildren(startItems, "start-settings");
     expect(settings.length).toBeGreaterThan(0);
+    // The container the shell renders is what carries the package's open hook: without it no visit ever begins.
+    expect(typeof findItem(settings, "set-audio")!.onOpen).toBe("function");
     be.seed("/roms/a.gb", gbRom());
     const id = stores.project.systems.addSystem("/roms/a.gb")!;
     const sys = stores.project.systems.view().find((s) => s.id === id)!;

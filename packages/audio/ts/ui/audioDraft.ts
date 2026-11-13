@@ -55,9 +55,10 @@ export function audioDraftDirty(host: Pick<UiHost, "config">): boolean {
   return JSON.stringify(getAudioDraft(host)) !== JSON.stringify(savedAudio(host));
 }
 
-/** Drop any pending edits back to the saved value, forget the sibling lists fetched for this visit, and clear a
- *  refusal the last visit met. The audio menu's `onOpen` runs it, so every visit starts from what the device is running,
- *  from a sibling no step of the new visit has asked about yet, and from no stale warning. */
+/** Drop any pending edits back to the saved section, forget the sibling lists fetched for this visit, and clear a
+ *  refusal the last visit met. The audio menu's `onOpen` runs it, so every visit starts from the saved choice (the
+ *  `This run:` and `Muted:` rows name any difference from the device), from a sibling no step of the new visit has
+ *  asked about yet, and from no stale warning. */
 export function resetAudioDraft(): void {
   draft = null;
   notSaved = "";

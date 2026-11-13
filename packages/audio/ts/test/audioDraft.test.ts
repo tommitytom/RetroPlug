@@ -5,6 +5,7 @@
 import { test, expect } from "@retroplug/testing";
 import type { AudioBackendDescription } from "@retroplug/core/host";
 import { FakeAudioDevice, DEFAULT_BACKENDS } from "../testSupport/fakeDevice";
+import { DEFAULT_AUDIO_SECTION } from "../configSection";
 import audioUi from "../ui/index";
 import {
   audioDescription, audioDraftDirty, audioDriverChoices, fetchMoreDrivers, getAudioDraft, moreDriversAvailable,
@@ -13,16 +14,16 @@ import {
 
 /** A host over the fake's globals: `audioDescription` is the one read the rows make, and a sibling's drivers come from
  *  the hook the native host binds (the fake counts those calls, which is what "asked once" is proved by). The config
- *  stub is the `audio` section the draft seeds from and is what a file that took the defaults holds. */
-const SAVED = { backend: "auto", driver: "", device: "", sampleRate: 48000, blockSize: 512, outChannels: 2 };
-const hostOver = (fake: FakeAudioDevice) =>
+ *  stub is the `audio` section the draft seeds from, by default what a file that took the defaults holds. */
+const SAVED = { ...DEFAULT_AUDIO_SECTION };
+const hostOver = (fake: FakeAudioDevice, section: typeof SAVED = SAVED) =>
   ({
     audioDevice: {
       describe: () => fake.description,
       backendDrivers: (id: string) =>
         (globalThis as unknown as { __rp_audioBackendDrivers: (b: string) => unknown }).__rp_audioBackendDrivers(id),
     },
-    config: { section: () => SAVED, setSection: () => true },
+    config: { section: () => section, setSection: () => true },
   }) as never;
 
 /** SDL with no driver it can list, which is what a refused (pinned) sibling answers. */
@@ -73,7 +74,7 @@ const rowsOf = (host: unknown) =>
   audioMenu.build(host as never, null, { systems: [], assetRom: () => null, romPatterns: [] });
 
 test("a visit asks a sibling that answered nothing again, and 'More drivers...' comes back", () => {
-  const fake = new FakeAudioDevice({ backends: SILENT_SIBLING }).install();
+  const fake = new FakeAudioDevice({ backends: [...SILENT_SIBLING] }).install();
   resetAudioDraft();
   try {
     const host = hostOver(fake);
@@ -86,7 +87,12 @@ test("a visit asks a sibling that answered nothing again, and 'More drivers...' 
     // nothing to list last time can now be seen to have something.
     audioMenu.onOpen!(host as never);
     expect(moreDriversAvailable(audioDescription(host)!)).toBe(true);
-    fake.description.backends[1].drivers = [{ id: "pipewire", label: "pipewire", devices: { names: ["Speakers"], defaultName: "Speakers" } }];
+    // The element is REPLACED rather than edited in place: the fixture is the module's, and a later case must not see
+    // this visit's answer.
+    fake.description.backends[1] = {
+      ...SILENT_SIBLING[1],
+      drivers: [{ id: "pipewire", label: "pipewire", devices: { names: ["Speakers"], defaultName: "Speakers" } }],
+    };
     expect(fetchMoreDrivers(host, audioDescription(host)!)).toBe(true);
     expect(fake.backendDriversCalls).toEqual(["sdl", "sdl"]);
     const labels = audioDriverChoices(host, audioDescription(host)!).map((choice) => choice.label);
@@ -107,13 +113,30 @@ test("a visit starts a fresh draft: a staged block size is gone, and Apply with 
     expect(audioDraftDirty(host)).toBe(true);
     expect(rowsOf(host).find((row) => row.id === "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
     expect(rowsOf(host).find((row) => row.id === "audio-apply")!.disabled).toBeFalsy();
-    // The container is collapsed and reopened: the unapplied draft is discarded, so the rows show the device that is
-    // running and Apply has nothing to commit.
+    // The container is collapsed and reopened: the unapplied draft is discarded, so the rows show the saved section and
+    // Apply has nothing to commit.
     audioMenu.onOpen!(host as never);
     expect(getAudioDraft(host).blockSize).toBe(512);
     expect(audioDraftDirty(host)).toBe(false);
     expect(rowsOf(host).find((row) => row.id === "audio-block")!.label).toBe("Block Size: 512 (10.7 ms)");
     expect(rowsOf(host).find((row) => row.id === "audio-apply")!.disabled).toBeTruthy();
+  } finally {
+    fake.uninstall();
+    resetAudioDraft();
+  }
+});
+
+test("a visit starts from the saved section, not from what the device is running", () => {
+  // The two differ whenever the device did not take the saved choice (a clamped rate, a muted fallback, a run's flag):
+  // the draft, and the rows, are the SECTION's, because that is what a later Apply writes and a later launch opens.
+  const fake = new FakeAudioDevice().install(); // running 512, 48 kHz
+  resetAudioDraft();
+  try {
+    const host = hostOver(fake, { ...SAVED, blockSize: 256 });
+    audioMenu.onOpen!(host);
+    expect(rowsOf(host).find((row) => row.id === "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
+    expect(audioDraftDirty(host)).toBe(false);
+    expect(fake.applied.length).toBe(0); // a visit opens nothing
   } finally {
     fake.uninstall();
     resetAudioDraft();
