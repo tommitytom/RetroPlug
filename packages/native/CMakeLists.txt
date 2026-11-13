@@ -141,7 +141,7 @@ set_target_properties(retroplug-backend PROPERTIES
 
 # retroplug-host: the test host — the backend lib + a main() that evals a TS bundle over the
 # __rpcSend bridge. Output binary lands in build/bin/.
-add_executable(retroplug-host src/main.cpp)
+add_executable(retroplug-host src/main.cpp src/host/SessionPump.cpp)
 
 # The txiki host it runs its control plane on (src/main.cpp): its own library, not the backend's.
 target_link_libraries(retroplug-host PRIVATE retroplug-backend retroplug-tjs-runtime)
@@ -262,7 +262,7 @@ add_dependencies(retroplug-cli-sdk-assets ${RP_BUNDLE_desktop_GENERATOR})
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
 # runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
+add_executable(retroplug-cli cli/main.cpp src/host/SessionPump.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend retroplug-tjs-runtime)
 retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad midi)

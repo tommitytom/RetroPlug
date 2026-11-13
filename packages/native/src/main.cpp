@@ -39,6 +39,7 @@
 #include "host/HostServices.hpp"
 #include "launchpad/harness/HarnessSurfaceLink.hpp"
 #include "host/QuickJsGlobals.hpp"
+#include "host/SessionPump.hpp"
 #include "host/devices/ProviderHost.hpp"
 #include "launchpad/desktop/LaunchpadProvider.hpp"
 #include "launchpad/desktop/LaunchpadRpc.hpp"
@@ -266,9 +267,11 @@ int main(int argc, char** argv) try {
         });
     });
 
-    // globalThis.tjs.exit — the harness sets the exit code through it. Override
-    // any txiki-provided exit so we record the code and return it (rather than terminating
-    // mid-pump and losing it).
+    // globalThis.tjs.exit - the harness sets the exit code through it. An override that RECORDS the code and returns
+    // (rather than terminating mid-pump) is installed here; under txiki it does not take (txiki freezes `tjs` before an
+    // embedder can wrap it, so the set fails with a TypeError it leaves pending, and the pump clears that once it is
+    // constructed). Section 8 of docs/known-bugs-batch-3-design.md gives txiki an exit hook that both hosts reach
+    // through, and deletes this attempt.
     {
         JSValue tjsObj = JS_GetPropertyStr(ctx, global, "tjs");
         if (JS_IsUndefined(tjsObj) || JS_IsNull(tjsObj)) {
@@ -283,6 +286,10 @@ int main(int argc, char** argv) try {
 
     JS_FreeValue(ctx, global);
 
+    // The session pump: the stop takeover and txiki's error check, one turn at a time (host/SessionPump.hpp). It also
+    // clears the TypeError the refused `tjs.exit` override above left pending, which is not the session's error.
+    rp::host::SessionPump pump(host);
+
     const std::string code = slurp(bundlePath);
     const int rc = host.evalModuleBuffer(code.data(), code.size(), bundlePath.c_str());
     if (rc != 0) {
@@ -291,18 +298,22 @@ int main(int argc, char** argv) try {
     }
 
     // Drive the job loop until the harness's microtask + tests run and call tjs.exit
-    // (ES modules evaluate async in QuickJS, so the module body itself runs here). Bounded.
-    for (int i = 0; i < 20000 && !g_exit.set; ++i) host.pump();
+    // (ES modules evaluate async in QuickJS, so the module body itself runs here). Bounded, and ended at once by a throw
+    // nothing caught (pumpOnce prints it).
+    for (int i = 0; i < 20000 && !g_exit.set && !pump.threw(); ++i) pump.pumpOnce();
 
     // A test that awaits real work - a parity recording runs each case alone in a child process - says so
     // with __rp_keepAlive(), and is pumped until it exits, bounded by the wall clock. Asking is required:
     // txiki keeps a handle of its own alive, so "the loop still has work" would also hold a hung test.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(30);
-    while (g_keepAlive && !g_exit.set && std::chrono::steady_clock::now() < deadline) {
-        host.pump();
+    while (g_keepAlive && !g_exit.set && !pump.threw() && std::chrono::steady_clock::now() < deadline) {
+        pump.pumpOnce();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
+    // A session that threw has said what, and fails (the test host's `tjs.exit` override never takes under txiki, so a
+    // thrown file used to run on to the deadline or the bounded spin and say only that it did not complete).
+    if (pump.threw()) return 1;
     if (!g_exit.set) {
         std::fprintf(stderr, "tests did not complete (tjs.exit never called)\n");
         return 1;
