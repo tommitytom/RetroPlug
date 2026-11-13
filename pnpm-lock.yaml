@@ -58,16 +58,25 @@ importers:
 
   packages/blastem:
     dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
       '@retroplug/system':
         specifier: workspace:*
         version: link:../system
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@retroplug/testing':
         specifier: workspace:*
         version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/bliptoaster:
     dependencies:

@@ -2,16 +2,29 @@
   "name": "@retroplug/blastem",
   "version": "0.1.0",
   "private": true,
+  "scripts": {
+    "typecheck": "node ../retroplug/scripts/lib/packages.mjs && tsc -p tsconfig.json"
+  },
   "type": "module",
-  "description": "The BlastEm core's half of the app: the Sega Mega Drive core, its ROM gate, the build function and the rp.blastem.md node.",
+  "description": "The BlastEm core's half of the app: the blastem core-config role the Mega Drive system carries (region) and its settings enum, the Mega Drive console descriptor, its ROM gate, the build function and the rp.blastem.md node.",
+  "exports": {
+    "./app": "./ts/app.ts",
+    "./consoles": "./ts/consoles.ts",
+    "./enums": "./ts/enums.ts"
+  },
   "dependencies": {
+    "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*",
-    "@retroplug/system": "workspace:*"
+    "@retroplug/system": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@retroplug/testing": "workspace:*"
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
   },
   "retroplug": {
+    "app": "ts/app.ts",
+    "consoles": "ts/consoles.ts",
     "native": { "target": "retroplug-blastem", "entry": "rp_blastem_package", "device": false }
   }
 }

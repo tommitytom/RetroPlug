@@ -73,7 +73,7 @@ test("the app's roles are the product's kinds, and a duplicate is what the gener
   // unobservable: the generated module checks that each kind appears once, and that is the property this pins. A kind
   // lost by a package's app contribution would still show here, whatever order the list is in.
   expect(ROLES.map((role) => role.kind).sort()).toEqual([
-    "bliptoaster", "bliptoaster-assets", "lsdj-assets", "lsdj-sync", "mesen", "mgb", "nes-n8-midi",
+    "blastem", "bliptoaster", "bliptoaster-assets", "lsdj-assets", "lsdj-sync", "mesen", "mgb", "nes-n8-midi",
     "risa", "risa-assets", "risa-sync", "sameboy", "sms-sync",
   ]);
 });

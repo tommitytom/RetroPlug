@@ -57,6 +57,23 @@ test("romHasBattery: SMS/GG default on - nothing in the header says otherwise", 
   expect(romHasBattery(new Uint8Array(0), "sms")).toBe(true); // even with no header read at all
 });
 
+// A Mega Drive header prefix carrying `flag` as the RAM flag byte at $1B2 (the "RA" marker is at $1B0).
+function mdHeader(flag: number, len = 0x200): Uint8Array {
+  const b = new Uint8Array(len);
+  b[0x1b0] = 0x52; // 'R'
+  b[0x1b1] = 0x41; // 'A'
+  b[0x1b2] = flag;
+  return b;
+}
+
+test("romHasBattery: MD reads $1B0's RA block", () => {
+  expect(romHasBattery(mdHeader(0xf8), "md")).toBe(true); // odd-byte SRAM, genmddj's own header
+  expect(romHasBattery(mdHeader(0x20), "md")).toBe(true); // even-byte SRAM
+  expect(romHasBattery(mdHeader(0x0f), "md")).toBe(false); // "no RAM" in the ROM DB's nibble
+  // Too short to see the field at all: never wrongly greyed.
+  expect(romHasBattery(new Uint8Array(0x150), "md")).toBe(true);
+});
+
 test("SystemView.battery is derived from the ROM header at construct", () => {
   const be = new MockBackend("/cfg");
   be.seed("/roms/plain.nes", nesRom());

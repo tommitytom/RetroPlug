@@ -248,7 +248,7 @@ test("the registry holds the consoles the product's packages contribute, each no
   // Every core a descriptor names is one the registry knows: the core-config role is named after its core, so a core
   // with no descriptor could not be configured by any role either.
   const cores = registeredCores();
-  expect(cores).toEqual(["sameboy", "mesen"]);
+  expect(cores).toEqual(["sameboy", "mesen", "blastem"]);
   expect(types.filter((d) => !cores.includes(d!.core)).map((d) => d!.core)).toEqual([]);
   // The N8 is the one registered real cart, and it names a platform a descriptor registers.
   const cart = realCartOf("nes");
@@ -299,14 +299,14 @@ test("projectConfig refuses an unknown platform and core, naming the registered 
   const known = registeredPlatforms().map((p) => p.id);
   // The order is the descriptors': the product's, then a package's own list (mesen declares its GBA before its NES, so
   // the extension lists keep the order the shell's own lists had).
-  expect(known).toEqual(["gb", "gba", "nes", "sms", "gg"]);
-  expect(registeredCores()).toEqual(["sameboy", "mesen"]);
+  expect(known).toEqual(["gb", "gba", "nes", "sms", "gg", "md"]);
+  expect(registeredCores()).toEqual(["sameboy", "mesen", "blastem"]);
   const platform = platformSchema.safeParse("n64");
   expect(platform.success).toBe(false);
   expect(platform.error?.issues[0]?.message).toBe(`unknown platform "n64" (known: ${known.join(", ")})`);
   const core = coreSchema.safeParse("gambatte");
   expect(core.success).toBe(false);
-  expect(core.error?.issues[0]?.message).toBe(`unknown core "gambatte" (known: sameboy, mesen)`);
+  expect(core.error?.issues[0]?.message).toBe(`unknown core "gambatte" (known: sameboy, mesen, blastem)`);
   // parseConfig drops the entries that fail the strict parse silently, as it dropped an unknown platform's before, so
   // a file with one bad entry still loads the others.
   const loaded = parseConfig(

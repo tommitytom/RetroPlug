@@ -1,10 +1,10 @@
 // detectPlatform - classify a ROM by magic bytes, over the same magic the console packages'
 // ROM gates check (packages/mesen/native/src/system/mesen/RomFormat.hpp and
 // packages/sameboy/native/src/system/sameboy/RomFormat.hpp). The priority is this sniffer's own -
-// NES, then GBA, then GB, then Sega, then unknown (first match wins), a native gate reading its
-// own console's magic alone - and short/empty buffers are unknown via the length guards. The logo
-// byte-arrays here are transcribed independently from the C++ so a wrong copy in the implementation
-// is caught.
+// NES, then GBA, then GB, then Sega, then Mega Drive, then unknown (first match wins), a native gate
+// reading its own console's magic alone - and short/empty buffers are unknown via the length guards.
+// The logo byte-arrays here are transcribed independently from the C++ so a wrong copy in the
+// implementation is caught.
 //
 // The Sega tier is the only one that consults the file extension, and only where the
 // content genuinely can't decide: which machine an unfilled region nibble means, and
@@ -132,6 +132,37 @@ test("sega: the header must be reachable in the buffer that was read", () => {
   // reads a second, deeper tier. A truncated buffer must decline rather than guess.
   expect(detectPlatform(segaRom(0x7ff0, 4).subarray(0, 0x134))).toBe("unknown");
   expect(detectPlatform(segaRom(0x7ff0, 4).subarray(0, 0x7ff0 + 7))).toBe("unknown"); // one byte short
+});
+
+// --- Mega Drive / Genesis ---------------------------------------------------
+
+// A Mega Drive image with `magic` at its $100 header (the console name, which every real cart starts "SEGA").
+function mdRom(magic: string, len = 0x4000): Uint8Array {
+  const b = new Uint8Array(len);
+  for (let i = 0; i < magic.length; i++) b[0x100 + i] = magic.charCodeAt(i);
+  return b;
+}
+
+test("md: the SEGA header at $100, in either name", () => {
+  expect(detectPlatform(mdRom("SEGA MEGA DRIVE "))).toBe("md");
+  expect(detectPlatform(mdRom("SEGA GENESIS    "))).toBe("md");
+  expect(detectPlatform(mdRom("SEGA GENESIS    "), ".bin")).toBe("md");
+  // The four bytes are the rule, not the machine's name, so a homebrew header is a Mega Drive too.
+  expect(detectPlatform(mdRom("SEGA HOMEBREW  "))).toBe("md");
+});
+
+test("md: a headerless .bin is not a Mega Drive", () => {
+  // Nothing claims a headerless `.bin`: the SMS descriptor's `extensionOnly` platforms list only `.sms` and `.gg`
+  // (@retroplug/mesen's consoles module), and the extension fallback matches only a listed extension, so the answer is
+  // "unknown", never "md". A `.bin` with the Mega Drive's header is the case above.
+  expect(detectPlatform(new Uint8Array(0x4000), ".bin")).toBe("unknown");
+  expect(detectPlatform(new Uint8Array(0x4000))).toBe("unknown");
+});
+
+test("md: a 32X image is not a Mega Drive", () => {
+  // The 32X is a different console this core does not run, and no other descriptor claims the header either, so the
+  // answer is "unknown": the file reaches no system at all rather than the wrong one.
+  expect(detectPlatform(mdRom("SEGA 32X        "))).toBe("unknown");
 });
 
 test("precedence: real content always beats the extension", () => {

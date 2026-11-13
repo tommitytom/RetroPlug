@@ -80,6 +80,9 @@ test("siblingRomCandidates: exact stem first, every ROM extension in order", () 
     "/roms/game.nes",
     "/roms/game.sms",
     "/roms/game.gg",
+    "/roms/game.md",
+    "/roms/game.bin",
+    "/roms/game.gen",
   ]);
 });
 
@@ -91,12 +94,18 @@ test("siblingRomCandidates: a -<digits> slot also probes the base stem, after th
     "/roms/game-2.nes",
     "/roms/game-2.sms",
     "/roms/game-2.gg",
+    "/roms/game-2.md",
+    "/roms/game-2.bin",
+    "/roms/game-2.gen",
     "/roms/game.gb",
     "/roms/game.gbc",
     "/roms/game.gba",
     "/roms/game.nes",
     "/roms/game.sms",
     "/roms/game.gg",
+    "/roms/game.md",
+    "/roms/game.bin",
+    "/roms/game.gen",
   ]);
 });
 
@@ -109,6 +118,9 @@ test("siblingRomCandidates: only a purely-numeric suffix adds the base stem", ()
     "/roms/game-2a.nes",
     "/roms/game-2a.sms",
     "/roms/game-2a.gg",
+    "/roms/game-2a.md",
+    "/roms/game-2a.bin",
+    "/roms/game-2a.gen",
   ]);
   // dangling dash (nothing after it) → no base stem
   expect(siblingRomCandidates("/roms/game-.sav")).toEqual([
@@ -118,6 +130,9 @@ test("siblingRomCandidates: only a purely-numeric suffix adds the base stem", ()
     "/roms/game-.nes",
     "/roms/game-.sms",
     "/roms/game-.gg",
+    "/roms/game-.md",
+    "/roms/game-.bin",
+    "/roms/game-.gen",
   ]);
 });
 
@@ -129,5 +144,8 @@ test("siblingRomCandidates: no directory yields bare relative candidates", () =>
     "game.nes",
     "game.sms",
     "game.gg",
+    "game.md",
+    "game.bin",
+    "game.gen",
   ]);
 });

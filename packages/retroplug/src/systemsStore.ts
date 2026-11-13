@@ -34,7 +34,7 @@ import {
   type Platform,
   type Core,
 } from "./platform";
-import { platformCapabilities, platformEntry } from "./consoles";
+import { platformCapabilities, platformEntry, providerHeaderBytes } from "./consoles";
 import { embeddedRomOf } from "./embeds";
 import { derivedRoleConfigs, rolesForRom } from "./rolesForRom";
 
@@ -1511,7 +1511,10 @@ export class SystemsStore {
   // "Save SRAM" affordances (a battery-less cart would only write a stray empty .sav).
   private detectBattery(romPath: string, embeddedRom: string, platform: Platform): boolean {
     if (!romPath || embeddedRom) return false;
-    const header = this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array();
+    // The console's own prefix where it declares one: a Sega header sits deep, and the Mega Drive's battery byte sits
+    // past the short header, so the short read would never see it.
+    const header =
+      this.backend.readFilePrefix(romPath, providerHeaderBytes(platform) ?? ROLE_HEADER_LEN) ?? new Uint8Array();
     return romHasBattery(header, platform);
   }
 
