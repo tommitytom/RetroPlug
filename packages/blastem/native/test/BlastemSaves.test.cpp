@@ -316,9 +316,13 @@ namespace {
 constexpr std::size_t kVdpFifoSizeAt = 2 + 64 * 1024 + 128 + 128 + 320 + 24 + 2 * 4 + 1;
 constexpr std::size_t kVdpAfterFifo  = 2 + 4 + 2 + 1 + 2 + 1 + 2 + 2 + 4 + 2 + 2 + 2 + 32 + 32 + 1 + 1;
 
-std::size_t vdpSpriteCounters(const std::vector<std::uint8_t>& state, std::size_t vdp) {
+std::size_t vdpAfterFifo(const std::vector<std::uint8_t>& state, std::size_t vdp) {
     const std::size_t fifo = state[vdp + kVdpFifoSizeAt];
-    return vdp + kVdpFifoSizeAt + 1 + 12 * fifo + kVdpAfterFifo;
+    return vdp + kVdpFifoSizeAt + 1 + 12 * fifo;
+}
+
+std::size_t vdpSpriteCounters(const std::vector<std::uint8_t>& state, std::size_t vdp) {
+    return vdpAfterFifo(state, vdp) + kVdpAfterFifo;
 }
 
 }  // namespace
@@ -515,4 +519,37 @@ TEST_CASE("a duplicated battery cart keeps its battery", "[blastem][saves]") {
     REQUIRE(duplicate->saveSramBytes().size() == 0x10000);
     CHECK(duplicate->saveSramBytes()[0] == 0x5A);
     CHECK(ramByte(*duplicate) == 0x5A);  // the ROM read it back, so the restored battery is the one its program saw
+}
+
+TEST_CASE("a state from another region's console is refused", "[blastem][saves]") {
+    // The console's region is the VDP's own flags (FLAG2_REGION_PAL, the HZ50 bit genesis.c sets at set_region), and a
+    // state does not carry the machine's 224 or 240-line frame: loading a PAL state into an NTSC instance, or the other
+    // way round, left an incoherent machine (a 224-line frame with the PAL flag set, the review's reproducer) rather
+    // than the one the build asked for. The instance's region is the boot core's own flag, so the two must agree.
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    std::vector<std::uint8_t> state = sys->saveStateBytes();
+    const std::size_t         vdp   = sectionPayload(state, kSectionVdp);
+    REQUIRE(vdp != kNoSection);
+    const std::size_t flags = vdpAfterFifo(state, vdp);
+    REQUIRE(flags + 1 < state.size());
+    state[flags] |= 0x10;  // FLAG2_REGION_PAL in the flags' high byte, so the state says PAL and this core is NTSC
+    auto restored = boot(rp::blastem::test::fmPsgRom(), state);
+    CHECK(restored->stateRefused());
+    CHECK(restored->activated());
+}
+
+TEST_CASE("a state from a newer VDP section is refused", "[blastem][saves]") {
+    // The VDP section's version byte says which layout follows it, and a newer build's layout is not this one: the
+    // fields after it may be longer, shorter or moved. The mirror warned and read on, so a state from a newer BlastEm
+    // behind the same identifier was misread; the section's fields are a user file's and the build can only refuse it.
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    std::vector<std::uint8_t> state = sys->saveStateBytes();
+    const std::size_t         vdp   = sectionPayload(state, kSectionVdp);
+    REQUIRE(vdp != kNoSection);
+    state[vdp] = 6;  // VDP_STATE_VERSION is 5 in this build
+    auto restored = boot(rp::blastem::test::fmPsgRom(), state);
+    CHECK(restored->stateRefused());
+    CHECK(restored->activated());
 }
