@@ -1,7 +1,7 @@
 // BlastEm's frontend seam, for a host that is RetroPlug rather than BlastEm's own SDL/GTK shell. Two halves:
 //
 //   1. What every build needs and libblastem.c would otherwise provide: the config tree, the globals genesis.c and
-//      io.c read (current_system, headless, z80_enabled, ...), read_bundled_file() for the ROM database, and the render
+//      io.c read (headless, z80_enabled, save_filename, ...), read_bundled_file() for the ROM database, and the render
 //      callbacks. They stay here because they are extern "C" and so may live in exactly one file; the video ones and
 //      the audio ones are real and delegate to the sinks in BlastemVideo.cpp and BlastemAudio.cpp.
 //   2. Stubs for the systems this build does not compile. genesis.c, romdb.c and io.c still reference them, but only
@@ -64,6 +64,9 @@ extern const char rom_db_data[];
 // The config tree, built once by the first system that activates and never written after (every instance reads the
 // same settings: the region is a build parameter, not a config value, so no per-instance tree is needed).
 tern_node* config = nullptr;
+// NEVER written and never read by this build's file set: the mirror's DMA and vdp_dma_started take their console from
+// the VDP they are handed. It stays because blastem.h declares it and other translation units in the tree name it (the
+// frontends that are not compiled), so a definition has to exist for the link.
 system_header* current_system = nullptr;
 // NEVER written. vdp.c reads it at init (it mallocs its own line buffer when set), at free (it frees that buffer) and
 // at every frame end (it skips the publish), so a value that changed between those three either leaks the first

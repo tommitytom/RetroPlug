@@ -168,15 +168,28 @@ TEST_CASE("a re-activation leaves the port's pins idle", "[blastem][port]") {
 }
 
 TEST_CASE("a port read with no instance, or another port, drives nothing", "[blastem][port]") {
-    // The entry point is BlastEm's, so a context built outside this package can reach it with no instance set: the
-    // answer then has to be the pull-ups ($7F through io_data_read's tail), not both pins driven low. And a stale
-    // instance must never answer for a port it does not drive: only port 2 is the host's device.
+    // The entry point is BlastEm's, so a context built outside this package can reach it with no host at all: the
+    // answer then has to be the pull-ups ($7F through io_data_read's tail), not both pins driven low. And a port this
+    // package does not drive must never be answered: only port 2 carries the host device.
     rp::blastem::currentInstance = nullptr;
     CHECK(io_custom_input(nullptr, 0) == kIdle);
     auto sys = boot(rp::blastem::test::portPollLoopRom());
     rp::blastem::currentInstance = sys.get();
     CHECK(io_custom_input(&sys->core()->io.ports[0], 0) == kIdle);
     CHECK(io_custom_input(&sys->core()->io.ports[1], 0) == kIdle);  // the queue is empty: the idle level
+    rp::blastem::currentInstance = nullptr;
+}
+
+TEST_CASE("a port read answers for its own console, whatever ran last on this thread", "[blastem][port]") {
+    // The console names its host (io_port's IO_CUSTOM device), so a read belongs to the console it came out of: an
+    // interleaved pair where B polls port 2 must get B's level even though A was the instance that ran last on this
+    // thread. Routing through the thread-local instance pointer instead answers B with A's device.
+    auto a = boot(rp::blastem::test::portPollLoopRom());
+    auto b = boot(rp::blastem::test::portPollLoopRom());
+    b->pushCoreBytes(0, &kLevel, 1);  // B's device holds TR low from host sample 0
+    rp::blastem::currentInstance = a.get();
+    CHECK(io_custom_input(&b->core()->io.ports[1], 0) == kLevel);
+    CHECK(io_custom_input(&a->core()->io.ports[1], 0) == kIdle);  // A's queue is its own, and empty
     rp::blastem::currentInstance = nullptr;
 }
 

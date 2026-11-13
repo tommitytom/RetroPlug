@@ -114,8 +114,10 @@ void BlastemMdSystem::boot() {
     useInstance(this);  // the context exists: from here, callbacks it starts belong to this instance
     // Port 2 is the host's device, not a pad: a game that reads player 2 sees the pins' idle state (which is a pad's
     // nothing-pressed state minus the pad's response), and a role claims the lines by pushing levels. Port 1 stays
-    // whatever romdb.c chose, which is the pad the wire bytes drive.
+    // whatever romdb.c chose, which is the pad the wire bytes drive. The port carries this instance as its host, so a
+    // read answers for the console it came from rather than for whichever instance last ran on this thread.
     gen_->io.ports[1].device_type = IO_CUSTOM;
+    gen_->io.ports[1].device.custom.host = this;
     m68k_reset(gen_->m68k);
     // The frame, once, for the region the core just chose: 240 lines on a PAL machine, 224 on an NTSC one (version_reg's
     // HZ50 bit, set by set_region during the allocation above). The shell's frame slot is sized at claim and never
@@ -179,9 +181,10 @@ void BlastemMdSystem::destroyCore() {
         gen_ = nullptr;
         activated_ = false;
     }
-    // Ends by clearing the thread-local, and not inside the branch: a boot that failed set it too, and a pointer left
-    // here outlives the instance it named, so the next BlastEm callback on this thread (a context built by whoever
-    // runs next, with no system of its own) would dereference a freed system.
+    // Clears THIS thread's pointer, which is the one the free above could have set, and not inside the branch: a boot
+    // that failed set it too. Another thread that ran this instance keeps its own stale value, which is harmless only
+    // because every entry into the core sets it first (BlastemCore.hpp's useInstance); this is the one place that
+    // clears it, so it is the covering of the destroying thread's slot, not a dangling-pointer sweep.
     useInstance(nullptr);
 }
 

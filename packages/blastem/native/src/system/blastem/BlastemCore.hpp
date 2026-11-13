@@ -10,13 +10,15 @@
 namespace rp::blastem {
 
 // BlastEm's frontend callbacks take no instance argument, so the callbacks that have none of their own
-// (render_get_framebuffer, render_framebuffer_updated, io_custom_input, the audio source entry points) read this. One
-// instance runs one call at a time; BlastemShim.cpp defines it, and every system method sets it on entry. Declared here,
-// where every translation unit that calls into the core can see it: a definition with no declaration is not a seam.
+// (render_get_framebuffer, render_framebuffer_updated, the audio source entry points) read this. One instance runs one
+// call at a time; BlastemShim.cpp defines it, and every system method sets it on entry. Declared here, where every
+// translation unit that calls into the core can see it: a definition with no declaration is not a seam.
 extern thread_local void* currentInstance;
 
-// Sets this thread's instance pointer, from a system on every call into the core (and with null once the call is
-// over). It used to set BlastEm's global `current_system` beside it, because genesis.c's 68k-to-VDP DMA read path
+// Sets this thread's instance pointer, from a system on every call into the core. It is this thread's value from then
+// until something else on this thread sets it, and destroyCore is the only place that clears it: a block or a state
+// load leaves it naming the instance that ran, which is harmless because every entry sets it before the core can call
+// back. It used to set BlastEm's global `current_system` beside it, because genesis.c's 68k-to-VDP DMA read path
 // (read_dma_value) and vdp_dma_started() cast that global to their context; the mirror now hands those calls the VDP's
 // own system pointer, and nothing in this build's file set reads current_system anymore.
 void useInstance(void* instance);

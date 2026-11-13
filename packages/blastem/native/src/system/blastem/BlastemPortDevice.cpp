@@ -46,12 +46,17 @@ extern "C" {
 // io_data_read's answer for a port whose device is IO_CUSTOM (deps/blastem, io.c). `cycle` is the 68k's own 32-bit
 // count, the same clock every other device's answer is read at: the device logs it beside the grid's sample, which is
 // what decides the level.
+//
+// The console names its host (io_port's IO_CUSTOM device), so the answer belongs to the console the read came out of,
+// never to whichever instance last ran on this thread: an interleaved pair and a migrating instance both read their
+// own device, and a context built outside this package answers with nothing at all.
 uint8_t io_custom_input(io_port* port, uint32_t cycle) {
-    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    // No instance (a context built outside this package), or a port this instance does not drive: the host drives
-    // nothing, which is the released level $60. io_data_read's tail then reads the pull-ups, $7F, exactly as an
-    // unplugged port does. Answering 0 here would drive TR and TH low instead.
-    if (!sys || !sys->core() || port != &sys->core()->io.ports[1]) return 0x60;
+    // No port, or a port whose device is not this one (the union's fields belong to whatever type the port carries), or
+    // a port no host claimed (a context built outside this package): the host drives nothing, which is the released
+    // level $60. io_data_read's tail then reads the pull-ups, $7F, exactly as an unplugged port does. Answering 0 here
+    // would drive TR and TH low instead.
+    if (!port || port->device_type != IO_CUSTOM || !port->device.custom.host) return 0x60;
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(port->device.custom.host);
     return sys->portDevice().level(sys->mclkOfCoreCycle(cycle));
 }
 }

@@ -134,8 +134,8 @@ public:
         return gen_ ? std::uint64_t(gen_->cycle_base) + cycle : 0;
     }
 
-    // This instance's port-2 device. The core reaches it the same way (through currentInstance in the entry point), so
-    // this is the host's own handle: the seam a feed writes through is pushCoreBytes, not this.
+    // This instance's port-2 device. The core reaches it through the console's own port (the io_port names this system
+    // as its host), so this is the host's own handle: the seam a feed writes through is pushCoreBytes, not this.
     PortDevice& portDevice() { return port_; }
     // Levels the port device has taken since construction: how a caller tells a delivery from a queue that refused. A
     // reactivation clears the queue and the held level but not this count.
