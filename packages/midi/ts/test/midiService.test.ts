@@ -482,6 +482,10 @@ test("a claim with no menu on screen costs no native read and no repaint", () =>
   expect(svc.poll!.run(r.host)).toBe(false); // no row prints it: no repaint
   expect(reads).toBe(0);                     // and no native call: the handheld's frame
   (r.host as { menuOpen?: boolean }).menuOpen = true;
-  expect(svc.poll!.run(r.host)).toBe(true);  // the menu came back: the rows show the claim
+  expect(svc.poll!.run(r.host)).toBe(true);  // the menu came back: one read reports the claim
   expect(reads).toBe(1);
+  // The claim the one read reported is IN the rows: the state merged onto the listing, not just a repaint asked for
+  // (the transport alone moves the rows key when the menu comes back, so the repaint would pass without the merge).
+  const rows = menu("settings.midi").build(r.host, null, { systems: [], assetRom: () => null, romPatterns: [] });
+  expect(rows.find((row) => row.id === "midi-reserved-in")!.label).toBe("[ ] Launchpad Pro MK3 (control surface)");
 });
