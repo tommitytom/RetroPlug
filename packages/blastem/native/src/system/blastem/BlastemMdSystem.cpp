@@ -92,7 +92,7 @@ std::uint32_t BlastemMdSystem::coreFrameHeight() const {
 }
 
 std::uint64_t BlastemMdSystem::mclkNow() const {
-    return gen_ ? static_cast<std::uint64_t>(gen_->m68k->cycles) : 0u;  // the 64-bit base arrives with the stop
+    return gen_ ? static_cast<std::uint64_t>(gen_->cycle_base) + gen_->m68k->cycles : 0;
 }
 
 void BlastemMdSystem::destroyCore() {
@@ -130,11 +130,20 @@ void BlastemMdSystem::setGainDb(float dB, bool immediate) {
     if (immediate) gainSmoother_.clearToTargetValue();
 }
 
-// The block triad, and the core's stop: the bodies that advance the machine arrive with the block loop, and until they
-// do a block steps nothing and drains nothing.
-void BlastemMdSystem::prepareForBlock(const AudioBlockInfo& info) { blockFrames_ = info.frames; }
+// The block triad, and the core's stop: one run a block, ended at the block's own master clock rather than at a frame
+// boundary. The audio the run leaves behind is drained by the audio sink.
+void BlastemMdSystem::prepareForBlock(const AudioBlockInfo& info) {
+    blockFrames_ = info.frames;
+    // The pad's transitions are applied as they arrive (BlastEm's gamepad state is a level its port read samples
+    // live), so nothing is queued here: a press that precedes a block is what that block's polls see.
+}
 
-bool BlastemMdSystem::stepIfBelowTarget(std::uint32_t) { return false; }
+bool BlastemMdSystem::stepIfBelowTarget(std::uint32_t /*framesNeeded*/) {
+    // One stop a block: the port device answers from a queue stamped in master clocks, so nothing else needs the 68k
+    // to pause mid-block. Always false: an unlinked system is the 1-member case of the round-robin.
+    run_until(masterClockOf(sampleBase_ + blockFrames_));
+    return false;
+}
 
 void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const*, std::size_t) {
     sampleBase_ += info.frames;
@@ -142,7 +151,28 @@ void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const*, std
 
 void BlastemMdSystem::reserveAudio(std::uint32_t maxBlockFrames) { SystemBase::reserveAudio(maxBlockFrames); }
 
-void BlastemMdSystem::run_until(std::uint64_t) {}  // later: the stop, and the 64-bit base it is measured from
+void BlastemMdSystem::run_until(std::uint64_t mclk) {
+    if (!gen_ || mclk <= mclkNow()) return;
+    currentInstance = this;
+    // The stop is a 32-bit OFFSET from gen->m68k->cycles (cycle_base + cycles is the absolute clock), so it is computed
+    // in that domain, never as `mclk - cycle_base` truncated to 32 bits: that difference is a 64-bit quantity and a
+    // `uint32_t` stop would wrap at about 20 s of emulation, putting the target in the past and stopping after one
+    // instruction forever. Three terms cap the step: the clocks still wanted, one quarter of the 32-bit space (which
+    // keeps the arithmetic clear of the top), and UINT32_MAX minus the current count (which is what the rebase's own
+    // window guarantees: a frame end lands within ADJUST_BUFFER of the top, so this third term never binds and the
+    // rebase always happens before the count can wrap).
+    constexpr std::uint64_t kWindow = 0x40000000u;
+    while (mclkNow() < mclk) {
+        const std::uint32_t cyc = gen_->m68k->cycles;
+        const std::uint64_t step = std::min<std::uint64_t>({mclk - mclkNow(), kWindow, UINT32_MAX - cyc - 1});
+        gen_->stop_cycle = cyc + static_cast<std::uint32_t>(step);
+        // resume_context returns at stop_cycle (or at the frame end if that is sooner, and a frame end is where the
+        // rebase happens); the loop then recomputes the step from the clock it just read, so a rebase inside a pass
+        // costs nothing: the rebase moves cycle_base, cycles and stop_cycle together.
+        gen_->header.resume_context(&gen_->header);
+        gen_->stop_cycle = 0;
+    }
+}
 
 // Port 1's pad: the button table and BlastEm's io_gamepad_down/up land with the pad's case, and until they do a press
 // is dropped rather than remembered and applied late.
