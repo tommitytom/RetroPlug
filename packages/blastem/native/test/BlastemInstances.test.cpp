@@ -126,3 +126,37 @@ TEST_CASE("a console's Z80 re-resolves through its own RAM", "[blastem][instance
     CHECK(b->core()->z80->fastwrite[0] == b->core()->zram);
     CHECK(a->core()->zram != b->core()->zram);
 }
+
+TEST_CASE("a soft reset delays by the same amount on two consoles that ran the same program", "[blastem][instances]") {
+    // The reset's delay used to come from rand(), the process-wide C library generator: each console got the next
+    // number in one shared sequence, so a reset depended on how many draws every other console (and the host) had made.
+    // Two consoles that have run the same program must reset at the same phase of their own frame.
+    auto a = boot(rp::blastem::test::hvPsgRom(), 1);
+    auto b = boot(rp::blastem::test::hvPsgRom(), 2);
+    std::vector<float> l(kFrames), r(kFrames);
+    for (int i = 0; i < 4; ++i) {
+        runBlock(*a, l, r);
+        runBlock(*b, l, r);
+    }
+    // Same program, same clock: the 68k's own count is the same on both, so any difference in the reset is the delay.
+    REQUIRE(a->core()->m68k->cycles == b->core()->m68k->cycles);
+    system_header* ha = &a->core()->header;
+    system_header* hb = &b->core()->header;
+    ha->soft_reset(ha);
+    hb->soft_reset(hb);
+    CHECK(a->core()->reset_cycle == b->core()->reset_cycle);
+    // And the delay is a phase within the frame that console is in, not a value off the end of it: 262 lines is an
+    // NTSC frame's total, blanking included.
+    const std::uint32_t delay = a->core()->reset_cycle - a->core()->m68k->cycles;
+    CHECK(delay > 0);
+    CHECK(delay <= MCLKS_LINE * 262);
+}
+
+TEST_CASE("each console's border-busting line is its own storage", "[blastem][instances]") {
+    // vdp_h40, vdp_h32 and vdp_h32_mode4 write a line to a fallback buffer when there is no output buffer (a mode change
+    // during the active display, which no image here performs). That buffer was one file-scope array every console in
+    // the process wrote through, so two consoles doing it at once raced in it; it is a line in each console's own VDP.
+    auto a = boot(rp::blastem::test::hvPsgRom(), 1);
+    auto b = boot(rp::blastem::test::hvPsgRom(), 2);
+    CHECK(a->core()->vdp->dummy_line != b->core()->vdp->dummy_line);
+}
