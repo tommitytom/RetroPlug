@@ -107,11 +107,47 @@ TEST_CASE("work RAM reads at 68k addresses, not in BlastEm's word order", "[blas
     CHECK((ram[0] & 0x40) != 0);
 }
 
-TEST_CASE("the Z80's own RAM is a region of its own", "[blastem][memory]") {
-    auto             sys = boot(rp::blastem::test::portPollRom());
+TEST_CASE("the Z80's own RAM is readable, and not a listed region", "[blastem][memory]") {
+    // The registry publishes the work RAM every block, and the engine only reads a published region (a write to any
+    // other is refused for its published size of 0), so listing the Z80's RAM would advertise a region that every job
+    // naming it is refused on. It stays reachable through the accessor for whoever publishes it next.
+    auto                 sys = boot(rp::blastem::test::portPollRom());
+    const auto           regions = sys->memory()->regions();
+    REQUIRE(regions.size() == 1);
+    CHECK(std::string(regions[0].name) == "work");
+    CHECK(regions[0].type == rp::MemoryType::Ram);
     rp::MemoryAccessor z80 = sys->getMemory(rp::MemoryType::ExtWorkRam, rp::AccessType::Read);
     CHECK(z80.valid());
     CHECK(z80.size() == 8192);
+}
+
+TEST_CASE("the work RAM accessor is a read-only copy", "[blastem][memory]") {
+    // The Ram view is a copy in address order, so a write through it would succeed and change nothing in the core.
+    // A caller has to see that from the accessor's own access type, or a poke that reads back through the same copy
+    // looks like it worked; memory() is the write half.
+    auto sys = boot(rp::blastem::test::portPollRom());
+    for (int i = 0; i < 4; ++i) runBlock(*sys);
+    rp::MemoryAccessor acc = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::ReadWrite);
+    REQUIRE(acc.valid());
+    CHECK(acc.access() == rp::AccessType::Read);
+    CHECK_FALSE(acc.write(0x0100, std::uint8_t(0x5A)));
+    CHECK(sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read)[0x0100] == 0x00);
+}
+
+TEST_CASE("a capability write refuses a range past the work RAM", "[blastem][memory]") {
+    // The bound is the region's own size (RAM_WORDS words), not a copy of it: half a song block is not a song, and a
+    // write past the end would corrupt whatever the core keeps after it.
+    auto                  sys = boot(rp::blastem::test::portPollRom());
+    rp::MemoryCapability* memory = sys->memory();
+    REQUIRE(memory != nullptr);
+    const std::uint8_t bytes[4] = {0x11, 0x22, 0x33, 0x44};
+    CHECK(memory->write(0, 0xFFFE, bytes, 2));         // the last word
+    CHECK_FALSE(memory->write(0, 0xFFFF, bytes, 2));   // one byte past it
+    CHECK_FALSE(memory->write(0, 0x10000, bytes, 1));  // the offset itself past it
+    const rp::MemoryAccessor ram = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+    REQUIRE(ram.valid());
+    CHECK(ram[0xFFFE] == 0x11);
+    CHECK(ram[0xFFFF] == 0x22);
 }
 
 TEST_CASE("a capability write lands at the 68k's address", "[blastem][memory]") {
@@ -130,8 +166,8 @@ TEST_CASE("the battery keeps BlastEm's odd-byte layout", "[blastem][memory]") {
     REQUIRE(sram.size() == 0x10000);  // (end - start + 1) / 2: the compacted odd-byte cart
     CHECK(sram[0] == 0x5A);           // byte 0 is $200001, which the ROM wrote
     CHECK(sram[1] == 0x00);           // byte 1 is $200003
-    // And the ROM read its own byte back through the odd lane.
-    CHECK((sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read)[0] & 0x5A) == 0x5A);
+    // And the ROM read its own byte back through the odd lane: the whole mask, not bits of it (0xFF would pass a mask).
+    CHECK(sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read)[0] == 0x5A);
 }
 
 TEST_CASE("the battery of a 16-bit cart is exported in the .sav's order", "[blastem][memory]") {
@@ -207,5 +243,7 @@ TEST_CASE("a battery seed reaches the cart", "[blastem][memory]") {
     cfg.sram[0] = 0xA5;  // $200001
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, sramRom());
     sys->onActivate(kRate);
-    CHECK(sys->saveSramBytes()[0] == 0xA5);
+    const std::vector<std::uint8_t> sram = sys->saveSramBytes();
+    REQUIRE_FALSE(sram.empty());  // indexing an empty dump would be UB, not this case's failure
+    CHECK(sram[0] == 0xA5);
 }

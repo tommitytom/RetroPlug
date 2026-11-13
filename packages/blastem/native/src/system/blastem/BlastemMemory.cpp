@@ -16,10 +16,10 @@ namespace {
 std::size_t wordOrder(std::size_t address) { return address ^ 1u; }
 
 // The regions, in the order a caller addresses them. Region 0 is the one the snapshot registry publishes every block
-// and the one Engine::writeRam looks up by type, so it is the work RAM.
+// and the one Engine::writeRam looks up by type. The Z80's own 8 KiB is reachable through getMemory(ExtWorkRam) but is
+// not listed here: a job can only read a published region, and the write path refuses one whose published size is 0.
 constexpr MemoryCapability::Region kRegions[] = {
     {"work", MemoryType::Ram},
-    {"z80", MemoryType::ExtWorkRam},
 };
 
 }  // namespace
@@ -38,7 +38,9 @@ std::size_t batteryStorageIndex(const genesis_context* gen, std::size_t at) {
 
 std::span<const std::uint8_t> WorkRamView::refresh(const std::uint8_t* source, std::size_t size) {
     // The scratch keeps the size it grew to (the region's size is fixed for a core's life), so a refresh is the copy
-    // and nothing else: no block thread ever allocates here.
+    // and nothing else after the first ask, which is the one that allocated. A block thread that re-asks while a
+    // previous accessor is still live is re-filling that accessor's buffer under it, which is why an accessor's
+    // lifetime is the call.
     scratch_.resize(size);
     for (std::size_t i = 0; i < size; ++i) scratch_[i] = source[wordOrder(i)];
     return scratch_;
@@ -49,16 +51,16 @@ std::span<const MemoryCapability::Region> MdMemory::regions() const { return kRe
 bool MdMemory::write(std::size_t region, std::uint32_t offset, const std::uint8_t* data, std::size_t size) {
     if (!data || size == 0) return false;
     if (region == 0) {  // work RAM: address order in, word order out
-        // The accessor is the liveness and range check, never the destination (that is what this class exists for).
-        auto live = sys_.getMemory(MemoryType::Ram, AccessType::ReadWrite);
-        if (!live.valid() || static_cast<std::size_t>(offset) + size > live.size()) return false;
         genesis_context* gen = sys_.core();
         if (!gen || !gen->work_ram) return false;
+        // The region's size IS the bound: RAM_WORDS words of two bytes, the same bytes workRamView() maps.
+        const std::size_t bytes = sizeof(*gen->work_ram) * RAM_WORDS;
+        if (static_cast<std::size_t>(offset) > bytes || size > bytes - static_cast<std::size_t>(offset)) return false;
         std::uint8_t* raw = reinterpret_cast<std::uint8_t*>(gen->work_ram);
         for (std::size_t i = 0; i < size; ++i) raw[wordOrder(offset + i)] = data[i];
         return true;
     }
-    if (region == 1) {  // the Z80's RAM: a plain byte array
+    if (region == 1) {  // the Z80's RAM: a plain byte array, and not a listed region until the engine publishes it
         auto live = sys_.getMemory(MemoryType::ExtWorkRam, AccessType::ReadWrite);
         if (!live.valid() || static_cast<std::size_t>(offset) + size > live.size()) return false;
         std::memcpy(live.data() + offset, data, size);

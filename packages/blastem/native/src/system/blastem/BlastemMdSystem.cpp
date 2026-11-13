@@ -230,9 +230,11 @@ rp::MemoryAccessor BlastemMdSystem::getMemory(rp::MemoryType type, rp::AccessTyp
     if (!gen_) return {};
     switch (type) {
         case rp::MemoryType::Ram: {
-            // The refresh and the view come from one call: a second one could reallocate the buffer the first returned.
+            // The refresh and the view come from one call: a second one could refill the buffer the first returned.
             workRamView();
-            return {type, access, ramView_.data(), ramView_.size()};
+            // READ, whatever was asked: this is the address-ordered copy, so a write through it succeeds and changes
+            // nothing in the core. memory() is the write half.
+            return {type, rp::AccessType::Read, ramView_.data(), ramView_.size()};
         }
         case rp::MemoryType::ExtWorkRam:  // the Z80's own 8 KiB (genesis.c's Z80_RAM_BYTES, one calloc), not a copy
             if (!gen_->zram) return {};

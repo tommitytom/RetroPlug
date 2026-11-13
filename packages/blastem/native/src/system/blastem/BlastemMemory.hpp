@@ -29,9 +29,11 @@ bool hasBattery(const genesis_context* gen);
 std::size_t batteryStorageIndex(const genesis_context* gen, std::size_t at);
 
 // The 68k's work RAM in the 68k's own address order. BlastEm keeps it as 16-bit words, so its byte view swaps each
-// pair; a view in address order is a per-call copy, refreshed on every getMemory (the registry copies it into its own
-// triple the same block, so the copy's lifetime is the call). The scratch is the system's, never this mapper's: it
-// owns nothing, which is what lets a caller build one over its own buffer on the spot.
+// pair; a view in address order is a per-call copy, refreshed on every getMemory. The copy is the system's one buffer:
+// a getMemory does not allocate after the first, which grew it to the region's size, and the NEXT ask re-fills that
+// same buffer under any accessor still held, so an accessor is only good until the next getMemory of its type (the
+// registry copies it into its own triple in the same block it asked in). The scratch is the system's, never this
+// mapper's: it owns nothing, which is what lets a caller build one over its own buffer on the spot.
 class WorkRamView {
 public:
     explicit WorkRamView(std::vector<std::uint8_t>& scratch) : scratch_(scratch) {}
@@ -42,8 +44,10 @@ private:
     std::vector<std::uint8_t>& scratch_;
 };
 
-// rp.system.memory/1's write half: an offset in 68k address order, poked into BlastEm's word-ordered storage. Region 0
-// is the 68k's work RAM and region 1 the Z80's own memory, the same order and names regions() lists.
+// rp.system.memory/1's write half: an offset in 68k address order, poked into BlastEm's word-ordered storage. Only
+// region 0, the 68k's work RAM, is a listed region: the registry publishes the work RAM every block, and the engine's
+// job paths only consult a published region, so listing the Z80's own RAM would advertise a region every job naming it
+// is refused on.
 //
 // Not rp::CoreMemory, even though only region 0's write differs: CoreMemory writes through the Ram accessor, and this
 // core's Ram accessor is the address-ordered COPY, so the poke it made would land in a buffer nobody reads.

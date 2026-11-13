@@ -58,9 +58,10 @@ public:
 
     // -- The control plane's memory views --------------------------------------
     //
-    // Ram is the 68k's 64 KiB in ADDRESS order (a copy: BlastEm's storage is a word array), ExtWorkRam is the Z80's own
-    // 8 KiB, and Sram is the cart's battery in its .sav's order, which is a copy too (a 16-bit cart's storage is
-    // pair-swapped under it). Anything else is the invalid accessor the base returns.
+    // Ram is the 68k's 64 KiB in ADDRESS order and Sram is the cart's battery in its .sav's order (both are copies: the
+    // work RAM is a word array and a 16-bit battery is pair-swapped under BlastEm's storage), and ExtWorkRam is the
+    // Z80's own 8 KiB. A write through Ram or Sram goes nowhere; memory() and sram() are the write halves. Anything
+    // else is the invalid accessor the base returns.
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
     // The battery in its .sav's order, so an odd-byte cart keeps its compacted layout (byte `i` of the result is
     // address $200001 + 2i) and a 16-bit cart is not rotated against every other emulator's save (design section 5).
