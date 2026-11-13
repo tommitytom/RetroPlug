@@ -25,6 +25,13 @@ jobs:
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive
 
+      # deps/blastem's cmake generates the 68k and Z80 interpreters with cpu_dsl.py, and the configure
+      # that includes cmake/blastem.cmake requires Python 3 when it is missing.
+      - name: Python 3 for BlastEm's core generator
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
@@ -217,6 +224,11 @@ jobs:
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive
 
+      - name: Python 3 for BlastEm's core generator
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
@@ -301,6 +313,11 @@ jobs:
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive
 
+      - name: Python 3 for BlastEm's core generator
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -375,6 +392,11 @@ jobs:
         run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive
+
+      - name: Python 3 for BlastEm's core generator
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install build dependencies (Homebrew)
         run: brew install ninja pkg-config rgbds

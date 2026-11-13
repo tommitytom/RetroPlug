@@ -4,7 +4,8 @@
 // the per-context window-hook routing (retroplug-plugin-test), the class-id
 // counter sync that keeps the DAW-hosted editor from rendering blank
 // (retroplug-classid-test), the per-channel audio taps (retroplug-audio-test), the two console
-// packages' own audio paths (retroplug-sameboy-test, retroplug-mesen-test),
+// packages' own audio paths (retroplug-sameboy-test, retroplug-mesen-test), the Mega Drive package's BlastEm core,
+// whose cases build the core directly and boot a minimal cart (retroplug-blastem-test),
 // the native file watcher (retroplug-watcher-test), the ThorVG-backed
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
 // the MIDI device-selection policy, the stream over a fake backend (its output-set swap,
@@ -37,7 +38,7 @@ const EXE = process.platform === "win32" ? ".exe" : "";
 
 const BINARIES = [
   "retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test",
-  "retroplug-sameboy-test", "retroplug-mesen-test", "retroplug-watcher-test", "retroplug-lottie-test",
+  "retroplug-sameboy-test", "retroplug-mesen-test", "retroplug-blastem-test", "retroplug-watcher-test", "retroplug-lottie-test",
   "retroplug-midi-test", "retroplug-audio-host-test", "retroplug-launchpad-test", "retroplug-graph-test",
   "retroplug-engine-graph-test", "retroplug-device-mode-test", "retroplug-n8-test",
   ...(process.platform === "linux" ? ["retroplug-serial-test"] : []),
