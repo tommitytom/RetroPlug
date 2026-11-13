@@ -7,9 +7,15 @@
 // resolved keyboard map into a DPF-code → button-value lookup the UI hook indexes per keystroke.
 //
 // The button values mirror native InputTypes.hpp (Right=0 … Start=7) — the raw uint8 pressButton
-// carries across the bridge, so they must not drift.
+// carries across the bridge, so they must not drift. The bytes past Start belong to whichever console
+// has more than eight buttons on its pad (the GBA's L/R are 8/9 of ITS table, the Mega Drive's
+// X/Y/Z/Mode are 8..11 of its own), so a press byte is only ever read by the console it was sent to.
+// The four Mega Drive extras are named here so a user can bind them; the seeded profile leaves them
+// unbound, so no default binding of any console changes (see bindingMap.ts defaultBindingMap()).
 
-/** GB button name → the native GameboyButton value ([InputTypes.hpp] Right=0 … Start=7). */
+/** Button name → the wire byte native's InputTypes.hpp table of the running console assigns (the shared
+ *  eight are Right=0 … Start=7 on every one; the extras are per console, so L/R name the GBA's 8/9 and
+ *  X/Y/Z/Mode the Mega Drive's 8..11). The raw uint8 pressButton carries across the bridge. */
 export const BUTTON_VALUE: Record<string, number> = {
   Right: 0,
   Left: 1,
@@ -19,6 +25,12 @@ export const BUTTON_VALUE: Record<string, number> = {
   B: 5,
   Select: 6,
   Start: 7,
+  // The 6-button Mega Drive pad's extras. A console whose table has no such button drops the byte rather
+  // than falling through onto one it does have, so naming them here binds nothing on its own.
+  X: 8,
+  Y: 9,
+  Z: 10,
+  Mode: 11,
 };
 
 // DPF key codes for the named (non-ASCII) keys. ASCII keys ("Z"/"x"/…) resolve via charCodeAt.

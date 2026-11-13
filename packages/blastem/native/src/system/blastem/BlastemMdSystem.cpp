@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <mutex>
 
 #include "system/blastem/BlastemCore.hpp"
 #include "system/blastem/BlastemRom.hpp"
+#include "system/blastem/InputTypes.hpp"
 
 namespace rp::blastem {
 
@@ -624,9 +626,60 @@ void BlastemMdSystem::run_until(std::uint64_t mclk) {
     }
 }
 
-// Port 1's pad: the button table and BlastEm's io_gamepad_down/up land with the pad's case, and until they do a press
-// is dropped rather than remembered and applied late.
-void BlastemMdSystem::pressButton(std::uint8_t /*button*/, bool /*down*/) {}
+// Port 1's pad (design section 5). BlastEm's gamepad state is a LEVEL that io_data_read samples live, so a press
+// applied before a block is what that block's polls see: no queue, and nothing for prepareForBlock to apply. That is
+// the same contract Mesen's apply gives, because the engine applies a block's presses before its core runs.
+//
+// The three tables below are one fact restated twice, so they live together: kBlastemButton turns the wire byte into one
+// of BlastEm's button ids, and kPadState/kPadBit turn the same byte into the bit io_port_gamepad_down/up set with it.
+// All three restate io.c's `static` button_defs table (io.c:78-91), which no header exposes, and MdButton::Count is the
+// length all three must keep (InputTypes.hpp).
+static constexpr std::uint8_t kBlastemButton[] = {
+    DPAD_RIGHT, DPAD_LEFT,  DPAD_UP,   DPAD_DOWN,
+    BUTTON_A,   BUTTON_B,   BUTTON_C,  BUTTON_START,
+    BUTTON_X,   BUTTON_Y,   BUTTON_Z,  BUTTON_MODE,
+};
+
+// io.c's three input registers (io.c:48-50: GAMEPAD_TH0, GAMEPAD_TH1, GAMEPAD_EXTRA, `#define`s that never reached a
+// header), and the register and bit each button's press sets in them (io_port_gamepad_down ORs the bit in, io.c:150-157).
+enum : std::uint8_t { kPadTh0 = 0, kPadTh1 = 1, kPadExtra = 2 };
+
+static constexpr std::uint8_t kPadState[] = {kPadTh1, kPadTh1, kPadTh0, kPadTh0,
+                                            kPadTh0, kPadTh1, kPadTh1, kPadTh0,
+                                            kPadExtra, kPadExtra, kPadExtra, kPadExtra};
+static constexpr std::uint8_t kPadBit[] = {0x08, 0x04, 0x01, 0x02,
+                                          0x10, 0x10, 0x20, 0x20,
+                                          0x04, 0x02, 0x01, 0x08};
+
+static_assert(std::size(kBlastemButton) == static_cast<std::size_t>(MdButton::Count));
+static_assert(std::size(kPadState) == static_cast<std::size_t>(MdButton::Count));
+static_assert(std::size(kPadBit) == static_cast<std::size_t>(MdButton::Count));
+
+void BlastemMdSystem::pressButton(std::uint8_t button, bool down) {
+    if (!gen_) return;
+    if (button >= std::size(kBlastemButton)) return;  // a byte that names no button of this console drives none
+    useInstance(this);  // as every call into the core: a callback the device makes belongs to this one
+    // The pad is gamepad number 1, not 0: setup_io_devices connects "gamepad6.1" to port 1 and "gamepad6.2" to port 2
+    // (io.c:387-388), find_gamepad matches on the digit in that name (io.c:93-115, io.c:286), and number 0 matches the
+    // EXT port instead (its gamepad_num is zeroed with the port), so a press on 0 would go to the wrong port.
+    if (down) {
+        io_gamepad_down(&gen_->io, 1, kBlastemButton[button]);
+    } else {
+        io_gamepad_up(&gen_->io, 1, kBlastemButton[button]);
+    }
+}
+
+// The test seam beside pressButton: the bit that button's press set, read straight out of port 1's pad registers. Set
+// means held, because the pad's output is logically inverted on the wire (io_data_read's IO_GAMEPAD6 case inverts the
+// register it hands the bus). False before a core exists, for a byte that names no button, and when port 1 holds no pad.
+bool BlastemMdSystem::padDown(std::uint8_t button) const {
+    if (!gen_ || button >= std::size(kPadState)) return false;
+    // find_gamepad takes a non-const io (it walks the ports to match a gamepad number), so this reads as the const
+    // lookup it is. Port 1's device is the pad setup_io_devices connected there; boot() replaced only port 2's.
+    io_port* port = find_gamepad(const_cast<sega_io*>(&gen_->io), 1);
+    if (!port) return false;
+    return (port->input[kPadState[button]] & kPadBit[button]) != 0;
+}
 
 // Port 2's host device (BlastemPortDevice.hpp): every byte of the block's feed becomes one level held from the host
 // sample of this block's `frame`-th sample on, so a level reaches the pins when the stop grid gets to its own sample

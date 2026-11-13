@@ -41,8 +41,14 @@ public:
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
     void reserveAudio(std::uint32_t maxBlockFrames) override;
 
-    // The wire-byte table's button, as InputTypes.hpp orders it.
+    // The wire-byte table's button, as InputTypes.hpp orders it. BlastEm's pad state is a level it samples live, so a
+    // press lands at once rather than waiting for the next prepareForBlock (as Mesen's queued apply does).
     void pressButton(std::uint8_t button, bool down) override;
+    // Whether port 1's pad holds the button `button` names now, read out of the pad's own input registers: the bit
+    // pressButton set, not a queue this class never keeps. False for a byte that names no button of this console, for a
+    // port with no pad on it, and before activation, where there is no pad to read. A read-only test seam of the shape
+    // MesenSmsSystem::buttonDown is.
+    bool padDown(std::uint8_t button) const;
     void setGainDb(float dB, bool immediate = false) override;
 
     // Controller port 2's host device: one LEVEL per byte of `data`, each held from the host sample of `frame` (the

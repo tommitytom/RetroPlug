@@ -30,7 +30,8 @@ retroplug_add_test_binary(
     NAME     retroplug-blastem-test
     SOURCES  test/BlastemBuild.test.cpp test/SyntheticRom.test.cpp test/BlastemBoot.test.cpp
              test/BlastemStop.test.cpp test/BlastemVideo.test.cpp test/BlastemAudio.test.cpp
-             test/BlastemPort.test.cpp test/BlastemInvariance.test.cpp test/BlastemInstances.test.cpp
+             test/BlastemPort.test.cpp test/BlastemPad.test.cpp test/BlastemInvariance.test.cpp
+             test/BlastemInstances.test.cpp
              test/BlastemMemory.test.cpp test/BlastemSaves.test.cpp test/BlastemFaults.test.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test   # SyntheticRom.hpp, a later task's images
     LIBS     retroplug-blastem)                 # blastem is its PUBLIC dependency, and is read after it

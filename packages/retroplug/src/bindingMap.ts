@@ -74,7 +74,13 @@ export function withActionDefaults(map: BindingMap, actions: readonly ActionDefa
 /** The built-in "default" profile — the seed for bindings/default.json and the fallback when an active
  *  profile is absent. Keyboard mirrors native's defaultBindingMap(); the gamepad channel additionally binds
  *  the LEFT STICK alongside the d-pad hat (the `<axis><sign>` tokens — TS-only, native binds only the
- *  hat) so analog-as-dpad works out of the box. See keyCodes.ts `axisToken` for the token convention. */
+ *  hat) so analog-as-dpad works out of the box. See keyCodes.ts `axisToken` for the token convention.
+ *
+ *  Both channels stop at the eight shared button names on purpose: the bytes past Start (keyCodes.ts
+ *  BUTTON_VALUE's X/Y/Z/Mode, the Mega Drive 6-button pad's extras) ship unbound, so a host gamepad's
+ *  buttons drive no Mega Drive extra until the user binds one and no recorded keyboard/gamepad matrix
+ *  moves. A channel with no entry for a name is what the bindings editor shows as "-" and what the input
+ *  resolvers skip, so binding one is a user edit, never a default. */
 export function defaultBindingMap(): BindingMap {
   return {
     name: "default",
