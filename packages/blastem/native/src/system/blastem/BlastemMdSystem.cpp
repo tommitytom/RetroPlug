@@ -73,6 +73,10 @@ void BlastemMdSystem::boot() {
         return;
     }
     useInstance(this, gen_);  // from here the core can start a DMA, which reads the context through current_system
+    // Port 2 is the host's device, not a pad: a game that reads player 2 sees the pins' idle state (which is a pad's
+    // nothing-pressed state minus the pad's response), and a role claims the lines by pushing levels. Port 1 stays
+    // whatever romdb.c chose, which is the pad the wire bytes drive.
+    gen_->io.ports[1].device_type = IO_CUSTOM;
     m68k_reset(gen_->m68k);
     // The frame, once, for the region the core just chose: 240 lines on a PAL machine, 224 on an NTSC one (version_reg's
     // HZ50 bit, set by set_region during the allocation above). The shell's frame slot is sized at claim and never
@@ -82,6 +86,7 @@ void BlastemMdSystem::boot() {
     sampleAnchor_ = 0;
     mclkAnchor_ = 0;
     nextGridSample_ = 0;
+    port_.clear();  // a queued level's clock belongs to the timeline the four anchors above just restarted
     activated_ = true;
     setGainDb(config_.gainDb, true);
 }
@@ -265,5 +270,27 @@ void BlastemMdSystem::run_until(std::uint64_t mclk) {
 // Port 1's pad: the button table and BlastEm's io_gamepad_down/up land with the pad's case, and until they do a press
 // is dropped rather than remembered and applied late.
 void BlastemMdSystem::pressButton(std::uint8_t /*button*/, bool /*down*/) {}
+
+// Port 2's host device (BlastemPortDevice.hpp): every byte of the block's feed becomes one level held from the master
+// clock of this block's `frame`-th sample, so a level reaches the pins at its own sample's clock rather than at the
+// block boundary. The clock is absolute, so a level staged past this block's end is still on time for the next one:
+// nothing rebases the schedule, and the host's block size chooses nothing.
+void BlastemMdSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool /*flush*/) {
+    if (!gen_ || !data || size == 0) return;
+    const std::uint64_t at = masterClockOf(sampleBase_ + frame);
+    for (std::size_t i = 0; i < size; ++i) port_.enqueue(at, data[i]);
+}
+
+void BlastemMdSystem::writePortControl(std::uint8_t value) {
+    if (!gen_) return;
+    useInstance(this, gen_);  // as every call into the core: a frontend callback the handler makes belongs to this one
+    io_control_write(&gen_->io.ports[1], value, gen_->m68k->cycles);
+}
+
+void BlastemMdSystem::writePortData(std::uint8_t value) {
+    if (!gen_) return;
+    useInstance(this, gen_);
+    io_data_write(&gen_->io.ports[1], value, gen_->m68k->cycles);
+}
 
 }  // namespace rp::blastem

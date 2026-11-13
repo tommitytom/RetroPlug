@@ -10,7 +10,8 @@
 #include "system/SystemCapabilities.hpp"
 #include "system/blastem/BlastemAudio.hpp"
 #include "system/blastem/BlastemMdConfig.hpp"
-#include "system/blastem/BlastemVideo.hpp"  // VideoSink (a member here), pixel_t and vdp_context
+#include "system/blastem/BlastemPortDevice.hpp"  // PortDevice (a member here)
+#include "system/blastem/BlastemVideo.hpp"       // VideoSink (a member here), pixel_t and vdp_context
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
 #include "util/Gain.hpp"  // dbToLin
@@ -18,8 +19,6 @@
 struct genesis_context;
 
 namespace rp::blastem {
-
-class PortDevice;
 
 // A Sega Mega Drive (or Genesis), run by BlastEm 1.0. One instance owns one `genesis_context`; every call into the
 // core sets `currentInstance` first, because BlastEm's frontend callbacks take no instance of their own.
@@ -43,6 +42,14 @@ public:
     // The wire-byte table's button, as InputTypes.hpp orders it.
     void pressButton(std::uint8_t button, bool down) override;
     void setGainDb(float dB, bool immediate = false) override;
+
+    // Controller port 2's host device: one LEVEL per byte of `data`, each held from the absolute master clock of
+    // `frame`'s sample (the intra-block offset) on. `flush` is accepted and ignored, as it is on the SMS's sync role:
+    // a held level has no undelivered-stream hazard to clear, and dropping one on a seek would only leave a stale pin.
+    void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush = false) override;
+    // True whether or not a role is wired to the port: the queue exists either way, and an unwired port simply never
+    // has anything in it (as MesenSmsSystem's answer is).
+    bool hasCoreBytesIn() const override { return true; }
 
     // The frame the engine reads: the video sink's triple, allocated at boot, or null before one exists.
     FrameBufferTriple* framebuffer() override { return video_.triple(); }
@@ -90,6 +97,24 @@ public:
     // test seam (a stop is checked against masterClockOf), and what the port device stamps from.
     std::uint64_t mclkNow() const;
 
+    // The same clock a port access carried into the core (BlastEm's own 32-bit count) in absolute terms: the port
+    // device's schedule is queued in this time base, so a read and the level due at it meet in absolute time.
+    std::uint64_t mclkOfCoreCycle(std::uint32_t cycle) const {
+        return gen_ ? std::uint64_t(gen_->cycle_base) + cycle : 0;
+    }
+
+    // This instance's port-2 device. The core reaches it the same way (through currentInstance in the entry point), so
+    // this is the host's own handle: the seam a feed writes through is pushCoreBytes, not this.
+    PortDevice& portDevice() { return port_; }
+    // Levels the port device has taken since activation: how a caller tells a delivery from a queue that refused.
+    std::uint64_t levelsAccepted() const { return port_.accepted(); }
+
+    // Test seams for the direction rule: BlastEm's own io_control_write / io_data_write on port 2 at the current clock.
+    // Those writes ARE the ROM's direction register ($A1000B) and data latch ($A10005) that io_data_read's tail mixes
+    // with the host's level, so the host never sees them and a case cannot reach them any other way.
+    void writePortControl(std::uint8_t value);
+    void writePortData(std::uint8_t value);
+
 private:
     void boot();
     void destroyCore();
@@ -107,6 +132,8 @@ private:
     // DECLARATION ORDER below is not what keeps them alive and moving them would change nothing.
     VideoSink                 video_;
     AudioSink                 audio_;
+    // Port 2 as the host drives it. Its queue and its sort scratch are sized at construction, before any block runs.
+    PortDevice                port_;
     genesis_context*          gen_ = nullptr;
     bool                      activated_ = false;
     bool                      stateRefused_ = false;  // a seed state the serializer refused
