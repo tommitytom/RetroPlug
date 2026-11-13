@@ -95,8 +95,8 @@ static StateWalk walkSections(const std::uint8_t* bytes, std::size_t size, bool 
 static constexpr double kStateClockSkewSeconds = 0.25;
 
 static bool clocksAgree(const genesis_context* gen) {
-    const std::uint64_t allowed = static_cast<std::uint64_t>(double(gen->master_clock) * kStateClockSkewSeconds);
-    const std::uint64_t m68k    = gen->m68k->cycles;
+    const std::uint64_t allowed   = static_cast<std::uint64_t>(double(gen->master_clock) * kStateClockSkewSeconds);
+    const std::uint64_t m68k      = gen->m68k->cycles;
     const std::uint64_t counts[4] = {gen->vdp->cycles, gen->z80->cycles, gen->ym->current_cycle, gen->psg->cycles};
     for (std::uint64_t count : counts) {
         const std::uint64_t skew = count > m68k ? count - m68k : m68k - count;
@@ -358,8 +358,9 @@ void BlastemMdSystem::seedBattery(const std::vector<std::uint8_t>& sram) {
     for (std::size_t i = 0; i < n; ++i) gen_->save_storage[batteryStorageIndex(gen_, i)] = sram[i];
 }
 
-// The state, as BlastEm writes it, behind the identifier loadStateBytes demands. The capture costs one buffer of its
-// own: BlastEm grows the one init_serialize gave it, and the caller's vector is the copy out of it.
+// The whole state container into `out`, which is resized (so a reused vector keeps its capacity): BlastEm's sections
+// through `buf`'s storage, which the caller may keep between captures, and then this host's own battery section.
+// `battery` is the scratch the battery is copied into on the way.
 bool BlastemMdSystem::captureStateInto(serialize_buffer& buf, std::vector<std::uint8_t>& battery,
                                        std::vector<std::uint8_t>& out) const {
     if (!gen_) {
@@ -367,9 +368,9 @@ bool BlastemMdSystem::captureStateInto(serialize_buffer& buf, std::vector<std::u
         return false;
     }
     useInstance(const_cast<BlastemMdSystem*>(this));  // the serializer's own callbacks are frontend calls
-    // A reused buffer starts at its beginning again; its storage (and the ROM's own rows) are what it keeps.
-    buf.size                 = 0;
-    buf.failed               = 0;
+    // A reused buffer starts at its beginning again; its storage is what it keeps.
+    buf.size                  = 0;
+    buf.failed                = 0;
     buf.current_section_start = 0;
     // The pc argument is the old core's resume address, and under NEW_CORE m68k_serialize ignores it: it writes
     // context->pc - 2, which is the instruction that will execute when the state is resumed, and m68k_deserialize adjusts
