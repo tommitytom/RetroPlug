@@ -17,7 +17,7 @@ target_link_libraries(retroplug-blastem
 # the core's references instead of leaving them undefined.
 retroplug_add_test_binary(
     NAME     retroplug-blastem-test
-    SOURCES  test/BlastemBuild.test.cpp
+    SOURCES  test/BlastemBuild.test.cpp test/SyntheticRom.test.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test   # SyntheticRom.hpp, a later task's images
     LIBS     blastem          # deps/blastem: read before the package, so its references reach the shim
          retroplug-blastem)
