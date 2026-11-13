@@ -9,6 +9,7 @@
 #include "system/SystemBase.hpp"
 #include "system/SystemCapabilities.hpp"
 #include "system/blastem/BlastemMdConfig.hpp"
+#include "system/blastem/BlastemVideo.hpp"  // VideoSink (a member here), pixel_t and vdp_context
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
 #include "util/Gain.hpp"  // dbToLin
@@ -42,8 +43,8 @@ public:
     void pressButton(std::uint8_t button, bool down) override;
     void setGainDb(float dB, bool immediate = false) override;
 
-    // No framebuffer override yet: the video sink is where framebuffer() appears, and until it does the base's null is
-    // the honest answer and no case asks for one.
+    // The frame the engine reads: the video sink's triple, allocated at boot, or null before one exists.
+    FrameBufferTriple* framebuffer() override { return video_.triple(); }
 
     // True once onActivate has booted a live core: a ROM the gate accepted can still fail to boot, and the backend
     // then rejects the build rather than adopting a dead system (as MesenSmsSystem::activated).
@@ -62,6 +63,11 @@ public:
     // The core, for this package's own tests only: the sibling screens (audio, the port device) read BlastEm's state
     // directly rather than growing a seam apiece.
     genesis_context* core() const { return gen_; }
+    // The VDP, for the render callbacks: a published frame's picture is placed by the VDP's own mode registers, and
+    // null before a core exists.
+    vdp_context* vdp() const { return gen_ ? gen_->vdp : nullptr; }
+    // The instance's framebuffer sink: the render callbacks hand it the buffer the VDP drew into (BlastemShim.cpp).
+    VideoSink& video() { return video_; }
 
     // The absolute master clock of host sample `sample`, in this instance's time base.
     std::uint64_t masterClockOf(std::uint64_t sample) const;
@@ -78,6 +84,9 @@ private:
     BlastemMdConfig           config_;
     // The ROM as a capability view; BlastEm gets its own aligned copy (see boot()) and owns it from then on.
     std::vector<std::uint8_t> rom_;
+    // Declared before gen_ because the VDP holds raw pointers into its buffers: declared first, the sink is destroyed
+    // after the context is freed, and a context freed first never reads them.
+    VideoSink                 video_;
     genesis_context*          gen_ = nullptr;
     bool                      activated_ = false;
     bool                      stateRefused_ = false;  // a seed state the serializer refused

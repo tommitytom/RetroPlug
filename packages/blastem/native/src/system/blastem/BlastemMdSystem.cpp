@@ -54,6 +54,11 @@ void BlastemMdSystem::boot() {
         // An allocation failure is a refused build, not a crash: alloc_config_genesis byteswaps the cart in place.
         return;
     }
+    // BEFORE alloc_config_genesis: the VDP asks render_get_framebuffer for its buffer at init (vdp.c:524) and points
+    // context->output into it immediately (vdp.c:529-530), so a sink with no buffers yet is a null write on the first
+    // line. `headless` stays 0 and is never written anywhere: vdp.c reads it at init, at free and at every frame end, so
+    // a value that changed between those three would leak or free a buffer the sink still owns.
+    video_.prepareBuffers();
     gen_ = alloc_config_genesis(cart, static_cast<std::uint32_t>(rom_.size()), nullptr, 0, 0,
                                 blastemRegion(config_.region));
     if (!gen_) {
@@ -61,6 +66,10 @@ void BlastemMdSystem::boot() {
         return;
     }
     m68k_reset(gen_->m68k);
+    // The frame, once, for the region the core just chose: 240 lines on a PAL machine, 224 on an NTSC one (version_reg's
+    // HZ50 bit, set by set_region during the allocation above). The shell's frame slot is sized at claim and never
+    // resized, so this is the only place its size is decided.
+    video_.prepareFrame((gen_->version_reg & 0x40) ? 240u : 224u);
     sampleBase_ = 0;
     sampleAnchor_ = 0;
     mclkAnchor_ = 0;
@@ -68,13 +77,15 @@ void BlastemMdSystem::boot() {
     setGainDb(config_.gainDb, true);
 }
 
-std::uint32_t BlastemMdSystem::coreFrameWidth() const { return 320; }
+// The frame the sink allocated IS the picture's size from boot on. Before a core exists the region is unknown, so the
+// answer is the frame a boot defaults to (the NTSC one), not zero: a caller that sizes anything off these reads a
+// picture the machine could actually produce.
+std::uint32_t BlastemMdSystem::coreFrameWidth() const { return video_.triple() ? video_.width() : 320u; }
 
 std::uint32_t BlastemMdSystem::coreFrameHeight() const {
-    // The region's visible lines (vdp.c's NTSC_INACTIVE_START and PAL_INACTIVE_START). version_reg's 0x40 is HZ50,
-    // set by set_region for a PAL machine; the video sink allocates its frame from the same expression.
-    if (!gen_) return 0;
-    return (gen_->version_reg & 0x40) ? 240u : 224u;
+    // The region's visible lines (vdp.c's NTSC_INACTIVE_START and PAL_INACTIVE_START); prepareFrame() allocated the
+    // frame from version_reg's HZ50 bit, so the triple's height is already the region's answer.
+    return video_.triple() ? video_.height() : 224u;
 }
 
 std::uint64_t BlastemMdSystem::mclkNow() const {

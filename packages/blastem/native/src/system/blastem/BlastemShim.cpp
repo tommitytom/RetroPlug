@@ -1,9 +1,9 @@
 // BlastEm's frontend seam, for a host that is RetroPlug rather than BlastEm's own SDL/GTK shell. Two halves:
 //
 //   1. What every build needs and libblastem.c would otherwise provide: the config tree, the globals genesis.c and
-//      io.c read (current_system, headless, z80_enabled, ...), read_bundled_file() for the ROM database, and the
-//      render callbacks that are not the video or audio sink (those are BlastemVideo.cpp / BlastemAudio.cpp and
-//      are the shell's video and audio sinks, which land beyond this file as it is introduced here).
+//      io.c read (current_system, headless, z80_enabled, ...), read_bundled_file() for the ROM database, and the render
+//      callbacks. They stay here because they are extern "C" and so may live in exactly one file; the video ones are
+//      real and delegate to the sink in BlastemVideo.cpp, and the audio ones are defaults until the audio sink lands.
 //   2. Stubs for the systems this build does not compile. genesis.c, romdb.c and io.c still reference them, but only
 //      behind a field a Mega Drive never sets (gen->mars for the 32X, gen->expansion for the Sega CD, a mapper type
 //      only a Pico, Coleco, LaserActive or SMS cart selects), so no emulated Mega Drive instruction reaches one.
@@ -12,6 +12,8 @@
 
 #include <cstdlib>
 #include <cstring>
+
+#include "system/blastem/BlastemMdSystem.hpp"  // the instance whose video() the render callbacks answer for
 
 namespace rp::blastem {
 
@@ -87,28 +89,48 @@ void bindings_release_capture(void) {}
 void bindings_set_mouse_mode(uint8_t) {}
 void init_terminal(void) {}
 
-// -- The render seam's defaults (the video and audio sinks replace these two halves when they land) ---------
+// -- The render seam -------------------------------------------------------------------------------
 pixel_t render_map_color(uint8_t r, uint8_t g, uint8_t b) {
     return 0xFF000000u | uint32_t(r) << 16 | uint32_t(g) << 8 | b;
 }
-void render_set_video_standard(vid_std) {}
+// The standard the core last asked for. Nothing in this build reads it back (the picture's geometry comes from the VDP's
+// own registers and the region from the context), so it exists because the callback has to be defined and its argument
+// is worth keeping rather than dropped.
+vid_std video_standard = VID_NTSC;
+void render_set_video_standard(vid_std standard) { video_standard = standard; }
 uint8_t render_create_window(char*, uint32_t, uint32_t, window_close_handler) { return 0; }
 void render_destroy_window(uint8_t) {}
-void render_framebuffer_updated(uint8_t, int) {}
-// A framebuffer the VDP can draw into before the sink exists, and the one case of this file that has to be real: with
-// headless 0 the VDP asks for a buffer at init (init_vdp_context's headless branch) and after every published frame, so
-// a stub returning null would write through null on the first line. 512 rows is what that branch allocates for itself.
-// ONE static serves every instance and every `which` (the VDP's debug indices included), so nothing may build on the
-// contents or the identity of this buffer: it is a landing pad for writes, and the sink replaces it.
+// The VDP's frame end. NO frame-end signal: a frontend ends the frame from this callback (render_sdl.c and libblastem.c
+// call system_request_exit here), and this host must not, because a block is longer than a frame, so a stop at the frame
+// boundary would leave the rest of the block undrained and starve its audio. The stop is run_until's, once a block. The
+// sink copies the picture out synchronously, so the VDP may reuse the buffer it just handed over.
+void render_framebuffer_updated(uint8_t which, int width) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (!sys) return;  // a context outside any system has no frame to publish, and the VDP does not read one back
+    vdp_context* vdp = sys->vdp();
+    if (!vdp) return;  // an alloc still in flight has a system but no context to take the picture's mode from
+    sys->video().publish(which, width, *vdp);
+}
+// The buffer the VDP draws into. The instance's own sink answers it once prepared, which is the whole story for a
+// booted system; the static stays as the fallback for a context built outside any system (what the link test does),
+// because the VDP at init points context->output into whatever this returns and draws through it: with headless 0 the
+// VDP asks here at init (init_vdp_context's non-headless branch) and after every published frame, so a null is a write
+// through null on the first line. 512 rows is what that branch allocates for itself. ONE static serves every instance
+// and every `which` (the VDP's debug indices included), so nothing may build on the contents or the identity of this
+// buffer: it is a landing pad for writes.
 pixel_t* render_get_framebuffer(uint8_t which, int* pitch) {
+    auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
+    if (sys) {
+        pixel_t* fb = sys->video().buffer(which, pitch);
+        if (fb) return fb;
+    }
     static pixel_t kScratch[512 * LINEBUF_SIZE];
-    (void)which;
     *pitch = LINEBUF_SIZE * static_cast<int>(sizeof(pixel_t));
     return kScratch;
 }
-uint8_t render_get_active_framebuffer(void) { return 0; }
+uint8_t render_get_active_framebuffer(void) { return FRAMEBUFFER_ODD; }
 uint8_t render_fullscreen(void) { return 0; }
-uint32_t render_overscan_top(void) { return 0; }
+uint32_t render_overscan_top(void) { return 0; }  // the full picture: the sink places it, so no overscan crop
 uint32_t render_overscan_bot(void) { return 0; }
 uint8_t render_should_release_on_exit(void) { return 0; }
 uint8_t render_is_threaded_video(void) { return 0; }
