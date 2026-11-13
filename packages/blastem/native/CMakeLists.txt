@@ -11,13 +11,13 @@ target_link_libraries(retroplug-blastem
             retroplug-node-sdk  # graph/node.hpp
             blastem)            # deps/blastem: the emulator (which carries -lm on the POSIX toolchains)
 
-# The link order is the point of naming blastem here beside the package: an archive's undefined symbols are answered
-# only by what the linker reads after it, and nothing in the case names a shim symbol directly, so reading the core
-# first lets the shim (retroplug-blastem's own object, holding the frontend globals and callbacks blastem calls) answer
-# the core's references instead of leaving them undefined.
+# The link order is not what makes this correct: the case names rp::blastem::currentInstance, the shim's own symbol, and
+# that reference is what pulls BlastemShim.cpp.o (the frontend globals and callbacks blastem calls) out of the package's
+# archive, so the core's references meet the shim whatever order the archives are read in. Listing blastem first and
+# counting on the linker's order would instead rest on CMake keeping the first of two occurrences of one library, which
+# is a policy (CMP0156) away from keeping the last.
 retroplug_add_test_binary(
     NAME     retroplug-blastem-test
     SOURCES  test/BlastemBuild.test.cpp test/SyntheticRom.test.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test   # SyntheticRom.hpp, a later task's images
-    LIBS     blastem          # deps/blastem: read before the package, so its references reach the shim
-         retroplug-blastem)
+    LIBS     retroplug-blastem)                 # blastem is its PUBLIC dependency, and is read after it

@@ -19,7 +19,7 @@ file(MAKE_DIRECTORY "${_BLASTEM_GEN}")
 # tree, so nothing lands in the source) and its .c to stdout (cpu_dsl.py's writeHeader + main). The dispatch is
 # upstream's: `call` per 68k instruction (the handlers are too large for one function on MSVC) and `goto` per Z80
 # instruction (Z80_DISPATCH:=goto, Makefile:13, 93). sh2 and upd78k2 are generated for their HEADERS only, so their
-# dispatch value is irrelevant; `call` matches upstream's Makefile:435.
+# dispatch value is irrelevant; `call` is what upstream's sed yields for any target but z80 (Makefile:435).
 function(_blastem_generate_core name dispatch)
     add_custom_command(
         OUTPUT "${_BLASTEM_GEN}/${name}.c" "${_BLASTEM_GEN}/${name}.h"
@@ -35,8 +35,8 @@ _blastem_generate_core(m68k call)
 _blastem_generate_core(z80 goto)
 # The 32X and LaserActive cores are not compiled, but genesis.h includes 32x.h -> sh2.h and the file set's own sources
 # include upd78k2.h, so their headers must exist.
-_blastem_generate_core(sh2 goto)
-_blastem_generate_core(upd78k2 goto)
+_blastem_generate_core(sh2 call)
+_blastem_generate_core(upd78k2 call)
 
 # BlastEm's ROM database, which romdb.c parses through read_bundled_file() ("rom.db"). Upstream's Makefile turns it
 # into a C string with sed (Makefile:437); this does the same with CMake's own string handling, escaping the one double
@@ -84,8 +84,6 @@ add_library(blastem STATIC
     # through 32x.h, and which upd78k2-using sources include) missing. A .h in a target's sources costs no compile and
     # makes CMake own the rule.
     "${_BLASTEM_GEN}/m68k.h" "${_BLASTEM_GEN}/z80.h" "${_BLASTEM_GEN}/sh2.h" "${_BLASTEM_GEN}/upd78k2.h")
-set_source_files_properties("${_BLASTEM_GEN}/m68k.c" "${_BLASTEM_GEN}/z80.c" "${_BLASTEM_GEN}/rom.db.c"
-                            PROPERTIES GENERATED TRUE)
 
 # The chips' maths (the synthesised sine and log tables) is libm's. MSVC keeps it in the CRT; the GNU and Apple
 # toolchains need -lm, which a static library propagates to its consumers.
@@ -94,8 +92,10 @@ if(NOT WIN32)
 endif()
 
 target_include_directories(blastem SYSTEM PUBLIC "${BLASTEM_DIR}" "${_BLASTEM_GEN}")
-# NEW_CORE selects the generated interpreters. IS_LIB is BlastEm's own library-build switch (it drops the debugger and
-# the oscilloscope and keeps the sound-chip chunk size small). DISABLE_NUKLEAR keeps SDL's headers out of config.c.
+# NEW_CORE selects the generated interpreters. IS_LIB is BlastEm's own library-build switch: it drops the debugger, the
+# oscilloscope and the threaded VDP renderer, keeps the sound-chip chunk size small, and compiles out romdb.c's
+# `device MENU` mapper and system.c's load_media_zip with the same switch (a Mega Drive takes neither: the ROM DB's one
+# `device MENU` row is the GUI image's). DISABLE_NUKLEAR keeps SDL's headers out of config.c.
 # PUBLIC, not PRIVATE: the package's own translation units include BlastEm's headers, and without NEW_CORE genesis.h
 # takes its JIT branch (m68k_core.h) while BlastemCore.hpp includes the generated m68k.h: two declarations of
 # m68k_context in one unit, which does not compile.

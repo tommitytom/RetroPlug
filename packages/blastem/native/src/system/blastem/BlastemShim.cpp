@@ -52,6 +52,9 @@ system_header* current_system = nullptr;
 int headless = 0;
 int exit_after = 0;
 int z80_enabled = 1;
+// NEVER written. The one caller that opens it as a path (genesis.c's persist_save) is reached only from blastem.c,
+// BlastEm's own frontend, which is not compiled, and the battery is the host's to save out of gen->save_storage. So the
+// null is dead code rather than a crash.
 char* save_filename = nullptr;
 uint8_t use_native_states = 1;
 
@@ -69,6 +72,9 @@ char* read_bundled_file(char* name, uint32_t* sizeret) {
     if (!std::strcmp(name, "rom.db")) {
         *sizeret = static_cast<uint32_t>(std::strlen(rom_db_data));
         char* ret = static_cast<char*>(std::malloc(*sizeret + 1));
+        // Out of memory is a null, which config.c reads as "no bundled file" and romdb.c turns into its "Failed to load
+        // ROM DB" message: either is better than a memcpy through null.
+        if (!ret) return nullptr;
         std::memcpy(ret, rom_db_data, *sizeret + 1);
         return ret;
     }
@@ -90,8 +96,10 @@ uint8_t render_create_window(char*, uint32_t, uint32_t, window_close_handler) { 
 void render_destroy_window(uint8_t) {}
 void render_framebuffer_updated(uint8_t, int) {}
 // A framebuffer the VDP can draw into before the sink exists, and the one case of this file that has to be real: with
-// headless 0 the VDP asks for a buffer at init (vdp.c:524) and after every published frame, so a stub returning null
-// would write through null on the first line. 512 rows is what headless's own allocation is (vdp.c:525).
+// headless 0 the VDP asks for a buffer at init (init_vdp_context's headless branch) and after every published frame, so
+// a stub returning null would write through null on the first line. 512 rows is what that branch allocates for itself.
+// ONE static serves every instance and every `which` (the VDP's debug indices included), so nothing may build on the
+// contents or the identity of this buffer: it is a landing pad for writes, and the sink replaces it.
 pixel_t* render_get_framebuffer(uint8_t which, int* pitch) {
     static pixel_t kScratch[512 * LINEBUF_SIZE];
     (void)which;

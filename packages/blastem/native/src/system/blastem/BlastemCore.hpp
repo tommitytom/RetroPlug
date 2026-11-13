@@ -1,7 +1,9 @@
 #pragma once
 
 // The one place BlastEm's C headers are seen from C++. Everything else in this package includes this header instead,
-// so the extern "C" wrap is written once (the vendored headers carry no C++ guards of their own).
+// so the extern "C" wrap is written once (the vendored headers carry no C++ guards of their own). Include this only
+// from a target that links `blastem`: its PUBLIC definitions and include roots are what make these headers parse
+// (without IS_LIB, render.h pulls in <SDL.h>; without NEW_CORE, genesis.h takes its JIT branch).
 
 namespace rp::blastem {
 
