@@ -3,7 +3,8 @@
 // activation, the ROM and seed resources that core is built from, and the machine's region, which is construct-time
 // (a region fixes the master clock and the frame height), so a change to it is a rebuild. The build is the package's
 // own (rp::blastem::buildMdCore), which the node's request carries to rp.host.systems/2 so the host that runs it names
-// no console; the knobs the core takes after that are none yet, so `Applied` is empty and the node applies nothing.
+// no console. One knob outlives the build: the port-2 claim (a placed protocol node's, which a live edit may add or
+// drop without rebuilding the machine the cart is running), so `Applied` carries it and `apply` sets it on the core.
 
 #include <cstddef>
 #include <cstdint>

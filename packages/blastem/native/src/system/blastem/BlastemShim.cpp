@@ -51,7 +51,8 @@ extern "C" {
 #include "korean_sms_multi.h"
 #include "laseractive.h"
 #include "mediaplayer.h"
-#include "net.h"  // iface_info, and the socket_* seam event_log.c and megawifi.c call
+#include "megawifi.h"
+#include "net.h"       // the socket_* seam event_log.c calls
 #include "paths.h"     // read_bundled_file
 #include "segacd.h"
 #include "sms.h"
@@ -61,8 +62,11 @@ extern "C" {
 extern const char rom_db_data[];
 
 // -- The globals libblastem.c would define ---------------------------------------------------------------
-// The config tree, built once by the first system that activates and never written after (every instance reads the
-// same settings: the region is a build parameter, not a config value, so no per-instance tree is needed).
+// NEVER built. Nothing in this host parses a config tree, so it stays null and every reader of it takes its own
+// default: config.c's find_path calls treat a null as "no config", and the two files this build would need are
+// deliberately not bundled (read_bundled_file below), so get_model() lands on BlastEm's built-in "md1va3" model, whose
+// values are the ones this console wants. A definition is all the link needs: blastem.h declares it and the file set
+// reads it (io.c's port setup, romdb.c's MegaWiFi row).
 tern_node* config = nullptr;
 // NEVER written and never read by this build's file set: the mirror's DMA and vdp_dma_started take their console from
 // the VDP they are handed. It stays because blastem.h declares it and other translation units in the tree name it (the
@@ -104,7 +108,20 @@ char* read_bundled_file(char* name, uint32_t* sizeret) {
     return nullptr;
 }
 
-uint8_t get_host_address(iface_info*) { return 0; }  // megawifi.c, only a WiFi cart's mapper calls it
+// -- The MegaWiFi cart's mapper (megawifi.c, not compiled; cmake/blastem.cmake says why) -----------------------
+// MegaWiFi is a network cartridge: a WiFi module on the mapper's $A130C0 window, speaking its own protocol over a
+// socket this host never opens, and no Mega Drive cart this host supports needs it. romdb.c names these four only for
+// the cart the ROM DB selects as `megawifi`, and only when the config tree's `system/megawifi` is "on": with the tree
+// null (above) the lookup takes its "off" default, so romdb.c leaves the map's read and write slots as it found them
+// and prints its "ROM uses MegaWiFi, but it is disabled" warning instead, precisely what a build with megawifi.c
+// compiled in does with no config. The stubs answer the way the other unused cart hardware does: a write hands the
+// context back (upstream's own tail), a read is the open bus.
+void* megawifi_write_w(uint32_t, void* vcontext, uint16_t) { return vcontext; }
+void* megawifi_write_b(uint32_t, void* vcontext, uint8_t) { return vcontext; }
+uint16_t megawifi_read_w(uint32_t, void*) { return 0; }
+uint8_t megawifi_read_b(uint32_t, void*) { return 0; }
+
+uint8_t get_host_address(iface_info*) { return 0; }
 void bindings_reacquire_capture(void) {}
 void bindings_release_capture(void) {}
 void bindings_set_mouse_mode(uint8_t) {}
@@ -295,10 +312,11 @@ void ymz263b_data_write(ymz263b*, uint32_t, uint8_t) {}
 uint8_t ymz263b_data_read(ymz263b*, uint32_t) { return 0; }
 uint8_t ymz263b_status_read(ymz263b*) { return 0; }
 
-// -- The socket seam (net.c and net_win.c are not compiled; event_log.c and megawifi.c call through it) ------
+// -- The socket seam (net.c and net_win.c are not compiled; event_log.c calls through it) ---------------------
 // Nothing here opens a socket, so the answers are the ones that end a conversation rather than spin: no error, not
-// would-block. event_log.c's server and megawifi's link are started only for a network-sourced media or a WiFi cart's
-// mapper, and a Mega Drive cart gets neither.
+// would-block. event_log.c's server is started only by a frontend that asks for one, which this host never does.
+// get_host_address is net.h's other entry point: nothing compiled calls it now that megawifi.c is out of the file set,
+// and it stays because the header declares it beside the four above.
 void socket_init(void) {}
 int socket_blocking(int, int) { return 0; }
 void socket_close(int) {}

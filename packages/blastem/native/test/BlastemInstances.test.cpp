@@ -338,7 +338,10 @@ TEST_CASE("each console's border-busting line is its own storage", "[blastem][in
     // console's own VDP now.
     auto a = boot(rp::blastem::test::hvPsgRom(), 1);
     auto b = boot(rp::blastem::test::hvPsgRom(), 2);
-    CHECK(a->core()->vdp->dummy_line != b->core()->vdp->dummy_line);
+    // The two arrays' ADDRESSES, never their contents: both lines are unwritten here, so an element-wise compare would
+    // pass even with one shared buffer, and comparing two arrays directly is deprecated in C++20 (GCC's
+    // -Warray-compare) and C5056 under MSVC's /W1, which this test target's /W4 /WX turns into an error.
+    CHECK(&a->core()->vdp->dummy_line != &b->core()->vdp->dummy_line);
 }
 
 TEST_CASE("a console's DMA reads its own work RAM", "[blastem][instances]") {

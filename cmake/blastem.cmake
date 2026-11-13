@@ -16,10 +16,13 @@ set(_BLASTEM_GEN "${CMAKE_BINARY_DIR}/blastem-gen")
 file(MAKE_DIRECTORY "${_BLASTEM_GEN}")
 
 # One generator run per core, in the build tree: cpu_dsl.py writes the core's .h into its working directory (the build
-# tree, so nothing lands in the source) and its .c to stdout (cpu_dsl.py's writeHeader + main). The dispatch is
-# upstream's: `call` per 68k instruction (the handlers are too large for one function on MSVC) and `goto` per Z80
-# instruction (Z80_DISPATCH:=goto, Makefile:13, 93). sh2 and upd78k2 are generated for their HEADERS only, so their
-# dispatch value is irrelevant; `call` is what upstream's sed yields for any target but z80 (Makefile:435).
+# tree, so nothing lands in the source) and its .c to stdout (cpu_dsl.py's writeHeader + main). Every core is generated
+# with `call` dispatch, so there is one code path on every platform: `goto` is GCC's labels-as-values (cpu_dsl.py's
+# _dispatchCImpl emits `goto *impl_...`, 7,516 times in z80.c), which cl.exe does not have, and upstream's Makefile's
+# Z80_DISPATCH:=goto is a choice for its own GNU-only targets, not a requirement. The 68k takes `call` for the same
+# reason plus one of its own (its handlers are too large for one function on MSVC); sh2 and upd78k2 are generated for
+# their HEADERS only, so their dispatch value is irrelevant; `call` is what upstream's sed yields for any core but z80
+# (Makefile:435).
 function(_blastem_generate_core name dispatch)
     add_custom_command(
         OUTPUT "${_BLASTEM_GEN}/${name}.c" "${_BLASTEM_GEN}/${name}.h"
@@ -32,7 +35,7 @@ function(_blastem_generate_core name dispatch)
 endfunction()
 
 _blastem_generate_core(m68k call)
-_blastem_generate_core(z80 goto)
+_blastem_generate_core(z80 call)
 # The 32X and LaserActive cores are not compiled, but genesis.h includes 32x.h -> sh2.h and the file set's own sources
 # include upd78k2.h, so their headers must exist.
 _blastem_generate_core(sh2 call)
@@ -58,13 +61,27 @@ file(WRITE "${_BLASTEM_GEN}/rom.db.c" "${_BLASTEM_ROMDB}")
 # serialiser and state support, the tern config tree, and the bundled zlib chd.c and zip.c need. NOT compiled: 32X,
 # Sega CD (segacd, cdd_*, cd_graphics, lc8951, cdimage, mediaplayer), SMS (sms, i8255, korean_sms_multi), Coleco,
 # LaserActive, the Pico (pico_pcm, ymz263b), the VGM player (gen_player), the terminal, Nuklear, SDL, and the x86 JIT
-# (m68k_core, m68k_core_x86, z80_to_x86, gen_x86, backend_x86). BlastemShim.cpp in packages/blastem provides the
-# functions genesis.c and romdb.c still reference in the branches a Mega Drive never takes.
+# (m68k_core, m68k_core_x86, z80_to_x86, gen_x86, backend_x86). megawifi.c is not compiled on any platform either:
+# MegaWiFi is a network cartridge (a WiFi module behind the mapper's $A130C0 window), which no Mega Drive cart this host
+# supports needs. A ROM built for that hardware loses only the WiFi window, exactly as it does with megawifi.c compiled
+# in: romdb.c's MegaWiFi rows are gated on a config key whose default is "off", and this host builds no config tree, so
+# romdb.c leaves those handlers unset either way (its own warning says the cart's MegaWiFi is disabled). Its four entry
+# points are stubs in BlastemShim.cpp, because romdb.c still names them.
+# BlastemShim.cpp in packages/blastem provides the functions genesis.c and romdb.c still reference in the branches a
+# Mega Drive never takes.
+#
+# alloc_code's page comes from mem.c (mmap) or mem_win.c (VirtualAlloc), the pair upstream's Makefile picks (Makefile:22):
+# mem.c includes <sys/mman.h> and <unistd.h>, which MSVC's CRT does not have.
+if(WIN32)
+    set(_BLASTEM_MEM_SRC mem_win.c)
+else()
+    set(_BLASTEM_MEM_SRC mem.c)
+endif()
 set(_BLASTEM_SOURCES
     system.c genesis.c vdp.c io.c romdb.c hash.c i2c.c nor.c
-    sega_mapper.c multi_game.c jcart.c realtec.c xband.c radica.c megawifi.c sft_mapper.c
+    sega_mapper.c multi_game.c jcart.c realtec.c xband.c radica.c sft_mapper.c
     serialize.c gst.c saves.c
-    tern.c util.c paths.c config.c backend.c arena.c gen.c mem.c
+    tern.c util.c paths.c config.c backend.c arena.c gen.c ${_BLASTEM_MEM_SRC}
     ym2612.c ymf262.c ym_common.c psg.c rf5c164.c wave.c flac.c vgm.c event_log.c blip_buf.c
     chd.c zip.c z80inst.c disasm.c 68kinst.c)
 
@@ -93,6 +110,13 @@ add_library(blastem STATIC
 # toolchains need -lm, which a static library propagates to its consumers.
 if(NOT WIN32)
     target_link_libraries(blastem PUBLIC m)
+endif()
+# event_log.c's socket half is compiled on Windows (its winsock2.h includes are unconditional there, and the socket
+# calls in its start and reader functions are not behind a guard) even though nothing this host does starts a log, so
+# the target still references winsock's entry points and the link needs the library. megawifi.c, the file set's other
+# socket user, is not compiled at all.
+if(WIN32)
+    target_link_libraries(blastem PUBLIC ws2_32)
 endif()
 
 target_include_directories(blastem SYSTEM PUBLIC "${BLASTEM_DIR}" "${_BLASTEM_GEN}")
@@ -144,6 +168,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(blastem PRIVATE -w)
 endif()
 # The interpreter is a single 1.94-million-line translation unit: MSVC needs /bigobj for the section count it produces.
+# /std:c11: BlastEm is C99, and this file set leans on designated initializers and compound literals, which cl.exe takes
+# only in C11 mode. __STDC_NO_ATOMICS__ is the standard's own answer for a C11 library without atomics, and keeps
+# zlib's crc32.c off <stdatomic.h> (its fallback for no atomics is what upstream builds everywhere without C11). The two
+# _CRT defines silence MSVC's deprecation notices for the POSIX spellings the sources use (strdup and strcasecmp through
+# util.h's _MSC_VER block, fopen, stat).
 if(MSVC)
-    target_compile_options(blastem PRIVATE /bigobj)
+    target_compile_options(blastem PRIVATE /bigobj /std:c11)
+    target_compile_definitions(blastem PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS __STDC_NO_ATOMICS__)
 endif()

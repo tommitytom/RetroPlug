@@ -132,8 +132,10 @@ it through the snapshot path like the other cores.
 
 ## 3. The port-2 device
 
-A device on controller port 2 that BlastEm's `io.c` calls on every read and write of `$A10005` (data) and `$A1000B`
-(control), with the access's master clock.
+A device on controller port 2 that BlastEm's `io.c` calls on every READ of `$A10005` (data) and `$A1000B` (control),
+with the access's master clock. As built, only reads reach it (its `io_custom_input`); a write to either port is
+BlastEm's own latch, which the ROM reads back while a pin is an output (the last bullet below), so the device never
+needs to see one.
 
 - It holds a queue of `(host sample, level byte)` entries. `pushCoreBytes(frame, bytes)` adds the block's first sample
   to the frame offset and enqueues; `hasCoreBytesIn()` is true while a role claims the port.
@@ -202,13 +204,17 @@ suite unless the commit re-records it.
 `./testFixtures`); `mdSyncLevels`; the shared state machine; the descriptor's classification of `.md`, `.bin`, `.gen`
 (an SMS `.bin` still goes to Mesen).
 
-**genmddj end-to-end (fixture-gated: skips in CI, counted in the skip baseline).** A `retroplug-cli` TS test boots the
-real ROM from `RETROPLUG_RESOURCES_DIR` with IN24 set in its SRAM options, runs the DAW transport at a few tempos and
-reads genmddj's RAM, whose sync variables are fixed addresses in the source (`sync_last` `$FFD425`, `sync_wait`
-`$FFD426`). It asserts WAIT clears on START, rows advance one per 6 clocks, STOP freezes, and a tempo past 3 clocks per
-frame is reported. The console exposes work RAM, Z80 RAM and battery RAM through the `memory()` / `sram()` capability
-accessors for this; CPU debugging is out of scope. `tools/fetch-genmddj-fixture.sh` builds the ROM from a genmddj
-checkout (vasm + wla-dx) into the resources tree.
+**genmddj end-to-end (fixture-gated: skips in CI, counted in the skip baseline).** As built it is
+`packages/retroplug/test-native/genmddj-sync.test.ts` on the QuickJS host (`test:native`, not `retroplug-cli`): it boots
+the real ROM from `RETROPLUG_RESOURCES_DIR` with IN24 set in its SRAM options, drives the DAW transport at one tempo
+(120 BPM) and reads genmddj's RAM through the console's `memory()` capability, whose sync variables are fixed addresses
+in the source (`sync_last` `$FFD425`, `sync_wait` `$FFD426`). It asserts WAIT clears on START, that the cart's rows
+advance as the transport runs, that STOP freezes it, and that the cart's own live-bar counter moved. What it does NOT
+do, against the paragraph this replaces: one tempo rather than a few; nothing reports a tempo past 3 clocks per frame
+(the cap is a constant and its arithmetic test on the TS side, `mdSyncLevels`); and Z80 RAM is not a published region
+(the console publishes work RAM and the battery, and the Z80's 8 KiB is reachable only through the internal
+`getMemory(ExtWorkRam)`, spec/06's Region note). CPU debugging is out of scope, as it was.
+`tools/fetch-genmddj-fixture.sh` builds the ROM from a genmddj checkout (vasm + wla-dx) into the resources tree.
 
 **Performance.** A profile-host bench records x86 xRT for the genmddj song and the synthetic ROMs.
 
@@ -224,10 +230,15 @@ checkout (vasm + wla-dx) into the resources tree.
   target, `retroplug-blastem`, with the TS side held by `pnpm check:boundaries` and the native side by review
   ([spec/06](../spec/06-build-test.md#the-packages)).
 - Windows: BlastEm is code we do not own, so its target is off `/W4 /WX` and suppresses by number; MSVC portability
-  fixes (BlastEm is GNU C99) are mirror commits with `RetroPlug:` markers. **The plan's first task proves the generated
-  68k interpreter (57 MB of C) compiles on every CI platform, MSVC included**, before anything builds on it; clang-cl
-  for that one target is the fallback.
-- CI: the Linux, macOS, Windows and arm64 jobs gain Python 3 where missing.
+  fixes (BlastEm is GNU C99) are mirror commits with `RetroPlug:` markers. The plan's first task was to prove the
+  generated interpreters (57 MB of 68k C) compile on every CI platform, MSVC included, before anything builds on them.
+  As built that proof is still owed: CI cannot fetch the mirror yet, so the configure makes the failures readable in the
+  sources impossible instead (`mem_win.c`, `call` dispatch for the Z80, MegaWiFi out, `ws2_32`, `/std:c11`) and
+  [spec/07](../spec/07-remaining-work.md#msvc-has-not-compiled-blastem) carries the open entry, with clang-cl for that
+  one target as the fallback.
+- CI: the Linux, macOS, Windows and arm64 jobs gain Python 3 where missing. As built, `build.yml`'s four jobs run
+  `actions/setup-python@v5` (3.12) for it and `release.yml`'s four do the same, so the two workflows agree; the runners
+  ship a python3 either way, and the step is what makes the configure's hard requirement explicit.
 - Error handling: a ROM that fails to load fails the system build with a message, like the other consoles; a Mega Drive
   ROM detection rejects gets no sync role; a foreign savestate is refused.
 - Docs, in the same commits as the code: spec/00's package table; a Mega Drive section in spec/13 (the port-2 device,

@@ -15,7 +15,8 @@ than work.
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
 - [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
 - [ ] [A `release.yml` run](#a-releaseyml-run)
-- [ ] [The BlastEm mirror is pushed](#the-blastem-mirror-is-pushed)
+- [ ] [The BlastEm mirror is pushed and public](#the-blastem-mirror-is-pushed-and-public)
+- [ ] [MSVC has not compiled BlastEm](#msvc-has-not-compiled-blastem)
 
 **Package split**
 - [ ] [A real component view on a host](#a-real-component-view-on-a-host)
@@ -162,16 +163,49 @@ only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modul
 with the three Mesen console options off, and no release job has built the branch. ([F2
 design](../docs/modular-graph-phase-f2-design.md) section 11.)
 
-### The BlastEm mirror is pushed
+### The BlastEm mirror is pushed and public
 
 `deps/blastem` is a git submodule of our own mirror, `https://github.com/tommitytom/RetroPlug-BlastEm`: `upstream` is
 one commit per imported BlastEm release (1.0 is hg `2b2a182f4522`) and `retroplug` is `upstream` plus this branch's
 Mega Drive edits, each carrying a `RetroPlug:` marker. Every one of those commits is in the local mirror at
 `.superpowers/megadrive/RetroPlug-BlastEm` and in `deps/blastem`, and none is on GitHub: only the user pushes the
-mirror, and the plan asks them to push both branches. Until they do, a fresh clone or a CI job cannot resolve the
-submodule at the pointer this tree carries, so CI stays red for this reason alone. The step is the user's push of
-`upstream` and `retroplug`; the pointer is not bumped before it, since a bump would only move the same missing commits.
-([design](../docs/megadrive-blastem-design.md) section 1, [spec/06](06-build-test.md#build-gotchas).)
+mirror, and the plan asks them to push both branches. The step is the user's push of `upstream` and `retroplug`, and it
+is **two things, not one**: the GitHub repository is also private, and CI initialises submodules over anonymous HTTPS
+("all repos are public", `build.yml` and `release.yml`), so a push alone still leaves every job unable to fetch. The
+user flips it public as well, or CI gains a submodule token instead (the same four jobs, and public is also what GPLv3
+distribution of a BlastEm-linked binary expects). Until both happen a fresh clone or a CI job cannot resolve the
+submodule at the pointer this tree carries, so CI cannot pass at all. The pointer is not bumped before the push, since
+a bump would only move the same missing commits. ([design](../docs/megadrive-blastem-design.md) section 1,
+[spec/06](06-build-test.md#build-gotchas).)
+
+### MSVC has not compiled BlastEm
+
+BlastEm is GNU C99 and had never been built by cl.exe before this branch, and CI cannot run the windows job until the
+mirror is reachable (the entry above), so **the Windows build of `blastem` is unproven**: everything below is a
+reading of the sources, not a green job.
+
+- What the configure now makes impossible rather than guessed at ([cmake/blastem.cmake](../cmake/blastem.cmake)):
+  `mem_win.c` (VirtualAlloc) on `WIN32` instead of `mem.c`, whose `<sys/mman.h>` and `<unistd.h>` cl.exe has neither of;
+  `call` dispatch for the Z80 on every platform, since `goto` dispatch is GCC's labels-as-values (7,516 of them) which
+  cl.exe does not have; `megawifi.c` out of the file set everywhere (a network cart this host does not support, its
+  four entry points stubbed in [BlastemShim.cpp](../packages/blastem/native/src/system/blastem/BlastemShim.cpp));
+  `ws2_32` on the link, because `event_log.c`'s socket half is compiled on Windows; `/std:c11`, which the file set's
+  designated initializers and compound literals need, plus `_CRT_SECURE_NO_WARNINGS`, `_CRT_NONSTDC_NO_WARNINGS` and
+  `__STDC_NO_ATOMICS__` (zlib's crc32.c takes its own no-atomics fallback); and the mirror commit: `util.h`'s
+  `_MSC_VER` block spelling `strcasecmp`/`strncasecmp`/`strdup` the way MSVC's CRT declares them, and one empty struct
+  in `cdd_mcu.h`, a GNU extension cl.exe rejects in C.
+- What the scan of the whole compiled file set found and settled: no statement expressions, `typeof`, case ranges,
+  zero-length arrays, VLAs, labels-as-values or `__builtin_*` anywhere in it, the generated 68k and Z80 cores included;
+  the `__attribute__` and `restrict` hits in `blip_buf.c` are inside a comment; every `<unistd.h>`, `<sys/*.h>`, socket
+  and pthread use is behind an `_WIN32` branch (io.c, util.c, paths.c, event_log.c, and util.c's dirent/stat code) or
+  leaves the file set with megawifi.c; and `strtok_r` and `localtime_r` already have shims in config.c and saves.c.
+- What it cannot settle without cl.exe: everything the compiler itself would say next, including the plain
+  `char *`/`uint8_t *` conversions clang reports under `-Wpointer-sign` (MSVC's C4133, a warning it does not make an
+  error for this target). More is likely, and the reading above is not a substitute for the job.
+- The fallback, if cl.exe's answer is a wall rather than a list: build the one `blastem` target with clang-cl (the
+  [design](../docs/megadrive-blastem-design.md) section 6 already names it), leaving the rest of the tree on MSVC.
+
+Once the mirror is reachable, dispatching `build.yml` is what closes this entry and [the green run](#a-green-ci-run-of-the-tip).
 
 ## Package split
 

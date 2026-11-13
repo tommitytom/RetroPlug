@@ -1,6 +1,6 @@
 // The Mega Drive group: the synthetic images the native cases boot, played through the store's own detection and
-// construct path, plus the port-2 device's timing proved natively (BlastemPort.test.cpp) and, once the sync role's
-// case lands, end to end (genmddj-sync.test.ts). Cases are compared byte for byte against baseline/md.json on
+// construct path, plus the port-2 device's timing proved natively (BlastemPort.test.cpp) and end to end on the real
+// cart (genmddj-sync.test.ts, the QuickJS host's). Cases are compared byte for byte against baseline/md.json on
 // linux-x64-gnu13 (spec/06's parity rule), so one case per image: a change to the PSG, the YM2612, the machine's
 // own timing or the one-sample stop grid moves a digest here even where the native invariance cases still hold.
 //

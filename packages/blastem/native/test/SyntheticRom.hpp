@@ -249,6 +249,18 @@ inline std::vector<std::uint8_t> unmappedAccessRom() {
                  {{0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
 }
 
+// A cart that does nothing but read an unmapped address, forever: the diagnostic path BlastEm's frontend runs
+// `machine_freeze` on, taken once per loop iteration rather than once per boot. A logging policy that prints every one
+// of them turns a run into unbounded stderr I/O on the thread running it, which is what BlastemFaults's bound case
+// measures; the loop is two instructions and one branch back to itself.
+//
+//   $200  move.w $B00000,d0          an unmapped read
+//   $206  bra.s  loop                ($F8: $200 - $208)
+inline std::vector<std::uint8_t> unmappedLoopRom() {
+    return image({0x30, 0x39, 0x00, 0xB0, 0x00, 0x00,  // move.w $B00000,d0   <- loop
+                  0x60, 0xF8});                       // bra.s  loop
+}
+
 // A tiny assembler for the timing images below: big-endian words, an absolute label (`at`), and only the encodings the
 // list above names. A program's labels are stamped with `at` so a branch and its target cannot disagree.
 struct Asm {

@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "SyntheticRom.hpp"
+#include "system/blastem/BlastemCore.hpp"    // genesis_context, and the console's freeze-log budget
 #include "system/blastem/BlastemMdSystem.hpp"
 
 namespace {
@@ -17,10 +18,10 @@ namespace {
 constexpr double        kRate   = 48000.0;
 constexpr std::uint32_t kFrames = 1024;
 
-std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom) {
+std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom, SystemId id = 1) {
     rp::blastem::BlastemMdConfig cfg;
     cfg.region = 1;
-    auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, std::move(rom));
+    auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(id, cfg, std::move(rom));
     sys->onActivate(kRate);
     return sys;
 }
@@ -59,6 +60,31 @@ TEST_CASE("a cart's unmapped and illegal accesses do not end the machine", "[bla
     REQUIRE(ram.size() >= 4);
     const auto counter = std::uint16_t(ram[2] << 8 | ram[3]);
     CHECK(counter > 1);
+}
+
+TEST_CASE("a cart that loops on an unmapped read logs a bounded number of lines", "[blastem][faults]") {
+    // The diagnostics a cart can trigger once per ACCESS (machine_freeze's library branch, and the Z80's banked-write
+    // warning) used to reach vfprintf on every one of them, and this host runs the console on its block thread, which
+    // is the audio thread: a cart poking an unmapped address in a loop was unbounded, blocking stderr I/O inside
+    // run_until. The image below reads one unmapped address in its loop, so two seconds of it is thousands of freezes;
+    // the console's own budget prints RP_FREEZE_LOG_LIMIT of them, then one notice that the rest are suppressed, and
+    // every later one is only counted.
+    auto sys = boot(rp::blastem::test::unmappedLoopRom());
+    REQUIRE(sys->activated());
+    std::vector<float> l(kFrames), r(kFrames);
+    const int blocks = 94;  // about two seconds at 48 kHz in 1024-frame blocks
+    for (int i = 0; i < blocks; ++i) runBlock(*sys, l, r);
+    const std::uint32_t seen = sys->core()->freeze_log_seen;
+    const std::uint32_t printed = sys->core()->freeze_log_printed;
+    CHECK(printed <= RP_FREEZE_LOG_LIMIT + 1);  // the budget, plus the one line that says the rest are suppressed
+    CHECK(printed >= RP_FREEZE_LOG_LIMIT);      // and it printed that much: the policy bounds the lines, it is not silent
+    CHECK(seen > 1000);                         // on a run that reached the path far more often than the budget
+    CHECK(sys->activated());
+    CHECK(sys->mclkNow() > 0);
+    // The budget is the console's, not the process's: a second instance starts with its own lines to spend.
+    auto other = boot(rp::blastem::test::unmappedLoopRom(), 2);
+    for (int i = 0; i < 4; ++i) runBlock(*other, l, r);
+    CHECK(other->core()->freeze_log_printed >= RP_FREEZE_LOG_LIMIT);
 }
 
 TEST_CASE("a cart's own write to the HV counter does not end the machine", "[blastem][faults]") {
