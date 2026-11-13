@@ -8,6 +8,7 @@ import { buildSmsMetronomeSav, pokeMetronomeIntoWram, SMS_SYNC_IN24, SMS_SYNC_OF
 declare const __REPO_RESOURCES_DIR__: string;
 declare const __MGB_ROM__: string;
 declare const __RESOURCES_DIR__: string;
+declare const __CONFIG_DIR__: string;
 
 export const ROMS = {
   mgb: __MGB_ROM__,
@@ -104,6 +105,16 @@ export function smsStart(sampleRate: number, blocks: Blocks, slot = 0): Segment[
     { blocks: blocks(frames(sampleRate, 100)), after: (rig) => rig.press(slot, PAUSE, false) },
     { blocks: blocks(frames(sampleRate, 100)) },
   ];
+}
+
+/** A synthetic Mega Drive image as a new system: the image goes in this file's own config dir (the parity rig keeps its
+ *  ROM copies in a PRIVATE directory, so a case cannot write there), and `rig.add` copies it in and adopts it as it
+ *  does a real ROM, which is what puts the store's own detection and construct path in the case. `name` is the cart's
+ *  file stem, so a case that boots two images gives them two battery slots. */
+export function mdSynthetic(rig: Rig, image: Uint8Array, name: string): number {
+  const src = `${__CONFIG_DIR__}/${name}.md`;
+  rig.writeFile(src, image);
+  return rig.add(src);
 }
 
 /** risa materializes the song into working RAM while it boots, transport off. */

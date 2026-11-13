@@ -1,0 +1,208 @@
+{
+ "cases": {
+  "fm": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "5e509dc5",
+     "length": 65536
+    }
+   },
+   "segments": [
+    {
+     "frames": 2048,
+     "lanes": [
+      "5e6d7806 0.1164",
+      "5e6d7806 0.1164"
+     ]
+    },
+    {
+     "frames": 7752,
+     "lanes": [
+      "1e8e590e 0.1175",
+      "1e8e590e 0.1175"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "fm-psg": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "5e509dc5",
+     "length": 65536
+    }
+   },
+   "segments": [
+    {
+     "frames": 2048,
+     "lanes": [
+      "946fb870 0.02626",
+      "946fb870 0.02626"
+     ]
+    },
+    {
+     "frames": 7752,
+     "lanes": [
+      "df178a93 0.02003",
+      "df178a93 0.02003"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "hv-psg": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "4215d753",
+     "length": 65536
+    }
+   },
+   "segments": [
+    {
+     "frames": 2048,
+     "lanes": [
+      "80f97cc9 0.01145",
+      "80f97cc9 0.01145"
+     ]
+    },
+    {
+     "frames": 7752,
+     "lanes": [
+      "a2ac4501 0.008144",
+      "a2ac4501 0.008144"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "psg": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "5e509dc5",
+     "length": 65536
+    }
+   },
+   "segments": [
+    {
+     "frames": 2048,
+     "lanes": [
+      "d6eb19ec 0.02633",
+      "d6eb19ec 0.02633"
+     ]
+    },
+    {
+     "frames": 7752,
+     "lanes": [
+      "e1f58965 0.02003",
+      "e1f58965 0.02003"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "vint-dma": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "ecab49a3",
+     "length": 65536
+    }
+   },
+   "segments": [
+    {
+     "frames": 2048,
+     "lanes": [
+      "57989d5b 0.01187",
+      "57989d5b 0.01187"
+     ]
+    },
+    {
+     "frames": 7752,
+     "lanes": [
+      "2e252f46 0.009057",
+      "2e252f46 0.009057"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "vint-hint": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "65dd9940",
+     "length": 65536
+    }
+   },
+   "segments": [
+    {
+     "frames": 2048,
+     "lanes": [
+      "ef3e9b19 0.01192",
+      "ef3e9b19 0.01192"
+     ]
+    },
+    {
+     "frames": 7752,
+     "lanes": [
+      "a6a2bea2 0.008213",
+      "a6a2bea2 0.008213"
+     ]
+    }
+   ],
+   "sram": {}
+  },
+  "z80-timing": {
+   "midiOut": {
+    "count": 0,
+    "fnv": "811c9dc5"
+   },
+   "ram": {
+    "0": {
+     "fnv": "4bdfed9b",
+     "length": 65536
+    }
+   },
+   "segments": [
+    {
+     "frames": 2048,
+     "lanes": [
+      "c8fcc418 0.01200",
+      "c8fcc418 0.01200"
+     ]
+    },
+    {
+     "frames": 7752,
+     "lanes": [
+      "817dd3b7 0.009038",
+      "817dd3b7 0.009038"
+     ]
+    }
+   ],
+   "sram": {}
+  }
+ },
+ "target": "linux-x64-gnu13"
+}

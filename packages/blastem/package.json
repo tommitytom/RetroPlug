@@ -10,7 +10,8 @@
   "exports": {
     "./app": "./ts/app.ts",
     "./consoles": "./ts/consoles.ts",
-    "./enums": "./ts/enums.ts"
+    "./enums": "./ts/enums.ts",
+    "./testFixtures": "./ts/fixtures.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
