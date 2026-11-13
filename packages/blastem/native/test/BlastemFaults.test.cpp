@@ -60,3 +60,16 @@ TEST_CASE("a cart's unmapped and illegal accesses do not end the machine", "[bla
     const auto counter = std::uint16_t(ram[2] << 8 | ram[3]);
     CHECK(counter > 1);
 }
+
+TEST_CASE("a cart's own write to the HV counter does not end the machine", "[blastem][faults]") {
+    // The review's reproducer for the freeze family: one `move.b #$12,$C00008`, which BlastEm's frontend answers with
+    // machine_freeze, and in that build machine_freeze exits the process (its guard tested a macro nothing defines). The
+    // image writes the port once at reset and spins, so a live core that ran blocks is the whole check.
+    auto sys = boot(rp::blastem::test::hvCounterWriteRom());
+    REQUIRE(sys->activated());
+    std::vector<float> l(kFrames), r(kFrames);
+    for (int i = 0; i < 8; ++i) runBlock(*sys, l, r);
+    CHECK(sys->activated());
+    CHECK(sys->mclkNow() > 0);
+    CHECK(sys->video().framesPublished() > 0);
+}

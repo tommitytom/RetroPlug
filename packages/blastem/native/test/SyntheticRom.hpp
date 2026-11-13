@@ -186,6 +186,13 @@ inline std::vector<std::uint8_t> portTimestampRom() {
                   0x13, 0xC0, 0x00, 0xFF, 0x00, 0x02});           // move.b d0,$FF0002
 }
 
+// A cart's own WRITE to the VDP's HV counter ($C00008): BlastEm's frontend treats the port as a machine freeze (it is a
+// counter, not a register), and this one instruction is the review's reproducer for the whole freeze family a cart can
+// reach. The program is the write table's single entry and the spin after it, so "the block after it ran" is the check.
+inline std::vector<std::uint8_t> hvCounterWriteRom() {
+    return image({0x60, 0xFE}, {{0xC00008, 0x12}});
+}
+
 // A VDP status/HV poll in a tight loop, and NO port read: the image for a case that stages levels on a port nobody
 // polls. `move.w $C00004,d0; bra.s .`. Every real game's vblank wait is this loop, and
 // the control port's read handler syncs the components (vdp_port_read -> sync_components), so this is the image a case

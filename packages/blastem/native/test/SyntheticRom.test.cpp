@@ -20,6 +20,7 @@ TEST_CASE("the synthetic images are the bytes later cases boot", "[blastem][roms
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::portLevelRom()) == 0x4338FAB0u);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::vdpPollRom()) == 0x8DD1EA23u);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::unmappedAccessRom()) == 0xB70FC200u);
+    CHECK(rp::blastem::test::fnv1a(rp::blastem::test::hvCounterWriteRom()) == 0x3FD1D443u);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::hvPsgRom()) == 0xDCEB58E7u);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::vintHintRom()) == 0x3DC48361u);
     CHECK(rp::blastem::test::fnv1a(rp::blastem::test::z80TimingRom()) == 0xA3C8A6BFu);
