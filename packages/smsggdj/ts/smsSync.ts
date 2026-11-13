@@ -140,3 +140,38 @@ export type SmsSyncMachine = "sms" | "gg";
 export function syncLevelsFor(machine: SmsSyncMachine): (counter: number) => number {
   return machine === "gg" ? ggSyncLevels : smsSyncLevels;
 }
+
+// --- The state machine, with the pins left out ------------------------------------------------
+//
+// Everything above this line is about WHICH lines carry the counter; everything below is the counter
+// itself, which is the same on every cart that takes this transport. genmddj clocks its tracker the
+// same way (packages/genmddj/ts/mdSync.ts), so the machine lives here and the encoder is the one
+// thing a caller supplies.
+
+/** A 2-bit free-running counter at a tracker's IN24 rate, and the level word it puts on the wire. The state machine
+ *  smsggdj and genmddj share: the ROM reads deltas, so the counter's absolute value never matters, there is no arm and
+ *  no locate, and every tick sends the encoder's word. `encode` is the only difference between the two carts. */
+export class CounterSync {
+  constructor(
+    private encode: (counter: number) => number,
+    private readonly mod = SMS_SYNC_COUNTER_MOD,
+  ) {}
+  private counter = 0;
+  private walking = 0;
+  /** The counter value to advance to, before a walk: the node keeps it across blocks so a mid-block walk resumes. */
+  get value(): number { return this.counter; }
+  set value(v: number) { this.counter = v; this.walking = v; }
+  /** Start a walk from the counter as the blocks left it. */
+  begin(): void { this.walking = this.counter; }
+  /** Swaps the encoder (a machine change) and keeps the counter, which is the state the ROM diffs. */
+  use(encode: (counter: number) => number): void { this.encode = encode; }
+  /** One clock: advances the counter and returns the level word for it. */
+  tick(): number { this.walking = (this.walking + 1) % this.mod; return this.encode(this.walking); }
+  /** Finish a walk: what it reached becomes the counter the next block advances. */
+  end(): void { this.counter = this.walking; }
+}
+
+/** The encoder for this machine's wire, as `syncLevelsFor` returns it, behind a CounterSync. */
+export function counterSyncFor(machine: SmsSyncMachine): CounterSync {
+  return new CounterSync(syncLevelsFor(machine));
+}
