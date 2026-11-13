@@ -52,6 +52,10 @@
    "skipped": 1,
    "total": 5
   },
+  "genmddj-sync": {
+   "skipped": 1,
+   "total": 1
+  },
   "lsdj-arduinoboy-slave": {
    "skipped": 1,
    "total": 1
