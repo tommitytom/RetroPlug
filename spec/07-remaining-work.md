@@ -9,12 +9,10 @@ than work.
 ## Checklist
 
 **Before merge**
-- [ ] [A green CI run of the tip](#a-green-ci-run-of-the-tip)
 - [ ] [The Launchpad real-device checklist](#the-launchpad-real-device-checklist)
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
 - [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
-- [ ] [A `release.yml` run](#a-releaseyml-run)
 
 **Package split**
 - [ ] [A real component view on a host](#a-real-component-view-on-a-host)
@@ -108,16 +106,6 @@ than work.
 
 What `feature/modularize` owes before it merges to main.
 
-### A green CI run of the tip
-
-The last green run of `build.yml` (run 43131974297, all four jobs: windows through `build.bat` at `/W4 /WX` and
-`test.bat`, macos, linux with `device:check` and `device:box`, linux-arm64) built ea2517dc9. The tip owes one too,
-and it is the first to prove three changes only CI can: `test:plugin` running the N8 pack's two binaries on every job
-(the serial test on Linux only), the linux job's Mesen compile-out proof (`tools/build-mesen-all-consoles.sh --off`),
-and `retroplug-sameboy-test` and `retroplug-mesen-test` built at `/W4 /WX` on windows. On this branch CI runs only
-when dispatched (build.yml also runs on a pull request and on main), so the user starts it.
-([F2 design](../docs/modular-graph-phase-f2-design.md) sections 11 and 12.)
-
 ### The Launchpad real-device checklist
 
 Design section 8's ten steps, about ten minutes on the desk with the Pro MK3 and LSDj in a ROM, have never run; they
@@ -148,12 +136,6 @@ headless UI host. ([F4c design](../docs/modular-graph-phase-f4c-design.md) secti
 `RP_NATIVE_USB` has never run on hardware: the image (af36f223 at E4) is still unflashed, built under the link trap
 only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modular-graph-phase-e3-design.md) section
 12.8, [E4 design](../docs/modular-graph-phase-e4-design.md) sections 11.7 and 11.8.)
-
-### A `release.yml` run
-
-`release.yml` last ran on 2026-08-07 (v0.7.4), before F2, so its Windows job has never built `RETROPLUG_MESEN_LTO=ON`
-with the three Mesen console options off, and no release job has built the branch. ([F2
-design](../docs/modular-graph-phase-f2-design.md) section 11.)
 
 ## Package split
 
