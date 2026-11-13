@@ -48,6 +48,8 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "system/SystemBuild.hpp"
+#include "system/blastem/BlastemMdConfig.hpp"
+#include "system/blastem/BlastemMdSystem.hpp"
 #include "system/mesen/MesenAudioDevice.hpp"
 #include "system/mesen/MesenBackend.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
@@ -149,6 +151,18 @@ std::string smsNode(NodeRig& rig, SystemId id, const std::string& extra = "") {
     return rig.boot("rp.mesen.sms", id, R"("enableFm":false,"romName":"smsggdj_v0_45","sram":"res:)" +
                                           std::to_string(sram) + "\"" + (extra.empty() ? "" : "," + extra));
 }
+
+// What mdNode() builds: the synthetic cart romFor hands the node (SyntheticRom.hpp's fmPsgRom, whose PSG sounds from
+// power-on) and the region the settings label names, so the node's core and this twin boot the same machine.
+std::unique_ptr<rp::blastem::BlastemMdSystem> md(SystemId id) {
+    rp::blastem::BlastemMdConfig cfg;
+    cfg.region = 1;  // ntscUs: the same region the node's settings below carry
+    auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(id, cfg, rp::blastem::test::fmPsgRom());
+    sys->onActivate(kRate);
+    return sys;
+}
+
+std::string mdNode(NodeRig& rig, SystemId id) { return rig.boot("rp.blastem.md", id, R"("region":"ntscUs")"); }
 
 // A note-on for the NES (through its N8 FIFO), so the mix and every pin it plays carry signal.
 void noteOn(SystemBase& sys, std::uint8_t channel, std::uint8_t key) {
@@ -420,6 +434,34 @@ TEST_CASE("a lone SMS node renders its core's mix bit for bit", "[engine-graph][
     REQUIRE(graphCore != nullptr);
     Direct d({direct.get()}, 2, {{0, 1}});
     CHECK(compare(rig, d, 5.0, smsStart(*direct, *graphCore)) == "");
+    CHECK(sounds(d));
+}
+
+TEST_CASE("a lone Mega Drive node builds its core from the ROM resource", "[engine-graph][system-node][blastem-md]") {
+    NodeRig rig(kRate);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"md","type":"rp.blastem.md","settings":{)" + mdNode(rig, 1) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"md.mix","to":"out.out.1-2"}]})").ok);
+    SystemBase* const graphCore = rig.builtCore(1);
+    REQUIRE(graphCore != nullptr);
+    // Not a const read: getMemory refills this instance's own view buffer before it hands the view out.
+    auto* core = static_cast<rp::blastem::BlastemMdSystem*>(graphCore);
+    CHECK(core->activated());
+    CHECK(core->masterClock() == 53693175u);  // ntscUs, from the settings' label
+    CHECK(core->getMemory(rp::MemoryType::Ram, rp::AccessType::Read).valid());
+}
+
+TEST_CASE("a lone Mega Drive node renders its core's mix bit for bit",
+          "[engine-graph][system-node][blastem-md]") {
+    NodeRig rig(kRate);
+    auto direct = md(1);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"md","type":"rp.blastem.md","settings":{)" + mdNode(rig, 1) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"md.mix","to":"out.out.1-2"}]})").ok);
+    SystemBase* const graphCore = rig.builtCore(1);
+    REQUIRE(graphCore != nullptr);
+    Direct d({direct.get()}, 2, {{0, 1}});  // stereo: the node's two mix lanes are the host's two
+    CHECK(compare(rig, d, 1.0) == "");      // one second, in the suite's ragged block pattern
     CHECK(sounds(d));
 }
 
@@ -4069,6 +4111,32 @@ TEST_CASE("a tap armed live on an activated NES sizes nothing on the block threa
     checkRaggedDrainsAreFree(*core, {mix.ptrs[0], mix.ptrs[1]});
     CHECK(core->tapOverflow() == 0);
     CHECK(core->audioRingOverflow() == 0);
+}
+
+TEST_CASE("a warmed Mega Drive block allocates nothing", "[engine-graph][system-node][alloc]") {
+    NodeRig rig(kRate);
+    REQUIRE(rig.set(R"({"nodes":[{"id":"md","type":"rp.blastem.md","settings":{)" + mdNode(rig, 1) +
+                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+                        "wires":[{"from":"md.mix","to":"out.out.1-2"}]})").ok);
+    Lanes out(2);
+    const rp_transport t{kRate, 120.0, 0.0, 0};
+    // Warm: the boot's savestate capture, the audio rings and the blip buffers are all first-block costs, and the eight
+    // warm blocks stay well under SystemBase's half-second snapshot interval, so no publish lands in the window below.
+    for (int b = 0; b < 8; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
+    // A level staged for the block, so the port device's queue and its sort are in the counted window too.
+    const std::uint8_t level = 0x00;
+    REQUIRE(rig.builtCore(1) != nullptr);
+    rig.builtCore(1)->pushCoreBytes(0, &level, 1);
+    rp::test::beginCountingAllocations();
+    for (int b = 0; b < 2; ++b) rig.host->processBlock(512, t, out.ptrs.data(), 2);
+    const auto counted = rp::test::endCountingAllocations();
+    INFO("block: " << counted.allocations << " allocations, " << counted.frees << " frees");
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    // The level was accepted and the block that applied it allocated nothing: the port device's queue is part of the
+    // same no-allocation window as the rest of the block.
+    CHECK(static_cast<rp::blastem::BlastemMdSystem*>(rig.builtCore(1))->levelsAccepted() == 1);
+    CHECK(static_cast<rp::blastem::BlastemMdSystem*>(rig.builtCore(1))->clampedBlocks() == 0);
 }
 
 TEST_CASE("a node re-activation grows a Mesen core's audio ring to the new block",

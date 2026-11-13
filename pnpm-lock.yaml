@@ -350,6 +350,9 @@ importers:
         specifier: workspace:*
         version: link:../system
     devDependencies:
+      '@retroplug/blastem':
+        specifier: workspace:*
+        version: link:../blastem
       '@retroplug/device-io':
         specifier: workspace:*
         version: link:../device-io

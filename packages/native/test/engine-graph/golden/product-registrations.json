@@ -23,6 +23,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -53,6 +54,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -83,6 +85,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -113,6 +116,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -143,6 +147,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -173,6 +178,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -203,6 +209,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -233,6 +240,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"
@@ -263,6 +271,7 @@
     "rp.mesen.nes",
     "rp.mesen.gba",
     "rp.mesen.sms",
+    "rp.blastem.md",
     "rp.host.midi-in",
     "rp.host.midi-out",
     "rp.bliptoaster.midi-policy"

@@ -69,6 +69,7 @@ retroplug_add_test_binary(
     LIBS     retroplug-backend                         # Engine, the graph and the script host
              retroplug-dsp-kernels                     # Effects.cpp's wrappers call these
     PACKAGES ${RP_DESKTOP_PACKAGES}                    # the consoles' packages, their include roots and their targets
+    INCLUDES ${CMAKE_SOURCE_DIR}/packages/blastem/native/test  # SyntheticRom.hpp, through GraphDocs.hpp's romFor
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms")
@@ -148,8 +149,9 @@ retroplug_add_test_binary(
     PACKAGES ${RP_DESKTOP_PACKAGES}
     PROVIDERS n8                                   # and the launchpad pack carried for its nodes alone (below)
     INCLUDES ${RP_QUICKJS_INCLUDE}
-             ${CMAKE_SOURCE_DIR}/packages/n8/native/test   # FakeN8.hpp (N8Adapters.test.cpp), QjsRpc.hpp
-             ${CMAKE_BINARY_DIR}/packages/test             # named/ and without/, rp_product_providers.hpp (below)
+             ${CMAKE_SOURCE_DIR}/packages/n8/native/test       # FakeN8.hpp (N8Adapters.test.cpp), QjsRpc.hpp
+             ${CMAKE_SOURCE_DIR}/packages/blastem/native/test  # SyntheticRom.hpp (the MD cases' images)
+             ${CMAKE_BINARY_DIR}/packages/test                 # named/ and without/, rp_product_providers.hpp (below)
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"

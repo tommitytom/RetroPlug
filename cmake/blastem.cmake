@@ -106,6 +106,36 @@ target_include_directories(blastem SYSTEM PUBLIC "${BLASTEM_DIR}" "${_BLASTEM_GE
 # The core is GNU C99 and is not ours to fix: warnings are silenced for it alone, never globally (on MSVC it is off
 # /W4 /WX in packages/native/cmake/warnings.cmake, and /wd suppressions belong there with a reason).
 target_compile_definitions(blastem PUBLIC NEW_CORE IS_LIB DISABLE_NUKLEAR)
+
+# BlastEm's copies of two vendored APIs get a package-private spelling, because the names are already taken by another
+# emulator in the same binary. Mesen sits beside BlastEm in every product, and it carries its own blip_buf
+# (deps/mesen/Utilities/Audio/blip_buf.cpp: the 1.2 API, where blip_new takes one argument and blip_read_samples four, and
+# blip_t is a different struct) and LuaSocket's usocket.c (its own socket_close, of a different signature too). All
+# eleven blip entry points and socket_close are defined by both archives, and a static link binds an undefined symbol
+# to whichever of the two objects was pulled first, so BlastEm's sink would silently synthesise on Mesen's blip_buf (and
+# pass the wrong argument counts to it) while the two socket_close definitions fight as one link error.
+#
+# So BlastEm's file set is compiled against these renames, and the blastem package's own units that reach the two seams
+# take the same definitions (packages/blastem/native/CMakeLists.txt); nothing else in the tree ever spells the names.
+# Only entry points are renamed, never the blip_t typedef, so a header's declaration and its caller's call always agree.
+set(BLASTEM_SEAM_RENAMES
+    blip_add_delta=rp_blastem_blip_add_delta
+    blip_add_delta_fast=rp_blastem_blip_add_delta_fast
+    blip_clear=rp_blastem_blip_clear
+    blip_clocks_needed=rp_blastem_blip_clocks_needed
+    blip_delete=rp_blastem_blip_delete
+    blip_end_frame=rp_blastem_blip_end_frame
+    blip_new=rp_blastem_blip_new
+    blip_read_samples=rp_blastem_blip_read_samples
+    blip_reset=rp_blastem_blip_reset
+    blip_samples_avail=rp_blastem_blip_samples_avail
+    blip_set_rates=rp_blastem_blip_set_rates
+    socket_init=rp_blastem_socket_init
+    socket_blocking=rp_blastem_socket_blocking
+    socket_close=rp_blastem_socket_close
+    socket_last_error=rp_blastem_socket_last_error
+    socket_error_is_wouldblock=rp_blastem_socket_error_is_wouldblock)
+target_compile_definitions(blastem PRIVATE ${BLASTEM_SEAM_RENAMES})
 set_target_properties(blastem PROPERTIES C_STANDARD 99 POSITION_INDEPENDENT_CODE ON)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(blastem PRIVATE -w)

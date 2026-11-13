@@ -31,6 +31,7 @@
 #include "n8/CartLink.hpp"
 #include "n8/N8Node.hpp"
 #include "system/HostSystems.hpp"
+#include "system/blastem/BlastemNode.hpp"
 #include "system/mesen/MesenNode.hpp"
 #include "system/sameboy/SameBoyNode.hpp"
 #include "system/SystemBase.hpp"
@@ -82,8 +83,8 @@ struct NodeRig {
         rate = sampleRate;
         // The packages' own entries, as a product's generated registration calls them: the rig names no console.
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp_sameboy_package(),
-                                    rp_mesen_package(), rp_host_io_package(), rp::n8::n8Package(),
-                                    rp::launchpad::launchpadPackage(), testPackage()})
+                                    rp_mesen_package(), rp_blastem_package(), rp_host_io_package(),
+                                    rp::n8::n8Package(), rp::launchpad::launchpadPackage(), testPackage()})
             registry.addPackage(p);
         rp::graph::HostConfig config;
         config.sampleRate = sampleRate;

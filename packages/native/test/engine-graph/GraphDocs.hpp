@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "SyntheticRom.hpp"  // rp::blastem::test's images (packages/blastem/native/test)
 #include "host/engine/Engine.hpp"
 #include "system/SystemTypes.hpp"
 
@@ -54,6 +55,9 @@ inline std::vector<std::uint8_t> romFor(const std::string& type) {
     if (type == kGbType) return readFile(RP_MGB_ROM_PATH);
     if (type == kNesType) return readFile(RP_BLIPTOASTER_ROM_PATH);
     if (type == "rp.mesen.sms") return readFile(RP_SMS_ROM_PATH);
+    // The Mega Drive's image is generated rather than read: the synthetic cart that every blastem case pins
+    // (packages/blastem/native/test/SyntheticRom.hpp), the one whose PSG sounds from power-on.
+    if (type == "rp.blastem.md") return rp::blastem::test::fmPsgRom();
     if (type == "rp.mesen.gba") {
         static constexpr std::uint8_t kGbaLogo[] = {
             0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21, 0x3D, 0x84, 0x82, 0x0A, 0x84, 0xE4, 0x09, 0xAD,

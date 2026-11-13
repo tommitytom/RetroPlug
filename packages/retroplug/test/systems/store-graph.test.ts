@@ -786,7 +786,7 @@ const SCRIPT_NODES = new Map(
 const NATIVE_TYPES = new Set([
   "rp.host.midi-in", "rp.host.midi-out", "rp.host.audio-out", "rp.core.split", "rp.core.add",
   "rp.launchpad.surface-in", "rp.launchpad.surface-out", "rp.n8.nes",
-  "rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms",
+  "rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms", "rp.blastem.md",
 ]);
 
 // What the engine's planner would refuse `doc` for, of the refusals a document TS builds can earn it: a node id used

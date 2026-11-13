@@ -9,8 +9,13 @@ retroplug_package_library(retroplug-blastem
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemMemory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemPortDevice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemVideo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemBackend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/blastem/BlastemNode.cpp)
 target_include_directories(retroplug-blastem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# The blip_buf and socket-seam renames, spelled as the core they feed is compiled (cmake/blastem.cmake owns the list and
+# the reason it exists). BlastemAudio.cpp calls blip_buf and BlastemShim.cpp answers the socket seam; the rest of the
+# target only sees the blip_t typedef, which no rename touches.
+target_compile_definitions(retroplug-blastem PRIVATE ${BLASTEM_SEAM_RENAMES})
 target_link_libraries(retroplug-blastem
     PUBLIC  retroplug-system    # SystemBase, the build request, the host's system services
             retroplug-node-sdk  # graph/node.hpp
