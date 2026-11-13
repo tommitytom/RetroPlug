@@ -15,6 +15,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "SyntheticRom.hpp"
+#include "system/blastem/BlastemCore.hpp"  // IO_CUSTOM, io_port
 #include "system/blastem/BlastemMdSystem.hpp"
 
 namespace {
@@ -54,6 +55,11 @@ std::vector<float> run(rp::blastem::BlastemMdSystem& sys, int blocks) {
         out.insert(out.end(), r.begin(), r.end());
     }
     return out;
+}
+
+// The byte a ROM that stores its port-2 read at $FF0000 left there, straight out of BlastEm's word-ordered work RAM.
+std::uint8_t ramByte(rp::blastem::BlastemMdSystem& sys) {
+    return static_cast<std::uint8_t*>(static_cast<void*>(sys.core()->work_ram))[1];
 }
 
 // serialize.h's section ids, for the two cases that reach one field of a real state without assuming the layout of the
@@ -98,6 +104,26 @@ TEST_CASE("two instances seeded with one state render identical bytes", "[blaste
     const std::vector<float> b = run(*second, 40);
     CHECK(a == b);
     CHECK(peak(a) > 0.01);  // the restored core is playing, not frozen at the state's first sample
+}
+
+TEST_CASE("a loaded state keeps port 2 as the host's device", "[blastem][saves]") {
+    // The state carries the port's device type (io_serialize writes IO_CUSTOM), and it carries no host state: the
+    // queue and the held level belong to the instance. So a load has to leave port 2 the host's device with its pins
+    // released, or a state saved while a transport was holding a pin comes back as that pin held.
+    auto sys = boot(rp::blastem::test::portPollLoopRom());
+    const std::uint8_t low = 0x00;
+    sys->pushCoreBytes(10, &low, 1);
+    run(*sys, 2);
+    CHECK((ramByte(*sys) & 0x60) == 0x00);  // the held level reached the ROM
+    const std::vector<std::uint8_t> state = sys->saveStateBytes();
+    REQUIRE(state.size() > 8);
+    auto restored = boot(rp::blastem::test::portPollLoopRom(), state);
+    REQUIRE(restored->activated());
+    CHECK_FALSE(restored->stateRefused());
+    CHECK(restored->core()->io.ports[1].device_type == IO_CUSTOM);
+    CHECK(restored->portDevice().lastApplied() == 0x60);
+    run(*restored, 2);
+    CHECK(ramByte(*restored) == 0x7F);  // the pull-ups, not the state's low level
 }
 
 TEST_CASE("a state from another serializer version is refused", "[blastem][saves]") {
