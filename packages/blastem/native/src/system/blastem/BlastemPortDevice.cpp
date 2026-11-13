@@ -44,11 +44,14 @@ std::uint8_t PortDevice::level(std::uint64_t mclk) {
 extern "C" {
 
 // io_data_read's answer for a port whose device is IO_CUSTOM (deps/blastem, io.c). `cycle` is the 68k's own 32-bit
-// count, the same clock every other device's answer is read at, so the host's schedule meets it in absolute time.
+// count, the same clock every other device's answer is read at: the device logs it beside the grid's sample, which is
+// what decides the level.
 uint8_t io_custom_input(io_port* port, uint32_t cycle) {
     auto* sys = static_cast<rp::blastem::BlastemMdSystem*>(rp::blastem::currentInstance);
-    // No instance (a context built outside this package) drives nothing: io_data_read's tail then reads the pull-ups.
-    if (!sys) return 0;
+    // No instance (a context built outside this package), or a port this instance does not drive: the host drives
+    // nothing, which is the released level $60. io_data_read's tail then reads the pull-ups, $7F, exactly as an
+    // unplugged port does. Answering 0 here would drive TR and TH low instead.
+    if (!sys || !sys->core() || port != &sys->core()->io.ports[1]) return 0x60;
     return sys->portDevice().level(sys->mclkOfCoreCycle(cycle));
 }
 }

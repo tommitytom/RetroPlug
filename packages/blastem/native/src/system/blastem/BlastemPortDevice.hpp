@@ -44,6 +44,7 @@ public:
     void clear() {
         pending_.clear();
         needsSort_ = false;
+        lastApplied_ = 0x60;  // a fresh session starts with the pins released, not holding the last session's level
     }
     // [control/block] The stop grid's sample the next run starts at: a level is on the pins from that run on, whichever
     // block delivered it. stepIfBelowTarget sets it before every run_until.
@@ -67,6 +68,8 @@ public:
     // [device] Whether anything is queued (a test's read of whether a block drained its schedule).
     bool empty() const { return pending_.empty(); }
 
+    // Levels the queue took since construction: clear() empties the queue and releases the pins, and keeps this count
+    // (as it keeps dropped()).
     std::uint64_t accepted() const { return accepted_; }
     std::uint64_t dropped() const { return pending_.dropped(); }
     std::uint8_t  lastApplied() const { return lastApplied_; }

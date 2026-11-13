@@ -134,7 +134,8 @@ public:
     // This instance's port-2 device. The core reaches it the same way (through currentInstance in the entry point), so
     // this is the host's own handle: the seam a feed writes through is pushCoreBytes, not this.
     PortDevice& portDevice() { return port_; }
-    // Levels the port device has taken since activation: how a caller tells a delivery from a queue that refused.
+    // Levels the port device has taken since construction: how a caller tells a delivery from a queue that refused. A
+    // reactivation clears the queue and the held level but not this count.
     std::uint64_t levelsAccepted() const { return port_.accepted(); }
 
     // Test seams for the direction rule: BlastEm's own io_control_write / io_data_write on port 2 at the current clock.

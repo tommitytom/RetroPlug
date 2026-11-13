@@ -70,9 +70,10 @@ double peak(const std::vector<float>& samples) {
 TEST_CASE("a level reaches the ROM's port read at its own sample", "[blastem][port]") {
     auto             sys = boot(rp::blastem::test::portPollLoopRom());
     std::vector<float> l(kFrames), r(kFrames);
-    // Let the ROM boot and settle on its poll loop; the idle level reads $60, or $FF with the pull-ups' bits counted.
+    // Let the ROM boot and settle on its poll loop. The idle level is TR and TH released, and io_data_read's tail pulls
+    // every other bit high, so the read is $7F (bit 7 is always an output and the latch is 0).
     for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
-    CHECK((ramByte(*sys, 0x0000) & 0x60) == kIdle);
+    CHECK(ramByte(*sys, 0x0000) == 0x7F);
     sys->pushCoreBytes(100, &kLevel, 1);  // inside this block, mid-block
     CHECK(sys->levelsAccepted() == 1);
     runBlock(*sys, l, r);
@@ -93,7 +94,7 @@ TEST_CASE("a level staged past the block's end keeps its timing", "[blastem][por
     // queue's timing.
     sys->pushCoreBytes(kFrames + 4, &kLevel, 1);
     runBlock(*sys, l, r);
-    CHECK((ramByte(*sys, 0x0000) & 0x60) == kIdle);             // this block still sees the idle level
+    CHECK(ramByte(*sys, 0x0000) == 0x7F);             // this block still sees the idle level
     runBlock(*sys, l, r);
     CHECK((ramByte(*sys, 0x0000) & 0x60) == (kLevel & 0x60));   // the next one sees it
 }
@@ -143,6 +144,39 @@ TEST_CASE("a ROM that never polls port 2 does not fill the queue", "[blastem][po
         // The held level is the last one the grid passed, which is what a first read in the next block answers with.
         CHECK(sys->portDevice().lastApplied() == 0x20);
     }
+}
+
+TEST_CASE("a re-activation leaves the port's pins idle", "[blastem][port]") {
+    // A level is host state, not machine state: a fresh machine from onActivate must not inherit the level the previous
+    // session was holding, or a parked pin from a stopped transport reads as a held button from boot.
+    auto               sys = boot(rp::blastem::test::portPollLoopRom());
+    std::vector<float> l(kFrames), r(kFrames);
+    for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
+    CHECK(ramByte(*sys, 0x0000) == 0x7F);  // the pull-ups: bit 7 is an output and the latch is 0
+    const std::uint8_t low = 0x00;
+    sys->pushCoreBytes(10, &low, 1);
+    runBlock(*sys, l, r);
+    CHECK((ramByte(*sys, 0x0000) & 0x60) == 0x00);
+    CHECK(sys->portDevice().lastApplied() == 0x00);
+    sys->onDeactivate();
+    sys->onActivate(kRate);
+    for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
+    CHECK(sys->portDevice().lastApplied() == kIdle);
+    CHECK(ramByte(*sys, 0x0000) == 0x7F);  // the old session's low level is not on the pins
+    CHECK(sys->levelsAccepted() == 1);     // counted since construction, so clear() keeps the total
+}
+
+TEST_CASE("a port read with no instance, or another port, drives nothing", "[blastem][port]") {
+    // The entry point is BlastEm's, so a context built outside this package can reach it with no instance set: the
+    // answer then has to be the pull-ups ($7F through io_data_read's tail), not both pins driven low. And a stale
+    // instance must never answer for a port it does not drive: only port 2 is the host's device.
+    rp::blastem::currentInstance = nullptr;
+    CHECK(io_custom_input(nullptr, 0) == kIdle);
+    auto sys = boot(rp::blastem::test::portPollLoopRom());
+    rp::blastem::currentInstance = sys.get();
+    CHECK(io_custom_input(&sys->core()->io.ports[0], 0) == kIdle);
+    CHECK(io_custom_input(&sys->core()->io.ports[1], 0) == kIdle);  // the queue is empty: the idle level
+    rp::blastem::currentInstance = nullptr;
 }
 
 // A level as a case stages it: the absolute host sample it goes on at, and the byte the host drives.
