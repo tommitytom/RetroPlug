@@ -168,7 +168,9 @@ it: code written against the old contract may still issue one, and a reset of th
 ([03](03-ts-layer.md) has the construct-time paragraph and the forwarding). (`region` is read at construct too, and
 is also a knob: a live edit resets the core, as switching a console's region would.) `sdRoot` is the host directory the
 emulated EverDrive N8 SD card maps to (`"/"` on the card), for a NES ROM that pulls its data off the cartridge;
-empty means a per-process scratch directory, not the working directory. Reading back what such a ROM sends
+empty means a per-process scratch directory, not the working directory. The System submenu sets it: the mesen
+package builds an `SD Card: <folder>` row at the `system.settings` placement that opens the folder dialog, and a
+`Use Scratch SD Card` row that empties it again. Reading back what such a ROM sends
 is `drainCoreBytes` ([09](09-cli-debugging.md)). A ROM can also skip the CPU entirely: `CMD_F_FRD_MEM` has
 the emulated MCU read the open file straight into cartridge memory over the PI bus, which `MesenNesSystem`
 backs for the CHR-RAM window (PI `0xC00000`) and the PRG window (PI `0x000000`, flat: PI offset N is PRG

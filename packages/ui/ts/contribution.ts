@@ -166,7 +166,8 @@ export type RoleRow = ConfigRow & {
 };
 
 /** Where a builder's rows land. Rows (RoleRow) take "system.settings" alone; a builder takes whichever placement it
- *  fills. "instance.footer" is the block after Remove Instance and before Exit (the Link Group); "instance.clock" is
+ *  fills. A "system.settings" builder lands in the System submenu right after the rows (the NES SD card folder);
+ *  "instance.footer" is the block after Remove Instance and before Exit (the Link Group); "instance.clock" is
  *  the host-transport block between the instance's own groups (the MIDI Clock submenu); "settings.audio" and
  *  "settings.midi" are the insides of Settings' two device containers, which the shell keeps. The list is data so
  *  the generated registry reads the same one the type is built from: a placement added here reaches its check without

@@ -335,6 +335,9 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     ...roleRowItems(roleRows(), sys, (kind) => ctx.stores.registry.roleType(kind), (role, key, value) =>
       systems.setRoleConfig(sys.id, role, { [key]: value }),
     ),
+    // Then the rows a package builds itself, where a cycler cannot say it (a folder picked through a dialog: the NES
+    // SD card).
+    ...menuPlacement("system.settings", hostOf(ctx), sys, buildContext(ctx)),
   );
   // Save/Load SRAM + State. The quick "Save SRAM"/"Save State" write to the ROM's sibling path with no
   // dialog (a real ROM only — the embedded synth has no on-disk target); the "As…" variants browse. The

@@ -7,7 +7,14 @@
 // project written elsewhere still shows the nearest step rather than a blank. `driveRealCart` is the descriptor's own
 // opt-out field (`realCartOptOut`), read by buildGraph to decide which system drives the physical cart; the NES
 // descriptor names that field as this row's key, and mesen's ts/test/ui.test.ts pins the two spellings together.
-import { defineUi, type RoleRow } from "@retroplug/ui/contribution";
+//
+// The NES SD card's folder is the one knob a row cannot hold (a path, picked through a dialog), so it is a builder at
+// the system.settings placement instead, drawn right after the rows.
+import type { SystemInfo } from "@retroplug/core/host";
+import { shortenMiddle } from "@retroplug/core/path";
+import { findRole } from "@retroplug/core/systemRoles";
+import { defineUi, type MenuBuilder, type RoleRow, type UiHost } from "@retroplug/ui/contribution";
+import { action, browseThen, type MenuItem } from "@retroplug/ui/menu";
 import { REGION_VALUES } from "../enums";
 
 /** Console region (ConsoleRegion 0..4), the "mesen" role's region knob. */
@@ -72,4 +79,41 @@ export const MESEN_ROWS: readonly RoleRow[] = [
   },
 ];
 
-export default defineUi({ rows: MESEN_ROWS });
+/** The longest path the SD Card row shows before it elides the middle: the row's label fits the menu's width at the
+ *  default window size with the prefix. */
+const SD_LABEL_MAX = 38;
+
+/** The folder the emulated N8's SD card maps to, as the mesen role holds it ("" = the per-process scratch card). */
+export function sdRootOf(sys: SystemInfo): string {
+  const root = findRole(sys.roles, "mesen")?.config.sdRoot;
+  return typeof root === "string" ? root : "";
+}
+
+/** The NES's SD card rows: the folder the card maps to, picked with the host's folder dialog, and a row that puts it
+ *  back on the scratch card. `sdRoot` is construct-time, so a pick rebuilds the system (setRoleConfig does), carrying
+ *  the battery: a ROM that reads its card at boot reads the new one. A builder rather than a row because a row is a
+ *  cycler over fixed values, and this one is a path. */
+export function sdCardRows(host: UiHost, sys: SystemInfo): MenuItem[] {
+  const root = sdRootOf(sys);
+  const prefix = "SD Card: ";
+  const pick: MenuItem = {
+    ...action("sys-nes-sdroot", `${prefix}${root ? shortenMiddle(root, SD_LABEL_MAX - prefix.length) : "Scratch"}`, () =>
+      browseThen(host, { title: "SD Card Folder", patterns: [], directory: true, startDir: root }, (path) =>
+        host.systems.setRoleConfig(sys.id, "mesen", { sdRoot: path }),
+      ),
+    ),
+    keepOpen: true,
+  };
+  if (!root) return [pick];
+  const clear = action("sys-nes-sdroot-clear", "Use Scratch SD Card", () =>
+    host.systems.setRoleConfig(sys.id, "mesen", { sdRoot: "" }),
+  );
+  return [pick, { ...clear, keepOpen: true }];
+}
+
+const SD_CARD_MENU: MenuBuilder = {
+  placement: "system.settings",
+  build: (host, sys) => (sys !== null && sys.platform === "nes" ? sdCardRows(host, sys) : []),
+};
+
+export default defineUi({ rows: MESEN_ROWS, menus: [SD_CARD_MENU] });

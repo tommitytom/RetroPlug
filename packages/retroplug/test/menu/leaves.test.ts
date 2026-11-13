@@ -96,6 +96,38 @@ test("the System submenu shows NES core knobs for a NES system, and the SameBoy 
   // Whether the system places a rp.n8.nes (ON by default: what every project did before the setting existed).
   expect(findItem(nesSys, "sys-nes-drive-cart")?.label).toBe("Drive Real Cart: On");
   expect(findItem(nesSys, "sys-model")).toBe(undefined);
+  // The SD card is the mesen package's own row (a folder, which a cycler cannot hold): a NES has it, a GB does not.
+  expect(findItem(nesSys, "sys-nes-sdroot")?.label).toBe("SD Card: Scratch");
+  expect(findItem(gbSys, "sys-nes-sdroot")).toBe(undefined);
+});
+
+test("SD Card picks the folder the NES's emulated N8 card maps to, and Use Scratch SD Card puts it back", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/g.nes", nesRom());
+  stores.project.systems.addSystem("/roms/g.nes");
+  // A construct-time edit rebuilds the system under a new id, so each read follows the one system there is.
+  const current = () => stores.project.systems.view()[0].id;
+  const menu = () => {
+    const sys = stores.project.systems.view()[0];
+    return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
+  };
+  expect(findItem(menu(), "sys-nes-sdroot-clear")).toBe(undefined); // nothing to clear on the scratch card
+
+  be.queueBrowse("/cards/nesvj");
+  const pick = findItem(menu(), "sys-nes-sdroot")!;
+  expect(pick.keepOpen).toBe(true);
+  pick.onSelect!();
+  await flush();
+  const opts = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(opts.directory).toBe(true);
+  // sdRoot is construct-time, so the pick rebuilds the system with the card in its settings.
+  expect(be.bootOf(current())!.settings.sdRoot).toBe("/cards/nesvj");
+  expect(findItem(menu(), "sys-nes-sdroot")?.label).toBe("SD Card: /cards/nesvj");
+
+  findItem(menu(), "sys-nes-sdroot-clear")!.onSelect!();
+  expect(be.bootOf(current())!.settings.sdRoot).toBe("");
+  expect(findItem(menu(), "sys-nes-sdroot")?.label).toBe("SD Card: Scratch");
 });
 
 test("the Recent submenu appears on BOTH the start and instance menus", () => {
