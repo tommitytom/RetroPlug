@@ -247,10 +247,11 @@ its close bytes and gives the device back), and the runtime is freed. That is th
 already took. A Ctrl-C hook that ends the session itself (`tjs.exit(130)` from `__rp_onInterrupt`, say) is the exit and
 not a thrown hook: the process ends with the hook's own code, and the exit's unwinding is not reported as an error. A
 host with no hook (the plugin, the SDL standalone, the stock `tjs` binary) keeps the old `exit()`: the process ends
-inside the call and no caller's stack unwinds. One limit is the engine's, not the hook's: quickjs-ng's promise
-constructor takes an executor's exception with `JS_GetException` and without the uncatchable check, so code after
-`new Promise(() => tjs.exit(0))` still runs synchronously until control returns to the C caller; nothing runs after
-that. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print
+inside the call and no caller's stack unwinds. One limit is the engine's, not the hook's: quickjs-ng takes an
+executor's exception with `JS_GetException` and without the uncatchable check (the promise constructor, and the same
+shape in `js_promise_resolve_thenable_job` and an async generator's resume), so code after
+`new Promise(() => tjs.exit(0))` still runs synchronously until control returns to the C caller. Nothing runs after
+that: the drain checks the exit on every pass, so a job queued behind the one that exited does not run either. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print
 `teardown: graph cleared, providers stopped`, and the test host print every message its scripted Pro MK3 was sent plus
 `teardown: providers stopped`, which is how
 [test-native/session-pump.test.ts](../packages/retroplug/test-native/session-pump.test.ts) holds a claimed Launchpad's

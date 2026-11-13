@@ -651,6 +651,36 @@ out="$TMP/run-exit-after.log"
 timeout 20 "$CLI" "$EX/after-exit.js" >"$out" 2>&1
 check "a clean exit after a queued microtask still exits 0" 0 $?
 absent "...and the job queued behind it never ran" "$out" "ran after exit"
+#     An exit the ENGINE swallows: quickjs-ng takes a promise executor's exception with JS_GetException and without the
+#     uncatchable check, so the job that called tjs.exit returns normally and JS_ExecutePendingJob reports it done. The
+#     drain checks the exit on every pass, so the job queued behind that one still does not run.
+printf '%s\n' 'Promise.resolve().then(() => { new Promise(() => tjs.exit(0)); });' \
+	'Promise.resolve().then(() => console.log("ran after exit"));' >"$EX/swallowed.js"
+out="$TMP/run-exit-swallowed.log"
+timeout 20 "$CLI" "$EX/swallowed.js" >"$out" 2>&1
+check "an exit the engine swallows still exits 0" 0 $?
+absent "...and the job queued behind it never ran either" "$out" "ran after exit"
+#     A listener that ends the session ITSELF: its exit's uncatchable marker is the unwinding, not an error, so the
+#     listener's status stands and nothing prints the marker. Both listeners a session can install - a rejection's and
+#     the module's load event - go through a path that used to dump it.
+printf '%s\n' 'addEventListener("unhandledrejection", () => tjs.exit(2));' \
+	'Promise.reject(new Error("nothing caught this"));' >"$EX/listener-exit.js"
+out="$TMP/run-exit-listener.log"
+timeout 20 "$CLI" "$EX/listener-exit.js" >"$out" 2>&1
+check "an unhandledrejection listener that exits ends the session with its code" 2 $?
+quiet "...and the exit's marker is not printed as an error" "$out"
+printf '%s\n' 'addEventListener("load", () => tjs.exit(4));' >"$EX/load-exit.js"
+out="$TMP/run-exit-load.log"
+timeout 20 "$CLI" "$EX/load-exit.js" >"$out" 2>&1
+check "a load listener that exits ends the session with its code" 4 $?
+quiet "...and the exit's marker is not printed as an error" "$out"
+#     A status that is not a number (a Symbol throws the conversion): the TypeError is the conversion's, not a session
+#     error the exit was asked for, so it is not reported as one. The stock exit(-1) status stands, 255 to a shell.
+printf '%s\n' 'tjs.exit(Symbol());' >"$EX/symbol-exit.js"
+out="$TMP/run-exit-symbol.log"
+timeout 20 "$CLI" "$EX/symbol-exit.js" >"$out" 2>&1
+check "an exit whose argument is not a number exits -1 (255)" 255 $?
+quiet "...and the conversion's TypeError is not reported as a session error" "$out"
 
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.
