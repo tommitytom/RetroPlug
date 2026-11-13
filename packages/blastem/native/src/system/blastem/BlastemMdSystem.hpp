@@ -65,6 +65,17 @@ public:
     // address $200001 + 2i (design section 5). Empty for a cart with no battery.
     std::vector<std::uint8_t> saveSramBytes() const override;
 
+    // -- The savestate (SystemBase's state plane) --------------------------------
+    //
+    // BlastEm's own serializer, behind BlastEm's own 8-byte identifier ("BLSTSZ\x01\x07"): a state that does not start
+    // with those bytes is not this serializer's and never reaches the emulator. Empty when no core exists, or when the
+    // capture could not grow.
+    std::vector<std::uint8_t> saveStateBytes() const override;
+    // True when a seed state was refused: the identifier, the section walk or the serializer itself said no, and the
+    // core booted from power-on instead. The build asked for a machine in that state; this is the honest answer that it
+    // is not one, and the caller decides whether to keep it.
+    bool stateRefused() const { return stateRefused_; }
+
     // The three capabilities (SystemCapabilities.hpp). The memory one is this package's own because of the work RAM's
     // word order; the battery and the ROM are the generic ones over getMemory and rom_.
     rp::MemoryCapability* memory() override { return &memoryCap_; }
@@ -135,6 +146,13 @@ public:
 private:
     void boot();
     void destroyCore();
+    // The snapshot triple's ceiling and the capture that fills it (SystemBase's hooks, called on the block thread once
+    // enableStateSnapshot has been called; the build function does that).
+    std::size_t stateSnapshotSize() const override;
+    bool        captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
+    // The build's state seed (SystemBase seeds it through seedSramAndState, as boot()'s last act). A refusal here is
+    // boot()'s retry, not an error out of a live machine: a state is only ever loaded into a core that was just built.
+    bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
     // Refills ramView_ with the 68k's work RAM in address order and returns it: the view every getMemory(Ram) hands out.
     // Empty (so an accessor reports itself invalid) once no core owns a work RAM to read.
     std::span<const std::uint8_t> workRamView();

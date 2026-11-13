@@ -1,6 +1,8 @@
 #include "system/blastem/BlastemMdSystem.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <mutex>
 
 #include "system/blastem/BlastemCore.hpp"
@@ -15,6 +17,29 @@ namespace rp::blastem {
 // stand, like every other core here.
 static bool hasBattery(const genesis_context* gen) {
     return gen && gen->save_type != SAVE_NONE && gen->save_storage && gen->save_size != 0;
+}
+
+// BlastEm's own serializer identifier. Its save_to_file writes these 8 bytes ahead of a state (serialize.c's sz_ident);
+// a library build writes the state with genesis_serialize directly and never sees them, so this prefixes the same bytes
+// and loadStateBytes demands them. Everything behind them is BlastEm's section stream, and anything else is a state this
+// core cannot be: another serializer version, another console, another emulator.
+static constexpr char kStateIdent[] = "BLSTSZ\x01\x07";
+
+// A state's sections are a u16 id, a u32 size and exactly that many bytes (start_section/end_section, serialize.c), so a
+// truncated or mis-sized body is visible before the serializer is asked to read it. The walk is what makes "refused"
+// mean refused rather than "partly loaded": the mirror's latch catches a short FIELD inside an otherwise well-formed
+// section, this catches everything else without touching the core.
+static bool sectionsFit(const std::uint8_t* bytes, std::size_t size) {
+    std::size_t at = 0;
+    while (at < size) {
+        if (size - at < 6) return false;
+        const std::uint32_t len = (std::uint32_t(bytes[at + 2]) << 24) | (std::uint32_t(bytes[at + 3]) << 16) |
+                                  (std::uint32_t(bytes[at + 4]) << 8) | std::uint32_t(bytes[at + 5]);
+        at += 6;
+        if (len > size - at) return false;
+        at += len;
+    }
+    return at == size;
 }
 
 static std::uint8_t blastemRegion(std::uint32_t region) {
@@ -86,6 +111,15 @@ void BlastemMdSystem::boot() {
         aligned_free(cart);
         return;
     }
+    if (gen_->header.info.load_failed) {
+        // The ROM database knows this cart, but only the map of a bigger image than the file we were handed (a trimmed
+        // or overdumped copy). romdb.c refuses it the way it refuses a bad state (mirror: rom_info.load_failed) rather
+        // than ending the process; the refusal reaches a caller as a system that never activated, which is how every
+        // other boot failure here reads (the gate, the cart copy, the allocation), and the backend turns that into the
+        // build error with the message.
+        destroyCore();
+        return;
+    }
     useInstance(this);  // the context exists: from here, callbacks it starts belong to this instance
     // Port 2 is the host's device, not a pad: a game that reads player 2 sees the pins' idle state (which is a pad's
     // nothing-pressed state minus the pad's response), and a role claims the lines by pushing levels. Port 1 stays
@@ -106,7 +140,21 @@ void BlastemMdSystem::boot() {
     // LAST, as the sibling backends do, and after m68k_reset (a seed laid in before the reset is a pattern the reset
     // overwrites): the battery first, into the core's own buffer through getMemory, and the savestate over it once this
     // core can take one.
+    stateRefused_ = false;
     seedSramAndState(config_.sram, config_.savestate);
+    if (stateRefused_ && !config_.savestate.empty()) {
+        // A refused state: either it was thrown out before it touched the core (the identifier, the section walk) or it
+        // latched after writing part of itself in (the serializer's short-field and impossible-field latches). Dropping
+        // the seed and rebuilding ONCE from power-on is the one path that leaves no half-loaded core behind in either
+        // case. Safe precisely because this is boot()'s last act: the core is fully built, nothing of ours is left
+        // outstanding, and the lifecycle mutex is not held here (destroyCore and the retry's own allocation take it in
+        // their own scopes, never nested). The retry sees an empty savestate, so it cannot recurse again, and the clear
+        // above is what it keys on.
+        config_.savestate.clear();
+        destroyCore();
+        boot();
+        stateRefused_ = true;  // the refusal is still this instance's answer to the build request
+    }
 }
 
 // The frame the sink allocated IS the picture's size from boot on. Before a core exists the region is unknown, so the
@@ -211,6 +259,83 @@ std::vector<std::uint8_t> BlastemMdSystem::saveSramBytes() const {
     // set: this reads the context's fields and calls no BlastEm function.
     if (!hasBattery(gen_)) return {};
     return {gen_->save_storage, gen_->save_storage + gen_->save_size};
+}
+
+// The state, as BlastEm writes it, behind the identifier loadStateBytes demands. The capture costs one buffer of its
+// own: BlastEm grows the one init_serialize gave it, and the caller's vector is the copy out of it.
+std::vector<std::uint8_t> BlastemMdSystem::saveStateBytes() const {
+    if (!gen_) return {};
+    useInstance(const_cast<BlastemMdSystem*>(this));  // the serializer's own callbacks are frontend calls
+    serialize_buffer buf;
+    init_serialize(&buf);
+    // The pc the 68k will resume at is the address sync_components is handed at a block boundary (genesis.c passes
+    // gen->m68k->pc there), so a state taken between blocks resumes on the next instruction rather than mid-one.
+    genesis_serialize(gen_, &buf, gen_->m68k->pc, 1);
+    if (buf.failed) {  // the capture could not grow: no state is better than half a state
+        free(buf.data);
+        return {};
+    }
+    std::vector<std::uint8_t> out(sizeof(kStateIdent) - 1 + buf.size);
+    std::memcpy(out.data(), kStateIdent, sizeof(kStateIdent) - 1);
+    std::memcpy(out.data() + sizeof(kStateIdent) - 1, buf.data, buf.size);
+    free(buf.data);
+    return out;
+}
+
+// A seed state, into a core that was just built and has run nothing. Returns false and latches stateRefused_ on any
+// refusal; boot()'s tail is what turns a refusal into a machine that booted from power-on instead.
+bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
+    constexpr std::size_t kIdent = sizeof(kStateIdent) - 1;
+    if (!gen_ || bytes.size() <= kIdent || std::memcmp(bytes.data(), kStateIdent, kIdent) != 0) {
+        stateRefused_ = !bytes.empty();  // nothing was asked for is not a refusal, an unusable state is
+        return false;
+    }
+    useInstance(this);  // the deserializers hand their consoles' audio sources to this instance's sink
+    if (!sectionsFit(bytes.data() + kIdent, bytes.size() - kIdent)) {
+        stateRefused_ = true;  // truncated, or its sizes are lies: nothing has been touched
+        return false;
+    }
+    deserialize_buffer buf;
+    init_deserialize(&buf, const_cast<std::uint8_t*>(bytes.data()) + kIdent, bytes.size() - kIdent);
+    genesis_deserialize(&buf, gen_);
+    if (buf.failed) {
+        // A well-formed section whose payload was short or impossible: the core is now PARTLY loaded, so it has to be
+        // rebuilt. That is boot()'s job and not this function's: loadStateBytes runs inside seedSramAndState, which
+        // boot() calls as its LAST act, so rebooting from here would recurse through a half-built boot. This only flags
+        // the refusal; boot()'s tail sees the flag, drops the seed, destroys the core and boots once more from
+        // power-on. The seed stays in config_ because that tail keys on a non-empty savestate, and clearing it here
+        // would only leave the half-loaded core in place.
+        stateRefused_ = true;
+        return false;
+    }
+    // The state carries the 68k's 32-bit cycle count, not this host's 64-bit clock, and BlastEm's serializer does not
+    // touch cycle_base at all: the restored core's own count is an offset from wherever this instance's base already is
+    // (the mirror note in the design's stepping study). So the anchor moves to the loaded core's absolute clock, the
+    // stop grid restarts at the next sample rather than at one the pre-load timeline had already scheduled, and the
+    // port device's queue goes with the clocks that no longer mean anything.
+    sampleAnchor_ = sampleBase_;
+    mclkAnchor_ = mclkNow();
+    nextGridSample_ = sampleBase_;
+    port_.clear();
+    // The sink's ring, its blips and its filter are HOST state that no state carries: re-prime them, at the size each
+    // one was sized for, or the restored core plays the tail of a machine that never existed.
+    audio_.reset();
+    return true;
+}
+
+std::size_t BlastemMdSystem::stateSnapshotSize() const {
+    // A Mega Drive state is about 50 KB (the VDP's 64 KB of VRAM dominates) and grows with a cart's battery; a ceiling
+    // with headroom is what lets the snapshot triple be allocated once, which is what SystemBase requires of it (its
+    // own comment on the ceiling, and the reason a live Mesen state gets headroom too).
+    return 256 * 1024;
+}
+
+bool BlastemMdSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
+    // Allocates on the block thread, which is Mesen's precedent (MesenSmsSystem captures a state the same way every
+    // kStateSnapshotIntervalSec); the triple this writes into was pre-sized from the ceiling above, so the state's own
+    // buffer is the only allocation in the publish.
+    dst = saveStateBytes();
+    return !dst.empty();
 }
 
 // The block triad, and the core's stop: one run a block, ended at the block's own master clock rather than at a frame
