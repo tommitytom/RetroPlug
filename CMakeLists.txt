@@ -222,6 +222,9 @@ endfunction()
 # --- SameBoy: Game Boy emulator core (submodule at deps/sameboy) ---
 include(cmake/sameboy.cmake)
 
+# --- BlastEm: Sega Mega Drive emulator core (submodule at deps/blastem, our mirror's retroplug branch) ---
+include(cmake/blastem.cmake)
+
 # --- wjwwood/serial: USB-serial for the Everdrive N8 Pro bridge (submodule at deps/serial) ---
 include(cmake/serial.cmake)
 
