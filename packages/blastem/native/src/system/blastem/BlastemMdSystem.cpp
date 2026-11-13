@@ -16,6 +16,13 @@ namespace rp::blastem {
 // core cannot be: another serializer version, another console, another emulator.
 static constexpr char kStateIdent[] = "BLSTSZ\x01\x07";
 
+// This host's own section, appended after BlastEm's: the cartridge battery, in the .sav's order every other part of the
+// host speaks (BlastemMemory.cpp's batteryStorageIndex is the pair swap a 16-bit cart needs). BlastEm's serializer has no
+// SRAM section for a plain cart, only a banked cart's mapper registers, and the host's state is what a Duplicate copies:
+// without this, duplicating a battery cart would duplicate the game and lose the save. The id is above BlastEm's own
+// (serialize.h's SECTION_COLECO_IO is the last) so a BlastEm walk over the stream skips it as a section it does not read.
+static constexpr std::uint16_t kSectionBattery = 0x8001;
+
 // A state's sections are a u16 id, a u32 size and exactly that many bytes (start_section/end_section, serialize.c), so a
 // truncated or mis-sized body is visible before the serializer is asked to read it. The walk is what makes "refused"
 // mean refused rather than "partly loaded": the mirror's latch catches a short FIELD inside an otherwise well-formed
@@ -27,31 +34,53 @@ static constexpr char kStateIdent[] = "BLSTSZ\x01\x07";
 // its absence from a banked cart leaves the mapper at power-on; and the model's TMSS section (15) at most once. A
 // repeated section, a missing one, or an id this build does not read is a state from another console, another
 // serializer or another cart, and a console with a section of itself missing is only half a machine.
-static bool sectionsAreWhole(const std::uint8_t* bytes, std::size_t size, bool banked) {
+//
+// This host's own battery section is allowed as well, at most once and last (a state this host writes puts it there, and
+// the stream BlastEm reads ends where it starts).
+struct StateWalk {
+    bool                whole        = false;
+    std::size_t         blastemBytes = 0;  // where BlastEm's sections end: this host's own start there, if any
+    const std::uint8_t* battery      = nullptr;
+    std::size_t         batteryBytes = 0;
+};
+
+static StateWalk walkSections(const std::uint8_t* bytes, std::size_t size, bool banked) {
     constexpr std::uint16_t kFirstMandatory = 1;   // SECTION_68000
     constexpr std::uint16_t kLastMandatory  = 11;  // SECTION_SOUND_RAM
     constexpr std::uint16_t kMapper         = 12;  // SECTION_MAPPER
     constexpr std::uint16_t kTmss           = 15;  // SECTION_TMSS
     bool                    seen[kTmss + 1] = {};
     std::size_t             at              = 0;
+    StateWalk               walk;
     while (at < size) {
-        if (size - at < 6) return false;
+        if (size - at < 6) return walk;
         const std::uint16_t id  = std::uint16_t(bytes[at] << 8 | bytes[at + 1]);
         const std::uint32_t len = (std::uint32_t(bytes[at + 2]) << 24) | (std::uint32_t(bytes[at + 3]) << 16) |
                                   (std::uint32_t(bytes[at + 4]) << 8) | std::uint32_t(bytes[at + 5]);
-        at += 6;
-        if (len > size - at) return false;
-        const bool mandatory = id >= kFirstMandatory && id <= kLastMandatory;
-        if (!mandatory && id != kMapper && id != kTmss) return false;
-        if (seen[id]) return false;
-        seen[id] = true;
+        const std::size_t payload = at + 6;
+        at = payload;
+        if (len > size - at) return walk;
+        if (id == kSectionBattery) {
+            if (walk.battery || at + len != size) return walk;  // once, and last
+            walk.battery      = bytes + at;
+            walk.batteryBytes = len;
+            walk.blastemBytes = payload - 6;
+        } else {
+            const bool mandatory = id >= kFirstMandatory && id <= kLastMandatory;
+            if (!mandatory && id != kMapper && id != kTmss) return walk;
+            if (seen[id]) return walk;
+            seen[id] = true;
+        }
         at += len;
     }
-    if (at != size) return false;
+    if (at != size) return walk;
     for (std::uint16_t id = kFirstMandatory; id <= kLastMandatory; ++id) {
-        if (!seen[id]) return false;
+        if (!seen[id]) return walk;
     }
-    return seen[kMapper] == banked;
+    if (seen[kMapper] != banked) return walk;
+    if (!walk.battery) walk.blastemBytes = size;  // no host section: BlastEm reads the whole body
+    walk.whole = true;
+    return walk;
 }
 
 // The clocks a state may have between its components and the 68k. Every component's cycle count is an offset from the
@@ -334,6 +363,12 @@ std::vector<std::uint8_t> BlastemMdSystem::saveStateBytes() const {
     // The pc the 68k will resume at is the address sync_components is handed at a block boundary (genesis.c passes
     // gen->m68k->pc there), so a state taken between blocks resumes on the next instruction rather than mid-one.
     genesis_serialize(gen_, &buf, gen_->m68k->pc, 1);
+    if (hasBattery(gen_)) {
+        const std::vector<std::uint8_t> battery = saveSramBytes();  // the .sav's order, which is what a load reads back
+        start_section(&buf, kSectionBattery);
+        save_buffer8(&buf, const_cast<std::uint8_t*>(battery.data()), battery.size());
+        end_section(&buf);
+    }
     if (buf.failed) {  // the capture could not grow: no state is better than half a state
         free(buf.data);
         return {};
@@ -354,12 +389,16 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
         return false;
     }
     useInstance(this);  // the deserializers hand their consoles' audio sources to this instance's sink
-    if (!sectionsAreWhole(bytes.data() + kIdent, bytes.size() - kIdent, gen_->mapper_type != MAPPER_NONE)) {
+    const StateWalk walk =
+        walkSections(bytes.data() + kIdent, bytes.size() - kIdent, gen_->mapper_type != MAPPER_NONE);
+    if (!walk.whole) {
         stateRefused_ = true;  // truncated, mis-sized or not this console's section set: nothing has been touched
         return false;
     }
     deserialize_buffer buf;
-    init_deserialize(&buf, const_cast<std::uint8_t*>(bytes.data()) + kIdent, bytes.size() - kIdent);
+    // BlastEm reads its own sections and stops where this host's begin: the battery is not a console register, and a walk
+    // that handed it over would only log a section it has no handler for.
+    init_deserialize(&buf, const_cast<std::uint8_t*>(bytes.data()) + kIdent, walk.blastemBytes);
     genesis_deserialize(&buf, gen_);
     if (buf.failed) {
         // A well-formed section whose payload was short or impossible: the core is now PARTLY loaded, so it has to be
@@ -377,6 +416,18 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
         stateRefused_ = true;
         return false;
     }
+    if (walk.battery) {
+        // The battery section, in the .sav's order, into BlastEm's storage. Its size is the cart's own, so a state with a
+        // different one is another cart's; a battery cart's state from a host that did not write this section keeps the
+        // build's seed battery instead of being refused.
+        if (!hasBattery(gen_) || walk.batteryBytes != std::size_t(gen_->save_size)) {
+            stateRefused_ = true;
+            return false;
+        }
+        for (std::size_t i = 0; i < walk.batteryBytes; ++i) {
+            gen_->save_storage[batteryStorageIndex(gen_, i)] = walk.battery[i];
+        }
+    }
     // The state carries the 68k's 32-bit cycle count, not this host's 64-bit clock, and BlastEm's serializer does not
     // touch cycle_base at all: the restored core's own count is an offset from wherever this instance's base already is
     // (the mirror note in the design's stepping study). So the anchor moves to the loaded core's absolute clock, the
@@ -393,10 +444,12 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
 }
 
 std::size_t BlastemMdSystem::stateSnapshotSize() const {
-    // A Mega Drive state is about 50 KB (the VDP's 64 KB of VRAM dominates) and grows with a cart's battery; a ceiling
-    // with headroom is what lets the snapshot triple be allocated once, which is what SystemBase requires of it (its
-    // own comment on the ceiling, and the reason a live Mesen state gets headroom too).
-    return 256 * 1024;
+    // Measured at 141,639 bytes with the identifier (the VDP's 66,865, the work RAM's 65,537 and the sound RAM's 8,193
+    // dominate), so the 256 KiB ceiling is about 1.8x headroom rather than the five a "50 KB" guess suggested. The
+    // cart's battery sits on top of that, in this host's own section, and it is the one part of the ceiling that varies
+    // by cart, so it is added here: the triple is allocated once from this figure and never resized (SystemBase's own
+    // comment on the ceiling).
+    return 256 * 1024 + (gen_ ? gen_->save_size : 0);
 }
 
 bool BlastemMdSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {

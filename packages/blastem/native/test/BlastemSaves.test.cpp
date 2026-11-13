@@ -476,3 +476,43 @@ TEST_CASE("a state saved after a 64K-word DMA is still accepted", "[blastem][sav
     CHECK_FALSE(restored->stateRefused());
     CHECK(restored->activated());
 }
+
+namespace {
+
+// A cart with 64 KiB of odd-byte SRAM (as genmddj's header declares it) and a program that writes one byte into it at
+// $200001 and reads it back into work RAM: the battery a Duplicate has to carry, and the ROM's own proof of it.
+std::vector<std::uint8_t> batteryRom() {
+    std::vector<std::uint8_t> rom = rp::blastem::test::image(
+        {0x13, 0xFC, 0x00, 0x5A, 0x00, 0x20, 0x00, 0x01,  // move.b #$5A,$00200001
+         0x10, 0x39, 0x00, 0x20, 0x00, 0x01,              // move.b $00200001,d0
+         0x13, 0xC0, 0x00, 0xFF, 0x00, 0x00},             // move.b d0,$FF0000
+        {});
+    rom[0x1B0] = 'R';
+    rom[0x1B1] = 'A';
+    rom[0x1B2] = 0xF8;  // SRAM present, odd bytes
+    rom[0x1B3] = 0x20;
+    rom[0x1B4] = 0x00; rom[0x1B5] = 0x20; rom[0x1B6] = 0x00; rom[0x1B7] = 0x01;  // start $00200001
+    rom[0x1B8] = 0x00; rom[0x1B9] = 0x21; rom[0x1BA] = 0xFF; rom[0x1BB] = 0xFF;  // end $0021FFFF
+    return rom;
+}
+
+}  // namespace
+
+TEST_CASE("a duplicated battery cart keeps its battery", "[blastem][saves]") {
+    // BlastEm's serializer has no SRAM section (only a mapper cart's registers), but the host's state is what a Duplicate
+    // copies (systemsStore.ts pulls the source's savestate and gives the copy a fresh .sav path), so a state that does
+    // not carry the battery duplicates a game and loses its save. This host appends the battery in the .sav's order as
+    // its own section, after BlastEm's, and restores it on a load.
+    auto sys = boot(batteryRom());
+    run(*sys, 4);  // the ROM writes $5A into the battery
+    REQUIRE(sys->saveSramBytes().size() == 0x10000);
+    REQUIRE(sys->saveSramBytes()[0] == 0x5A);
+    const std::vector<std::uint8_t> state = sys->saveStateBytes();
+    // A fresh instance with the state and NO battery seed: the battery can only come out of the state.
+    auto duplicate = boot(batteryRom(), state);
+    REQUIRE_FALSE(duplicate->stateRefused());
+    REQUIRE(duplicate->activated());
+    REQUIRE(duplicate->saveSramBytes().size() == 0x10000);
+    CHECK(duplicate->saveSramBytes()[0] == 0x5A);
+    CHECK(ramByte(*duplicate) == 0x5A);  // the ROM read it back, so the restored battery is the one its program saw
+}
