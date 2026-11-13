@@ -3,8 +3,8 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** The eight entries from [spec/07](../../spec/07-remaining-work.md)'s known bugs that
-[known-bugs-batch-3-design.md](../../docs/known-bugs-batch-3-design.md) settles: the type stripper's bundle builds from
+**Goal:** The eight entries from [spec/07](../spec/07-remaining-work.md)'s known bugs that
+[known-bugs-batch-3-design.md](../docs/known-bugs-batch-3-design.md) settles: the type stripper's bundle builds from
 any build directory, a settings edit to an empty project stops dirtying it, a visit to the audio menu starts a fresh
 draft, an Apply the config refuses leaves the device alone and says why, Settings > MIDI reads the stream's own state
 every poll, each hardware MIDI output is written from a thread of its own, one session pump reports what the old hosts
@@ -31,7 +31,7 @@ shared `SessionPump`, the nested txiki fork under `deps/dpf.js/deps/lv_binding_j
 pointer bumped up the chain), `tools/run-cli-ts-tests.sh` for the real binary's exit, and
 `tools/run-sanitizer.sh`'s ThreadSanitizer and AddressSanitizer legs.
 
-**Spec:** [known-bugs-batch-3-design.md](../../docs/known-bugs-batch-3-design.md). Its section 9 lists the tasks and the
+**Spec:** [known-bugs-batch-3-design.md](../docs/known-bugs-batch-3-design.md). Its section 9 lists the tasks and the
 acceptance; the acceptance run is the controller's, after this batch lands.
 
 **Provenance:** every code block below was applied to this worktree at `080c0c0ba` in this plan's order, test first and
@@ -63,7 +63,7 @@ from the configure and no step touches it.
 **Hardware.** A real NES with an Everdrive N8 Pro, a Zoom L6, a capture card and MIDI interfaces hang off this
 container, so nothing in this plan may open one. Every command below that starts the CLI, the test host, a
 `pnpm test*` suite, a Catch2 binary or `tools/run-cli-ts-tests.sh` is written under the guarded wrapper, which preloads
-the tracked device guard ([tools/sdl-audio-guard](../../tools/sdl-audio-guard)), self-tests it and refuses
+the tracked device guard ([tools/sdl-audio-guard](../tools/sdl-audio-guard)), self-tests it and refuses
 `/dev/snd`, `/dev/video*`, `/dev/ttyACM*`, `/dev/ttyUSB*`, `/dev/serial/*`, `/dev/hidraw*` and `/dev/bus/usb/*` before
 the syscall:
 
@@ -95,7 +95,7 @@ These are the repo's rules this batch must keep. They are not optional and no st
 - **Match the surrounding code**: names, comment density and wrapping (comments explain WHY, in full sentences, at
   about 116-120 columns, and say what IS, not change history).
 - **Never edit an existing `docs/*-plan.md` or design doc.** The batch's own design
-  ([known-bugs-batch-3-design.md](../../docs/known-bugs-batch-3-design.md)) gains its as-built and execution sections
+  ([known-bugs-batch-3-design.md](../docs/known-bugs-batch-3-design.md)) gains its as-built and execution sections
   from the controller, not from a task here.
 - **Only a step's named paths are staged.** `git add` exactly what the step lists; a task's commit is its own
   `git diff` and nothing else.
@@ -5297,7 +5297,7 @@ MSG
 
 ## Task 9: the documents record the batch
 
-No behaviour: [spec/07](../../spec/07-remaining-work.md) loses the eight known-bug entries and their checklist lines,
+No behaviour: [spec/07](../spec/07-remaining-work.md) loses the eight known-bug entries and their checklist lines,
 and the specs that describe what changed gain it - spec/13 the MIDI stream's writer and the exit's close bytes,
 spec/14 what a session's exit runs, that a same-turn error is reported, that a Ctrl-C hook which exits is the exit,
 and the promise-executor limit that lets code after `new Promise(() => tjs.exit())` still run, spec/02 what the test
