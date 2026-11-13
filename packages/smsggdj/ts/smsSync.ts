@@ -158,9 +158,6 @@ export class CounterSync {
   ) {}
   private counter = 0;
   private walking = 0;
-  /** The counter value to advance to, before a walk: the node keeps it across blocks so a mid-block walk resumes. */
-  get value(): number { return this.counter; }
-  set value(v: number) { this.counter = v; this.walking = v; }
   /** Start a walk from the counter as the blocks left it. */
   begin(): void { this.walking = this.counter; }
   /** Swaps the encoder (a machine change) and keeps the counter, which is the state the ROM diffs. */
