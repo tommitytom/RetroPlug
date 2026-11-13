@@ -217,8 +217,10 @@ export interface ViewsHost {
 export interface ProjectHost {
   /** The section as its contributor parses it (raw JSON for a key no package contributes). */
   section<T = Record<string, unknown>>(key: string): T;
-  /** Apply a patch through the contributor's `merge`, mark the project dirty, publish the graph and notify. THROWS when
-   *  the contributor refuses the patch, and does nothing for a section stamped newer than its contributor. */
+  /** Apply a patch through the contributor's `merge`, publish the graph and notify. An edit to an empty project (no
+   *  systems, no path, no name) is not unsaved work, so it does not mark it dirty: there is nothing a prompt could
+   *  save. THROWS when the contributor refuses the patch, and does nothing for a section stamped newer than its
+   *  contributor or for a patch that changes nothing. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): void;
   /** What a project service published (the controller cart's polled SYNC), or undefined for no such service. */
   serviceState<T = unknown>(key: string): T | undefined;

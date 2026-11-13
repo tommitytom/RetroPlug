@@ -8,6 +8,7 @@ import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { K_PROJECT } from "../../src/projectConfig";
+import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import type { SystemLayout } from "../../src/settingsEnums";
 import { gbRom, gbRomBattery, lsdjRom } from "../systems/fixtures";
 import { savFrom, type SavInput } from "@retroplug/lsdj";
@@ -345,4 +346,58 @@ test("setFocus: fires the focus observer for a re-render but does NOT mark the p
   expect(project.systems.setFocus(b)).toBeFalsy(); // already focused → no-op, no notify
   expect(project.systems.setFocus(999999)).toBeFalsy(); // unknown id → no-op, no notify
   expect(focusNotifies).toBe(1);
+});
+
+test("a settings edit on an empty untitled project is not a project change, but still fires the observer", () => {
+  const { be, project } = newProject();
+  let changes = 0;
+  project.setOnChange(() => changes++);
+  // A pick on the start screen (Settings > MIDI), and the four settings the Project submenu offers there: none of
+  // them is a change a prompt should save, because opening a ROM starts a new project anyway.
+  project.setSection("midi", { allInputs: true });
+  expect(project.section<{ allInputs: boolean }>("midi").allInputs).toBe(true);
+  expect(project.setLayout("grid")).toBe(true);
+  expect(project.setZoom(4)).toBe(true);
+  expect(project.isDirty()).toBe(false);
+  expect(hasUnsavedChanges(be, project)).toBe(false);
+  expect(changes).toBe(3); // the observer still hears every edit: the rows repaint
+  // Adding a system makes it a project, and the pick is part of it.
+  be.seed("/proj/a.gb", gbRom());
+  project.systems.addSystem("/proj/a.gb");
+  expect(project.isDirty()).toBe(true);
+  expect(project.save("/proj/song.rplg")).toBe(true);
+  const saved = JSON.parse(be.readText("/proj/song.rplg")!);
+  expect(saved.settings.midi.allInputs).toBe(true);
+});
+
+test("a pathless project with a system still dirties, and a saved one dirties on a section edit", () => {
+  const { be, project } = newProject();
+  be.seed("/proj/a.gb", gbRom());
+  project.systems.addSystem("/proj/a.gb");
+  project.save("/proj/song.rplg");
+  expect(project.isDirty()).toBe(false);
+  project.setSection("midi", { allInputs: true }); // a saved project: the edit is unsaved, and the prompt says so
+  expect(project.isDirty()).toBe(true);
+  expect(hasUnsavedChanges(be, project)).toBe(true);
+  // The same for an unsaved project that holds a system: no path, but a project.
+  const other = newProject();
+  other.be.seed("/proj/b.gb", gbRom());
+  other.project.systems.addSystem("/proj/b.gb");
+  other.project.setZoom(4);
+  expect(other.project.isDirty()).toBe(true);
+});
+
+test("a section patch that changes nothing dirties nothing and publishes nothing", () => {
+  const { be, project } = newProject();
+  be.seed("/proj/a.gb", gbRom());
+  project.systems.addSystem("/proj/a.gb");
+  project.save("/proj/song.rplg");
+  let changes = 0;
+  project.setOnChange(() => changes++);
+  let systemNotifies = 0;
+  project.addOnSystemsChange(() => systemNotifies++);
+  project.setSection("midi", {}); // a cycler landing on its current value
+  expect(project.isDirty()).toBe(false);
+  expect(changes).toBe(0);
+  expect(systemNotifies).toBe(0);
 });

@@ -294,11 +294,12 @@ export class ProjectStore {
     return readableProjectSection<T>(this.projectSettings, key, this.sections);
   }
 
-  /** Apply a patch to a section through its contributor's `merge`, then mark the project dirty, publish the graph and
+  /** Apply a patch to a section through its contributor's `merge`, then mark the project changed, publish the graph and
    *  notify: a section's values are what the graph's placers place (the controller node is placed from this one at each
    *  publish), so a change that was never published would leave the audio thread running the previous session. A patch
    *  the contributor refuses THROWS, nothing written. A section stamped newer than its contributor is left alone, with
-   *  one warning naming the key and both versions: this build must not rewrite what it cannot read. */
+   *  one warning naming the key and both versions: this build must not rewrite what it cannot read. A patch that
+   *  changes nothing is not an edit: it neither dirties, nor publishes, nor notifies. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): void {
     assertSectionKey(key);
     // Writing a block no package of this product contributes would create a key E5 then keeps in every save forever,
@@ -332,8 +333,12 @@ export class ProjectStore {
         ? contributor.merge(current, patch)
         : contributor.schema.parse({ ...(isObject(current) ? current : {}), ...patch })
       : { ...(isObject(current) ? current : {}), ...patch };
+    // A patch that lands on the values already there is not an edit (a cycler landing on its current value, a service
+    // re-applying the saved section), so it dirties nothing and publishes nothing: the audio thread is already running
+    // it. Both sides went through the same parse, so their key order is the same and the comparison is exact.
+    if (JSON.stringify(next) === JSON.stringify(current)) return;
     this.projectSettings = { ...this.projectSettings, sections: { ...this.projectSettings.sections, [key]: next } };
-    this.markDirty();
+    this.markSettingsChanged();
     this.publishGraph(false);
     this.notifySystemsChange();
   }
@@ -615,7 +620,7 @@ export class ProjectStore {
   setZoom(n: number): boolean {
     if (n < 0 || n > ZOOM_MAX) return false; // out of range → reject
     this.projectSettings = { ...this.projectSettings, zoom: n };
-    this.markDirty();
+    this.markSettingsChanged();
     return true;
   }
 
@@ -865,8 +870,25 @@ export class ProjectStore {
   private setEnumSetting(key: "layout" | "midiRouting" | "audioRouting", value: string): boolean {
     if (!(SETTING_VALUES[key] as readonly string[]).includes(value)) return false; // unknown → reject
     this.projectSettings = { ...this.projectSettings, [key]: value } as ProjectSettings;
-    this.markDirty();
+    this.markSettingsChanged();
     return true;
+  }
+
+  /** A project with nothing of its own yet: no systems, no file, no name. The start screen's settings rows edit such a
+   *  project (Settings > MIDI's picks, Layout, Zoom, the MIDI and audio routings), and a prompt to save one protects
+   *  nothing: opening a ROM starts a new project anyway (openRom calls newProject, which resets the settings), and a
+   *  close that saved one would write a .rplg holding only settings. The edit itself is kept, so it applies to the audio
+   *  and MIDI streams as it lies and reaches the project a system is later added to. A pathless project WITH systems is
+   *  a project: it is what the close guard exists for. */
+  private isPristine(): boolean {
+    return this.systems.systems().length === 0 && this.path === "" && this.projectName === "";
+  }
+
+  /** A settings edit landed: unsaved work in a project, an edit alone in an empty one. The change callback fires either
+   *  way, so what shows a setting repaints. */
+  private markSettingsChanged(): void {
+    if (this.isPristine()) this.onChangeCb();
+    else this.markDirty();
   }
 
   /** Publish the whole graph: the systems as they stand, wired by the current audio-routing mode, with their

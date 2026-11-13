@@ -43,6 +43,12 @@ test("Settings > MIDI: the checklist picks ports into the project, 'All devices'
   expect(labelOf("Arturia KeyStep 32")).toBe("[x] Arturia KeyStep 32");
   expect(fake.applied.at(-1)!.selection.inputs).toEqual(["Arturia KeyStep 32"]);
 
+  // The pick is a settings edit to a project with no systems and no file, so it is not unsaved work: the close goes
+  // through, with no prompt to save a project that holds only the pick.
+  const closeGuard = g as { __rp_onCloseRequested?: () => boolean };
+  expect(closeGuard.__rp_onCloseRequested?.()).toBe(false);
+  expect(ui.findByTextContaining("Unsaved changes")).toBe(null);
+
   // The output side mirrors to a chosen port; Left/Right do nothing on a checklist row, Enter toggles it.
   expect(navTo("Deluge")).toBeTruthy();
   ui.tapKey(Key.Enter);
