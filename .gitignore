@@ -19,6 +19,8 @@
 # sanitizer build dirs (tools/run-sanitizer.sh)
 /build-tsan/
 /build-asan/
+# the assertions build the CLI's exit cases are also run against (spec/14's "A session's exit")
+/build-dbg/
 # profiling build dir (tools/run-profile.sh)
 /build-prof/
 # the Mesen all-consoles build dirs (tools/build-mesen-all-consoles.sh: ON, and --off at -O0)

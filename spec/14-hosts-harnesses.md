@@ -251,8 +251,10 @@ inside the call and no caller's stack unwinds. One limit is the engine's, not th
 executor's exception with `JS_GetException` and without the uncatchable check (the promise constructor, and the same
 shape in `js_promise_resolve_thenable_job` and an async generator's resume), so code after
 `new Promise(() => tjs.exit(0))` still runs synchronously until control returns to the C caller. Nothing runs after
-that: the drain checks the exit on every pass, so a job queued behind the one that exited does not run either. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print
-`teardown: graph cleared, providers stopped`, and the test host print every message its scripted Pro MK3 was sent plus
-`teardown: providers stopped`, which is how
-[test-native/session-pump.test.ts](../packages/retroplug/test-native/session-pump.test.ts) holds a claimed Launchpad's
-close bytes from a child process's exit.
+that: the drain checks the exit on every pass, so a job queued behind the one that exited does not run either. Those
+cases run against `build/bin/retroplug-cli`; `RETROPLUG_CLI=build-dbg/bin/retroplug-cli` runs the same script against
+an assertions build, where a reference an exit path leaks aborts `JS_FreeRuntime`'s gc-list check at exit, which the
+release build cannot see. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print `teardown: graph cleared, providers
+stopped`, and the test host print every message its scripted Pro MK3 was sent plus `teardown: providers stopped`,
+which is how [test-native/session-pump.test.ts](../packages/retroplug/test-native/session-pump.test.ts) holds a claimed
+Launchpad's close bytes from a child process's exit.

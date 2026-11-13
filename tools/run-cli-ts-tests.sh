@@ -12,7 +12,10 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLI="$REPO/build/bin/retroplug-cli"
+# The build's CLI. RETROPLUG_CLI names another, which is how section 6h's exit cases are also run against an assertions
+# build (build-dbg): a JS reference the exit paths leak aborts JS_FreeRuntime's gc_obj_list check there, at exit, where
+# the release build cannot see it.
+CLI="${RETROPLUG_CLI:-$REPO/build/bin/retroplug-cli}"
 FIX="$REPO/tools/fixtures"
 
 if [ ! -x "$CLI" ]; then
@@ -593,6 +596,10 @@ absent "...and never shows the exit's marker" "$out" "taken by the embedder's ex
 #     its close bytes - and an error thrown in the same turn as a tjs.exit(0) was lost with exit 0. With txiki's exit
 #     hook the exit unwinds like a thrown session or a Ctrl-C, so the same teardown runs, and the hook records what was
 #     pending when exit was called. RETROPLUG_TEARDOWN_TRACE=1 makes the teardown say it ran.
+#     The reference counts on these paths are checked by building this script against an assertions build:
+#     `RETROPLUG_CLI=build-dbg/bin/retroplug-cli tools/run-cli-ts-tests.sh`, where a rejection's reason an exit path
+#     forgot to free aborts JS_FreeRuntime's gc_obj_list check at exit (rc 134) instead of exiting 2. The release binary
+#     cannot see that (quickjs-ng asserts only off NDEBUG), so the listener case below is a guard only in that run.
 EX="$TMP/exit"
 mkdir -p "$EX"
 printf '%s\n' 'tjs.exit(0);' >"$EX/normal.js"
