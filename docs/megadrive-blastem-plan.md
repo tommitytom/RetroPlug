@@ -2708,7 +2708,12 @@ the registry (a `std::vector<Source*>`, 8 is no longer a limit), and **`add` siz
 block. `prepare` growing `capacity_` re-primes every source, which the boot path does not depend on (it runs before any
 source exists) but a runtime growth does; that is a quiescent control-thread operation, and the one audible cost is that
 re-prime. `putMono` duplicates into both sides. `reset()` calls `blip_reset(blip, int(capacity_))` on both sides of
-every source and re-primes, which is `clear()`'s ring reset without dropping the registry.
+every source, which ALSO resets each blip's rate to blip_buf's default, so it then re-applies the rates (`adjustClock`
+with the source's stored master clock and divider, which recomputes `blip_set_rates` and `flushClocks`), zeroes
+`pendingClocks`, `lastLeft`/`lastRight` and the one-pole filter's state, and only then re-primes: `clear()`'s ring reset
+without dropping the registry. Without the re-applied rates every state load leaves the core silent (Task 13's peak
+check is the guard). `Source` therefore stores its master clock and divider when it is added, for `setHostRate` and
+`reset()` both.
 
 `render_audio_source`/`render_free_source`/... in `BlastemShim.cpp` forward to the instance's sink. **Every one of them
 tolerates a null instance**, because the sink's entry points are also called by a context built outside a system (Task
@@ -4308,6 +4313,18 @@ Five edits in `deps/blastem`, each with the marker:
    malformed ROM must not take the host process with it.
 5. `vdp.c`'s `vdp_deserialize` (:6617) refuses an out-of-range FIFO size out of a loaded state the same way
    (`buf->failed = 1; return;`), which is another field a corrupt state controls.
+6. `romdb.c`'s two map-entry offset checks a USER'S ROM can trip (`offset >= expanded_size` for a `ROM` device, :1030,
+   and for `sft-wukong-fixed`/`-remap`, :1326: a trimmed or overdumped copy of a game the database knows) stop calling
+   `fatal_error`. `rom_info` (romdb.h) gains `uint8_t load_failed;`, zeroed where `rom_info` is built; both sites set it,
+   `warning(...)` the same text, point `map->buffer` at `state->rom` with offset 0 so nothing indexes out of range, and
+   return. `BlastemMdSystem::boot()` checks `gen_`'s `rom_info`/the configured info after `alloc_config_genesis` (read
+   genesis.c to find where the info lands, and check that) and, when `load_failed` is set, destroys the core and throws
+   the same build error a ROM that fails to load throws (section "Error handling" of the design: the system build fails
+   with a message). Test: add a case to this task's test file that builds a 64 KiB synthetic image whose header
+   product code (`GAME_ID_OFF`, romdb.c:1407-1438: the database is looked up by SHA1 first, then by product code alone,
+   so no checksum is involved) is `T-81406` (NBA Jam TE in `rom.db`, whose map has a `ROM` row at `offset 200000`, past
+   a 64 KiB image's expanded size), and asserts the build is refused with that message and the process is still
+   running.
 
 and, because a state can also fail to *grow* (`serialize.c`'s `reserve` reallocs without a check, so an out-of-memory
 capture writes through NULL): `reserve` returns a `uint8_t` that latches `buf->failed` on a failed `realloc`, and every
@@ -4331,7 +4348,8 @@ one falls in one of three groups:
   `genesis.c:2147` (`load_state`'s file path; this plan calls `genesis_serialize`/`genesis_deserialize` directly).
   The host hands `alloc_config_genesis` a memory buffer and its own state bytes, so none of those three is on any path a
   plugin takes.
-- **Built-in data only, which is ours and static**: `romdb.c`'s fifteen and `i2c.c`'s four fire on a malformed ROM DATABASE
+- **Built-in data only, which is ours and static**: `romdb.c`'s thirteen others (the two a user's ROM can reach are
+  edit 6 above) and `i2c.c`'s four fire on a malformed ROM DATABASE
   or a missing EEPROM map, and the database is compiled in from `deps/blastem/rom.db` (a bad row fails Task 3's build
   test, not a user's session); `config.c`, `tern.c`, `paths.c`, `gen.c` and `event_log.c` are the frontend's
   configuration, asset and code-generation paths, which a library build never enters; `genesis.c:3035,
@@ -4426,10 +4444,10 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
         // A well-formed section whose payload is short or impossible: the core is now PARTLY loaded, so it has to be
         // rebuilt. That is boot()'s job, not this function's: loadStateBytes runs inside seedSramAndState, which boot()
         // calls as its LAST act, so rebooting from here would recurse through a half-built boot. It only flags the
-        // refusal and drops the seed; boot()'s tail sees the flag, destroys the core and boots once more from power-on
-        // (and the second boot has no state to seed, so it cannot recurse again).
+        // refusal; boot()'s tail sees the flag, drops the seed, destroys the core and boots once more from power-on
+        // (and the second boot has no state to seed, so it cannot recurse again). The seed is NOT cleared here: boot()'s
+        // retry keys on a non-empty seed, and clearing it would keep the half-loaded core.
         stateRefused_ = true;
-        config_.savestate.clear();
         return false;
     }
     // The state carries the 68k's 32-bit cycle count, not this host's 64-bit clock: re-anchor so masterClockOf maps the
