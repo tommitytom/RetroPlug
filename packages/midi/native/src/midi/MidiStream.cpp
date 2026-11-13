@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -60,6 +61,7 @@ void MidiStream::close() {
     OutputSet* old = outputs_.exchange(nullptr, std::memory_order_seq_cst);
     retire(old);
     openOutputs_.clear();
+    for (const auto& entry : hwOut_) reportDrops(*entry.second);
     hwOut_.clear();      // closed only now: no published set named them, so no send can be inside one
     virtualIn_.reset();  // cancels its callback: no receiver runs after this returns
     hwIn_.clear();       // each port cancels its own callback as it goes
@@ -192,6 +194,7 @@ void MidiStream::applyOutputs(Apply mode) {
         // heal. Nothing is published while that happens, so a send in the gap reaches no hardware output - the price of
         // the re-pick, and the reason a project load diffs instead.
         publishOutputs({});  // waits out the send in flight, so no send is inside a port when it is closed
+        for (const auto& entry : hwOut_) reportDrops(*entry.second);
         hwOut_.clear();
         openOutputs_.clear();
     }
@@ -233,6 +236,7 @@ void MidiStream::applyOutputs(Apply mode) {
                             ++it;
                             continue;
                         }
+                        reportDrops(*it->second);
                         it = hwOut_.erase(it);  // closed now: no published set names it and no send is inside it
                     }
                     dropped.clear();
@@ -251,6 +255,7 @@ void MidiStream::applyOutputs(Apply mode) {
             ++it;
             continue;
         }
+        reportDrops(*it->second);
         it = hwOut_.erase(it);  // closes it
     }
 }
@@ -363,6 +368,12 @@ void MidiStream::send(const std::uint8_t* data, std::size_t n) {
         for (PortWriter* writer : set->ports) writer->push(data, n);
     }
     epoch_.fetch_add(1, std::memory_order_seq_cst);  // even: done, and everything above happens-before a retire
+}
+
+void MidiStream::reportDrops(const PortWriter& writer) {
+    const std::uint64_t n = writer.dropped();
+    if (n == 0) return;
+    emit("MIDI out (" + writer.name() + "): " + std::to_string(n) + " message(s) dropped");
 }
 
 void MidiStream::emit(const std::string& text) {

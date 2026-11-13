@@ -9,6 +9,11 @@
 //
 // The operator new/delete replacements themselves are defined ONCE, in PortWriter.test.cpp, and cover the whole
 // retroplug-midi-test binary; this header is how the stream's own case (MidiStream.test.cpp) arms and reads the count.
+//
+// What the replacements do not cover: the ALIGNED forms (operator new(std::align_val_t)), which nothing on the push path
+// uses, and on Windows (/MD) every allocation made inside the C++ runtime's own DLL, which calls the DLL's operator new
+// and not the executable's. Neither gap touches what the cases measure: the push is a memcpy into the ring and a futex
+// (a `lock xadd` plus, for a sleeping writer, one wait or wake syscall), and none of those allocates.
 
 #include <cstddef>
 

@@ -23,15 +23,18 @@
 // the counter and then reads `sleeping_`, and under acquire/release both store-load pairs may be reordered - the writer
 // would then sleep with a record queued, which x86 hides and AArch64 (the handheld and Pi builds) does not. In the one
 // total order either the exchange sees the writer's `true` and notifies, or the writer's re-read sees the bumped
-// counter. stop() bumps the counter seq_cst and notifies all as well, so a writer waiting with an empty ring is still
-// joined.
+// counter. The snapshot that re-read compares against is taken at the TOP of each pass, before the writer looks at the
+// ring: one taken after that look does not cover the push that lands in between, which is a lost wake in the same shape
+// and the same failure. stop() bumps the counter seq_cst and notifies all as well, so a writer waiting with an empty
+// ring is still joined.
 //
 // STOPPING. A port that leaves the selection, or the stream closing, stops its writer with a FLUSH: what a push has
 // queued is sent before the port goes, because a dropped Note Off is a stuck note. The flush is bounded by
-// kFlushDeadline, after which the rest is discarded; the send already inside the port cannot be interrupted (WinMM
-// gives no way to cancel a write in progress), so a close can take that long on top. Nothing may push after stop()
-// begins: the stream unpublishes the set and waits the send in flight out before it stops a writer, which is the order
-// its epoch handshake already keeps for the ports' lifetime.
+// kFlushDeadline, which stop() counts from itself; a send that started just before the writer saw the stop runs to
+// completion inside the bound and one that started just before the deadline runs on after it, so a close can take up to
+// two sends on top (WinMM gives no way to cancel a write in progress). Nothing may push after stop() begins: the stream
+// unpublishes the set and waits the send in flight out before it stops a writer, which is the order its epoch handshake
+// already keeps for the ports' lifetime.
 //
 // An Inline writer is the same object with no thread: push() writes to the port on the caller's thread, which is what
 // the CLI's facet and the test host want (their caller is the JS thread, and a script that returns from `midiSend` and
@@ -61,8 +64,9 @@ public:
     /** The ring's size. A DIN port drains at about 3125 bytes a second, so this is over twenty seconds of the busiest
      *  traffic a control surface makes; a bigger ring would only add latency to a flush. */
     static constexpr std::size_t kDefaultRingBytes = 64 * 1024;
-    /** How long stop() keeps sending what is queued. A Note Off left in the ring is a stuck note; a port that is
-     *  wedged must not hold the control thread's close for longer than this. */
+    /** How long stop() keeps sending what is queued, counted from the stop. A Note Off left in the ring is a stuck
+     *  note; a port that is wedged must not hold the control thread's close for longer than this, which the two sends
+     *  it can still be inside (one already running, one started just before the deadline) add to. */
     static constexpr std::chrono::milliseconds kFlushDeadline{500};
 
     /** The line sink: the stream's own `emit`, so a writer's log line carries the same prefix and reaches the same
@@ -87,7 +91,7 @@ public:
     bool push(const std::uint8_t* data, std::size_t n);
 
     /** Send what is queued (up to kFlushDeadline), join the writer and close the port. No push may come afterwards.
-     *  Idempotent, and safe on a writer whose port never opened. */
+     *  Idempotent, and safe on a writer whose port never opened (it has no thread to join). */
     void stop();
 
     /** Whole messages dropped because the ring was full, since this writer opened. Read on the control thread, as
@@ -123,6 +127,8 @@ private:
     std::atomic<std::uint32_t> wake_{0};
     std::atomic<bool>          sleeping_{false};
     std::atomic<bool>          stopping_{false};
+    // When the flush runs out, taken by stop() before it sets `stopping_` and read by the writer after it sees it.
+    std::chrono::steady_clock::time_point flushDeadline_{};
 
     std::thread worker_;  // Inline: never started
 };

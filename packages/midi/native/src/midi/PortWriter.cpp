@@ -13,7 +13,10 @@ PortWriter::PortWriter(std::unique_ptr<MidiPort> port, std::string name, Options
       log_(std::move(log)),
       ring_(options.ringBytes < kHeader * 2 ? kHeader * 2 : options.ringBytes),
       scratch_(ring_.size()) {
-    if (options_.mode == OutputMode::Threaded) worker_ = std::thread([this] { run(); });
+    // Only a writer with a port it can send to gets a thread: a null port takes no push (push() says so) and has
+    // nothing to flush, and a thread started for one would be left joinable by stop()'s early return, whose ~thread
+    // terminates the process.
+    if (port_ && options_.mode == OutputMode::Threaded) worker_ = std::thread([this] { run(); });
 }
 
 PortWriter::~PortWriter() { stop(); }
@@ -55,11 +58,16 @@ bool PortWriter::push(const std::uint8_t* data, std::size_t n) {
 
 void PortWriter::stop() {
     if (!port_) return;  // already stopped
+    // The deadline is taken HERE, before the writer is told to stop: the send already inside the port cannot be
+    // interrupted, and one that starts just before the writer sees the flag runs to completion too, so the bound has to
+    // be measured from the stop to hold for both (see kFlushDeadline). Taken by the writer when it notices the flag, it
+    // would leave the second send outside the bound.
+    flushDeadline_ = std::chrono::steady_clock::now() + kFlushDeadline;
     stopping_.store(true, std::memory_order_release);
     if (worker_.joinable()) {
         wake_.fetch_add(1, std::memory_order_seq_cst);
         wake_.notify_all();
-        worker_.join();  // the writer flushes for up to kFlushDeadline (plus the send already in flight) and returns
+        worker_.join();  // the writer flushes to flushDeadline_ and returns
     }
     port_.reset();  // closed now, and no push can reach it: the stream unpublishes and waits sends out before stopping
 }
@@ -68,9 +76,15 @@ void PortWriter::run() {
     bool                                  flushing = false;
     std::chrono::steady_clock::time_point deadline{};
     for (;;) {
+        // The counter snapshot is taken FIRST, before this pass looks at the ring or at the stop: a push that the ring
+        // check below misses has bumped the counter after this load, so either the re-read further down sees the bump
+        // or the push's exchange saw `sleeping_` and notified. Taken after the ring check it does not cover the push
+        // that lands between the two, and the writer then sleeps with that record queued - a Note Off at a burst's end,
+        // held until the next message or a stop.
+        const std::uint32_t seen = wake_.load(std::memory_order_seq_cst);
         if (stopping_.load(std::memory_order_acquire) && !flushing) {
             flushing = true;
-            deadline = std::chrono::steady_clock::now() + kFlushDeadline;
+            deadline = flushDeadline_;
         }
         if (queued()) {
             if (flushing && std::chrono::steady_clock::now() >= deadline) return;  // the rest is discarded
@@ -78,9 +92,8 @@ void PortWriter::run() {
             continue;
         }
         if (flushing) return;  // the flush has nothing left to send
-        // Nothing to do: publish that this thread is going to sleep, then look once more, so a push that landed
-        // between the check above and the store below is not missed, and wait for the next one.
-        const std::uint32_t seen = wake_.load(std::memory_order_acquire);
+        // Nothing to do: publish that this thread is going to sleep, then look once more, so a push that lands after
+        // the snapshot above is not missed, and wait for the next one.
         sleeping_.store(true, std::memory_order_seq_cst);
         if (wake_.load(std::memory_order_seq_cst) == seen && !stopping_.load(std::memory_order_acquire))
             wake_.wait(seen, std::memory_order_seq_cst);

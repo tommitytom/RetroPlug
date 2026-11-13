@@ -142,7 +142,8 @@ public:
     std::uint64_t droppedCount() const { return dropped_.load(std::memory_order_relaxed); }
     /** Whole messages a hardware output's writer dropped because its ring was full - always 0 in a healthy run.
      *  Threaded streams only (an Inline one has no ring): a port that is not draining must not make a lost message
-     *  invisible. Read on the control thread, as droppedCount() is. */
+     *  invisible. Read on the control thread, as droppedCount() is, and the stream itself reads it there: a writer that
+     *  is about to be let go says what it dropped before it goes, since the count lives in the object. */
     std::uint64_t droppedOutputCount() const {
         std::uint64_t n = 0;
         for (const auto& entry : hwOut_) n += entry.second->dropped();
@@ -171,6 +172,9 @@ private:
     void retire(OutputSet* old);  // waits out a send in flight, then frees the set (never a port: hwOut_'s)
     void pushRing(const std::uint8_t* data, std::size_t len);
     void emit(const std::string& line);  // one log line, prefix included, through sink_ or stderr
+    /** One "MIDI out (...): N message(s) dropped" line for a writer that dropped any, called on the control thread just
+     *  before the writer is let go: its count is all that says a message was lost, and the count dies with the object. */
+    void reportDrops(const PortWriter& writer);
 
     MidiBackend* backend_;  // non-const on purpose: a listing probes the system, and listInputs() is const
     OutputMode   mode_ = OutputMode::Inline;  // where a hardware output's send happens (see OutputMode)

@@ -127,6 +127,41 @@ TEST_CASE("a slow port does not delay a fast one: each output has its own writer
     CHECK(backend.sentTo("Synth out").size() == 1);
 }
 
+// ---- the idle wake --------------------------------------------------------------------------------------------
+
+TEST_CASE("a push that lands as the writer goes idle is not lost: 50k single messages, one at a time") {
+    Rig         rig;
+    auto&       backend = rig.backend;
+    auto        writer  = rig.open();
+    const Bytes note    = {0x90, 0x3C, 0x7F};
+    // Every round waits for the PREVIOUS send to finish and then pushes, so the push lands as the writer leaves
+    // sendOne() for the idle path - the window between its empty-ring check and its sleep that a counter snapshot taken
+    // AFTER the check can miss. Nothing calls stop() in between: a stop's own notify would wake the writer and hide the
+    // lost one, and a lost wake is exactly the Note Off a burst ends with, held until the next message arrives.
+    constexpr int kRounds = 50000;
+    int           lost    = -1;
+    for (int i = 1; i <= kRounds && lost < 0; ++i) {
+        while (backend.sendsFinished.load(std::memory_order_acquire) < i - 1) std::this_thread::yield();
+        if (!writer->push(note.data(), note.size())) {
+            lost = i;  // the ring holds one message and the writer drains it: a refusal is not the case being tested
+            break;
+        }
+        // A writer that noticed the push delivers it at once; one that went to sleep with it queued delivers it only
+        // on the NEXT push or on stop(), so the round's own bound is what tells them apart.
+        const auto deadline = Clock::now() + std::chrono::milliseconds(250);
+        int        spins    = 0;
+        while (backend.sendsFinished.load(std::memory_order_acquire) < i) {
+            if ((++spins & 0x3FF) == 0 && Clock::now() >= deadline) break;
+            std::this_thread::yield();
+        }
+        if (backend.sendsFinished.load(std::memory_order_acquire) < i) lost = i;
+    }
+    writer->stop();
+    CHECK(lost == -1);  // the round whose message the writer held, -1 when it held none
+    // Nothing was dropped and nothing was abandoned: every message reached the port, in order, whatever the scheduling.
+    if (lost < 0) CHECK(backend.sentTo("Synth out").size() == kRounds);
+}
+
 // ---- Inline, the mode the CLI's facet and the test host use ---------------------------------------------------
 
 TEST_CASE("an inline push is the write, on the caller's thread") {
@@ -173,6 +208,18 @@ TEST_CASE("a full ring drops the newest WHOLE message, counts it, and never tear
 
 // ---- stopping -------------------------------------------------------------------------------------------------
 
+TEST_CASE("a threaded writer whose port never opened starts no thread, and stop is the no-op it promises") {
+    // The stream opens a port OUTSIDE the writer, so a refused exclusive open never builds one with no port; a null
+    // one still has to be safe, and stop()'s doc says it is. It was not: the thread started whatever `port_` was, and
+    // stop() returned at its `!port_` check without joining it, so ~thread ended the process.
+    PortWriter         writer(nullptr, "no port", PortWriter::Options{}, [](const std::string&) {});
+    const std::uint8_t note[3] = {0x90, 0x3C, 0x7F};
+    CHECK(!writer.push(note, sizeof(note)));
+    writer.stop();
+    writer.stop();  // idempotent
+    CHECK(writer.dropped() == 0);
+}
+
 TEST_CASE("a stop flushes what queued before the port goes, and nothing is sent after it") {
     Rig   rig;
     auto& backend       = rig.backend;
@@ -199,8 +246,9 @@ TEST_CASE("a wedged port's stop returns by its deadline, and abandons the rest o
     const auto t0 = Clock::now();
     writer->stop();
     const auto elapsed = Clock::now() - t0;
-    // The deadline, plus the one write that was already inside the port when the stop landed, plus slack.
-    CHECK(elapsed < PortWriter::kFlushDeadline + std::chrono::milliseconds(200 + 500));
+    // The deadline (counted from the stop), plus the one write that was already inside the port when the stop landed,
+    // plus the one that started just before the deadline, plus slack.
+    CHECK(elapsed < PortWriter::kFlushDeadline + std::chrono::milliseconds(2 * 200 + 500));
     CHECK(backend.sendsAfterClose() == 0);
     // It gave up on the rest: fewer than the twenty, and more than none (the flush sent what it could).
     const std::size_t sent = backend.sentTo("Synth out").size();

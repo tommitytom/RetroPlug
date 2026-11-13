@@ -697,7 +697,7 @@ TEST_CASE("a swap behind back-to-back long sends waits a bounded time: one send 
     MidiStream stream(backend, mode);
     stream.setOutputs({"Synth out"});
     REQUIRE(stream.open());
-    constexpr int kSends = 40;  // 800 ms of unbroken sends
+    constexpr int kSends = 40;  // 800 ms of unbroken sends, which is the backlog a flush has to abandon
     std::thread   audio([&] {
         const std::uint8_t note[3] = {0x90, 0x3C, 0x7F};
         for (int i = 0; i < kSends; ++i) stream.send(note, 3);
@@ -716,8 +716,11 @@ TEST_CASE("a swap behind back-to-back long sends waits a bounded time: one send 
         CHECK(waited < kSends * backend.sendDelayMs / 4);
         CHECK(backend.totalReceived() == static_cast<std::size_t>(kSends));
     } else {
+        // The bound is the flush's deadline plus the sends it can still be inside, and it has to be TIGHTER than the
+        // backlog to mean anything: a writer with no deadline at all sends all 800 ms of it and fails this.
         CHECK(waited < rp::midi::PortWriter::kFlushDeadline.count() + 500);
         CHECK(backend.totalReceived() >= 1);  // the flush sent what the deadline allowed, and discarded the rest
+        CHECK(backend.totalReceived() < static_cast<std::size_t>(kSends));
     }
     CHECK(backend.sendsAfterClose() == 0);
 }
@@ -1011,18 +1014,34 @@ TEST_CASE("a Threaded stream's send allocates nothing on the audio callback") {
     stream.close();
 }
 
-TEST_CASE("a threaded stream counts the messages a full ring drops") {
+TEST_CASE("a threaded stream counts the messages a full ring drops, and says so when the writer goes") {
     // The count is per port and read on the control thread, as droppedCount() is for the receive ring: a port that is
-    // not draining must not make a lost message invisible.
+    // not draining must not make a lost message invisible. The stream itself is a reader - it reports what a writer
+    // dropped just before letting it go, because the count dies with the writer - so the case holds that line too.
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;
     backend.sendDelayMs      = 300;
     backend.virtualPorts     = false;
-    MidiStream stream(backend, rp::midi::OutputMode::Threaded);
+    MidiStream               stream(backend, rp::midi::OutputMode::Threaded);
+    std::mutex               linesMutex;
+    std::vector<std::string> lines;
+    stream.setLogSink([&](const std::string& line) {
+        std::lock_guard<std::mutex> lk(linesMutex);
+        lines.push_back(line);
+    });
     stream.setOutputs({"Synth out"});
     REQUIRE(stream.open());
     const std::vector<std::uint8_t> repaint(1024, 0xF0);  // a big message, so a few fills the ring
     for (int i = 0; i < 400; ++i) stream.send(repaint.data(), repaint.size());
     CHECK(stream.droppedOutputCount() > 0);
     stream.close();
+    bool said = false;
+    {
+        std::lock_guard<std::mutex> lk(linesMutex);
+        for (const std::string& line : lines)
+            if (line.find("MIDI out (Synth out): ") != std::string::npos &&
+                line.find(" message(s) dropped") != std::string::npos)
+                said = true;
+    }
+    CHECK(said);
 }
