@@ -1,6 +1,7 @@
 #include "system/blastem/BlastemMdSystem.hpp"
 
 #include <algorithm>
+#include <mutex>
 
 #include "system/blastem/BlastemCore.hpp"
 #include "system/blastem/BlastemRom.hpp"
@@ -54,9 +55,8 @@ void BlastemMdSystem::onActivate(double sampleRate) {
 void BlastemMdSystem::boot() {
     if (!isMdRom(rom_)) return;
     // The callbacks BlastEm makes while allocating (render_audio_source, render_set_video_standard,
-    // render_get_framebuffer) belong to this instance: the shim and the sinks read this thread's pointer. There is no
-    // context for `current_system` to name until the allocation returns.
-    currentInstance = this;
+    // render_get_framebuffer) belong to this instance: the shim and the sinks read this thread's pointer.
+    useInstance(this);
     void* cart = blastemRomCopy(rom_);
     if (!cart) {
         // An allocation failure is a refused build, not a crash: alloc_config_genesis byteswaps the cart in place.
@@ -66,13 +66,18 @@ void BlastemMdSystem::boot() {
     // context->output into it immediately (vdp.c:529-530), so a sink with no buffers yet is a null write on the first
     // line.
     video_.prepareBuffers();
-    gen_ = alloc_config_genesis(cart, static_cast<std::uint32_t>(rom_.size()), nullptr, 0, 0,
-                                blastemRegion(config_.region));
+    {
+        // The allocation is not reentrant (BlastemCore.hpp's coreLifecycleMutex): BlastEm's own file statics are
+        // handed through it. Only the allocation takes the lock, so a failed boot can be retried without holding it.
+        std::lock_guard<std::mutex> lock(coreLifecycleMutex());
+        gen_ = alloc_config_genesis(cart, static_cast<std::uint32_t>(rom_.size()), nullptr, 0, 0,
+                                    blastemRegion(config_.region));
+    }
     if (!gen_) {
         aligned_free(cart);
         return;
     }
-    useInstance(this, gen_);  // from here the core can start a DMA, which reads the context through current_system
+    useInstance(this);  // the context exists: from here, callbacks it starts belong to this instance
     // Port 2 is the host's device, not a pad: a game that reads player 2 sees the pins' idle state (which is a pad's
     // nothing-pressed state minus the pad's response), and a role claims the lines by pushing levels. Port 1 stays
     // whatever romdb.c chose, which is the pad the wire bytes drive.
@@ -108,17 +113,22 @@ std::uint64_t BlastemMdSystem::mclkNow() const {
 
 void BlastemMdSystem::destroyCore() {
     if (gen_) {
-        useInstance(this, gen_);
+        useInstance(this);
         // Frees the aligned ROM copy too, and the chips' own frees hand their audio sources back to audio_ through
         // render_free_source, which is why currentInstance is set before this and the sink outlives the context.
-        gen_->header.free_context(&gen_->header);
+        // The free takes the allocation lock (BlastemCore.hpp's coreLifecycleMutex): vdp_free touches the same
+        // file-scope table state the allocation does.
+        {
+            std::lock_guard<std::mutex> lock(coreLifecycleMutex());
+            gen_->header.free_context(&gen_->header);
+        }
         gen_ = nullptr;
         activated_ = false;
     }
     // Ends by clearing the thread-local, and not inside the branch: a boot that failed set it too, and a pointer left
     // here outlives the instance it named, so the next BlastEm callback on this thread (a context built by whoever
     // runs next, with no system of its own) would dereference a freed system.
-    useInstance(nullptr, nullptr);
+    useInstance(nullptr);
 }
 
 void BlastemMdSystem::onDeactivate() { destroyCore(); }
@@ -222,7 +232,7 @@ void BlastemMdSystem::switchPsgClock(bool fast) {
     // The callback psg_adjust_master_clock makes belongs to THIS instance's sink. It routes by the source's own sink
     // (BlastemAudio.hpp), but the instance pointer is what a future callback reached from here would read, and a
     // switchPsgClock on an instance that is not the last one to run must not name that one.
-    useInstance(this, gen_);
+    useInstance(this);
     gen_->psg->clock_inc = fast ? 112u : 240u;
     psg_adjust_master_clock(gen_->psg, gen_->master_clock);
 }
@@ -238,13 +248,13 @@ void BlastemMdSystem::syncSoundTo(std::uint64_t mclk) {
     const std::uint64_t offset = upto - gen_->cycle_base;
     if (offset > UINT32_MAX) return;  // unreachable: the rebase keeps the count inside the window
     if (gen_->psg->cycles >= offset) return;  // every sync so far ran both chips to the same clock
-    useInstance(this, gen_);
+    useInstance(this);
     genesis_sync_sound(gen_, static_cast<std::uint32_t>(offset));
 }
 
 void BlastemMdSystem::run_until(std::uint64_t mclk) {
     if (!gen_ || mclk <= mclkNow()) return;
-    useInstance(this, gen_);
+    useInstance(this);
     // The stop is a 32-bit OFFSET from gen->m68k->cycles (cycle_base + cycles is the absolute clock), computed in that
     // domain, never as `mclk - cycle_base` truncated to 32 bits: the difference is a 64-bit quantity, and it stays
     // exact only because the rebase keeps the count inside the window. Three terms cap the step: the clocks still
@@ -283,13 +293,13 @@ void BlastemMdSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* dat
 
 void BlastemMdSystem::writePortControl(std::uint8_t value) {
     if (!gen_) return;
-    useInstance(this, gen_);  // as every call into the core: a frontend callback the handler makes belongs to this one
+    useInstance(this);  // as every call into the core: a frontend callback the handler makes belongs to this one
     io_control_write(&gen_->io.ports[1], value, gen_->m68k->cycles);
 }
 
 void BlastemMdSystem::writePortData(std::uint8_t value) {
     if (!gen_) return;
-    useInstance(this, gen_);
+    useInstance(this);
     io_data_write(&gen_->io.ports[1], value, gen_->m68k->cycles);
 }
 

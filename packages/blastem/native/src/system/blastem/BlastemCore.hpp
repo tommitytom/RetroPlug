@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 // The one place BlastEm's C headers are seen from C++. Everything else in this package includes this header instead,
 // so the extern "C" wrap is written once (the vendored headers carry no C++ guards of their own). Include this only
 // from a target that links `blastem`: its PUBLIC definitions and include roots are what make these headers parse
@@ -13,12 +15,17 @@ namespace rp::blastem {
 // where every translation unit that calls into the core can see it: a definition with no declaration is not a seam.
 extern thread_local void* currentInstance;
 
-// BlastEm's global `current_system`, which `currentInstance` does not reach: genesis.c's 68k-to-VDP DMA read path
-// (read_dma_value) and vdp_dma_started() cast it to their context, so a ROM that starts a DMA reads through a null
-// without it. Set beside currentInstance, from the same call sites and for the same reason (one instance runs one call
-// at a time); the per-instance replacement, the VDP's own system pointer, is a later mirror commit. `context` is the
-// instance's genesis_context, or null when it has none.
-void useInstance(void* instance, void* context);
+// Sets this thread's instance pointer, from a system on every call into the core (and with null once the call is
+// over). It used to set BlastEm's global `current_system` beside it, because genesis.c's 68k-to-VDP DMA read path
+// (read_dma_value) and vdp_dma_started() cast that global to their context; the mirror now hands those calls the VDP's
+// own system pointer, and nothing in this build's file set reads current_system anymore.
+void useInstance(void* instance);
+
+// One process-wide lock over BlastEm's allocation path (alloc_config_genesis and free_context). That path still
+// touches file-scope state this package has not audited end to end (the m68k sync/int-ack handoff, the YM and VDP
+// table inits), so no two instances build or free a context at the same time and those statics are never shared
+// state in practice. Control thread only: a block never allocates a context, so the audio path never takes it.
+std::mutex& coreLifecycleMutex();
 
 }  // namespace rp::blastem
 

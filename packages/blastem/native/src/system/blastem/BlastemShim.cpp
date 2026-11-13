@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 
 #include "system/blastem/BlastemMdSystem.hpp"  // the instance whose video() and audio() the callbacks answer for
 
@@ -20,6 +21,14 @@ namespace rp::blastem {
 
 // The instance the frontend callbacks belong to (declared in BlastemCore.hpp).
 thread_local void* currentInstance = nullptr;
+
+// BlastEm's allocation path (alloc_config_genesis / free_context) still touches file-scope state this package has not
+// audited end to end, so it runs under one process-wide lock. Control thread only: a block never allocates a context,
+// so the audio path never takes it.
+std::mutex& coreLifecycleMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
 
 // The audio_source* BlastEm hands back IS the AudioSink::Source* render_audio_source returned: BlastEm never reads the
 // struct's own fields (they are render_audio.c's, which is not compiled) and this host never reads theirs. So the round
@@ -296,9 +305,8 @@ int socket_error_is_wouldblock(void) { return 0; }
 
 namespace rp::blastem {
 
-void useInstance(void* instance, void* context) {
+void useInstance(void* instance) {
     currentInstance = instance;
-    current_system = static_cast<system_header*>(context);
 }
 
 }  // namespace rp::blastem
