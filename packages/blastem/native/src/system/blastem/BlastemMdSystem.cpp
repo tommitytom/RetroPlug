@@ -54,7 +54,8 @@ void BlastemMdSystem::onActivate(double sampleRate) {
 void BlastemMdSystem::boot() {
     if (!isMdRom(rom_)) return;
     // The callbacks BlastEm makes while allocating (render_audio_source, render_set_video_standard,
-    // render_get_framebuffer) belong to this instance: the shim and the sinks read this thread's pointer.
+    // render_get_framebuffer) belong to this instance: the shim and the sinks read this thread's pointer. There is no
+    // context for `current_system` to name until the allocation returns.
     currentInstance = this;
     void* cart = blastemRomCopy(rom_);
     if (!cart) {
@@ -72,6 +73,7 @@ void BlastemMdSystem::boot() {
         aligned_free(cart);
         return;
     }
+    useInstance(this, gen_);  // from here the core can start a DMA, which reads the context through current_system
     m68k_reset(gen_->m68k);
     // The frame, once, for the region the core just chose: 240 lines on a PAL machine, 224 on an NTSC one (version_reg's
     // HZ50 bit, set by set_region during the allocation above). The shell's frame slot is sized at claim and never
@@ -80,6 +82,7 @@ void BlastemMdSystem::boot() {
     sampleBase_ = 0;
     sampleAnchor_ = 0;
     mclkAnchor_ = 0;
+    nextGridSample_ = 0;
     activated_ = true;
     setGainDb(config_.gainDb, true);
 }
@@ -101,7 +104,7 @@ std::uint64_t BlastemMdSystem::mclkNow() const {
 
 void BlastemMdSystem::destroyCore() {
     if (gen_) {
-        currentInstance = this;
+        useInstance(this, gen_);
         // Frees the aligned ROM copy too, and the chips' own frees hand their audio sources back to audio_ through
         // render_free_source, which is why currentInstance is set before this and the sink outlives the context.
         gen_->header.free_context(&gen_->header);
@@ -111,7 +114,7 @@ void BlastemMdSystem::destroyCore() {
     // Ends by clearing the thread-local, and not inside the branch: a boot that failed set it too, and a pointer left
     // here outlives the instance it named, so the next BlastEm callback on this thread (a context built by whoever
     // runs next, with no system of its own) would dereference a freed system.
-    currentInstance = nullptr;
+    useInstance(nullptr, nullptr);
 }
 
 void BlastemMdSystem::onDeactivate() { destroyCore(); }
@@ -142,15 +145,22 @@ void BlastemMdSystem::setGainDb(float dB, bool immediate) {
 // The block triad, and the core's stop: one run a block, ended at the block's own master clock rather than at a frame
 // boundary. The audio the run leaves behind is drained by the audio sink.
 void BlastemMdSystem::prepareForBlock(const AudioBlockInfo& info) {
-    blockFrames_ = info.frames;
-    // The pad's transitions are applied as they arrive (BlastEm's gamepad state is a level its port read samples
-    // live), so nothing is queued here: a press that precedes a block is what that block's polls see.
+    blockFrames_ = info.frames;  // the stop grid's end is sampleBase_ + this
 }
 
 bool BlastemMdSystem::stepIfBelowTarget(std::uint32_t /*framesNeeded*/) {
-    // One stop a block: the port device answers from a queue stamped in master clocks, so nothing else needs the 68k
-    // to pause mid-block. Always false: an unlinked system is the 1-member case of the round-robin.
-    run_until(masterClockOf(sampleBase_ + blockFrames_));
+    // One stop per host SAMPLE, not one per block. BlastEm charges refresh delays and interrupt-latency syncs at every
+    // sync, so where the stops fall moves the emulation by a few cycles: a block's end as a stop point would make a
+    // 1-frame render and a 4096-frame render of the same 2 s disagree. The grid is absolute time, so every partition
+    // hits exactly the same stops, and run_until is already a no-op once the clock has passed, so a sample the core has
+    // overrun costs nothing here. The resumes are not free (a block of stops costs about a fifth more than one stop a
+    // block on the timing images), and they are what buys invariance. Always false: an unlinked system is the 1-member
+    // case of the round-robin.
+    const std::uint64_t end = sampleBase_ + blockFrames_;
+    for (std::uint64_t s = nextGridSample_; s < end; ++s) {
+        run_until(masterClockOf(s + 1));
+        nextGridSample_ = s + 1;
+    }
     return false;
 }
 
@@ -199,16 +209,16 @@ void BlastemMdSystem::switchPsgClock(bool fast) {
 
 void BlastemMdSystem::run_until(std::uint64_t mclk) {
     if (!gen_ || mclk <= mclkNow()) return;
-    currentInstance = this;
+    useInstance(this, gen_);
     // The stop is a 32-bit OFFSET from gen->m68k->cycles (cycle_base + cycles is the absolute clock), computed in that
     // domain, never as `mclk - cycle_base` truncated to 32 bits: the difference is a 64-bit quantity, and it stays
     // exact only because the rebase keeps the count inside the window. Three terms cap the step: the clocks still
     // wanted, one quarter of the 32-bit space (2^30 clocks, about 20 s at 53.7 MHz, which keeps the arithmetic clear
     // of the top), and UINT32_MAX minus the current count. The third can be the smallest: between crossing
-    // MAX_NO_ADJUST and the frame end that rebases, the headroom is under one 8192-frame block at 48 kHz, so it binds
-    // and adds a mid-block stop. A stop costs the clock nothing (the loop recomputes the step from the clock it reads
-    // after the resume), and a block-end stop is a partition-dependent one, which is what the one-sample grid in
-    // stepIfBelowTarget removes.
+    // MAX_NO_ADJUST and the next top-level sync, which is where the rebase happens, the headroom is under one
+    // 8192-frame block at 48 kHz, so it binds and adds a mid-block stop. A stop costs the clock nothing (the loop
+    // recomputes the step from the clock it reads after the resume), and with the one-sample grid in stepIfBelowTarget
+    // it is not a partition-dependent one either.
     constexpr std::uint64_t kWindow = 0x40000000u;
     while (mclkNow() < mclk) {
         const std::uint32_t cyc = gen_->m68k->cycles;

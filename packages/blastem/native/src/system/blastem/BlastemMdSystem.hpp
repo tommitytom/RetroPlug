@@ -111,6 +111,9 @@ private:
     std::uint64_t sampleAnchor_ = 0;
     std::uint64_t mclkAnchor_ = 0;
     std::uint32_t blockFrames_ = 0;  // the block prepareForBlock was told about
+    // The first host sample of the grid the next stepIfBelowTarget runs: the stop schedule is a fixed one-sample grid
+    // (absolute time), so a host block's partition cannot move a stop. See stepIfBelowTarget.
+    std::uint64_t nextGridSample_ = 0;
 
     // The block's drained mix, before the gain: sized at activation and at every reserveAudio growth, never reallocated
     // on the block thread (the engine's [alloc] cases count a block's allocations, emulation included).

@@ -13,6 +13,13 @@ namespace rp::blastem {
 // where every translation unit that calls into the core can see it: a definition with no declaration is not a seam.
 extern thread_local void* currentInstance;
 
+// BlastEm's global `current_system`, which `currentInstance` does not reach: genesis.c's 68k-to-VDP DMA read path
+// (read_dma_value) and vdp_dma_started() cast it to their context, so a ROM that starts a DMA reads through a null
+// without it. Set beside currentInstance, from the same call sites and for the same reason (one instance runs one call
+// at a time); the per-instance replacement, the VDP's own system pointer, is a later mirror commit. `context` is the
+// instance's genesis_context, or null when it has none.
+void useInstance(void* instance, void* context);
+
 }  // namespace rp::blastem
 
 extern "C" {

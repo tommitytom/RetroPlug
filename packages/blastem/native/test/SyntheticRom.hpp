@@ -8,15 +8,29 @@
 //
 // The 68k encodings used, and nothing else, so a reader can check a byte against a manual:
 //   13FC 00vv aaaaaaaa   move.b #vv,(aaaaaaaa).L
+//   23FC vvvvvvvv aaaaaaaa move.l #vvvvvvvv,(aaaaaaaa).L
+//   33FC vvvv aaaaaaaa   move.w #vvvv,(aaaaaaaa).L
 //   1039 aaaaaaaa       move.b (aaaaaaaa).L,d0
 //   3039 aaaaaaaa       move.w (aaaaaaaa).L,d0
+//   3239 aaaaaaaa       move.w (aaaaaaaa).L,d1
 //   13C0 aaaaaaaa       move.b d0,(aaaaaaaa).L
+//   13C2 aaaaaaaa       move.b d2,(aaaaaaaa).L
 //   33C1 aaaaaaaa       move.w d1,(aaaaaaaa).L
+//   33C2 aaaaaaaa       move.w d2,(aaaaaaaa).L
+//   33F9 aaaaaaaa aaaaaaaa move.w (aaaaaaaa).L,(aaaaaaaa).L
+//   5279 aaaaaaaa       addq.w #1,(aaaaaaaa).L
 //   7200                moveq #0,d1
 //   0200 00mm           andi.b #mm,d0
+//   0242 vvvv           andi.w #vvvv,d2
+//   0002 00mm           ori.b #mm,d2
 //   0C00 00mm           cmpi.b #mm,d0
 //   5241                addq.w #1,d1
+//   D441                add.w d1,d2
+//   C6C1                mulu.w d1,d3 (an unsigned multiply: its cost depends on the operands)
+//   46FC vvvv           move.w #vvvv,sr
 //   67dd / 66dd         beq.s / bne.s (dd is signed, from the address two bytes past the opcode)
+//   6000 dddd           bra.w  (dd is signed, from the address of dddd)
+//   4E73                rte
 //   60dd                bra.s
 //   60FE                bra.s  -2 (a spin)
 #include <cstddef>
@@ -159,5 +173,149 @@ inline std::vector<std::uint8_t> syncEdgeRom() {
                   0x13, 0xFC, 0x00, 0x01, 0x00, 0xFF, 0x00, 0x01}, // move.b #$01,$FF0001 (the flag)
                   {{0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
 }
+
+// A tiny assembler for the timing images below: big-endian words, an absolute label (`at`), and only the encodings the
+// list above names. A program's labels are stamped with `at` so a branch and its target cannot disagree.
+struct Asm {
+    std::vector<std::uint8_t> rom = std::vector<std::uint8_t>(0x10000, 0x00);
+    std::uint32_t             at = 0;
+
+    void w(std::uint16_t v) {
+        rom[at++] = std::uint8_t(v >> 8);
+        rom[at++] = std::uint8_t(v);
+    }
+    void l(std::uint32_t v) {
+        w(std::uint16_t(v >> 16));
+        w(std::uint16_t(v));
+    }
+    void moveWImmAbs(std::uint16_t imm, std::uint32_t addr) { w(0x33FC); w(imm); l(addr); }
+    void moveBImmAbs(std::uint8_t imm, std::uint32_t addr) { w(0x13FC); w(imm); l(addr); }
+    void moveLImmAbs(std::uint32_t imm, std::uint32_t addr) { w(0x23FC); l(imm); l(addr); }
+    // The displacement of a bra.w is measured from the extension word's address, two bytes past the opcode.
+    void braW(std::uint32_t target) {
+        const std::uint32_t extension = at + 2;
+        w(0x6000);
+        w(static_cast<std::uint16_t>(static_cast<std::int32_t>(target) - static_cast<std::int32_t>(extension)));
+    }
+};
+
+// The timing-observing images: what a real game does that a tight register-write loop does not. Each one's main loop
+// reads the VDP's status and HV counter (which sync the components at points the host did not choose), folds them into
+// a PSG volume write, and spends a data-dependent number of clocks in `mulu`; the flags add the interrupt pairs, a Z80
+// running its own program behind a 68k bus request, and a 68k-to-VDP DMA started from the VINT handler, which blocks
+// the 68k inside the control-port write for thousands of clocks. They are here because a stop model that is transparent
+// on a `bra .` spin can still move the emulation on a ROM that watches its own timing.
+//
+//   $0     SP $00FFFE00, reset PC $000200
+//   $70    HINT (autovector 4) -> $400
+//   $78    VINT (autovector 6) -> $420
+//   $100   the SEGA header
+//   $200   VDP register writes, optional Z80 program, PSG tone, then the loop
+//   $400   the HINT handler
+//   $420   the VINT handler
+//
+// `ints` enables VINT and HINT (reg 0's 0x10 and reg 1's 0x20), `dma` also sets reg 1's DMA bit, `z80` loads a Z80
+// program through the bus request window and then reads Z80 RAM in the main loop. Without `ints` the VDP's interrupt
+// pins stay quiet, which is the no-interrupt variant a case uses when it wants the VDP reads alone.
+inline std::vector<std::uint8_t> timingRom(bool z80, bool ints, bool dma) {
+    Asm a;
+    a.at = 0;
+    a.l(0x00FFFE00);  // SP
+    a.l(0x00000200);  // reset PC
+    a.at = 0x70;
+    a.l(0x00000400);  // HINT
+    a.at = 0x78;
+    a.l(0x00000420);  // VINT
+    std::memcpy(a.rom.data() + 0x100, "SEGA MEGA DRIVE ", 16);
+    for (std::uint32_t i = 0; i < 0x200; ++i) a.rom[0x1000 + i] = std::uint8_t(i * 7 + 3);  // the DMA source
+
+    a.at = 0x200;
+    a.moveWImmAbs(ints ? 0x8014 : 0x8004, 0xC00004);                                  // reg 0: HINT enable
+    a.moveWImmAbs(ints ? (dma ? 0x8174 : 0x8164) : (dma ? 0x8154 : 0x8144), 0xC00004);  // reg 1: display, VINT, DMA, mode 5
+    a.moveWImmAbs(0x8A10, 0xC00004);                                                  // reg 10: HINT every 16 lines
+    a.moveWImmAbs(0x8C81, 0xC00004);                                                  // reg 12: H40
+    a.moveWImmAbs(0x8F02, 0xC00004);                                                  // reg 15: autoinc 2
+    if (z80) {
+        // Toggle a byte in Z80 RAM at $4000, read it back, store the program's state, and loop. The 68k asserts the
+        // bus request, loads the program one byte at a time, releases reset, and then releases the bus.
+        static const std::uint8_t prog[] = {0x3E, 0x2B, 0x32, 0x00, 0x40, 0x3E, 0x80, 0x32, 0x01, 0x40,
+                                            0x3E, 0x2A, 0x32, 0x00, 0x40, 0x21, 0x00, 0x10, 0x34, 0x7E,
+                                            0x32, 0x01, 0x40, 0x18, 0xF9};
+        a.moveWImmAbs(0x0100, 0xA11100);
+        a.moveWImmAbs(0x0000, 0xA11200);
+        for (unsigned i = 0; i < sizeof(prog); ++i) a.moveBImmAbs(prog[i], 0xA00000 + i);
+        a.moveWImmAbs(0x0100, 0xA11200);
+        a.moveWImmAbs(0x0000, 0xA11100);
+    }
+    a.moveBImmAbs(0x8E, 0xC00011);  // PSG channel 0: latch, then the tone's high bits, then full volume
+    a.moveBImmAbs(0x01, 0xC00011);
+    a.moveBImmAbs(0x90, 0xC00011);
+    if (ints) {
+        a.w(0x46FC);  // move.w #$2000,sr: supervisor, interrupts at level 5 and below masked (VINT 6 and HINT 4 pass)
+        a.w(0x2000);
+    }
+    const std::uint32_t loop = a.at;
+    a.w(0x3039);
+    a.l(0xC00004);  // move.w $C00004,d0 (status)
+    a.w(0x3239);
+    a.l(0xC00008);  // move.w $C00008,d1 (HV)
+    a.w(0xD441);    // add.w d1,d2
+    a.w(0x33C2);
+    a.l(0xFF0010);  // move.w d2,$FF0010
+    a.w(0xC6C1);    // mulu.w d1,d3
+    a.w(0x33C3);
+    a.l(0xFF0014);  // move.w d3,$FF0014
+    a.w(0x0242);
+    a.w(0x000F);  // andi.w #$F,d2
+    a.w(0x0002);
+    a.w(0x0090);  // ori.b #$90,d2
+    a.w(0x13C2);
+    a.l(0xC00011);  // move.b d2,$C00011 (PSG channel 0 volume)
+    if (z80) {
+        a.moveWImmAbs(0x0100, 0xA11100);
+        a.w(0x1039);
+        a.l(0xA01000);  // move.b $A01000,d0 (Z80 RAM through the window)
+        a.w(0x13C0);
+        a.l(0xFF0012);  // move.b d0,$FF0012
+        a.moveWImmAbs(0x0000, 0xA11100);
+    }
+    a.braW(loop);
+
+    a.at = 0x400;  // HINT
+    a.w(0x5279);
+    a.l(0xFF0000);  // addq.w #1,$FF0000
+    a.w(0x4E73);    // rte
+
+    a.at = 0x420;  // VINT
+    a.w(0x5279);
+    a.l(0xFF0002);  // addq.w #1,$FF0002
+    a.w(0x33F9);
+    a.l(0xC00008);
+    a.l(0xFF0004);  // move.w $C00008,$FF0004
+    if (dma) {
+        // Source $0100 in the VDP's window, 256 words, then a VRAM write through the control port: a 68k-to-VDP DMA
+        // (reg 23's high bit clear), which the VDP runs with the 68k stalled.
+        a.moveWImmAbs(0x9300, 0xC00004);
+        a.moveWImmAbs(0x9401, 0xC00004);
+        a.moveWImmAbs(0x9500, 0xC00004);
+        a.moveWImmAbs(0x9608, 0xC00004);
+        a.moveWImmAbs(0x9700, 0xC00004);
+        a.moveLImmAbs(0x40000080, 0xC00004);
+    }
+    a.w(0x4E73);  // rte
+    return a.rom;
+}
+
+// VDP status/HV reads feeding the PSG, no interrupts: the components are synced by port handlers in the middle of the
+// 68k's own instructions, which is where a rebase or a stop must not happen.
+inline std::vector<std::uint8_t> hvPsgRom() { return timingRom(false, false, false); }
+// The same loop with VINT and HINT enabled: interrupt entry and exit sync at points of the VDP's choosing.
+inline std::vector<std::uint8_t> vintHintRom() { return timingRom(false, true, false); }
+// And with the Z80 running its own program: the bus arbiter grants the Z80 the bus between syncs, so what the 68k reads
+// back from Z80 RAM depends on where the syncs fell.
+inline std::vector<std::uint8_t> z80TimingRom() { return timingRom(true, true, false); }
+// And with a 68k-to-VDP DMA started from the VINT handler: the 68k stops inside the control-port write for thousands
+// of clocks, so a stop bound of one instruction is not a bound of a few hundred clocks.
+inline std::vector<std::uint8_t> vintDmaRom() { return timingRom(true, true, true); }
 
 }  // namespace rp::blastem::test

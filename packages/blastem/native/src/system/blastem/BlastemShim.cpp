@@ -284,3 +284,12 @@ void socket_close(int) {}
 int socket_last_error(void) { return 0; }
 int socket_error_is_wouldblock(void) { return 0; }
 }
+
+namespace rp::blastem {
+
+void useInstance(void* instance, void* context) {
+    currentInstance = instance;
+    current_system = static_cast<system_header*>(context);
+}
+
+}  // namespace rp::blastem
