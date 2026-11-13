@@ -172,8 +172,14 @@ endif()
 # only in C11 mode. __STDC_NO_ATOMICS__ is the standard's own answer for a C11 library without atomics, and keeps
 # zlib's crc32.c off <stdatomic.h> (its fallback for no atomics is what upstream builds everywhere without C11). The two
 # _CRT defines silence MSVC's deprecation notices for the POSIX spellings the sources use (strdup and strcasecmp through
-# util.h's _MSC_VER block, fopen, stat).
+# util.h's _MSC_VER block, fopen, stat). _USE_MATH_DEFINES: the UCRT's <math.h> hides M_PI_2 (ym_common.c) without it.
 if(MSVC)
     target_compile_options(blastem PRIVATE /bigobj /std:c11)
-    target_compile_definitions(blastem PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS __STDC_NO_ATOMICS__)
+    target_compile_definitions(blastem PRIVATE
+        _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS __STDC_NO_ATOMICS__ _USE_MATH_DEFINES)
+endif()
+# Upstream's Makefile passes HAVE_UNISTD_H everywhere but Windows: the bundled zlib's zconf.h includes <unistd.h> only
+# under it, and without the include gzlib.c calls lseek undeclared, which GCC only warns about but Apple's clang refuses.
+if(NOT WIN32)
+    target_compile_definitions(blastem PRIVATE HAVE_UNISTD_H)
 endif()
