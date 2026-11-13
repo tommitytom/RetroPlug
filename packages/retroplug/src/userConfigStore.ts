@@ -146,18 +146,21 @@ export class UserConfigStore {
 
   /** Apply a patch to a section through its contributor's `merge`, written through a re-read of the file (two
    *  processes may share it), and say how it landed - three answers, because a caller cannot act on two: `"written"`
-   *  is a patch the file now holds, `"unchanged"` is a patch that changes nothing (a row re-sending the saved choice: a
-   *  caller that gates something on the file, such as a device, must do it), and `"refused"` is a file that would not
-   *  take it (the read-only latch a newer build's file sets, a failed atomic write, a block stamped newer than its
-   *  contributor). THROWS when the package has no such section or the contributor refuses the patch. The stamp check
-   *  and the merge run over the RE-READ block, inside the store's apply callback: the block's truth is the file, and
-   *  another process may have moved it since this one read it. */
+   *  is a patch the file now holds, `"unchanged"` is a patch the file, as this process last read it, already holds (a
+   *  row re-sending the saved choice: a caller that gates something on the file, such as a device, must act on it),
+   *  and `"refused"` is a file that would not take it (the read-only latch a newer build's file sets, a failed atomic
+   *  write, a block stamped newer than its contributor). THROWS when the package has no such section or the
+   *  contributor refuses the patch. The stamp check and the merge run over the RE-READ block, inside the store's apply
+   *  callback: the block's truth is the file, and another process may have moved it since this one read it. */
   writeSection(key: string, patch: Readonly<Record<string, unknown>>): "written" | "unchanged" | "refused" {
     assertConfigSectionKey(key);
     const entry = configSectionEntryOf(key, this.configSections);
     if (!entry) throw new Error(`${key} is not a config section this product's packages contribute`);
     let stampedNewer = false;
     const answer = this.apply((model) => {
+      // The callback runs once per call today; clearing here means a second run (a re-read and retry loop, if one is
+      // ever added) cannot answer with the previous attempt's refusal.
+      stampedNewer = false;
       const stored = model.sections[key];
       const version = entry.section.version;
       const stamped = version !== undefined && isObject(stored) ? readSectionVersion(stored) : 0;
@@ -349,7 +352,7 @@ export class UserConfigStore {
     // A newer build wrote this file; ours is not the version that gets to edit it.
     if (this.readOnly) return "refused";
     const after = this.serialize(next);
-    if (after === this.serialize()) return "unchanged"; // genuine no-op: the file already holds it
+    if (after === this.serialize()) return "unchanged"; // genuine no-op: the file, as last read, holds it
     // Adopted only once it is on disk. A failed write (on Windows, another process holding the file open without
     // FILE_SHARE_DELETE fails the rename) must not show the change all session and lose it at the next launch.
     if (!this.backend.writeFileAtomic(this.filePath(), enc.encode(after))) return "refused";

@@ -113,7 +113,7 @@ function audioSettingsChildren(host: UiHost): MenuItem[] {
       ? [separator("audio-sep-status"), infoRow("audio-status", `Muted: ${muted}`)]
       : []),
     // An Apply the file refused: the rows still show the staged choice (nothing was applied), and this says why the
-    // device did not move. Cleared by the next Apply that lands, or the next visit.
+    // device did not move. Cleared by the next Apply that lands, the next edit, or the next visit.
     ...(notSaved ? [infoRow("audio-not-saved", notSaved)] : []),
     // A run's flags win over the saved section (E12), so the rows say which choice is NOT the one running rather than
     // showing a saved value the device is not using.

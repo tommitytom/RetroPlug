@@ -18,7 +18,7 @@ export type AudioDraft = AudioDeviceChoice;
 
 let draft: AudioDraft | null = null;
 /** The last Apply the config file refused, for the rows to say why, or "" when none did. Session state beside the
- *  draft, cleared the same ways (a landed Apply, a new visit). */
+ *  draft, and cleared the same ways (a landed Apply, an edit, a new visit). */
 let notSaved = "";
 const notify = createSubscribable();
 const emit = notify.emit;
@@ -43,10 +43,13 @@ export function getAudioDraft(host: Pick<UiHost, "config">): AudioDraft {
   return draft;
 }
 
-/** Edit the draft (a cycler step). Notifies the UI service so the labels repaint at once. */
+/** Edit the draft (a cycler step). Notifies the UI service so the labels repaint at once. The edit also drops a
+ *  refusal: the row says the FILE does not hold the staged choice, and once the staged choice moves, the row is about
+ *  a value no row shows any more. */
 export function setAudioDraft(patch: Partial<AudioDraft>): void {
   if (draft == null) return;
   draft = { ...draft, ...patch };
+  notSaved = "";
   emit();
 }
 
@@ -84,7 +87,10 @@ export function applyAudioDraft(host: UiHost): void {
   // "Holds the patch" is written OR unchanged (a muted device's retry re-sends the saved choice), so a no-op write must
   // not read as a refusal.
   if (!host.config.setSection(AUDIO_SECTION_KEY, { ...choice })) {
-    notSaved = "Not saved: config.json could not be written";
+    // True of both refusals: a newer build's file that this one leaves read-only (the store's warning says which),
+    // and a write that failed. What the row must not claim is a write attempt that never happened.
+    notSaved = "Not saved: config.json was not written";
+    console.warn(`[audio] ${notSaved}`);
     emit();
     return;
   }

@@ -8,22 +8,24 @@ import { FakeAudioDevice, DEFAULT_BACKENDS } from "../testSupport/fakeDevice";
 import { DEFAULT_AUDIO_SECTION } from "../configSection";
 import audioUi from "../ui/index";
 import {
-  audioDescription, audioDraftDirty, audioDriverChoices, fetchMoreDrivers, getAudioDraft, moreDriversAvailable,
-  resetAudioDraft, setAudioDraft,
+  applyAudioDraft, audioDescription, audioDraftDirty, audioDriverChoices, audioNotSaved, fetchMoreDrivers,
+  getAudioDraft, moreDriversAvailable, resetAudioDraft, setAudioDraft,
 } from "../ui/audioDraft";
 
 /** A host over the fake's globals: `audioDescription` is the one read the rows make, and a sibling's drivers come from
  *  the hook the native host binds (the fake counts those calls, which is what "asked once" is proved by). The config
  *  stub is the `audio` section the draft seeds from, by default what a file that took the defaults holds. */
 const SAVED = { ...DEFAULT_AUDIO_SECTION };
-const hostOver = (fake: FakeAudioDevice, section: typeof SAVED = SAVED) =>
+const hostOver = (fake: FakeAudioDevice, section: typeof SAVED = SAVED, setSection: () => boolean = () => true) =>
   ({
     audioDevice: {
       describe: () => fake.description,
       backendDrivers: (id: string) =>
         (globalThis as unknown as { __rp_audioBackendDrivers: (b: string) => unknown }).__rp_audioBackendDrivers(id),
+      apply: (choice: unknown) =>
+        (globalThis as unknown as { __rp_audioApply: (c: unknown) => unknown }).__rp_audioApply(choice),
     },
-    config: { section: () => section, setSection: () => true },
+    config: { section: () => section, setSection },
   }) as never;
 
 /** SDL with no driver it can list, which is what a refused (pinned) sibling answers. */
@@ -137,6 +139,30 @@ test("a visit starts from the saved section, not from what the device is running
     expect(rowsOf(host).find((row) => row.id === "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
     expect(audioDraftDirty(host)).toBe(false);
     expect(fake.applied.length).toBe(0); // a visit opens nothing
+  } finally {
+    fake.uninstall();
+    resetAudioDraft();
+  }
+});
+
+test("an Apply the file refuses leaves the device alone and the draft staged", () => {
+  // The gate the shell's Apply row and this package share: the FILE is the record, so the device must not run a choice
+  // the next launch will not open.
+  const fake = new FakeAudioDevice().install();
+  resetAudioDraft();
+  try {
+    const refused = hostOver(fake, SAVED, () => false);
+    expect(getAudioDraft(refused).blockSize).toBe(512); // the builder that shows the row seeds the draft
+    setAudioDraft({ blockSize: 256 });
+    applyAudioDraft(refused);
+    expect(fake.applied.length).toBe(0);
+    expect(audioNotSaved().length > 0).toBe(true);
+    expect(getAudioDraft(refused).blockSize).toBe(256);
+
+    // The file takes the same draft: the device runs it, and the row clears.
+    applyAudioDraft(hostOver(fake, SAVED, () => true));
+    expect(fake.applied.at(-1)!.blockSize).toBe(256);
+    expect(audioNotSaved()).toBe("");
   } finally {
     fake.uninstall();
     resetAudioDraft();

@@ -77,7 +77,7 @@ export function defaultConfigSections(
 
 /** A raw section carried up to its contributor's version and parsed, or kept verbatim. Kept verbatim when it is stamped
  *  NEWER than its contributor reads: the refuse-newer rule at section scope, so the rest of the file loads and this one
- *  block is neither read nor (see serializeConfigSection / UserConfigStore.setSection) written. */
+ *  block is neither read nor (see serializeConfigSection / UserConfigStore.writeSection) written. */
 export function parseConfigSection(contributor: ProjectSection, raw: unknown): unknown {
   const block = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as RawObject) : {};
   const version = contributor.version;

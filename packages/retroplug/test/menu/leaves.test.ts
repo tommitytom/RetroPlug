@@ -1738,7 +1738,7 @@ test("a muted device keeps Apply live, and the audio service repaints when the s
   }
 });
 
-test("Settings -> Audio: an Apply the config refuses leaves the device alone, keeps the draft, and says why", async () => {
+test("Settings -> Audio: a refused Apply leaves the device alone, keeps the draft, and says why", async () => {
   const fake = new FakeAudioDevice().install();
   const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
@@ -1766,8 +1766,18 @@ test("Settings -> Audio: an Apply the config refuses leaves the device alone, ke
   items = audioItems();
   expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
   expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
-  expect(findItem(items, "audio-not-saved")!.label).toBe("Not saved: config.json could not be written");
+  expect(findItem(items, "audio-not-saved")!.label).toBe("Not saved: config.json was not written");
   expect(be.readText("/cfg/config.json")).toBe(newer);
+
+  // The row is about the value that was staged: stepping back to what the file holds makes its claim untrue, so it
+  // goes with the edit, and Apply greys out with it.
+  findItem(items, "audio-block")!.onCycle!(1); // 256 -> 512, the saved value
+  items = audioItems();
+  expect(findItem(items, "audio-not-saved")).toBe(undefined);
+  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+  findItem(items, "audio-block")!.onCycle!(-1); // stage 256 again for the retry
+  items = audioItems();
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
 
   // A writable file again: the retry lands, reaches the device, and clears the row.
   be.seed("/cfg/config.json", JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA, ...DEFAULT_USER_CONFIG }));
@@ -1782,7 +1792,7 @@ test("Settings -> Audio: an Apply the config refuses leaves the device alone, ke
   delete g.__rp_isStandalone;
 });
 
-test("Settings -> Audio: an Apply whose write FAILS leaves the device alone, keeps the draft, and says why", async () => {
+test("Settings -> Audio: a failed write leaves the device alone, keeps the draft, and says why", async () => {
   const fake = new FakeAudioDevice().install();
   const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
@@ -1808,7 +1818,7 @@ test("Settings -> Audio: an Apply whose write FAILS leaves the device alone, kee
   let items = audioItems();
   expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
   expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
-  expect(findItem(items, "audio-not-saved")!.label).toBe("Not saved: config.json could not be written");
+  expect(findItem(items, "audio-not-saved")!.label).toBe("Not saved: config.json was not written");
   expect(be.readText("/cfg/config.json")).toBe(saved);
 
   // The file takes writes again: the retry lands on it, reaches the device, and clears the row.
@@ -1824,14 +1834,21 @@ test("Settings -> Audio: an Apply whose write FAILS leaves the device alone, kee
   delete g.__rp_isStandalone;
 });
 
-test("Settings -> Audio: a muted device with a clean draft re-applies, and the no-op write is not a refusal", async () => {
+test("Settings -> Audio: a muted device re-applies a clean draft, and the no-op write is no refusal", async () => {
   const fake = new FakeAudioDevice({ status: { error: "no device" } }).install();
   const g = globalThis as { __rp_isStandalone?: boolean };
   g.__rp_isStandalone = true;
   const { resetAudioDraft } = await import("@retroplug/audio/ui");
   resetAudioDraft();
 
+  // A file that already carries the audio block as this build writes it: the retry's no-op must reach the store's
+  // "unchanged" answer from the FILE's own state, not from a first-run write that happened to carry the same values.
   const be = new MockBackend("/cfg");
+  be.seed("/cfg/config.json", JSON.stringify({
+    schemaVersion: USER_CONFIG_SCHEMA,
+    ...DEFAULT_USER_CONFIG,
+    audio: { backend: "auto", driver: "", device: "", sampleRate: 48000, blockSize: 512, outChannels: 2 },
+  }));
   const stores = composeAppStores({ backend: be, notify: () => {} });
   const audioItems = () =>
     submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");

@@ -242,10 +242,11 @@ export interface ConfigHost {
    *  refused, not answered. */
   section<T = Record<string, unknown>>(key: string): T;
   /** Apply a patch through the contributor's `merge`, written through a re-read of the file (two processes may share
-   *  it), and answer whether the file HOLDS the patch: true for a patch it now carries or already carried, false when
-   *  it refused it (a file a newer build wrote, which reads read-only; a failed write; a block stamped newer than its
-   *  contributor). A caller that changes something outside the file on the strength of a write - a device, a link - goes
-   *  ahead on true and does nothing on false. THROWS when it refuses the patch's shape. */
+   *  it), and answer whether the file HOLDS the patch: true for a patch it now carries or, as this process last read
+   *  the file, already carried, false when it refused it (a file a newer build wrote, which reads read-only; a failed
+   *  write; a block stamped newer than its contributor). A caller that changes something outside the file on the
+   *  strength of a write - a device, a link - goes ahead on true and does nothing on false. THROWS when it refuses the
+   *  patch's shape. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): boolean;
 }
 
