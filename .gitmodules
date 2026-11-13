@@ -25,3 +25,7 @@
 	path = deps/portaudio
 	url = https://github.com/tommitytom/portaudio.git
 	branch = pipewire
+[submodule "deps/blastem"]
+	path = deps/blastem
+	url = https://github.com/tommitytom/RetroPlug-BlastEm
+	branch = retroplug
