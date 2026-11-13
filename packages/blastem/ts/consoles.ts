@@ -2,7 +2,7 @@
 // Drive ROM, place the node that runs it, and wire its knobs, without naming the console. Detection is the header at
 // $100, never the extension: a Master System `.bin` has no "SEGA" there and is not this platform, and a `.md` file that
 // is not one is refused rather than booted as noise.
-import { REGION_VALUES } from "./enums";
+import { MD_REGION_VALUES } from "./enums";
 import { label, type ConsolesContribution, type ConsoleDescriptor } from "@retroplug/core/consoles";
 
 // ONE rule, the native gate's: "SEGA" at $100, and not "SEGA 32X" (a different console this core does not run). A
@@ -25,12 +25,16 @@ export const MD: ConsoleDescriptor = {
   core: "blastem",
   nodeType: "rp.blastem.md",
   platforms: [{ id: "md", label: "Mega Drive", extensions: [".md", ".bin", ".gen"] }],
-  // The Mega Drive's header sits at $100, inside the cheap tier every Nintendo console is read at, so this adds no
-  // deeper read (0x110 would be a third sniff length, and registry.test.ts pins the tiers to [0x134, 0x8200]).
+  // Read at the DEEP tier even though the header is at $100: classifyRom reads in tiers, and the cheap tier runs every
+  // detector that reads that far, so a detector here would answer "md" before the Sega 8-bit one (rank 3, at 0x8200) is
+  // consulted, and a Sega 8-bit ROM or a crafted polyglot carrying "SEGA" at $100 would be a Mega Drive on the path the
+  // app uses. At the deep tier rank 4 means LAST in classifyRom's tiered walk and in detectPlatform's whole-buffer pass
+  // alike, which is the priority below; the cost is one deep read per Mega Drive ROM. The tiers stay [0x134, 0x8200]
+  // (registry.test.ts pins them).
   detect: {
-    prefixBytes: 0x134,
+    prefixBytes: 0x8200,
     // Rank 4: LAST, so a crafted file carrying the GB logo or the Sega 8-bit header as well is that console and not
-    // this one. Ranks are unique per detector (the same rank ties, and a tie is broken by platform id, which is not a
+    // this one. Ranks are unique per detector (the same rank ties, and a tie is broken by descriptor id, which is not a
     // decision anyone wrote down), which is why this is not 2 (the Game Boy's).
     rank: 4,
     run: (bytes) =>
@@ -53,10 +57,10 @@ export const MD: ConsoleDescriptor = {
     (header[0x1B0] === 0x52 && // 'R'
      header[0x1B1] === 0x41 && // 'A'
      (header[0x1B2] & 0x0f) !== 0x0f),
-  settingFields: { region: label(REGION_VALUES) },
+  settingFields: { region: label(MD_REGION_VALUES) },
   // A region fixes the master clock and the frame height, so a change is a rebuild, not a live knob (the native
   // config is read once at boot).
-  constructFields: { region: { takes: label(REGION_VALUES), fallback: "auto" } },
+  constructFields: { region: { takes: label(MD_REGION_VALUES), fallback: "auto" } },
   configParams: [],
 };
 

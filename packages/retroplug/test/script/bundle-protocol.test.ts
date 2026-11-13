@@ -147,11 +147,11 @@ test("graph/buildGraph.ts carries the protocol tables but neither zod nor the ap
   // The positive control the placers need: the generated placer table IS carried, so the case is not vacuous.
   expect(inputs.includes("src/generated/placers.ts")).toBe(true);
   // The planner, its own helpers, the consoles' descriptors it reads, core's placer types, the one package placer the
-  // product ships and that package's node-type constants: 23 modules today (one per registered console descriptor, and
-  // the Mega Drive's is the newest), and not one of them is a node module. The ceiling is the count plus one, so a whole
-  // package's app or a node module dragged in by a placer fails by NAME (forbidden, below) and a quiet arrival of
-  // anything else fails by count.
-  expect(inputs.length <= 23, `${inputs.length} modules went in`).toBe(true);
+  // product ships and that package's node-type constants: 23 modules today (five registered consoles' descriptors arrive
+  // through three package modules, plus their enums modules, and the Mega Drive's is the newest), and not one of them is
+  // a node module. The ceiling is the count plus one, so a whole package's app or a node module dragged in by a placer
+  // fails by NAME (forbidden, below) and a quiet arrival of anything else fails by count.
+  expect(inputs.length <= 24, `${inputs.length} modules went in`).toBe(true);
   expect(bytes < 64 * 1024, `the bundle is ${bytes} bytes`).toBe(true);
   expect(forbidden(inputs, await nodeModules())).toEqual([]);
 });

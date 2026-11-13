@@ -11,7 +11,7 @@
 // (as the last tier of all) a file carrying no magic anywhere. The precedence tests at
 // the bottom are the ones that matter - an extension must never beat real content.
 import { test, expect } from "@retroplug/testing";
-import { detectPlatform } from "../../src/platform";
+import { classifyRom, detectPlatform } from "../../src/platform";
 
 // iNES magic "NES\x1A" at offset 0.
 const NES_MAGIC = [0x4e, 0x45, 0x53, 0x1a];
@@ -163,6 +163,25 @@ test("md: a 32X image is not a Mega Drive", () => {
   // The 32X is a different console this core does not run, and no other descriptor claims the header either, so the
   // answer is "unknown": the file reaches no system at all rather than the wrong one.
   expect(detectPlatform(mdRom("SEGA 32X        "))).toBe("unknown");
+});
+
+// A reader classifyRom walks its tiers with: each request is answered with the file's first `length` bytes, as the
+// backend's readFilePrefix is.
+function prefixReader(rom: Uint8Array) {
+  return { readFilePrefix: (_path: string, length: number) => rom.subarray(0, Math.min(length, rom.length)) };
+}
+
+test("md: a polyglot carrying both Sega headers is the 8-bit console, whichever classifier reads it", () => {
+  // The Mega Drive's header is at $100 and the Sega 8-bit one at a bank's end, so a file can carry both. The Mega
+  // Drive's detector is read LAST, and the tiered read (classifyRom, the store's) reaches the deep tier only after the
+  // cheap one declines: it must answer what detectPlatform's single whole-buffer pass does, or a crafted file is handed
+  // to BlastEm as noise while the two classifiers disagree about it.
+  const polyglot = segaRom(0x7ff0, 4);
+  polyglot.set(mdRom("SEGA MEGA DRIVE ").subarray(0x100, 0x110), 0x100);
+  expect(detectPlatform(polyglot)).toBe("sms");
+  expect(classifyRom(prefixReader(polyglot), "/roms/polyglot.bin")).toBe("sms");
+  // And a plain Mega Drive ROM is one through the tiered read too, at both tiers' cost.
+  expect(classifyRom(prefixReader(mdRom("SEGA MEGA DRIVE ")), "/roms/cart.md")).toBe("md");
 });
 
 test("precedence: real content always beats the extension", () => {

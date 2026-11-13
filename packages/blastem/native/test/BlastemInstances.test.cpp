@@ -292,10 +292,16 @@ TEST_CASE("instances booted and destroyed in a loop beside a running one stay al
     churner.join();
     checkAgainstSolo(ranThrough, aloneDma);
     REQUIRE(!churned.empty());
+    // Every churned trace is compared, but folded into TWO assertions: how many the churner managed is how much of the
+    // runner it overlapped, so an assertion per iteration would make the binary's assertion count differ run to run.
+    bool sameState = true;
+    bool sameAudio = true;
     for (const Trace& trace : churned) {
-        CHECK(trace.state == aloneZ80.state);
-        CHECK(trace.audio == aloneZ80.audio);
+        if (trace.state != aloneZ80.state) sameState = false;
+        if (trace.audio != aloneZ80.audio) sameAudio = false;
     }
+    CHECK(sameState);
+    CHECK(sameAudio);
 }
 
 TEST_CASE("a soft reset delays by the same amount on two consoles that ran the same program", "[blastem][instances]") {

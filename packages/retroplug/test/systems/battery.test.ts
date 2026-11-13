@@ -66,6 +66,19 @@ function mdHeader(flag: number, len = 0x200): Uint8Array {
   return b;
 }
 
+// A Mega Drive ROM image the store classifies as one: the console name at $100, and the same RA block at $1B0. 0x4000
+// is longer than the 0x150-byte header the store would read without the console's provider prefix, so the 0x0F answer
+// below pins that read (a 0x150-byte prefix is too short to hold $1B2 and answers true by policy).
+function mdRom(flag: number, len = 0x4000): Uint8Array {
+  const b = new Uint8Array(len);
+  const name = "SEGA MEGA DRIVE ";
+  for (let i = 0; i < name.length; i++) b[0x100 + i] = name.charCodeAt(i);
+  b[0x1b0] = 0x52; // 'R'
+  b[0x1b1] = 0x41; // 'A'
+  b[0x1b2] = flag;
+  return b;
+}
+
 test("romHasBattery: MD reads $1B0's RA block", () => {
   expect(romHasBattery(mdHeader(0xf8), "md")).toBe(true); // odd-byte SRAM, genmddj's own header
   expect(romHasBattery(mdHeader(0x20), "md")).toBe(true); // even-byte SRAM
@@ -80,6 +93,8 @@ test("SystemView.battery is derived from the ROM header at construct", () => {
   be.seed("/roms/batt.nes", nesRomBattery());
   be.seed("/roms/plain.gb", gbRom());
   be.seed("/roms/batt.gb", gbRomBattery());
+  be.seed("/roms/batt.md", mdRom(0xf8));
+  be.seed("/roms/plain.md", mdRom(0x0f));
   const s = new SystemsStore(be, () => {}, reg());
   const byId = (id: number) => s.view().find((v) => v.id === id)!;
 
@@ -87,9 +102,14 @@ test("SystemView.battery is derived from the ROM header at construct", () => {
   const battNes = s.addSystem("/roms/batt.nes") as number;
   const plainGb = s.addSystem("/roms/plain.gb") as number;
   const battGb = s.addSystem("/roms/batt.gb") as number;
+  const battMd = s.addSystem("/roms/batt.md") as number;
+  const plainMd = s.addSystem("/roms/plain.md") as number;
 
   expect(byId(plainNes).battery).toBe(false);
   expect(byId(battNes).battery).toBe(true);
   expect(byId(plainGb).battery).toBe(false);
   expect(byId(battGb).battery).toBe(true);
+  // $1B2 is past the short header: the store reads the console's own 0x10000-byte prefix, which is what this pins.
+  expect(byId(battMd).battery).toBe(true);
+  expect(byId(plainMd).battery).toBe(false);
 });
