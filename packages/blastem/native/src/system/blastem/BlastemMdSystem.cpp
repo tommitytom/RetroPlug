@@ -173,9 +173,9 @@ void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const* outs
     // and the drain would read samples they have not made. This is the same absolute clock the grid stops at, so it
     // moves no stop and no sample.
     syncSoundTo(masterClockOf(sampleBase_ + info.frames));
-    // Drained EVERY time, lanes or none. A lane-less block still ends the sink's frame: blip's buffer is sized for one
-    // block plus the prime, so a `return` before the drain would leave the second block's deltas past its end and
-    // either corrupt memory or trip blip's own assert (the rebase case and the video case both pass no lanes).
+    // Drained EVERY time, lanes or none. A lane-less block still ends the sink's frames: the sink's ring is sized for a
+    // block and its blips for one frame, so a `return` before the drain would leave the next block's audio queued behind
+    // this one's (the rebase case and the video case both pass no lanes).
     // The mix is sized at activation and at every growth (reserveAudio), never here: the engine's [alloc] cases count a
     // block's allocations, emulation included. A block larger than it is a breach of the engine's contract, so it is cut
     // to the reservation and counted rather than read past the end of the mix.
