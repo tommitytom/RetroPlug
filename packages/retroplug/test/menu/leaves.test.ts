@@ -1856,9 +1856,16 @@ test("Settings -> Audio: a muted device re-applies a clean draft, and the no-op 
 
   const items = audioItems();
   expect(findItem(items, "audio-apply")!.disabled).toBeFalsy(); // enabled while muted, even with a clean draft
+  let writes = 0;
+  const write = be.writeFileAtomic.bind(be);
+  be.writeFileAtomic = (path, bytes) => {
+    writes++;
+    return write(path, bytes);
+  };
   findItem(items, "audio-apply")!.onSelect!();
   expect(fake.applied.length).toBe(1); // the retry reached the device
   expect(fake.applied.at(-1)!.blockSize).toBe(512);
+  expect(writes).toBe(0); // the file already held it, so the patch never got as far as a write
   expect(findItem(audioItems(), "audio-not-saved")).toBe(undefined);
 
   resetAudioDraft();
