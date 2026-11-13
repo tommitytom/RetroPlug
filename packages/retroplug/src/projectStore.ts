@@ -326,6 +326,9 @@ export class ProjectStore {
       return;
     }
     const current = this.section<Record<string, unknown>>(key);
+    // Snapshotted BEFORE the merge: a contributor whose `merge` mutates the block it is handed would otherwise make
+    // the comparison read the mutated block on both sides, and an edit that DID land would be dropped as no change.
+    const before = JSON.stringify(current);
     // A contributor's schema parses the patched block, so `section()` answers the same shape a reload would: an
     // unparsed shallow merge would leave a hand-patched value in memory only.
     const next = contributor
@@ -334,9 +337,9 @@ export class ProjectStore {
         : contributor.schema.parse({ ...(isObject(current) ? current : {}), ...patch })
       : { ...(isObject(current) ? current : {}), ...patch };
     // A patch that lands on the values already there is not an edit (a cycler landing on its current value, a service
-    // re-applying the saved section), so it dirties nothing and publishes nothing: the audio thread is already running
-    // it. Both sides went through the same parse, so their key order is the same and the comparison is exact.
-    if (JSON.stringify(next) === JSON.stringify(current)) return;
+    // re-applying the saved section), so it dirties nothing, publishes nothing and notifies nothing: the audio thread
+    // is already running it.
+    if (JSON.stringify(next) === before) return;
     this.projectSettings = { ...this.projectSettings, sections: { ...this.projectSettings.sections, [key]: next } };
     this.markSettingsChanged();
     this.publishGraph(false);
@@ -619,6 +622,7 @@ export class ProjectStore {
   }
   setZoom(n: number): boolean {
     if (n < 0 || n > ZOOM_MAX) return false; // out of range → reject
+    if (n === this.projectSettings.zoom) return true; // already there: not an edit
     this.projectSettings = { ...this.projectSettings, zoom: n };
     this.markSettingsChanged();
     return true;
@@ -869,6 +873,7 @@ export class ProjectStore {
 
   private setEnumSetting(key: "layout" | "midiRouting" | "audioRouting", value: string): boolean {
     if (!(SETTING_VALUES[key] as readonly string[]).includes(value)) return false; // unknown → reject
+    if (this.projectSettings[key] === value) return true; // already there: not an edit
     this.projectSettings = { ...this.projectSettings, [key]: value } as ProjectSettings;
     this.markSettingsChanged();
     return true;
@@ -878,8 +883,8 @@ export class ProjectStore {
    *  project (Settings > MIDI's picks, Layout, Zoom, the MIDI and audio routings), and a prompt to save one protects
    *  nothing: opening a ROM starts a new project anyway (openRom calls newProject, which resets the settings), and a
    *  close that saved one would write a .rplg holding only settings. The edit itself is kept, so it applies to the audio
-   *  and MIDI streams as it lies and reaches the project a system is later added to. A pathless project WITH systems is
-   *  a project: it is what the close guard exists for. */
+   *  and MIDI streams as it lies, and reaches the project a system is later added to. A pathless project WITH systems
+   *  is a project: it is what the close guard exists for. */
   private isPristine(): boolean {
     return this.systems.systems().length === 0 && this.path === "" && this.projectName === "";
   }

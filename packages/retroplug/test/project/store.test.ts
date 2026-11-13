@@ -401,3 +401,91 @@ test("a section patch that changes nothing dirties nothing and publishes nothing
   expect(changes).toBe(0);
   expect(systemNotifies).toBe(0);
 });
+
+test("a named, system-less project in memory is a project: a settings edit dirties it", () => {
+  // The NAME is the only thing that makes it one: an in-memory load (the DPF state chunk) passes no path, and a
+  // project with no systems has nothing else. Without it in `isPristine`, the edit below would be dropped as a
+  // start-screen pick and the name would never reach a save.
+  const { project } = newProject();
+  project.setName("Idea");
+  const bytes = project.exportBytes()!;
+  const loaded = newProject();
+  expect(loaded.project.loadBytes(bytes).kind).toBe("loaded");
+  expect(loaded.project.currentPath()).toBe("");
+  expect(loaded.project.isDirty()).toBe(false);
+  loaded.project.setZoom(4);
+  expect(loaded.project.isDirty()).toBe(true);
+});
+
+test("either routing on an empty project is not a project change, and both still publish", () => {
+  const { be, project } = newProject();
+  let changes = 0;
+  project.setOnChange(() => changes++);
+  // A routing is a real edit to the graph (the planner wires by it), and nothing a prompt should save on a project
+  // that holds only settings: the rows repaint, the close guard does not ask.
+  expect(project.setAudioRouting("twoPerInstance")).toBe(true);
+  expect(project.setMidiRouting("oneChannelPerInstance")).toBe(true);
+  expect(project.settings().audioRouting).toBe("twoPerInstance");
+  expect(project.settings().midiRouting).toBe("oneChannelPerInstance");
+  expect(project.isDirty()).toBe(false);
+  expect(hasUnsavedChanges(be, project)).toBe(false);
+  expect(changes).toBe(2);
+  expect(be.graphRequests.length).toBe(2); // one publish each, as before: the graph is what carries the routing
+});
+
+test("a no-op patch on a pristine project dirties and notifies nothing", () => {
+  // The saved-project case above proves the compare; this proves the compare comes BEFORE the pristine rule, so an
+  // empty project is not dirtied by a row re-sending what it already has.
+  const { project } = newProject();
+  let changes = 0;
+  project.setOnChange(() => changes++);
+  let systemNotifies = 0;
+  project.addOnSystemsChange(() => systemNotifies++);
+  project.setSection("midi", {});
+  expect(project.isDirty()).toBe(false);
+  expect(changes).toBe(0);
+  expect(systemNotifies).toBe(0);
+});
+
+test("a setting re-written with the value it already has is not an edit", () => {
+  const { be, project } = newProject();
+  be.seed("/proj/a.gb", gbRom());
+  project.systems.addSystem("/proj/a.gb");
+  project.save("/proj/song.rplg");
+  let changes = 0;
+  project.setOnChange(() => changes++);
+  // A caller applying the value it just read: the graph is already wired that way, so nothing is a change.
+  expect(project.setZoom(project.settings().zoom)).toBe(true);
+  expect(project.setLayout(project.settings().layout)).toBe(true);
+  expect(project.isDirty()).toBe(false);
+  expect(changes).toBe(0);
+});
+
+test("a section whose merge edits its block in place is still an edit", () => {
+  // `merge` has no rule against mutating what it is handed, so the no-op compare must snapshot the block BEFORE the
+  // merge: taken after, both sides would read the mutated object and an edit that landed would be dropped as "no
+  // change", leaving the save prompt and the audio thread on the old values.
+  const be = new MockBackend("/cfg");
+  const project = new ProjectStore(be, new RecentStore(be), undefined, {
+    sections: [{
+      pkg: "test",
+      section: {
+        key: "mutating",
+        schema: { parse: (raw: unknown) => raw as { n: number } },
+        defaults: () => ({ n: 1 }),
+        merge: (current: { n: number }, patch: Readonly<Record<string, unknown>>) => {
+          Object.assign(current, patch); // in place, and returns the same object
+          return current;
+        },
+      },
+    }],
+  });
+  project.newProject(); // this store's own sections, at their defaults
+  be.seed("/proj/a.gb", gbRom());
+  project.systems.addSystem("/proj/a.gb");
+  project.save("/proj/song.rplg");
+  expect(project.isDirty()).toBe(false);
+  project.setSection("mutating", { n: 2 });
+  expect(project.section<{ n: number }>("mutating").n).toBe(2);
+  expect(project.isDirty()).toBe(true); // the edit landed, so the prompt must see it
+});

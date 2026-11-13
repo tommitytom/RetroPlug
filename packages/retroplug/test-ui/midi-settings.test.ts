@@ -47,6 +47,7 @@ test("Settings > MIDI: the checklist picks ports into the project, 'All devices'
   // through, with no prompt to save a project that holds only the pick.
   const closeGuard = g as { __rp_onCloseRequested?: () => boolean };
   expect(closeGuard.__rp_onCloseRequested?.()).toBe(false);
+  ui.pump(8); // any prompt a regression raised has its frames before the lookup below
   expect(ui.findByTextContaining("Unsaved changes")).toBe(null);
 
   // The output side mirrors to a chosen port; Left/Right do nothing on a checklist row, Enter toggles it.

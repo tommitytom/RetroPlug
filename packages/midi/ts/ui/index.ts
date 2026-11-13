@@ -217,8 +217,8 @@ function clockChildren(host: UiHost, t: NonNullable<ReturnType<MidiDeviceHost["t
       infoRow("inst-clock-tempo", `Tempo: ${Math.round(t.bpm)} BPM`),
     ];
   }
-  // A step that the clamp turns into no change writes nothing: a tempo already at 20 or 999 must not dirty the project
-  // for a press it did not act on (the close guard would then ask to save it).
+  // A step the clamp turns into no change is not written at all: a tempo already at 20 or 999 has nothing new to send,
+  // and setSection would answer a re-send of its current value with no edit anyway.
   const step = (delta: number) => {
     const next = Math.min(CLOCK_BPM_MAX, Math.max(CLOCK_BPM_MIN, Math.round(bpm + delta)));
     if (next !== Math.round(bpm)) host.project.setSection(MIDI_SECTION_KEY, { clockBpm: next });
