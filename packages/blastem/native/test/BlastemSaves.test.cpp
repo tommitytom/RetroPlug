@@ -2,9 +2,10 @@
 // silent, and a state whose serializer identifier is not BlastEm's 1.0 one (or whose body is truncated) is refused
 // rather than misread.
 //
-// The last two cases are the whole point: BlastEm's own serializer calls fatal_error, which exit()s the process, on a
-// short read. A plugin handed a truncated or foreign state has to return an error and keep its core, so reaching a
-// CHECK at all is the proof, and a live render after it is the proof the refusal left a machine behind.
+// The refusal cases are the whole point: BlastEm's own serializer used to call fatal_error, which exit()s the process,
+// on a short read. A plugin handed a truncated or foreign state has to return an error and keep its core, so reaching a
+// CHECK at all is the proof, and the render after it is the proof the refusal left a machine behind (the same bytes a
+// fresh boot renders, not a half-loaded core).
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -121,6 +122,15 @@ std::vector<std::uint8_t> assembleSections(const std::vector<RawSection>& sectio
     return out;
 }
 
+// A refused state leaves the instance at power-on, and this is what "rebuilt" means: the blocks it renders after the
+// refusal are the blocks a fresh boot of the same ROM renders, exactly. A peak only says the machine is audible, which a
+// half-loaded core is too (in the impossible-field case every section but the work RAM has been written by the time the
+// serializer latches).
+void checkRebuilt(rp::blastem::BlastemMdSystem& restored) {
+    auto fresh = boot(rp::blastem::test::fmPsgRom());
+    CHECK(run(restored, 4) == run(*fresh, 4));
+}
+
 }  // namespace
 
 TEST_CASE("two instances seeded with one state render identical bytes", "[blastem][saves]") {
@@ -174,13 +184,13 @@ TEST_CASE("a state from another serializer version is refused", "[blastem][saves
     // reached the emulator.
     CHECK(restored->activated());
     CHECK(restored->stateRefused());
-    CHECK(peak(run(*restored, 4)) > 0.01);
+    checkRebuilt(*restored);
 }
 
 TEST_CASE("a truncated state is refused, and the core still runs", "[blastem][saves]") {
-    // The case is the RETURN, not the message: BlastEm's own serializer exits the process on a short read
-    // (fatal_error, serialize.c:216 and its load_* helpers), so reaching the next CHECK at all is the proof, and the
-    // render after it is the proof that the refusal left a live core behind.
+    // The case is the RETURN, not the message: BlastEm's own serializer exited the process on a short read (fatal_error
+    // in its load_* helpers), so reaching the next CHECK at all is the proof, and the render after it is the proof that
+    // the refusal left a live core behind.
     auto sys = boot(rp::blastem::test::fmPsgRom());
     run(*sys, 2);
     std::vector<std::uint8_t> state = sys->saveStateBytes();
@@ -188,7 +198,7 @@ TEST_CASE("a truncated state is refused, and the core still runs", "[blastem][sa
     auto restored = boot(rp::blastem::test::fmPsgRom(), state);
     REQUIRE(restored->stateRefused());
     CHECK(restored->activated());
-    CHECK(peak(run(*restored, 4)) > 0.01);  // from power-on, not a half-loaded state
+    checkRebuilt(*restored);  // from power-on, not a half-loaded core
 }
 
 TEST_CASE("a state whose section sizes are lies is refused before the core is touched", "[blastem][saves]") {
@@ -204,7 +214,7 @@ TEST_CASE("a state whose section sizes are lies is refused before the core is to
     auto restored = boot(rp::blastem::test::fmPsgRom(), state);
     CHECK(restored->stateRefused());
     CHECK(restored->activated());
-    CHECK(peak(run(*restored, 4)) > 0.01);
+    checkRebuilt(*restored);
 }
 
 TEST_CASE("a state whose section carries an impossible field is refused after a partial load", "[blastem][saves]") {
@@ -221,7 +231,7 @@ TEST_CASE("a state whose section carries an impossible field is refused after a 
     auto restored = boot(rp::blastem::test::fmPsgRom(), state);
     CHECK(restored->stateRefused());
     CHECK(restored->activated());
-    CHECK(peak(run(*restored, 4)) > 0.01);  // the power-on machine, not the one the partial load left
+    checkRebuilt(*restored);  // the power-on machine, not the one the partial load left
 }
 
 TEST_CASE("a foreign state is refused with the bytes of another emulator's format", "[blastem][saves]") {
@@ -230,7 +240,7 @@ TEST_CASE("a foreign state is refused with the bytes of another emulator's forma
     auto                      restored = boot(rp::blastem::test::fmPsgRom(), foreign);
     CHECK(restored->stateRefused());
     CHECK(restored->activated());
-    CHECK(peak(run(*restored, 4)) > 0.01);
+    checkRebuilt(*restored);
 }
 
 TEST_CASE("a cart the database maps past the end of its own image is refused, not fatal", "[blastem][saves]") {
@@ -262,7 +272,7 @@ TEST_CASE("a state whose VDP VRAM size runs past the section is refused", "[blas
     auto restored = boot(rp::blastem::test::fmPsgRom(), state);
     CHECK(restored->stateRefused());
     CHECK(restored->activated());
-    CHECK(peak(run(*restored, 4)) > 0.01);  // from power-on, not from the misread section
+    checkRebuilt(*restored);  // from power-on, not from the misread section
 }
 
 TEST_CASE("a state's PSG volume is clamped to the channel's four bits", "[blastem][saves]") {
@@ -281,7 +291,7 @@ TEST_CASE("a state's PSG volume is clamped to the channel's four bits", "[blaste
     CHECK_FALSE(restored->stateRefused());
     REQUIRE(restored->activated());
     CHECK((restored->core()->psg->volume[0] & 0xF0) == 0);  // masked, so the table index is in range
-    CHECK(peak(run(*restored, 4)) > 0.01);
+    CHECK(peak(run(*restored, 4)) > 0.01);  // the restored channel plays its masked level
 }
 
 TEST_CASE("a state's YM block and fnum are clamped to the register's bits", "[blastem][saves]") {
@@ -421,7 +431,7 @@ TEST_CASE("a state without the console's mandatory sections is refused", "[blast
     auto missing = boot(rp::blastem::test::fmPsgRom(), assembleSections(noVdp));
     CHECK(missing->stateRefused());
     CHECK(missing->activated());
-    CHECK(peak(run(*missing, 4)) > 0.01);  // the power-on machine
+    checkRebuilt(*missing);  // the power-on machine
 }
 
 TEST_CASE("a state with a repeated or unknown section is refused", "[blastem][saves]") {
@@ -467,7 +477,7 @@ TEST_CASE("a state whose component clocks are far from the 68k's is refused", "[
     auto restored = boot(rp::blastem::test::fmPsgRom(), state);
     CHECK(restored->stateRefused());
     CHECK(restored->activated());
-    CHECK(peak(run(*restored, 4)) > 0.01);
+    checkRebuilt(*restored);
 }
 
 TEST_CASE("a state saved after a 64K-word DMA is still accepted", "[blastem][saves]") {
@@ -572,4 +582,23 @@ TEST_CASE("a published snapshot is the state the control plane saves", "[blastem
         CHECK(published == saved);
         run(*sys, 1);  // move on, so the next publish is a different state and the buffers are reused for it
     }
+}
+
+TEST_CASE("a state whose neighbouring sections traded bytes is refused", "[blastem][saves]") {
+    // A walk-consistent size shift: the 68k's section loses its last four bytes and the Z80's section gains them as its
+    // first four, so every header still adds up and the stream's total is the state's own, which is the one class the
+    // host's framing check cannot see. The 68k's deserializer then runs out of section before its last field, which is
+    // the mirror's short-field latch, and the instance boots from power-on.
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    const std::vector<RawSection> whole = splitSections(sys->saveStateBytes());
+    REQUIRE(whole.size() > 5);
+    std::vector<RawSection> shifted = whole;
+    const std::vector<std::uint8_t> tail(shifted[0].payload.end() - 4, shifted[0].payload.end());
+    shifted[0].payload.resize(shifted[0].payload.size() - 4);
+    shifted[1].payload.insert(shifted[1].payload.begin(), tail.begin(), tail.end());
+    auto restored = boot(rp::blastem::test::fmPsgRom(), assembleSections(shifted));
+    CHECK(restored->stateRefused());
+    CHECK(restored->activated());
+    checkRebuilt(*restored);
 }

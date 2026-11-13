@@ -220,8 +220,8 @@ void BlastemMdSystem::boot() {
         // the seed and rebuilding ONCE from power-on is the one path that leaves no half-loaded core behind in either
         // case. Safe precisely because this is boot()'s last act: the core is fully built, nothing of ours is left
         // outstanding, and the lifecycle mutex is not held here (destroyCore and the retry's own allocation take it in
-        // their own scopes, never nested). The retry sees an empty savestate, so it cannot recurse again, and the clear
-        // above is what it keys on.
+        // their own scopes, never nested). The retry sees an empty savestate, so it cannot recurse again: the clear at
+        // the end of this block is what it keys on, and the retry is the last line here.
         config_.savestate.clear();
         destroyCore();
         boot();
@@ -371,8 +371,10 @@ bool BlastemMdSystem::captureStateInto(serialize_buffer& buf, std::vector<std::u
     buf.size                 = 0;
     buf.failed               = 0;
     buf.current_section_start = 0;
-    // The pc the 68k will resume at is the address sync_components is handed at a block boundary (genesis.c passes
-    // gen->m68k->pc there), so a state taken between blocks resumes on the next instruction rather than mid-one.
+    // The pc argument is the old core's resume address, and under NEW_CORE m68k_serialize ignores it: it writes
+    // context->pc - 2, which is the instruction that will execute when the state is resumed, and m68k_deserialize adjusts
+    // it back. What matters here is that a state is taken between blocks, so the pc is an instruction boundary and the
+    // restore resumes on the next instruction (genesis_deserialize's own adjust_int_cycle follows the loaded pc).
     genesis_serialize(gen_, &buf, gen_->m68k->pc, 1);
     if (hasBattery(gen_)) {
         // The .sav's order, which is what a load reads back: this is the same copy saveSramBytes() returns, in the
@@ -458,6 +460,14 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     // (the mirror note in the design's stepping study). So the anchor moves to the loaded core's absolute clock, the
     // stop grid restarts at the next sample rather than at one the pre-load timeline had already scheduled, and the
     // port device's queue goes with the clocks that no longer mean anything.
+    //
+    // What the state does NOT carry is the grid's own phase: the overshoot the pre-load run had passed its last stop by,
+    // and the offset within a sample the anchors hold. A restored instance therefore stops at its own timeline's
+    // boundaries rather than the source's, and a stop moves the emulation by the cycles it lands on, so a Duplicate is
+    // not sample-exact against its source after the load. That is accepted rather than fixed: two instances restored
+    // from the same bytes do match each other exactly (the round-trip cases), block-size invariance survives a load,
+    // and audio could not match regardless (the sink's ring, blips and filter are host state, re-primed below). The
+    // promise a Duplicate keeps is the machine's state, not the source's future sample for sample.
     sampleAnchor_ = sampleBase_;
     mclkAnchor_ = mclkNow();
     nextGridSample_ = sampleBase_;
