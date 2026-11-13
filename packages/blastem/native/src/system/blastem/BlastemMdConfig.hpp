@@ -24,7 +24,8 @@ struct BlastemMdConfig {
     std::uint32_t region  = 0;     // an MdRegion ordinal
     float         gainDb  = 0.0f;
     // The file stem a core built outside a plan names its ROM by (BlastemMdSystem stages nothing: BlastEm takes its
-    // bytes, so this only names the image in messages and in `event_system_start`).
+    // bytes), so this only names the image in host-facing messages. The system-start event's name is not this: it is
+    // the cart header's own (romdb.c's get_header_name), and alloc_config_genesis cannot be handed a name.
     std::string               romName;
     std::vector<std::uint8_t> sram;       // battery seed (may be empty)
     std::vector<std::uint8_t> savestate;  // savestate seed (may be empty; wins over the battery)

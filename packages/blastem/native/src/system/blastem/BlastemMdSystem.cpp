@@ -1,29 +1,11 @@
 #include "system/blastem/BlastemMdSystem.hpp"
 
 #include <algorithm>
-#include <cstring>
 
 #include "system/blastem/BlastemCore.hpp"
 #include "system/blastem/BlastemRom.hpp"
 
 namespace rp::blastem {
-
-// The ROM must be BlastEm's own allocation: alloc_config_genesis takes the pointer, byteswaps it in place over
-// nearest_pow2(size) bytes (shared_init_gen), and free_genesis releases it with aligned_free, which reads the byte
-// BEFORE the pointer to find the offset (util.c:51). A std::vector's buffer is not that allocation, and handing it
-// over is a double free at teardown. So the image is copied into aligned_calloc's buffer, padded to the power of two
-// BlastEm byteswaps, and BlastEm owns it from boot to free.
-//
-// The alignment is 16, BlastEm's own (romdb.c:274), and never more: aligned_calloc keeps it in ONE byte
-// (`ret[-1] = (uint8_t)align`, util.c:44), so 4096 truncates to 0 and aligned_free then frees a misaligned pointer.
-static void* blastemRomCopy(const std::vector<std::uint8_t>& rom) {
-    std::size_t size = 1;
-    while (size < rom.size()) size <<= 1;
-    void* copy = aligned_calloc(1, size, 16);
-    if (!copy) return nullptr;
-    std::memcpy(copy, rom.data(), rom.size());
-    return copy;
-}
 
 static std::uint8_t blastemRegion(std::uint32_t region) {
     switch (static_cast<MdRegion>(region)) {
@@ -51,6 +33,10 @@ std::uint64_t BlastemMdSystem::masterClockOf(std::uint64_t sample) const {
 }
 
 void BlastemMdSystem::onActivate(double sampleRate) {
+    // A second activation on a live object keeps the machine. boot() would overwrite gen_, the only pointer to the
+    // context, and so leak it whole with its aligned cart while silently dropping the machine's state; the sibling
+    // backends guard the same way.
+    if (activated_) return;
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate_));
     boot();
@@ -126,6 +112,7 @@ void BlastemMdSystem::onSampleRateChanged(double sampleRate) {
 void BlastemMdSystem::setGainDb(float dB, bool immediate) {
     // ExpSmoother's own shape (util/ExpSmoother.hpp), as MesenSmsSystem::setGainDb uses it: the smoother holds a linear
     // gain, so the dB is converted once, and `immediate` snaps rather than ramps.
+    config_.gainDb = dB;  // config() is what a later activation boots from, so the knob is the record
     gainSmoother_.setTargetValue(dbToLin(dB));
     if (immediate) gainSmoother_.clearToTargetValue();
 }
@@ -146,6 +133,8 @@ bool BlastemMdSystem::stepIfBelowTarget(std::uint32_t /*framesNeeded*/) {
 }
 
 void BlastemMdSystem::finishBlock(const AudioBlockInfo& info, float* const*, std::size_t) {
+    // A block's end is its counter and nothing else: the lanes stay untouched because the audio sink that fills them
+    // is not here yet, so there is nothing to drain them from.
     sampleBase_ += info.frames;
 }
 
