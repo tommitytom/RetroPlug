@@ -68,6 +68,7 @@ constexpr std::size_t kSectionMainRam = 10;   // SECTION_MAIN_RAM
 constexpr std::size_t kSectionVdp     = 3;    // SECTION_VDP
 constexpr std::size_t kSectionYm      = 4;    // SECTION_YM2612
 constexpr std::size_t kSectionPsg     = 5;    // SECTION_PSG
+constexpr std::size_t kSection68000   = 1;    // SECTION_68000
 constexpr std::size_t kNoSection      = ~std::size_t(0);
 
 // The offset of section `id`'s first payload byte in a whole state (identifier included), or kNoSection. The same
@@ -333,11 +334,25 @@ TEST_CASE("a state whose VDP sprite counters index past their tables is refused"
     REQUIRE(vdp != kNoSection);
     const std::size_t counters = vdpSpriteCounters(base, vdp);
     REQUIRE(base[counters + 1] <= 20);  // MAX_SPRITES_LINE, so the offsets above are the fields they claim to be
-    for (std::size_t field = 1; field <= 3; ++field) {  // sprite_draws, slot_counter and cur_slot, not sprite_index
+    // The four counters: sprite_index has no value above 0x80 (the "no more sprites" marker), and the other three have
+    // no value above the line's 20.
+    const std::uint8_t bad[4] = {0xFF, 21, 21, 21};
+    for (std::size_t field = 0; field < 4; ++field) {
         std::vector<std::uint8_t> state = base;
-        state[counters + field]         = 21;
+        state[counters + field]         = bad[field];
         auto restored                   = boot(rp::blastem::test::vintDmaRom(), state);
         CHECK(restored->stateRefused());
+        CHECK(restored->activated());
+    }
+    // And the values a running VDP really holds are not refused: 0x80 is the marker the sprite passes write to mean "no
+    // more", and 80 to 127 are the link values a stop can fall on between the SAT read and the clamp that follows it.
+    // The review's proposed ceiling of 80 for this field would have refused a state saved mid-scan (and did, for the
+    // DMA image the review's own fuzzer reached: it saves with 128 there).
+    for (std::uint8_t live : {std::uint8_t(0x80), std::uint8_t(100)}) {
+        std::vector<std::uint8_t> state = base;
+        state[counters]                 = live;
+        auto restored                   = boot(rp::blastem::test::vintDmaRom(), state);
+        CHECK_FALSE(restored->stateRefused());
         CHECK(restored->activated());
     }
 }
@@ -426,3 +441,4 @@ TEST_CASE("a state with a repeated or unknown section is refused", "[blastem][sa
     CHECK(unknown->stateRefused());
     CHECK(unknown->activated());
 }
+
