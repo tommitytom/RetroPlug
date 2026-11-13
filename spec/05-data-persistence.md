@@ -231,11 +231,14 @@ this session did not set is written back VERBATIM**: the store keeps each block 
 value, and only a key `setSection` set this session is serialized from its parsed form, so an additive field a newer
 build wrote survives this one. A section write is computed inside the store's apply callback over the file AS IT IS ON
 DISK (`syncFromDisk` first), so two processes sharing it cannot revert each other, and a block stamped newer than its
-contributor is refused with one warning and written back byte-identical. `setSection` answers whether the file
-HOLDS the patch: true for one it now carries or, as this process last read it, already carried, and false for a
-refusal (a newer build's file, read-only; a failed write; a block stamped newer than its contributor). A caller that
-changes something outside the file on the strength of a write - a device, a link - acts on true and does nothing on
-false; the store's `writeSection` is the three-answer form, because "unchanged" is a satisfied patch, not a refusal.
+contributor is refused with one warning and written back byte-identical. `host.config`'s `setSection` answers whether
+the file HOLDS the patch: true for one it now carries or, as this process last read it, already carried, and false for
+a refusal (a newer build's file, read-only; a failed write; a block stamped newer than its contributor). It is bound to
+`writeSection(...) !== "refused"` for exactly that reason, and the store's `writeSection` is the three-answer form. The
+store's own boolean `setSection`, which no production code calls, is the narrower `writeSection(...) === "written"`: a
+satisfied re-send answers false from it, the same answer a refusal gives, so it cannot answer "did the file take it". A
+caller that changes something outside the file on the strength of a write - a device, a link - acts on the host
+group's true and does nothing on its false.
 
 **The files this phase stopped reading** (E1): `audio.json` (the standalone's device choice and clock tempo) and
 `midi.json` (its one input and one output). They are neither imported nor deleted: the audio choice is `config.json`'s

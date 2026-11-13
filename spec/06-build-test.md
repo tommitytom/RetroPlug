@@ -33,8 +33,9 @@ it. A full build produces the plugin (all formats) + the standalone.
   `packages/retroplug/` are **esbuild output dirs** created by the run scripts, not
   CMake build dirs. The CMake build dirs are `build/` (the load-bearing one), `build-tsan/` and
   `build-asan/` ([run-sanitizer.sh](../tools/run-sanitizer.sh)), `build-prof/`
-  ([run-profile.sh](../tools/run-profile.sh)), and `build-arm/` + `build-arm-prof/`
-  ([arm-build.sh](../tools/arm-build.sh)). All six are gitignored.
+  ([run-profile.sh](../tools/run-profile.sh)), `build-arm/` + `build-arm-prof/`
+  ([arm-build.sh](../tools/arm-build.sh)), and `build-dbg/`, the assertions build the CLI's exit cases are also run
+  against ([spec/14](14-hosts-harnesses.md#a-sessions-exit)). All seven are gitignored.
 
 ## CMake targets
 
@@ -74,7 +75,7 @@ CMakeLists of [node-sdk](../packages/node-sdk/native/CMakeLists.txt),
 | `retroplug-cp-bundle` / `-ui-bundle` / `-cli-bundle` / `-ts-stripper-bundle` / `-render-worker-bundle` / `-script-bundle` / `-script-test-bundle` / `-cli-sdk-assets` | custom | `build/native/*bundle_data.c`: control-plane / React-UI / CLI / TS-stripper / render-worker / script-node bytecode (the script nodes every Engine loads, [packages/native/cmake/bundles.cmake](../packages/native/cmake/bundles.cmake); the test twin's toy nodes, embedded in `retroplug-engine-graph-test` alone) and the CLI SDK assets, embedded in their consumers. | cp: yes; rest: via dependents |
 | `retroplug-example-session` | custom | The CLI example sessions under `build/cli/`. | yes |
 | `retroplug-render-host-test` | executable | A manual smoke of engine jobs on `rp::host::OfflineJobs` ([11-ui-rendering.md](11-ui-rendering.md)): `<job-json>` runs one render (and is `cmp`-identical to `retroplug-cli render`), `--parallel <j>...` runs N concurrently on one pool, `--cancel <j>` cancels mid-render. Not a CI step (`[engine-jobs]` carries that coverage). `EXCLUDE_FROM_ALL`. | no |
-| `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test` / `-audio-host-test` | executable | Fourteen of the sixteen Catch2 binaries `pnpm test:plugin` builds and runs (the other two are the N8 pack's, the next row). Each is made by `retroplug_add_test_binary` ([cmake/test-binary.cmake](../cmake/test-binary.cmake)) and links `Catch2::Catch2WithMain`. `EXCLUDE_FROM_ALL`; the console packages', the midi package's and the launchpad pack's are declared in their own `native/CMakeLists.txt` (`retroplug-midi-test` holds `MidiStream` and `PortWriter` over `FakeMidiBackend`, the port filters and the ring - a slow port's write off the caller's thread, a slow port not delaying a fast one, a full ring dropping whole messages, a stop's flush and its deadline, and neither a push nor a threaded `send` allocating, all of them in the thread sanitizer leg of [run-sanitizer.sh](../tools/run-sanitizer.sh) too, and with the five concurrency cases (the exclusive port's re-pick, a close under a send in flight, an output swap under a send, a diff's close before its open, a swap behind back-to-back sends) run in BOTH output modes through `GENERATE`; `retroplug-audio-host-test` holds `AudioHost` over `FakeAudioBackend` and the run-override rule). | no |
+| `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test` / `-audio-host-test` | executable | Fourteen of the sixteen Catch2 binaries `pnpm test:plugin` builds and runs (the other two are the N8 pack's, the next row). Each is made by `retroplug_add_test_binary` ([cmake/test-binary.cmake](../cmake/test-binary.cmake)) and links `Catch2::Catch2WithMain`. `EXCLUDE_FROM_ALL`; the console packages', the midi package's and the launchpad pack's are declared in their own `native/CMakeLists.txt` (`retroplug-midi-test` holds `MidiStream` and `PortWriter` over `FakeMidiBackend`, the port filters and the ring - a slow port's write off the caller's thread, a slow port not delaying a fast one, the push that lands as the writer goes idle (the lost wake, which only ThreadSanitizer's window makes fail), a full ring dropping whole messages, a stop's flush and its deadline (a wedged port's `stop` returns by `kFlushDeadline` plus the two sends it can be inside, abandoning the rest), a writer whose port never opened starting no thread, the stream's one drop line when it lets a writer go, and neither a push nor a threaded `send` allocating, all of them in the thread sanitizer leg of [run-sanitizer.sh](../tools/run-sanitizer.sh) too, and with the five concurrency cases (the exclusive port's re-pick, a close under a send in flight, an output swap under a send, a diff's close before its open, a swap behind back-to-back sends) run in BOTH output modes through `GENERATE`; `retroplug-audio-host-test` holds `AudioHost` over `FakeAudioBackend` and the run-override rule). | no |
 | `retroplug-n8-test` / `-serial-test` / `-n8-hwtest` | executable | The Everdrive N8 pack's protocol and serial checks (`packages/n8/native/test/`), the first two `pnpm test:n8`'s; `-hwtest` needs the physical console and links no Catch2 (`NO_CATCH2`). `EXCLUDE_FROM_ALL`. | no |
 
 The plugin's identity is vendor-owned (not the DPF example namespace):
@@ -414,16 +415,18 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
 
    **A config section** is the same shape at `config.json`'s root: `retroplug.app` may declare `configSections`, the
    same `{ key, schema, defaults, version?, migrations?, merge? }` with the same stamp rules and the same
-   `section` / `setSection` group on the host (`host.config`). Its `key` is a ROOT key of config.json, never one of the
-   shell's own (`CORE_CONFIG_KEYS`, derived from `userConfigSchema`'s shape plus `schemaVersion`) and never two
-   packages' (the generated registry refuses both, and `core/ts/host.ts`'s `ConfigHost` doc states the file rules). Two
-   differences from a project section, both because the file is shared by builds of different ages: an absent key reads
-   the defaults but is NOT written until `setSection`, and a block this session did not set is written back VERBATIM, so
-   an additive field a newer build wrote survives. A section's parse should therefore drop nothing it cannot keep: the
-   `midi` section keeps each entry's unknown fields (`{ name, ...rest }`) for exactly that reason. The audio package's
-   `audio` section and the Launchpad pack's `controlSurface` are the two in tree, and `test/config/config-sections.test.ts`
-   holds the rules (a core key refused, a duplicate refused, refuse-newer over the re-read file, a verbatim block, a
-   session-set block, the core-key list against the generator's).
+   `section` / `setSection` group on the host (`host.config`). `setSection` answers whether the file HOLDS the patch,
+   which a re-send of what it already carries is, for the reason spec/05's config section gives. Its `key` is a ROOT key
+   of config.json, never one of the shell's own (`CORE_CONFIG_KEYS`, derived from `userConfigSchema`'s shape plus
+   `schemaVersion`) and never two packages' (the generated registry refuses both, and `core/ts/host.ts`'s `ConfigHost`
+   doc states the file rules). Two differences from a project section, both because the file is shared by builds of
+   different ages: an absent key reads the defaults but is NOT written until `setSection`, and a block this session did
+   not set is written back VERBATIM, so an additive field a newer build wrote survives. A section's parse should
+   therefore drop nothing it cannot keep: the `midi` section keeps each entry's unknown fields (`{ name, ...rest })`
+   for exactly that reason. The audio package's `audio` section and the Launchpad pack's `controlSurface` are the two
+   in tree, and `test/config/config-sections.test.ts` holds the rules (a core key refused, a duplicate refused,
+   refuse-newer over the re-read file, a verbatim block, a session-set block, the core-key list against the
+   generator's).
 6. `tsconfig.json` extends [tsconfig.base.json](../tsconfig.base.json) in two lines, so the package typechecks alone.
    A package with `retroplug.ui` exports the module it names (the shell imports it through the generated menus), one
    with `retroplug.views` exports `./views` (the generated view table imports it there), one with `retroplug.cli`
@@ -987,9 +990,9 @@ nested `deps/dpf.js` submodule (documented in its own README), consumed through 
 4. **Use of `${DPFJS_PATH}`**: the shell's `retroplug-tjs-runtime` library compiles the shared txiki host `TjsHostRuntime.cpp` and links `tjs`; the backend takes the bare QuickJS headers (`quickjs.h`) and links `qjs`; the plugin embeds the generic `dpf-widgets/generic/LVGL.cpp` and links `dpfjs::core` + `lvgl-js-native` + `retroplug-tjs-runtime`. All in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt).
 5. **React resolution** — the UI ([ui/main.tsx](../packages/retroplug/ui/main.tsx)) is bundled by the shared [tools/build-ui.js](../tools/build-ui.js), which resolves `react`/`react-reconciler`/`lvgljs-ui` from dpf.js's own pnpm workspace under `deps/dpf.js/deps/lv_binding_js/node_modules`.
 
-**The txiki fork's one addition.** The nested `deps/dpf.js/deps/lv_binding_js/deps/txiki` is a fork of `tommitytom/txiki.js`
-(MSVC fixes on top of upstream), and RetroPlug carries one patch of its own there: the embedder exit hook
-(`TJS_SetExitHook` / `TJS_StopRequested` / `TJS_ExitTaken`, `src/tjs.h`, `src/private.h`, `src/mod_os.c`,
+**The txiki fork's one addition.** The nested `deps/dpf.js/deps/lv_binding_js/deps/txiki` is a fork of
+`tommitytom/txiki.js` (MSVC fixes on top of upstream), and RetroPlug carries one patch of its own there: the embedder
+exit hook (`TJS_SetExitHook` / `TJS_StopRequested` / `TJS_ExitTaken`, `src/tjs.h`, `src/private.h`, `src/mod_os.c`,
 `src/eval.c`, `src/utils.c`, `src/vm.c`), which is what lets a session's `tjs.exit` unwind instead of ending the
 process inside the call ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)); `deps/dpf.js`'s own
 `TjsHostRuntime.cpp` matches it, skipping the bytecode module's `load` event once an exit has been taken (the module
@@ -1152,6 +1155,7 @@ TMP="$(mktemp -d)"; REPO_DIR="$PWD"
 export NOSND_LOG="$TMP/nosnd.log"
 export RETROPLUG_HOST="$PWD/build-asan/bin/retroplug-host"
 export ASAN_OPTIONS="abort_on_error=1:detect_leaks=1:verify_asan_link_order=0"
+node packages/retroplug/scripts/run-native-tests.mjs dsp-threaded
 node packages/retroplug/scripts/run-native-tests.mjs dsp-lifecycle
 ```
 

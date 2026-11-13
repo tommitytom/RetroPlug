@@ -157,9 +157,9 @@ reaches a surface, and it names no launchpad provider.
   flight: a push takes a lock the writer holds only for a swap. A session's EXIT is where the close bytes go out: the
   provider's destroy disconnects the link, which writes the device's `exitToLiveMode` bytes (a pad left in Programmer
   mode has its front panel locked) before the ports close. That is the CLI's teardown path, so it runs on a normal
-  `tjs.exit` as it does after a thrown session or Ctrl-C ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)).
-  The pack's portable core is held to MicroQuickJS by the
-  device-pack toolchain's scenario mode (byte-identical transcripts under Node and `retroplug-mqjs-run`), but it
+  `tjs.exit` as it does after a thrown session or Ctrl-C
+  ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)). The pack's portable core is held to MicroQuickJS
+  by the device-pack toolchain's scenario mode (byte-identical transcripts under Node and `retroplug-mqjs-run`), but it
   declares no `script` member, so the scenarios are the proof and no box image carries it.
 - **Prove a change:** `retroplug-launchpad-test` (one of the sixteen `pnpm test:plugin` binaries),
   `pnpm test:native launchpad` (the facet's cases over the headless host's scripted device, and
@@ -223,11 +223,18 @@ MIDI OUT LEAVES THE AUDIO CALLBACK here, and only here: this app drains the Engi
 (WinMM's SysEx path waits for a 538-byte Launchpad repaint, about 170 ms at DIN rate), so its `MidiStream` runs in
 `Threaded` mode. Each selected hardware output then has a `PortWriter` of its own
 ([PortWriter.hpp](../packages/midi/native/src/midi/PortWriter.hpp)): `send` copies the message into a preallocated ring
-(all or nothing, so a SysEx is never torn) and wakes a thread that does the blocking write, and a message that does not
-fit is dropped whole and counted (`droppedOutputCount()`). A port leaving the selection, or the stream closing, stops
-its writer with a bounded FLUSH, because a dropped Note Off is a stuck note. The CLI's and the test host's MIDI facet
-stays `Inline` - the caller there is the JS thread, and a script relies on a returned `midiSend` being on the wire - and
-the virtual output is inline in both modes.
+(all or nothing, so a SysEx is never torn) and wakes a thread that does the blocking write. The wake is a wait on a flag
+word with a message counter beside it: the writer's snapshot of the counter is taken at the TOP of each pass, before it
+looks at the ring, and all four operations are `seq_cst`, so a push that lands as the writer goes idle wakes it or is
+caught by the re-read (a snapshot taken after the look leaves the record queued). A message that does not fit is
+dropped whole and counted, and `droppedOutputCount()` is read by the stream itself, which prints one
+`MIDI out (<port>): N message(s) dropped` line when it lets a writer go, so a lost message is not invisible outside the
+tests. A port leaving the selection, or the stream closing, stops its writer with a bounded FLUSH, because a dropped
+Note Off is a stuck note: `kFlushDeadline` counts 500 ms from the stop, with up to two sends on top (one already
+running, one that started just before the deadline), and what the deadline leaves is dropped and counted. A threaded
+writer whose port never opened starts no thread. The CLI's and the test host's MIDI facet stays `Inline` - the caller
+there is the JS thread, and a script relies on a returned `midiSend` being on the wire - and the virtual output is
+inline in both modes.
 
 At startup it holds MIDI and audio until the UI has reported: the control surface's `restored()` (only when it
 started the launchpad provider) and the `audio` section's apply. The wait is bounded in time, at 2000 ms

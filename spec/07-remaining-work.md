@@ -620,7 +620,10 @@ The debug facet is built out ([09-cli-debugging.md](09-cli-debugging.md)); the o
 The SDL standalone sends host MIDI at block time: its RtMidi out takes no timestamp, so the audio callback sends each
 block's `Engine::midiOut` as the block renders, its frames dropped, where the plugin hands the DAW each message at its
 frame. Scheduling it is the standalone's own work. ([LSDj serial-out design](../docs/lsdj-serial-out-design.md) section
-11.)
+11.) The record a `PortWriter`'s ring carries is its length only (`sizeof(std::uint32_t)`): section 6 of the batch's
+design said the header would also carry the frame and the block time for this scheduling, and the plan does not record
+the departure, so scheduling has to extend the header and `push()` (and `MidiStream::send`, which takes no timestamp
+today) or carry the time beside the ring.
 
 ### SDL MIDI-in at frame 0
 

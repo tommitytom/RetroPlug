@@ -83,7 +83,7 @@ All three hosts compose the services, mount their facets on an rpcpp server over
   ([`SharedDSP`](../packages/native/plugin/PluginShared.hpp#L21)),
   so the UI reaches the backend through the already-bound `__rpcSend` — no second RPC bridge.
   The UI and window-geometry seams are 03's topic.
-- **Native test host**: [`main.cpp:107-151`](../packages/native/src/main.cpp#L107-L151) binds the same namespace,
+- **Native test host**: [`main.cpp:289-318`](../packages/native/src/main.cpp#L289-L318) binds the same namespace,
   constructs the shared [`SessionPump`](../packages/native/src/host/SessionPump.cpp) before it evals a TS bundle (the
   stop takeover, the uncaught-error report, and txiki's exit hook, so a session's `tjs.exit` unwinds to `main` and the
   exit code comes back from it: [spec/14](14-hosts-harnesses.md#a-sessions-exit)), pumps the job loop until the harness

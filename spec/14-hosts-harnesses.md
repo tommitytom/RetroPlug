@@ -217,12 +217,12 @@ to the implementation by type identity, not mutual assignability (which passes a
 
 **An error nothing caught.** It ends a session, kept alive or not, with exit 1 and its text, including one thrown in the
 same loop turn as a `tjs.exit(0)`: txiki's exit hook is told what was pending when `exit` was called, and the launcher
-prints it before the unwinding ([A session's exit](#a-sessions-exit)). txiki turns one (a throw in
-an async module body, a rejection nothing cancelled, a throw in a timer) into a pending exception and a request to stop
-its loop, and the launcher ([packages/native/cli/main.cpp](../packages/native/cli/main.cpp)) drives that loop itself, so
-after every pump it looks for both: the exception, which it prints, and the stop request, which it both takes over and
-asks txiki for (`TJS_StopRequested`, the flag set where a stop is asked for, since the handle is not serviced once the
-loop is being stopped) because it survives a sibling callback's try/catch clearing the exception. In a test file the harness
+prints it before the unwinding ([A session's exit](#a-sessions-exit)). txiki turns one (a throw in an async module body,
+a rejection nothing cancelled, a throw in a timer) into a pending exception and a request to stop its loop, and the
+launcher ([packages/native/cli/main.cpp](../packages/native/cli/main.cpp)) drives that loop itself, so after every pump
+it looks for both: the exception, which it prints, and the stop request, which it also asks txiki for
+(`TJS_StopRequested`: the flag is set where a stop is asked for, and the handle is not serviced once the loop is being
+stopped), because it survives a sibling callback's try/catch clearing the exception. In a test file the harness
 ([packages/testing/ts/harness.ts](../packages/testing/ts/harness.ts), the one `pnpm test`, `test:native` and `test:ui`
 run too) takes over first, from its first `test()`: it records a rejection nothing handled, or a throw in a timer
 callback, prints it to stderr at once, fails the running case at once (each case is raced against an abort, so one
@@ -236,25 +236,30 @@ ends it with exit 1 too, as an async one that rejects does. A session holding a 
 `launchpad-probe` runs each timer body so that a throw reports, leaves Programmer mode and closes its ports before
 exiting 1. [tools/run-cli-ts-tests.sh](../tools/run-cli-ts-tests.sh) checks each of these through the real binary.
 
-**A session's exit.** `tjs.exit` is txiki's own and stays frozen (`src/js/core/index.js` freezes the global before
-`TJS_NewRuntime` returns), so a host does not wrap it: both hosts that drive the loop themselves install txiki's exit
-HOOK instead (`TJS_SetExitHook` in the fork at `deps/dpf.js/deps/lv_binding_js/deps/txiki/src/mod_os.c`, through
-[SessionPump](../packages/native/src/host/SessionPump.cpp)). With a hook, `tjs.exit(status)` records the status, stops
-the loop and throws an UNCATCHABLE error, so the JS stack unwinds - through try/catch/finally, out of async functions
-and promise jobs - and `main` returns: the CLI's `Teardown` (`engine.clearGraph()`, then `rp_stop_providers`) runs,
-`~AudioDriverRpcService` stops the audio thread, the providers stop in reverse order (a claimed Launchpad's link writes
-its close bytes and gives the device back), and the runtime is freed. That is the path a thrown session and Ctrl-C
-already took. A Ctrl-C hook that ends the session itself (`tjs.exit(130)` from `__rp_onInterrupt`, say) is the exit and
-not a thrown hook: the process ends with the hook's own code, and the exit's unwinding is not reported as an error. A
-host with no hook (the plugin, the SDL standalone, the stock `tjs` binary) keeps the old `exit()`: the process ends
-inside the call and no caller's stack unwinds. One limit is the engine's, not the hook's: quickjs-ng takes an
-executor's exception with `JS_GetException` and without the uncatchable check (the promise constructor, and the same
-shape in `js_promise_resolve_thenable_job` and an async generator's resume), so code after
-`new Promise(() => tjs.exit(0))` still runs synchronously until control returns to the C caller. Nothing runs after
-that: the drain checks the exit on every pass, so a job queued behind the one that exited does not run either. Those
-cases run against `build/bin/retroplug-cli`; `RETROPLUG_CLI=build-dbg/bin/retroplug-cli` runs the same script against
-an assertions build, where a reference an exit path leaks aborts `JS_FreeRuntime`'s gc-list check at exit, which the
-release build cannot see. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print `teardown: graph cleared, providers
-stopped`, and the test host print every message its scripted Pro MK3 was sent plus `teardown: providers stopped`,
-which is how [test-native/session-pump.test.ts](../packages/retroplug/test-native/session-pump.test.ts) holds a claimed
-Launchpad's close bytes from a child process's exit.
+### A session's exit
+
+`tjs.exit` is txiki's own and stays frozen (`src/js/core/index.js` freezes the global before `TJS_NewRuntime` returns),
+so a host does not wrap it: both hosts that drive the loop themselves install txiki's exit HOOK instead
+(`TJS_SetExitHook`, `src/vm.c` in the fork at `deps/dpf.js/deps/lv_binding_js/deps/txiki`, through
+[SessionPump](../packages/native/src/host/SessionPump.cpp); `src/mod_os.c`'s `tjs_exit` is what consults it). With a
+hook, `tjs.exit(status)` records the status, stops the loop and throws an UNCATCHABLE error, so the JS stack unwinds -
+through try/catch/finally, out of async functions and promise jobs - and `main` returns: `~AudioDriverRpcService` stops
+the audio thread (the CLI declares it after `teardown` for that reason), then the CLI's `Teardown` runs
+(`engine.clearGraph()`, then `rp_stop_providers`, which stops the providers in reverse order - a claimed Launchpad's
+link writes its close bytes and gives the device back), and the runtime is freed. That is the path a thrown session and
+Ctrl-C already took. A Ctrl-C hook that ends the session itself (`tjs.exit(130)` from `__rp_onInterrupt`, say) is the
+exit and not a thrown hook: the process ends with the hook's own code, and the exit's unwinding is not reported as an
+error. Nor is one a listener takes (`unhandledrejection`, or a module's `load` listener): the rejection's reason stays
+pending for the embedder and is freed there, so the exit answers with its code and a quiet stderr. A host with no hook
+(the plugin, the SDL standalone, the stock `tjs` binary) keeps the old `exit()`: the process ends inside the call and no
+caller's stack unwinds. One limit is the engine's, not the hook's: quickjs-ng takes an executor's exception with
+`JS_GetException` and without the uncatchable check (the promise constructor, and the same shape in
+`js_promise_resolve_thenable_job` and an async generator's resume), so code after `new Promise(() => tjs.exit(0))`
+still runs synchronously until control returns to the C caller. Nothing runs after that: the drain
+(`tjs__drain_microtasks`) checks the exit on every pass, so a job queued behind the one that exited does not run
+either. Those cases run against `build/bin/retroplug-cli`; `RETROPLUG_CLI=build-dbg/bin/retroplug-cli` runs the same
+script against an assertions build, where a reference an exit path leaks aborts `JS_FreeRuntime`'s gc-list check at
+exit, which the release build cannot see. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print `teardown: graph cleared,
+providers stopped`, and the test host print every message its scripted Pro MK3 was sent plus `teardown: providers
+stopped`, which is how [test-native/session-pump.test.ts](../packages/retroplug/test-native/session-pump.test.ts)
+holds a claimed Launchpad's close bytes from a child process's exit.

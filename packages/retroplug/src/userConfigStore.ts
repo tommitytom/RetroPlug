@@ -136,10 +136,11 @@ export class UserConfigStore {
   }
 
   /** Apply a patch to a section through its contributor's `merge`, written through a re-read of the file (two
-   *  processes may share it), and answer whether the file HOLDS it. THROWS when the package has no such section or the
+   *  processes may share it), and answer whether this call WROTE it. THROWS when the package has no such section or the
    *  contributor refuses the patch; a block stamped newer than its contributor is a refusal (one warning, and the block
-   *  stays byte-identical). This is `writeSection(...) === "written"`: a caller that only distinguishes saved from not
-   *  saved wants `writeSection`, because "unchanged" is a satisfied patch, not a failure. */
+   *  stays byte-identical). This is `writeSection(...) === "written"`, and no production code calls it: the
+   *  `ConfigHost` a package sees binds `writeSection(...) !== "refused"`, because "unchanged" is a satisfied patch,
+   *  not a failure (spec/05). A caller that has to tell those apart reads `writeSection`. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): boolean {
     return this.writeSection(key, patch) === "written";
   }
