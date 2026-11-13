@@ -3,7 +3,8 @@
 // Synthetic Mega Drive images, hand-assembled: no assembler, so CI needs none. Each is a 64 KiB cart (one Sega bank)
 // with the "SEGA MEGA DRIVE " header at $100, no battery, a stack pointer of $00FFFE00 and a reset vector of $000200
 // in its vectors, a table of `move.b #value,(address).L` register writes at $200, and a program after them, ended by a
-// `bra .` spin.
+// `bra .` spin. A program must start on an even address and leave room for the two spin bytes: `image()` refuses
+// anything else, because an odd start is an address error and an overrun is no image at all, and either proves nothing.
 //
 // The 68k encodings used, and nothing else, so a reader can check a byte against a manual:
 //   13FC 00vv aaaaaaaa   move.b #vv,(aaaaaaaa).L
@@ -20,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 namespace rp::blastem::test {
@@ -29,15 +31,9 @@ struct Write {
     std::uint8_t  value;
 };
 
-inline void push32(std::vector<std::uint8_t>& v, std::uint32_t x) {
-    v.push_back(static_cast<std::uint8_t>(x >> 24));
-    v.push_back(static_cast<std::uint8_t>(x >> 16));
-    v.push_back(static_cast<std::uint8_t>(x >> 8));
-    v.push_back(static_cast<std::uint8_t>(x));
-}
-
 // `= {}` on `writes`, and the includes above, are not style: without the default, every no-write image (portPollRom,
-// syncEdgeRom) fails to compile, and without <cstring> the memcpy below has no declaration.
+// syncEdgeRom) fails to compile, without <cstring> the memcpy below has no declaration, and without <stdexcept> the
+// refusal below has no type.
 inline std::vector<std::uint8_t> image(const std::vector<std::uint8_t>& program,
                                        const std::vector<Write>& writes = {}) {
     std::vector<std::uint8_t> rom(0x10000, 0x00);
@@ -51,6 +47,9 @@ inline std::vector<std::uint8_t> image(const std::vector<std::uint8_t>& program,
                                      std::uint8_t(w.address >> 8), std::uint8_t(w.address)};
         std::memcpy(rom.data() + at, ins, sizeof(ins));
         at += sizeof(ins);
+    }
+    if (at % 2 != 0 || at + program.size() + 2 > rom.size()) {
+        throw std::length_error("synthetic image: program must start word-aligned and fit before its spin");
     }
     std::memcpy(rom.data() + at, program.data(), program.size());
     at += program.size();
@@ -105,10 +104,11 @@ inline std::vector<std::uint8_t> portPollLoopRom() {
 }
 
 // Polls port 2 in a tight loop, counting its polls, and leaves the loop the first time TR/TH differ from their idle
-// level ($60): it stores the count at $FF0000 (a word) and the byte it read at $FF0002. The count is the poll loop's own
-// clock, so a case reads WHEN a level arrived in units the ROM can see, not in host samples.
+// level ($60): it stores the count at $FF0000 (a word) and the masked level it read at $FF0002, which is therefore one
+// of $00, $20, $40, $60. The count is the poll loop's own clock, so a case reads WHEN a level arrived in units the ROM
+// can see, not in host samples.
 //
-//   $200  moveq #0,d1                 ($204 is the loop's head; the moveq runs once)
+//   $200  moveq #0,d1                 ($202 is the loop's head; the moveq runs once)
 //   $202  move.b $A10005,d0           <- loop
 //   $208  andi.b #$60,d0
 //   $20C  cmpi.b #$60,d0
@@ -131,9 +131,9 @@ inline std::vector<std::uint8_t> portTimestampRom() {
 
 // Holds PSG channel 0 at full volume, then silences it the first time TR/TH leave their idle level, and records that
 // it happened at $FF0001. An audio edge a case can time: the level's sample is the sample the volume drops on. Its
-// program starts at $218 (three PSG writes precede it), its loop is 14 bytes, and its branch is 0xF0 ($200 - $210).
+// program starts at $218 (three PSG writes precede it), its loop is 14 bytes, and its branch is 0xF0 ($218 - $228).
 //
-//   $200  $C00011 <- $8E, $01         the three writes, from the table below
+//   $200  $C00011 <- $8E, $01, $90    the three writes, from the table below
 //   $218  move.b $A10005,d0           <- loop
 //   $21E  andi.b #$60,d0
 //   $222  cmpi.b #$60,d0
@@ -141,13 +141,13 @@ inline std::vector<std::uint8_t> portTimestampRom() {
 //   $228  move.b #$9F,$C00011         channel 0, attenuation 15 (silence)
 //   $230  move.b #$01,$FF0001         the flag
 inline std::vector<std::uint8_t> syncEdgeRom() {
-    return image({0x10, 0x39, 0x00, 0xA1, 0x00, 0x05,             // move.b $A10005,d0   <- loop
-                  0x02, 0x00, 0x00, 0x60,                         // andi.b #$60,d0
-                  0x0C, 0x00, 0x00, 0x60,                         // cmpi.b #$60,d0
-                  0x67, 0xF0,                                     // beq.s  loop
-                  0x13, 0xFC, 0x00, 0x9F, 0x00, 0xC0, 0x00, 0x11, // move.b #$9F,$C00011 (channel 0 level 15)
-                  0x13, 0xFC, 0x00, 0x01, 0x00, 0xFF, 0x00, 0x01},// move.b #$01,$FF0001 (the flag)
-                {{0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
+    return image({0x10, 0x39, 0x00, 0xA1, 0x00, 0x05,              // move.b $A10005,d0   <- loop
+                  0x02, 0x00, 0x00, 0x60,                          // andi.b #$60,d0
+                  0x0C, 0x00, 0x00, 0x60,                          // cmpi.b #$60,d0
+                  0x67, 0xF0,                                      // beq.s  loop
+                  0x13, 0xFC, 0x00, 0x9F, 0x00, 0xC0, 0x00, 0x11,  // move.b #$9F,$C00011 (channel 0 level 15)
+                  0x13, 0xFC, 0x00, 0x01, 0x00, 0xFF, 0x00, 0x01}, // move.b #$01,$FF0001 (the flag)
+                  {{0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
 }
 
 }  // namespace rp::blastem::test

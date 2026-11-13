@@ -1,11 +1,9 @@
 // The images are code, so this pins them: a hash per image (any byte that moves changes it), the header and vectors
 // a Mega Drive needs, and the one property a later case depends on and a hash cannot state (the write table's order).
-//
-// The hashes are the corrected generators' (the first draft's `beq.s $F2` in the two poll loops landed inside an
-// address operand, and its fmPsgRom omitted the three PSG writes its hash had been taken without): every one was
-// recomputed from the bytes above, and the numbers are the bytes' own, never a target to edit towards.
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -24,10 +22,7 @@ TEST_CASE("an image carries the Mega Drive header and vectors", "[blastem][roms]
     const std::vector<std::uint8_t> rom = rp::blastem::test::portPollRom();
     CHECK(rom.size() == 0x10000);
     CHECK(std::memcmp(rom.data() + 0x100, "SEGA MEGA DRIVE ", 16) == 0);
-    CHECK(rom[0x00] == 0x00);  // stack pointer $00FFFE00
-    CHECK(rom[0x01] == 0xFF);
-    CHECK(rom[0x04] == 0x00);  // reset vector $000200
-    CHECK(rom[0x06] == 0x02);
+    CHECK(std::memcmp(rom.data(), "\x00\xFF\xFE\x00\x00\x00\x02\x00", 8) == 0);  // SP $00FFFE00, reset $000200
     CHECK(rom[0x200] == 0x10);  // the program's first byte is at $200
 }
 
