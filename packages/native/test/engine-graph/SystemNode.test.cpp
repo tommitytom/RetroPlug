@@ -163,7 +163,12 @@ std::unique_ptr<rp::blastem::BlastemMdSystem> md(SystemId id) {
     return sys;
 }
 
-std::string mdNode(NodeRig& rig, SystemId id) { return rig.boot("rp.blastem.md", id, R"("region":"ntscUs")"); }
+// The node's settings, plus any extra member a case needs (the port-2 claim, which TS writes from the roles the
+// system's pipeline places).
+std::string mdNode(NodeRig& rig, SystemId id, const std::string& extra = "") {
+    return rig.boot("rp.blastem.md", id,
+                    std::string(R"("region":"ntscUs")") + (extra.empty() ? "" : "," + extra));
+}
 
 // A note-on for the NES (through its N8 FIFO), so the mix and every pin it plays carry signal.
 void noteOn(SystemBase& sys, std::uint8_t channel, std::uint8_t key) {
@@ -895,6 +900,71 @@ TEST_CASE("a system node records what its bytes input feeds the core in the engi
     REQUIRE(rig.traced.size() == 1);
     CHECK(rig.traced[0].frame == 5);
     CHECK(rig.traced[0].data == std::vector<std::uint8_t>{1, 2, 3});
+}
+
+TEST_CASE("a Mega Drive node feeds controller port 2 only for the system whose role claimed it",
+          "[engine-graph][system-node][inputs][blastem-md]") {
+    // Port 2 is player 2 on every Mega Drive cart, so a level reaches its pins only for the system whose node says a
+    // role claimed the port (`coreBytesIn`: TS writes the claim of the protocol node that system's pipeline places).
+    // Unclaimed, both doors into the core's byte path stay shut: the MIDI message too long for the framed door, which
+    // applyInputs sends down pushCoreBytes as it does for every core with a raw ingress, and the bytes input the sync
+    // node's levels arrive on. The pins then read what the cart's own poll has always read: the pull-ups a pad leaves.
+    const std::vector<std::uint8_t> sysex{0xF0, 0x7D, 0x42, 0x03, 0x00, 0xF7};  // longer than a MidiEvent holds
+    for (const bool claimed : {false, true}) {
+        const char* const which = claimed ? "claimed" : "unclaimed";
+        INFO(which);
+        NodeRig rig(kRate);
+        REQUIRE(rig.set(fedDocument("rp.blastem.md",
+                                    mdNode(rig, 1, claimed ? R"("coreBytesIn":true)" : R"("coreBytesIn":false)"),
+                                    {"midi", "bytes"}))
+                    .ok);
+        auto* const core = static_cast<rp::blastem::BlastemMdSystem*>(rig.builtCore(1));
+        REQUIRE(core != nullptr);
+        CHECK(core->hasCoreBytesIn() == claimed);
+        Feed& feed = rig.node<Feed>("feed");
+        feed.next[Feed::Midi]  = {{0, sysex}};
+        feed.next[Feed::Bytes] = {{4, {0x20}}, {8, {0x00}}};
+        Lanes   graph(2);
+        const rp_transport t{kRate, 120.0, 0.0, 0};
+        rig.host->processBlock(64, t, graph.ptrs.data(), 2);
+        // Claimed: one level per byte of the two messages, the last of them what the grid left on the pins. Unclaimed:
+        // nothing taken at all, and the held level still the idle one the port booted on.
+        CHECK(core->levelsAccepted() == (claimed ? sysex.size() + 2 : 0u));
+        CHECK(core->portDevice().lastApplied() == (claimed ? 0x00 : 0x60));
+        CHECK(core->clampedBlocks() == 0);
+    }
+}
+
+TEST_CASE("a message staged at a Mega Drive node is refused while port 2 stands unclaimed",
+          "[engine-graph][system-node][inputs][blastem-md][stage]") {
+    // The other door into the same byte path: the UI stages a settings SysEx at the node whose menu sent it
+    // (rp.stage/1), and the node asks hasCoreBytesIn before handing it over. On a cart that claimed nothing the answer
+    // is no, so the message stays the caller's to route elsewhere rather than becoming levels on player 2's pins; on
+    // the cart that claimed the port it is the raw ingress the sync node's levels use too.
+    const std::vector<std::uint8_t> sysex{0xF0, 0x7D, 0x42, 0x03, 0x00, 0x01, 0x00, 0x02, 0x00, 0xF7};
+    for (const bool claimed : {false, true}) {
+        const char* const which = claimed ? "claimed" : "unclaimed";
+        INFO(which);
+        Engine e(kRate);
+        rp::host::test::Roms roms;
+        std::vector<rp::host::test::DocSystem> systems{
+            {1, "rp.blastem.md", 0,
+             claimed ? R"("region":"ntscUs","coreBytesIn":true)" : R"("region":"ntscUs")"}};
+        rp::host::test::withRoms(e, systems, roms);
+        REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1})).ok);
+        QueuedInvoker invoker(e);
+        auto* const core = static_cast<rp::blastem::BlastemMdSystem*>(e.findSystem(1));
+        REQUIRE(core != nullptr);
+        CHECK(core->hasCoreBytesIn() == claimed);
+        invoker.stageNodeMidi("sys-1", sysex);
+        invoker.drainInto(e);
+        Lanes lanes(2);
+        e.processBlock(512, lanes.ptrs.data(), 2);
+        CHECK(core->levelsAccepted() == (claimed ? sysex.size() : 0u));
+        // Claimed, the message is a run of levels and the last of them is what the grid left held; unclaimed, the pins
+        // never moved off the pull-ups the port booted with.
+        CHECK(core->portDevice().lastApplied() == (claimed ? sysex.back() : 0x60));
+    }
 }
 
 // ---- settings ----------------------------------------------------------------------------------------------------
@@ -4116,8 +4186,11 @@ TEST_CASE("a tap armed live on an activated NES sizes nothing on the block threa
 
 TEST_CASE("a warmed Mega Drive block allocates nothing", "[engine-graph][system-node][alloc][blastem-md]") {
     NodeRig rig(kRate);
-    REQUIRE(rig.set(R"({"nodes":[{"id":"md","type":"rp.blastem.md","settings":{)" + mdNode(rig, 1) +
-                    R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+    // The port claimed: the level this case stages for the block reaches the core's byte path, which is open only for
+    // a system whose node says a role took port 2.
+    REQUIRE(rig.set(R"({"nodes":[{"id":"md","type":"rp.blastem.md","settings":{)" +
+                        mdNode(rig, 1, R"("coreBytesIn":true)") +
+                        R"(}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
                         "wires":[{"from":"md.mix","to":"out.out.1-2"}]})").ok);
     Lanes out(2);
     const rp_transport t{kRate, 120.0, 0.0, 0};

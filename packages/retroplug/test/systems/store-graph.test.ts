@@ -33,6 +33,7 @@ import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
 // The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
 // of the script host's contexts.
 import "../../src/script/bundle";
+import { genmddjHeader } from "@retroplug/genmddj/testFixtures";
 import { warned } from "../_warnings";
 import { blipToasterRom, gbRom, lsdjRom, nesRom, smsggdjRom } from "./fixtures";
 
@@ -45,6 +46,7 @@ function project() {
   be.seed("/roms/b.gb", gbRom());
   be.seed("/roms/c.nes", nesRom());
   be.seed("/roms/lsdj.gb", lsdjRom());
+  be.seed("/roms/genmddj.bin", genmddjHeader());
   const p = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   return { be, p, sys: p.systems };
 }
@@ -856,6 +858,7 @@ test("whatever a loaded project stores for a protocol role, the store hands its 
     "nes-n8-midi": { romPath: "/roms/c.nes" },
     "risa-sync": { romPath: "/roms/c.nes" },
     "sms-sync": { romPath: "/roms/smsggdj.sms" },
+    "genmddj-sync": { romPath: "/roms/genmddj.bin" },
     "lsdj-sync": { romPath: "/roms/lsdj.gb" },
   };
   expect(Object.keys(carts).sort()).toEqual(Object.keys(ROLE_NODES).sort());

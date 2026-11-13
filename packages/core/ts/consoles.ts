@@ -88,6 +88,12 @@ export interface ConsoleCapabilities {
   readonly linkCable?: { readonly field: string };
   /** The core can capture its serial out for a decoder node to read. */
   readonly serialOut?: true;
+  /** The core's `bytes` input reaches a device the cart SHARES with a player (a Mega Drive's controller port 2), so the
+   *  core opens it only for a system whose pipeline places a node that writes it. buildGraph carries that answer on the
+   *  node's settings as `coreBytesIn`, and a core that never opens it reads the pins' idle state for a MIDI SysEx or a
+   *  staged knob. A console without it (a NES, whose bytes are a cart's memory-mapped FIFO that other ROMs ignore)
+   *  gets no such setting on its node. */
+  readonly claimedBytesIn?: true;
   /** The engine's split tap can arm on it (a NES's pins or its five channels). */
   readonly channelTap?: true;
 }

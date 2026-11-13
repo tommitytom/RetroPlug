@@ -52,12 +52,17 @@ public:
     void setGainDb(float dB, bool immediate = false) override;
 
     // Controller port 2's host device: one LEVEL per byte of `data`, each held from the host sample of `frame` (the
-    // intra-block offset) on. `flush` is accepted and ignored, as it is on the SMS's sync role: a held level has no
-    // undelivered-stream hazard to clear, and dropping one on a seek would only leave a stale pin.
+    // intra-block offset) on, for a cart that claimed the port. `flush` is accepted and ignored, as it is on the SMS's
+    // sync role: a held level has no undelivered-stream hazard to clear, and dropping one on a seek would only leave a
+    // stale pin. Nothing is taken while the port stands unclaimed, so a routed SysEx or a staged knob cannot put a
+    // level on player 2's pins.
     void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush = false) override;
-    // True whether or not a role is wired to the port: the queue exists either way, and an unwired port simply never
-    // has anything in it (as MesenSmsSystem's answer is).
-    bool hasCoreBytesIn() const override { return true; }
+    // Whether a cart claimed port 2: the node's `coreBytesIn` knob (BlastemNode.cpp), which is what the sync role's
+    // levels arrive on. Unclaimed, pushCoreBytes takes nothing and the port answers a pad's idle lines.
+    bool hasCoreBytesIn() const override { return port2Claimed_; }
+    // Open or close port 2 to the host. Its own device type never changes (see port2Claimed_): closing the port is the
+    // pad's idle answer, and no reset is needed to move between the two. Closing releases whatever level was held.
+    void setPort2Claimed(bool claimed);
 
     // The frame the engine reads: the video sink's triple, allocated at boot, or null before one exists.
     FrameBufferTriple* framebuffer() override { return video_.triple(); }
@@ -202,6 +207,10 @@ private:
     AudioSink                 audio_;
     // Port 2 as the host drives it. Its queue and its sort scratch are sized at construction, before any block runs.
     PortDevice                port_;
+    // Whether a cart claimed port 2 (setPort2Claimed). The port stays BlastEm's IO_CUSTOM either way: an empty queue
+    // and a released level answer with the pull-ups a disconnected pad leaves, which is what an unclaimed port 2 must
+    // read as. What the flag decides is whether the host may drive the lines at all.
+    bool                      port2Claimed_ = false;
     genesis_context*          gen_ = nullptr;
     bool                      activated_ = false;
     bool                      stateRefused_ = false;  // a seed state the serializer refused

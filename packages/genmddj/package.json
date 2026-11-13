@@ -8,12 +8,22 @@
   "type": "module",
   "description": "genmddj's half of the app: the ROM identity, the IN24 clock levels (a 2-bit counter on controller port 2's TR and TH), the genmddj-sync role, its ROM provider, and the rp.genmddj.sync protocol node (span label 24).",
   "exports": {
+    "./app": "./ts/app.ts",
+    "./genmddjSyncNode": "./ts/genmddjSyncNode.ts",
     "./mdSync": "./ts/mdSync.ts",
+    "./protocol": "./ts/protocol.ts",
     "./romDetect": "./ts/romDetect.ts",
     "./romProvider": "./ts/romProvider.ts",
     "./testFixtures": "./ts/fixtures.ts"
   },
-  "retroplug": {},
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "module": "ts/protocol.ts",
+      "nodes": [{ "type": "rp.genmddj.sync", "label": 24, "midiIn": null, "writes": ["bytes"] }],
+      "roles": { "genmddj-sync": "rp.genmddj.sync" }
+    }
+  },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/smsggdj": "workspace:*",

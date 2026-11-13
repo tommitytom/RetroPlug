@@ -16,13 +16,15 @@ import { mgbMidiNode } from "@retroplug/mgb/mgbMidiNode";
 import { n8MidiToFifoNode } from "@retroplug/n8/n8MidiToFifoNode";
 import { risaSyncNode } from "@retroplug/risa/risaSyncNode";
 import { smsSyncNode } from "@retroplug/smsggdj/smsSyncNode";
+import { genmddjSyncNode } from "@retroplug/genmddj/genmddjSyncNode";
 import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
 import { lsdjSerialOutNode } from "@retroplug/lsdj/lsdjSerialOutNode";
 // The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
 // of the script host's contexts.
 import "../../src/script/bundle";
 
-const PROTOCOL_MODULES: readonly DefinedNode<any>[] = [mgbMidiNode, n8MidiToFifoNode, risaSyncNode, smsSyncNode, lsdjSyncNode, lsdjSerialOutNode];
+const PROTOCOL_MODULES: readonly DefinedNode<any>[] = [mgbMidiNode, n8MidiToFifoNode, risaSyncNode, smsSyncNode,
+                                                       genmddjSyncNode, lsdjSyncNode, lsdjSerialOutNode];
 const moduleOf = (type: string): DefinedNode<any> | undefined => PROTOCOL_MODULES.find((d) => d.id === type);
 
 const registered = (): string[] =>

@@ -35,10 +35,13 @@ constexpr double        kRate   = 48000.0;
 constexpr std::uint32_t kFrames = 512;
 constexpr int           kBlocks = 128;
 
+// The port claimed on every instance: one case drives port 2's levels, and the claim is per instance, so two booted
+// the same way must hold the port the same way (the held level is part of the per-block state hash).
 std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom, SystemId id) {
     rp::blastem::BlastemMdConfig cfg;
     cfg.region = 1;
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(id, cfg, std::move(rom));
+    sys->setPort2Claimed(true);
     sys->onActivate(kRate);
     return sys;
 }

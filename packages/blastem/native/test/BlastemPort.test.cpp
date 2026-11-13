@@ -28,10 +28,13 @@ constexpr std::uint8_t  kIdle   = 0x60;  // TR and TH released: the level a disc
 // A level on the host's side of port 2: 0x40 is TR low, TH high.
 constexpr std::uint8_t kLevel = 0x40;
 
+// Every case here but the last is the work of a cart that CLAIMED port 2 (the node's `coreBytesIn`, which TS writes
+// from the sync role's protocol node), so the helper boots with the port open; the gate's own case boots without it.
 std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom) {
     rp::blastem::BlastemMdConfig cfg;
     cfg.region = 1;
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, std::move(rom));
+    sys->setPort2Claimed(true);
     sys->onActivate(kRate);
     return sys;
 }
@@ -456,4 +459,35 @@ TEST_CASE("a mid-session rate change maps the same sample to the clock the ancho
     INFO("polls " << c0 << " " << c1 << " " << c2 << " " << c3 << ", per poll " << perPoll << ", expected shift "
                   << expected);
     CHECK(std::llabs((std::int64_t(c3) - std::int64_t(c2)) - std::int64_t(std::llround(expected))) <= 3);
+}
+
+TEST_CASE("port 2 drives the pins only for the cart that claimed it", "[blastem][port]") {
+    // The gate the design's section 4 calls required rather than tidy: port 2 is player 2 on every Mega Drive cart, so
+    // only a system whose role claimed the port may hold its lines. Unclaimed, a level is refused outright and the pins
+    // read the pull-ups the cart's own poll has always read; claiming lets one through, and un-claiming takes the lines
+    // back so a level held for a cart that went away cannot keep driving someone else's pad.
+    rp::blastem::BlastemMdConfig cfg;
+    cfg.region = 1;
+    auto               sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, rp::blastem::test::portPollLoopRom());
+    std::vector<float> l(kFrames), r(kFrames);
+    sys->onActivate(kRate);
+    CHECK_FALSE(sys->hasCoreBytesIn());
+    for (int i = 0; i < 4; ++i) runBlock(*sys, l, r);
+    CHECK(ramByte(*sys, 0x0000) == 0x7F);
+    sys->pushCoreBytes(0, &kLevel, 1);
+    CHECK(sys->levelsAccepted() == 0);  // refused at the door: the queue never saw a byte
+    runBlock(*sys, l, r);
+    CHECK(ramByte(*sys, 0x0000) == 0x7F);  // still the idle lines, never the level's bits
+
+    sys->setPort2Claimed(true);
+    CHECK(sys->hasCoreBytesIn());
+    sys->pushCoreBytes(0, &kLevel, 1);
+    CHECK(sys->levelsAccepted() == 1);
+    runBlock(*sys, l, r);
+    CHECK((ramByte(*sys, 0x0000) & 0x60) == (kLevel & 0x60));
+
+    sys->setPort2Claimed(false);
+    CHECK(sys->portDevice().lastApplied() == kIdle);  // the held level went with the claim
+    runBlock(*sys, l, r);
+    CHECK(ramByte(*sys, 0x0000) == 0x7F);
 }

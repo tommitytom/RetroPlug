@@ -37,6 +37,7 @@ std::unique_ptr<rp::blastem::BlastemMdSystem> boot(std::vector<std::uint8_t> rom
     cfg.region = 1;
     cfg.savestate = std::move(state);
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, std::move(rom));
+    sys->setPort2Claimed(true);  // the port case below is a cart that claimed it; the rest never touch the port
     sys->onActivate(kRate);
     return sys;
 }

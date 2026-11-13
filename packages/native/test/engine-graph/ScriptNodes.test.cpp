@@ -2561,7 +2561,8 @@ TEST_CASE("the embedded script bundle loads, and registers the production script
     // decoder, which buildGraph places (ProtocolNodes.test.cpp holds them to what the DSP kernel they replaced was
     // recorded sending, the decoder by design aside).
     const std::vector<std::string> ids{"rp.midi.route", "rp.mgb.midi",  "rp.n8.midi-to-fifo",    "rp.risa.sync",
-                                       "rp.sms.sync",   "rp.lsdj.sync", "rp.controller.session", "rp.lsdj.serial-out"};
+                                       "rp.sms.sync",   "rp.lsdj.sync", "rp.controller.session", "rp.lsdj.serial-out",
+                                       "rp.genmddj.sync"};
     REQUIRE(host.package()->node_type_count == ids.size());
     for (std::size_t i = 0; i < ids.size(); ++i) CHECK(std::string(host.package()->node_types[i]->id) == ids[i]);
     CHECK(host.package()->abi_version == RP_ABI_VERSION);
@@ -2842,18 +2843,22 @@ TEST_CASE("a type past the trace's name table is traced under the shared script-
     rig.scripts.traceReset(false);
 }
 
-TEST_CASE("the embedded bundle's types are labelled 16 to 23 in the order spec/08 quotes, the serial-out decoder last",
+TEST_CASE("the embedded bundle's types are labelled 16 to 24 in the order spec/08 quotes, the serial-out decoder before "
+          "the Mega Drive's sync",
           "[script][profile][trace]") {
-    // 16 to 22 the seven the B3b design quotes, and 23 the one registered after them (docs/lsdj-serial-out-design.md).
+    // 16 to 22 the seven the B3b design quotes, 23 the one registered after them (docs/lsdj-serial-out-design.md), and
+    // 24 genmddj's host sync, the next label the product list takes.
     ScriptHost host;
     const ScriptHost::Chunk bundle = ScriptHost::embeddedBundle();
     REQUIRE(host.load({&bundle, 1}));
     const auto names = host.traceNames();
     const std::vector<std::string> ids{"rp.midi.route", "rp.mgb.midi",  "rp.n8.midi-to-fifo",    "rp.risa.sync",
-                                       "rp.sms.sync",   "rp.lsdj.sync", "rp.controller.session", "rp.lsdj.serial-out"};
+                                       "rp.sms.sync",   "rp.lsdj.sync", "rp.controller.session", "rp.lsdj.serial-out",
+                                       "rp.genmddj.sync"};
     REQUIRE(names.size() >= rp::host::DSP_SPAN_TYPE_BASE + ids.size());
     for (std::size_t i = 0; i < ids.size(); ++i) CHECK(names[rp::host::DSP_SPAN_TYPE_BASE + i] == ids[i]);
     CHECK(names[23] == "rp.lsdj.serial-out");
+    CHECK(names[24] == "rp.genmddj.sync");
 }
 
 TEST_CASE("an Engine's apu-render spans its plan's whole run, each script node's process span inside it wherever it runs",

@@ -263,8 +263,10 @@ const MGB = role("mgb");
 const N8 = role("nes-n8-midi");
 const RISA = role("risa-sync");
 const SMS = role("sms-sync", { machine: "gg" });
+const GENMDDJ = role("genmddj-sync", {});
 const LSDJ = (mode = "midiSync"): ProtocolRole => role("lsdj-sync", { mode, tempoDivisor: 1, autoStart: false });
 const sms = (id: number, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, platform: "sms", type: "rp.mesen.sms", linkGroup: 0, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline });
+const md = (id: number, pipeline: ProtocolRole[] = []): GraphSystem => ({ id, platform: "md", type: "rp.blastem.md", linkGroup: 0, exportMode: 0, resources: { rom: id }, romName: `rom${id}`, pipeline });
 
 const CONTROLLER: GraphController = {
   app: "lsdj-midimap", target: "system", systemId: 0, appConfig: { quantise: "bar", follow: true, page: 0 },
@@ -699,6 +701,25 @@ test("a Game Boy captures its serial out for the mode its lsdj-sync node runs: d
   // Only a Game Boy has one.
   expect(built([nes(2, 0, [N8])]).node("sys-2")?.settings?.serialOutCapture).toBe(undefined);
   expect(serialOutCaptureFor([LSDJ("midiOut")], "midiMap")).toBe("off");
+});
+
+test("a Mega Drive node opens controller port 2 only for a system whose pipeline places the node that feeds it", () => {
+  // Port 2 is every Mega Drive cart's player 2 (the descriptor's `claimedBytesIn`), so the document says which system's
+  // cart claimed it and the core refuses a level until it does. Written off and on: a document that dropped the role's
+  // node has to close the port again, and a settings field a document leaves out is one the node never applies.
+  const claim = (pipeline: ProtocolRole[]) => built([md(1, pipeline)]).node("sys-1")?.settings?.coreBytesIn;
+  expect(claim([])).toBe(false);
+  expect(claim([GENMDDJ])).toBe(true);
+  // A role whose node writes another of the system's inputs claims nothing here.
+  expect(claim([MGB])).toBe(false);
+  expect(claim([N8])).toBe(false);
+  // And a console whose byte input is not a shared device (a NES's cart FIFO) carries no such setting at all, whichever
+  // of its roles is placed.
+  const absent = (node: { settings?: Record<string, unknown> } | undefined) =>
+    (node?.settings ?? {}).coreBytesIn;
+  expect(absent(built([nes(2, 0, [N8])]).node("sys-2"))).toBe(undefined);
+  expect(absent(built([sms(3, [SMS])]).node("sys-3"))).toBe(undefined);
+  expect(absent(built([gb(4, 0, [MGB])]).node("sys-4"))).toBe(undefined);
 });
 
 test("a cart the controller drives in MI.MAP captures nothing, whatever its stored mode, and its peers keep their own", () => {

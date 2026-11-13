@@ -8,6 +8,7 @@ import { RoleRegistry, type RoleType } from "@retroplug/core/systemRoles";
 import { buildAppRegistry } from "../../src/appHost";
 import { ROLES } from "../../src/generated/packages";
 import { protocolNodeOf } from "../../src/graph/protocolNodes";
+import { genmddjHeader } from "@retroplug/genmddj/testFixtures";
 import { registerCoreRoles } from "../_coreRoles";
 import { registerFeatureRoles } from "../_featureRoles";
 import { z } from "zod";
@@ -73,8 +74,8 @@ test("the app's roles are the product's kinds, and a duplicate is what the gener
   // unobservable: the generated module checks that each kind appears once, and that is the property this pins. A kind
   // lost by a package's app contribution would still show here, whatever order the list is in.
   expect(ROLES.map((role) => role.kind).sort()).toEqual([
-    "blastem", "bliptoaster", "bliptoaster-assets", "lsdj-assets", "lsdj-sync", "mesen", "mgb", "nes-n8-midi",
-    "risa", "risa-assets", "risa-sync", "sameboy", "sms-sync",
+    "blastem", "bliptoaster", "bliptoaster-assets", "genmddj-sync", "lsdj-assets", "lsdj-sync", "mesen", "mgb",
+    "nes-n8-midi", "risa", "risa-assets", "risa-sync", "sameboy", "sms-sync",
   ]);
 });
 
@@ -98,6 +99,9 @@ test("the product's ROM providers fix a system's role-list order", () => {
   expect(kinds("sameboy", "gb", lsdjRom())).toEqual(["sameboy", "lsdj-sync", "lsdj-assets"]);
   expect(kinds("sameboy", "gb", gbRom())).toEqual(["sameboy"]);
   expect(kinds("mesen", "sms", smsggdjRom())).toEqual(["mesen", "sms-sync"]);
+  // The Mega Drive's cart role, behind the console's: the provider matches the cart's identity, so a genmddj image is
+  // the only Mega Drive ROM that gets the one thing that opens controller port 2.
+  expect(kinds("blastem", "md", genmddjHeader())).toEqual(["blastem", "genmddj-sync"]);
   expect(kinds("mesen", "gba", gbaRom())).toEqual(["mesen"]);
 });
 
@@ -219,7 +223,7 @@ test("the protocol-node table names a node for exactly the feature roles that ha
   // override, a ROM's facts). A role registered there with no node, a node for a role registered elsewhere, or a kind
   // renamed on either side fails here.
   const dsp = kindsRegisteredBy(() => registerFeatureRoles(new RoleRegistry())).map((t) => t.kind);
-  expect(dsp).toEqual(["mgb", "nes-n8-midi", "risa-sync", "sms-sync", "lsdj-sync"]);
+  expect(dsp).toEqual(["mgb", "nes-n8-midi", "risa-sync", "sms-sync", "genmddj-sync", "lsdj-sync"]);
   const app = kindsRegisteredBy(() => buildAppRegistry());
   expect(app.length).toBeGreaterThan(10);
   for (const t of app) expect(protocolNodeOf(t.kind) !== undefined, t.kind).toBe(dsp.includes(t.kind));

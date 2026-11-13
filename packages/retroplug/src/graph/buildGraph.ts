@@ -334,8 +334,17 @@ export function exportModeOf(type: SystemNodeType, config: Readonly<Record<strin
   return index > 0 ? index : 0;
 }
 
+/** Whether some protocol node `pipeline` places writes the system's `bytes` input. The one claim rule for a console
+ *  whose core shares that input with a player's device (a descriptor's `claimedBytesIn`): as the serial-out capture
+ *  follows the node that decodes it, the port follows the node that feeds it. The claim is the PLACED node's, not the
+ *  role's: a role the pipeline left out (one whose node would write an input another already writes) feeds nothing,
+ *  and a port nothing feeds stays an unplugged pad. */
+const bytesClaimed = (pipeline: readonly ProtocolRole[]): boolean =>
+  pipeline.some((role) => (PROTOCOL_NODES[role.node] as ProtocolNodeSpec).writes.includes("bytes"));
+
 /** A system's node: its system id, the resources its core boots from, its ROM's name, its construct-time fields, its
- *  knobs and, on a Game Boy, `capture`. */
+ *  knobs, on a Game Boy `capture`, and on a console whose core shares its byte input with a player's device that
+ *  input's claim. */
 function systemNode(system: GraphSystem, capture: SerialOutCaptureMode | null): NodeDoc {
   const knobs = systemKnobs(system);
   const settings: Record<string, unknown> = {
@@ -351,6 +360,10 @@ function systemNode(system: GraphSystem, capture: SerialOutCaptureMode | null): 
   // the stored config's, so a document names the machine whatever state a hand-edited config is in.
   Object.assign(settings, platformEntry(system.platform)?.nodeSettings ?? {});
   if (capture !== null) settings.serialOutCapture = capture;
+  // The claim rides every such system's node, on and off, as the capture does: an edit that drops the role's node must
+  // close the port again, and a settings field absent from a document is one the node leaves as its core has it.
+  if (capabilitiesOf(system.type).claimedBytesIn === true)
+    settings.coreBytesIn = bytesClaimed(system.pipeline);
   const node: NodeDoc = { id: systemNodeId(system.id), type: system.type, settings };
   if (Object.keys(knobs.params).length > 0) node.params = knobs.params;
   return node;

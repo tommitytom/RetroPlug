@@ -192,9 +192,10 @@ void BlastemMdSystem::boot() {
     }
     useInstance(this);  // the context exists: from here, callbacks it starts belong to this instance
     // Port 2 is the host's device, not a pad: a game that reads player 2 sees the pins' idle state (which is a pad's
-    // nothing-pressed state minus the pad's response), and a role claims the lines by pushing levels. Port 1 stays
-    // whatever romdb.c chose, which is the pad the wire bytes drive. The port carries this instance as its host, so a
-    // read answers for the console it came from rather than for whichever instance last ran on this thread.
+    // nothing-pressed state minus the pad's response), and only a cart that CLAIMED the port (setPort2Claimed, the
+    // node's `coreBytesIn`) can move those pins. Port 1 stays whatever romdb.c chose, which is the pad the wire bytes
+    // drive. The port carries this instance as its host, so a read answers for the console it came from rather than for
+    // whichever instance last ran on this thread.
     gen_->io.ports[1].device_type = IO_CUSTOM;
     gen_->io.ports[1].device.custom.host = this;
     m68k_reset(gen_->m68k);
@@ -684,7 +685,17 @@ bool BlastemMdSystem::padDown(std::uint8_t button) const {
 // sample of this block's `frame`-th sample on, so a level reaches the pins when the stop grid gets to its own sample
 // rather than at the block boundary. The sample is absolute, so a level staged past this block's end is still on time
 // for the block that reaches it: nothing rebases the schedule, and the host's block size chooses nothing.
+void BlastemMdSystem::setPort2Claimed(bool claimed) {
+    if (port2Claimed_ == claimed) return;
+    port2Claimed_ = claimed;
+    // Closing the port takes the lines back: a level held for the cart that went away would keep driving player 2.
+    if (!claimed) port_.clear();
+}
+
 void BlastemMdSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool /*flush*/) {
+    // An unclaimed port 2 is every other cart's player 2: the bytes a MIDI run or a staged knob carries are not levels
+    // for it to hold, and refusing them is what keeps phantom presses off a pad the cart is polling.
+    if (!port2Claimed_) return;
     if (!gen_ || !data || size == 0) return;
     const std::uint64_t at = sampleBase_ + frame;
     for (std::size_t i = 0; i < size; ++i) port_.enqueue(at, data[i]);

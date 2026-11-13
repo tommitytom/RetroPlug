@@ -107,6 +107,9 @@ Staged renderStaged(std::uint32_t block, bool staged, std::uint64_t frame, std::
     rp::blastem::BlastemMdConfig cfg;
     cfg.region = 1;
     auto sys = std::make_unique<rp::blastem::BlastemMdSystem>(1, cfg, rp::blastem::test::syncEdgeRom());
+    // Both runs claim the port: the unstaged one is the control for WHERE the level lands, not for whether the port
+    // answers the host at all (that gate is BlastemPort.test.cpp's).
+    sys->setPort2Claimed(true);
     sys->onActivate(kRate);
     Staged out;
     out.left.reserve(total);

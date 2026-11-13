@@ -57,6 +57,9 @@ export const MD: ConsoleDescriptor = {
     (header[0x1B0] === 0x52 && // 'R'
      header[0x1B1] === 0x41 && // 'A'
      (header[0x1B2] & 0x0f) !== 0x0f),
+  // Port 2 is the host's device only for a cart that claimed it: the shell writes `coreBytesIn` on the node from the
+  // protocol nodes the system's roles place, and the core refuses a level until it says so (BlastemNode.cpp).
+  capabilities: { claimedBytesIn: true },
   settingFields: { region: label(MD_REGION_VALUES) },
   // A region fixes the master clock and the frame height, so a change is a rebuild, not a live knob (the native
   // config is read once at boot).

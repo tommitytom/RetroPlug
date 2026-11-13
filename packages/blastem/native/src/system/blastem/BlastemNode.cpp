@@ -37,6 +37,11 @@ struct MdSettings {
     // which is the four words packages/blastem/ts/enums.ts spells. A label list beside the enum would be a second
     // spelling of one fact.
     std::optional<knobs::Label<rp::blastem::MdRegion>> region;
+    // Whether a role claimed controller port 2 for this system: TS writes it from the protocol nodes the system's
+    // roles place (graph/buildGraph.ts), so the cart that clocks itself from the DAW transport holds the lines and
+    // every other Mega Drive game reads its player 2. A live knob, not a construct-time field: adding or dropping the
+    // role's node is one document edit that must not rebuild the machine the cart is running.
+    std::optional<bool> coreBytesIn;
 
     struct Key {
         std::uint64_t              system = 0;
@@ -49,10 +54,12 @@ struct MdSettings {
                 region ? std::optional<int>(static_cast<int>(region->value())) : std::nullopt};
     }
 
-    // The live knobs alone (SystemNode::Applied says why): a Mega Drive has none yet, every field it takes being read
-    // when its core is built.
-    struct Applied {};
-    Applied liveKnobs() const { return {}; }
+    // The live knobs alone (SystemNode::Applied says why): every other field this node takes is read when its core is
+    // built.
+    struct Applied {
+        std::optional<bool> coreBytesIn;
+    };
+    Applied liveKnobs() const { return {coreBytesIn}; }
 };
 
 struct Md : SystemNode<Md, rp::blastem::BlastemMdSystem, MdSettings> {
@@ -63,8 +70,9 @@ struct Md : SystemNode<Md, rp::blastem::BlastemMdSystem, MdSettings> {
     static constexpr SystemBuildFn kBuild = rp::blastem::buildMdCore;
     // All four, as the Master System's node declares them (MesenNode.cpp): SystemNode::applyInputs reads serialIn,
     // midi, bytes and buttons unconditionally, so a node that names three of them does not compile. `bytes` is where
-    // the sync role's levels arrive (the rp.genmddj.sync node writes them); a MIDI run or a staged knob reaches the
-    // port device the same way.
+    // the sync role's levels arrive (the rp.genmddj.sync node writes them), and a MIDI run reaches the same door when
+    // a message is too long for the framed one: both are levels only for a system whose node says the port is claimed
+    // (`coreBytesIn`), which is what keeps them off player 2 on every other cart.
     struct {
         rp::bytes_in  serialIn;
         rp::events_in midi;
@@ -80,6 +88,14 @@ struct Md : SystemNode<Md, rp::blastem::BlastemMdSystem, MdSettings> {
         rp::blastem::BlastemMdConfig c;
         if (s.region) c.region = static_cast<std::uint32_t>(knobs::valueOf<rp::blastem::MdRegion>(*s.region));
         return c;
+    }
+
+    // The port claim is not part of BlastemMdConfig: the core takes it through its own setter, so the build did not
+    // apply it and the node's own first application must.
+    void configApplied(Applied& a) const noexcept { a.coreBytesIn.reset(); }
+
+    void apply(const Settings& to, const Applied& from) noexcept {
+        if (knobs::moved(to.coreBytesIn, from.coreBytesIn)) core->setPort2Claimed(*to.coreBytesIn);
     }
 };
 
