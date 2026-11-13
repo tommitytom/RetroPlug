@@ -15,6 +15,7 @@ than work.
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
 - [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
 - [ ] [A `release.yml` run](#a-releaseyml-run)
+- [ ] [The BlastEm mirror is pushed](#the-blastem-mirror-is-pushed)
 
 **Package split**
 - [ ] [A real component view on a host](#a-real-component-view-on-a-host)
@@ -43,6 +44,8 @@ than work.
 - [ ] [An Apply past a read-only config](#an-apply-past-a-read-only-config)
 - [ ] [A normal CLI exit skips the teardown](#a-normal-cli-exit-skips-the-teardown)
 - [ ] [The test host drops an uncaught error](#the-test-host-drops-an-uncaught-error)
+- [ ] [An SMS stage lands on player 2](#an-sms-stage-lands-on-player-2)
+- [ ] [BlastEm's remaining process-exits](#blastems-remaining-process-exits)
 
 **Engine**
 - [ ] [DAW automation of node params](#daw-automation-of-node-params)
@@ -103,6 +106,10 @@ than work.
 - [ ] [No DAW check records LSDj's MIDI out](#no-daw-check-records-lsdjs-midi-out)
 - [ ] [A plain-ROM controller target](#a-plain-rom-controller-target)
 - [ ] [DAW MIDI to a cart with no NES system](#daw-midi-to-a-cart-with-no-nes-system)
+- [ ] [genmddj's tracker integration and MIDI takeover (spec 2)](#genmddjs-tracker-integration-and-midi-takeover-spec-2)
+- [ ] [Mega Drive audio fidelity (spec 3)](#mega-drive-audio-fidelity-spec-3)
+- [ ] [The A53's Mega Drive speed](#the-a53s-mega-drive-speed)
+- [ ] [The bindings menu's Mega Drive extras](#the-bindings-menus-mega-drive-extras)
 
 ## Before merge
 
@@ -154,6 +161,17 @@ only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modul
 `release.yml` last ran on 2026-08-07 (v0.7.4), before F2, so its Windows job has never built `RETROPLUG_MESEN_LTO=ON`
 with the three Mesen console options off, and no release job has built the branch. ([F2
 design](../docs/modular-graph-phase-f2-design.md) section 11.)
+
+### The BlastEm mirror is pushed
+
+`deps/blastem` is a git submodule of our own mirror, `https://github.com/tommitytom/RetroPlug-BlastEm`: `upstream` is
+one commit per imported BlastEm release (1.0 is hg `2b2a182f4522`) and `retroplug` is `upstream` plus this branch's
+Mega Drive edits, each carrying a `RetroPlug:` marker. Every one of those commits is in the local mirror at
+`.superpowers/megadrive/RetroPlug-BlastEm` and in `deps/blastem`, and none is on GitHub: only the user pushes the
+mirror, and the plan asks them to push both branches. Until they do, a fresh clone or a CI job cannot resolve the
+submodule at the pointer this tree carries, so CI stays red for this reason alone. The step is the user's push of
+`upstream` and `retroplug`; the pointer is not bumped before it, since a bump would only move the same missing commits.
+([design](../docs/megadrive-blastem-design.md) section 1, [spec/06](06-build-test.md#build-gotchas).)
 
 ## Package split
 
@@ -357,6 +375,54 @@ does not take either. The fix is the CLI's `pumpOnce` (which handles this fault)
 pending exception cleared as the CLI clears it (`cli/main.cpp`), then a whole `pnpm test:native` run for the strays
 it surfaces. ([sdk-n8 port design](../docs/sdk-n8-port-design.md) section 3; [D3
 design](../docs/modular-graph-phase-d3-design.md) section 10.)
+
+### An SMS stage lands on player 2
+
+`MesenSmsSystem::hasCoreBytesIn()` is unconditionally true (`MesenSmsSystem.hpp:80`), so `SystemNode::applyInputs` routes
+a raw `bytes` write and `stageMessage` routes a staged UI message into `pushCoreBytes`, and on any SMS or Game Gear ROM
+those bits drive port 2's TL, TR and TH, which every game reads as player 2 (`isSmsggdjRom`'s comment describes the
+hazard). The Mega Drive closed the same door with its descriptor's `capabilities.claimedBytesIn` and the node's
+`coreBytesIn` live knob (`BlastemNode.cpp`): the port accepts levels only while the system's nodes claim its `bytes`
+input. The capability is generic (`SystemBase::hasCoreBytesIn()`), so the SMS fix is the descriptor's
+`claimedBytesIn: true` plus a `coreBytesIn` knob on `rp.mesen.sms`. It is latent, not live: nothing in the shipped
+product stages at an SMS node or wires its `midi` input. ([design](../docs/megadrive-blastem-design.md) section 4;
+found by the genmddj sync role's review.)
+
+### BlastEm's remaining process-exits
+
+BlastEm's `fatal_error` logs at FATAL and calls `exit(1)` inside the DAW's process. This branch converted the sites a
+cart reaches (`machine_freeze` no longer ends a library build: it logs at WARN, and an unmapped access, an HV counter
+write, a Z80 VDP window write or a VDP port read the decoder has no answer for is a dropped write or an open-bus read).
+What is left, by the condition that makes each reachable in this build's file set:
+
+- `romdb.c`'s fifteen (50, 887, 891, 911, 915, 924, 938, 942, 946, 950, 954, 1014, 1020, 1388, 1646): the parser of the
+  compiled-in `rom.db.c`. A cart cannot add a row (it selects one by hash, and a bad selection is already the mirror's
+  `load_failed` refusal), so these need a corrupt generated `rom.db.c` or the null `read_bundled_file` returns on
+  out-of-memory at the first boot.
+- `i2c.c`'s four (187, 203, 228, 242): an EEPROM cart's own access to an address its ROM DB map does not cover. A ROM
+  the DB maps as EEPROM can reach these, and it is the one group a cartridge's code alone can trigger.
+- `tern.c:277`: a ternary key path longer than 127 bytes, in the config or ROM DB tree; only a key that long in either
+  reaches it.
+- `system.c:104, 219`: a split SMD ROM and a short read, both inside the file loader (`load_media`) this host never
+  calls, since it hands bytes to `alloc_config_genesis`.
+- `genesis.c:2207`: a state that is neither native nor GST, inside `genesis_load_state`, the frontend's path; this host
+  deserializes behind its own section walk.
+- `genesis.c:3095, 3102, 3129, 3177`: a TMSS model whose ROM cannot be loaded, and memmap chunks past `NUM_MEM_AREAS`
+  after the TMSS remap. TMSS is off in the model this build's empty config tree selects (`md1va3`), so no machine it
+  boots reaches them; a config that turns TMSS on would.
+- `config.c`'s six (67, 596, 598, 630, 636): a malformed, missing or unwritable config file, in `load_config` /
+  `save_config`, which nothing in this build calls (`config` stays null, and the ROM DB's defaults are what the core
+  uses).
+- `paths.c`'s four (91, 95, 538, 542) and `util.c`'s four (944, 948, 1074, 1078): Android's activity and URI lookups,
+  compiled out of every desktop build.
+- `event_log.c`'s thirteen (67, 379, 486, 491, 648, 654, 671, 674, 685, 696, 702, 730, 745): a log's socket or
+  deflate/inflate failure. Nothing in this build starts a log, so they are dead until something does ([the event
+  log](../docs/megadrive-blastem-design.md) section 2).
+- `gen.c:12`: the JIT code generator's allocation failure, reached only from the x86 backend this build does not
+  compile.
+
+The task that converts the last of them deletes this entry, per this file's own rule. Until then it is the record that
+a corrupt payload from a path nobody has taken can still exit the DAW.
 
 ## Engine
 
@@ -789,6 +855,53 @@ design](../docs/known-bugs-batch-2-design.md) section 5.)
 No project-level fallback forwards DAW MIDI to the real cart without a NES system: a card job addresses a node, and a
 project with no system places none, so driving a MIDI cart with no NES in the project has no UI path. ([C5
 design](../docs/modular-graph-phase-c5-design.md) section 10.)
+
+### genmddj's tracker integration and MIDI takeover (spec 2)
+
+genmddj is identified and clocked (spec 1), and its app half stops there. Spec 2 is what makes it a tracker and an
+instrument ([design](../docs/megadrive-blastem-design.md) section 1's table and section 7): an SRAM codec for the
+cart's own save format, so the Songs menu can list, load, import and export over `@retroplug/tracker`'s `SongCatalog`
+(and so the end-to-end case can seed a `.sav` rather than poke IN24 into work RAM, which it does today because the codec
+is this spec's); the Songs and live-load path the other trackers have; and the 10-voice MIDI takeover, the DAW's MIDI
+played on the cart over the emulated port-2 bridge (design section 3's last bullet: the device answers each TR edge the
+ROM drives, at its cycle, with the next bit of a queued message). One thing the bridge must do first is split the port's
+door deliberately: once a system claims port 2, `pushCoreBytes` takes every byte, so a staged UI message and a routed
+MIDI run too long for the framed door are levels of IN24 clocks just as the sync node's words are. It has to tell them
+apart (the Mega Drive node overriding `stageMessage` to refuse, or a separate input), not read the claim as the sync's.
+Nothing in the shipped product stages at a Mega Drive node or wires its `midi` input today, so it is latent.
+
+### Mega Drive audio fidelity (spec 3)
+
+Spec 1 ships BlastEm's chips and keeps its output path's character: the YM2612 as BlastEm runs it, BlastEm's 3390 Hz
+one-pole, and blip_buf's band-limited steps at the host rate. Spec 3 ([design](../docs/megadrive-blastem-design.md)
+sections 0, 2 and 7) is the fidelity pass: Nuked-OPN2 as an FM option (the design's speed estimate with it is about
+0.7x realtime on the A53, which is why it is an option and not the default), the YM2612 against YM3438 (discrete against
+integrated) models, the output filter's choice, and per-channel stems, where the sink is one stereo mix today. Two open
+questions ride with it: the LFO's step period, where BlastEm steps every N+1 samples and Nuked and MAME every N (same
+table), so rate 7 is 69 Hz against 83 Hz and Sega's documented rates match N+1, and spec 1 keeps BlastEm's behaviour;
+and the sink's treble shelf, blip's kernel taking -0.35 dB at 3 kHz to -3.4 dB at 16 kHz for the PSG at 48 kHz (less
+for the YM, which already interpolates), which a hardware recording settles along with the filter.
+
+### The A53's Mega Drive speed
+
+The design's estimate is weak: about 1.2x realtime, about 0.7x with Nuked, extrapolated from x86 through Mesen's
+x86-to-device ratio ([design](../docs/megadrive-blastem-design.md) section 7). No A53 ran it, and this branch could not
+try (the board was unavailable), so it is still an estimate, and the stop grid is why it may be optimistic: the grid
+costs about 15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x realtime, the per-VINT DMA image 19.2 to 16.2,
+Release, 8192-frame blocks), and the device's interpreter has smaller caches for the generated 68k core. What this
+branch measured on x86 is in [spec/08](08-profiling.md): 26 to 28x for the three chip-register images, 15.6 to 18.7x for
+the four timing images, and 17.7x for a real genmddj song clocked through port 2. The start is the spike's arm64 builds
+and its unrun `device-bench.sh` in `.superpowers/mdspike/arm/deploy/`: running them is this entry.
+
+### The bindings menu's Mega Drive extras
+
+The Mega Drive's 6-button pad has four buttons the bindings editor cannot reach: X, Y and Z (genmddj uses them for its
+mixer) and Mode. The wire has them (`BUTTON_VALUE` names X 8, Y 9, Z 10 and Mode 11, and the console's native table reads
+all four), so a hand-edited `bindings/*.json` binds them and reaches the pad; the default profile deliberately binds none,
+so no recorded input matrix moves. The editor's rows are the bare eight (`GB_BUTTONS` in `menuDefs.ts`), and the UI has
+no per-platform label machinery: a console's buttons have to come from its descriptor, since the shell names no platform.
+Closing this is a descriptor field naming a pad's buttons and labels, the editor reading the focused system's console,
+and a row per button. ([design](../docs/megadrive-blastem-design.md) section 1.)
 
 ## Deferred
 

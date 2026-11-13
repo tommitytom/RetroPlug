@@ -69,6 +69,89 @@ shape one layer down — it reads its EXT parallel port (`$01`/PC4-PC6) instead.
   then `pnpm reaper:sms-sync` / `reaper:gg-sync` for the real-DAW halves.
 - Deeper: [docs/sms-support.md](../docs/sms-support.md).
 
+### Mega Drive (BlastEm)
+
+The Sega Mega Drive / Genesis, on BlastEm 1.0, and genmddj's IN24 clock sync over controller port 2. The console is
+`packages/blastem` over the vendored `deps/blastem` (our mirror's `retroplug` branch); the cart's half is
+`packages/genmddj`. The descriptor classifies by the header (`SEGA` at `$100`, not `SEGA 32X`; extensions `.md`,
+`.bin`, `.gen`), at the deep tier with rank 4 (last), so a crafted file carrying another console's header as well is
+that console and a Master System `.bin` stays Mesen's. Its region is construct-time (`auto`, `ntscUs`, `ntscJp`,
+`pal`): it fixes the master clock and the frame height, so a change is a rebuild. The gain is the node's param, not a
+setting.
+
+- Code: `packages/blastem/native/src/system/blastem/` (`BlastemMdSystem`, `BlastemPortDevice`, `BlastemAudio`,
+  `BlastemVideo`, `BlastemMemory`, `BlastemShim`, `BlastemBackend`, `BlastemNode`), `packages/blastem/ts/consoles.ts`
+  and `packages/genmddj/ts/`.
+- **The clock.** Each instance keeps a 64-bit absolute master clock; host sample `n` at rate `R` is
+  `floor(n * MCLK / R)` from an anchor, in exact integers, so a rate change re-anchors at the current sample and never
+  drifts. `MCLK` is the core's own `gen->master_clock`: 53,693,175 NTSC and 53,203,395 PAL as BlastEm's constant has it
+  (the hardware nominal is 53,203,424). `run_until(mclk)` sets `stop_cycle` and resumes the core, and
+  `stepIfBelowTarget` stops once per HOST SAMPLE, not once per block: a block's end as a stop point moves the emulation
+  by the refresh and interrupt-latency syncs BlastEm charges where it syncs, so a 1-frame and a 4096-frame render of the
+  same 2 s disagreed (27 of the invariance case's 36 audio and state checks did, before the grid). The grid is absolute
+  time, so every partition hits the same stops, and a sample the core has overrun costs nothing. It is not free: about
+  15 to 19 percent of a block on x86 (hvPsg 22.7 to 19.7x real time, the per-VINT DMA image 19.2 to 16.2), measured in
+  the core's own invariance work and, through the engine, in [spec/08](08-profiling.md).
+- **Port 2** is the host's device. The mirror's `io.c` names the instance (`io_port.device.custom.host`), the port stays
+  `IO_CUSTOM`, and `PortDevice` holds (host sample, level byte) entries, one packed word each. A level is on the pins
+  from the stop grid's own sample on, whichever block delivered it. The key is the host sample, not a clock: every stop
+  lands at the first instruction boundary at or past its target, so a clock-keyed schedule answered differently in a
+  large block and in a 1-frame one. `pushCoreBytes(frame, bytes)` enqueues each byte at `sampleBase_ + frame`; bit 5 is
+  TR and bit 6 TH, and the other lines idle high. A pin the ROM makes an output in `$A1000B` reads back the ROM's own
+  latch, so genmddj's OUT and PULSE modes do not fight the host. The port is open only for a system whose nodes claim
+  its `bytes` input (the descriptor's `claimedBytesIn`, written as the node's `coreBytesIn`), so a staged message or a
+  routed SysEx cannot press player 2 on any other Mega Drive game.
+- **Audio** never goes through BlastEm's `render_audio.c`, which is not compiled (a process-global registry capped at
+  8, linear resampling). `render_audio.h`'s entry points feed the instance's `AudioSink`: each chip is a source at its
+  own native rate (`master_clock / sample_divider`: 1,008 master clocks a stereo sample for the YM2612, 53,267 Hz NTSC;
+  240 for the PSG; 112 while the VDP test register halves the Z80's clock), BlastEm's 3390 Hz one-pole low-pass and the
+  chip gains apply at that rate, and blip_buf band-limits each step to the host rate, one ring per side. A block drains
+  the ring exactly, after the chips are synced to the block's end clock, because a 68k-to-VDP DMA can carry the 68k
+  past the stop with the sound chips behind it. Each ring carries a quarter second over the block (the longest DMA costs
+  11,980,603 master clocks); `overrunSamples()` and `starvedSamples()` are 0 on a driven core, and `clampedBlocks()` is 0
+  in any real run. The sink removes DC (part of a peak differs from BlastEm's), takes a little treble (-0.35 dB at
+  3 kHz down to -3.4 dB at 16 kHz for the PSG at 48 kHz, less for the YM), and its bass corner scales with the host
+  rate, which [spec/07](07-remaining-work.md#mega-drive-audio-fidelity-spec-3) owns.
+- **Video**: the VDP draws into BlastEm's own bordered frame, and the frame end copies the active picture into the
+  `FrameBufferTriple` at 320 wide (the widest mode) by the region's 224 or 240 lines. The frame is allocated once at
+  boot, so a mode change moves the picture inside it; a picture taller than the frame is centred.
+- **Memory, battery and savestates.** `getMemory(Ram)` is the 68k's 64 KiB in address order (not BlastEm's word order),
+  `ExtWorkRam` the Z80's 8 KiB, and only `work` is published as a region. The battery is reached in its `.sav`'s order
+  for every cart (an odd-byte cart keeps byte `i` at `$200001 + 2i`; a 16-bit cart is pair-swapped out of BlastEm's
+  storage), through `saveSramBytes`, `getMemory(Sram)` and the capability's write alike. A savestate is BlastEm's
+  serializer behind BlastEm's own 8-byte identifier (`BLSTSZ\x01\x07`), with a section walk in front that requires the
+  Genesis section set exactly once, the mapper section exactly when the cart is banked and the model's TMSS section at
+  most once, and this host's own section (id `0x8001`) after BlastEm's, carrying the battery. The ceiling is 256 KiB
+  plus the battery (a state measures 141,639 bytes). A refused state boots from power-on and reports `stateRefused()`;
+  a load re-anchors the clock and the grid and resets the sink, because the grid's phase is host state no state
+  carries, so a Duplicate is not sample-exact against its source (two instances restored from the same bytes match
+  exactly).
+- **Faults do not exit.** The mirror's `machine_freeze` guard is `ISLIB || IS_LIB` and logs at WARN, so an unmapped
+  access, an HV counter write, a Z80 VDP window write or a VDP port read the decoder has no answer for is a dropped
+  write or an open-bus read and the run continues. The remaining `fatal_error` sites are the paths
+  [spec/07](07-remaining-work.md#blastems-remaining-process-exits) lists.
+- **The cart.** `packages/genmddj` is genmddj's identity (product code `GM GENMDDJ-` at `$180` and its `V<number>.<number>`
+  version string inside the first 64 KiB), `mdSyncLevels` (counter bit 0 on TR, bit 1 on TH, `0x60` idle), the
+  `genmddj-sync` role, its ROM provider and `rp.genmddj.sync` (span label 24), which runs smsggdj's `CounterSync` state
+  machine with that encoder at 24 PPQN. The counter is never reset (START does not zero it: a reset would hand an
+  un-re-armed ROM a spurious delta), and at most 3 clocks survive one of the ROM's frame polls, which is the tempo cap.
+  There is no relocate, so the DAW drives start, stop and tempo but not song position.
+- **Not ours.** `deps/blastem` is a git submodule of our mirror, every edit carrying a `RetroPlug:` marker, and a mirror
+  commit is pushed to the local mirror before the outer pointer (only the user pushes it on). The threaded VDP renderer
+  is compiled out (`render_is_threaded_video()` returns 0), and the event log is compiled in but never started: nothing
+  opens its file, socket or memory reader, and the mirror's VRAM hooks return before their delta state unless a log is
+  active. `BlastemShim.cpp` supplies the frontend globals and the functions a 32X, Sega CD, Pico, Coleco or SMS cart
+  would reach, each stating the field that keeps it out of a Mega Drive.
+- **Prove a change:** `pnpm test:plugin blastem` (`retroplug-blastem-test`: boot and the ROM gate, the stop and its
+  32-bit rebase, block-size invariance at 1, 64, 1024 and 4096 frames, the port device at every block size and its
+  direction rule, the audio sink's DMA burst, the pad, memory and the battery's order, the savestate's walk and
+  refusals, a cart's faults, and the two-instance cases), `pnpm test:native parity-md` (the seven synthetic images,
+  exact bytes on `linux-x64-gnu13`), and, with the fixture tree, `pnpm test:native genmddj-sync`
+  ([tools/fetch-genmddj-fixture.sh](../tools/fetch-genmddj-fixture.sh) builds the ROM). `pnpm test blastem` and
+  `pnpm test genmddj` run the packages' own TS cases.
+- Deeper: [docs/megadrive-blastem-design.md](../docs/megadrive-blastem-design.md) and its
+  [plan](../docs/megadrive-blastem-plan.md).
+
 ### The LSDj HD player
 
 A full-resolution LSDj view: a pure-TS reader over live WRAM, tile-diffed into an LVGL canvas. No

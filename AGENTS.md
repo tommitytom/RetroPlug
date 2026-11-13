@@ -29,9 +29,10 @@ topic, and a line here links to it. Keep it under 200 lines; a new rule cuts or 
 - **`deps/sameboy` is dirty after a configure, and that is EXPECTED**: the configure applies RetroPlug's tracked
   patches. Never reset / stash / commit it, and never bump its pointer to absorb it; a bump that breaks a patch fails
   the configure, and the fix is regenerating the patch ([Build gotchas](spec/06-build-test.md#build-gotchas)).
-- **Every edit to the vendored `deps/mesen` carries a `RetroPlug:` marker comment**, and a Mesen merge runs both modes
-  of `tools/build-mesen-all-consoles.sh` (`--off` catches a dropped guard)
-  ([Build gotchas](spec/06-build-test.md#build-gotchas)).
+- **Every edit to the vendored `deps/mesen` or `deps/blastem` carries a `RetroPlug:` marker comment.** A Mesen merge
+  runs both modes of `tools/build-mesen-all-consoles.sh` (`--off` catches a dropped guard), and a BlastEm edit is a
+  commit on the mirror's `retroplug` branch, pushed to the local mirror and only then bumped beside it (only the user
+  pushes the mirror on) ([Build gotchas](spec/06-build-test.md#build-gotchas)).
 - **`deps/mquickjs` is upstream's, unpatched: a fix is a wrapper in `rp_mqjs_engine.c`**, and a pin bump that fails
   the configure's hash guard means regenerating the wrapper, not loosening the guard
   ([The device build](spec/06-build-test.md#the-device-build)).
