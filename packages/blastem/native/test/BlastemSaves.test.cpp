@@ -86,6 +86,39 @@ std::size_t sectionPayload(const std::vector<std::uint8_t>& state, std::size_t i
     return kNoSection;
 }
 
+// One section as the walk sees it: its id and its payload, so a case can rebuild a state with a section missing, one
+// repeated, or one relabelled, without knowing where in the stream anything is.
+struct RawSection {
+    std::uint16_t             id;
+    std::vector<std::uint8_t> payload;
+};
+
+std::vector<RawSection> splitSections(const std::vector<std::uint8_t>& state) {
+    std::vector<RawSection> out;
+    std::size_t             at = 8;  // the identifier saveStateBytes prefixes
+    while (at + 6 <= state.size()) {
+        const std::uint16_t id  = std::uint16_t(state[at] << 8 | state[at + 1]);
+        const std::uint32_t len = (std::uint32_t(state[at + 2]) << 24) | (std::uint32_t(state[at + 3]) << 16) |
+                                  (std::uint32_t(state[at + 4]) << 8) | std::uint32_t(state[at + 5]);
+        if (len > state.size() - at - 6) break;
+        out.push_back({id, std::vector<std::uint8_t>(state.begin() + at + 6, state.begin() + at + 6 + len)});
+        at += 6 + len;
+    }
+    return out;
+}
+
+std::vector<std::uint8_t> assembleSections(const std::vector<RawSection>& sections) {
+    std::vector<std::uint8_t> out{'B', 'L', 'S', 'T', 'S', 'Z', 0x01, 0x07};
+    for (const RawSection& s : sections) {
+        const std::uint32_t len = static_cast<std::uint32_t>(s.payload.size());
+        out.push_back(std::uint8_t(s.id >> 8));
+        out.push_back(std::uint8_t(s.id));
+        for (int shift = 24; shift >= 0; shift -= 8) out.push_back(std::uint8_t(len >> shift));
+        out.insert(out.end(), s.payload.begin(), s.payload.end());
+    }
+    return out;
+}
+
 }  // namespace
 
 TEST_CASE("two instances seeded with one state render identical bytes", "[blastem][saves]") {
@@ -340,4 +373,56 @@ TEST_CASE("a restored FM note plays the note it was saved in", "[blastem][saves]
     const double             before        = rms(original);
     REQUIRE(before > 0.05);  // the original is playing, or the comparison proves nothing
     CHECK(rms(restoredAudio) > 0.5 * before);
+}
+
+TEST_CASE("a state without the console's mandatory sections is refused", "[blastem][saves]") {
+    // The host's walk checked framing only, so a state holding one section (the identifier and the PSG) or every
+    // section but the VDP loaded with the rest of the console at power-on, and stateRefused() said nothing was wrong:
+    // the review's only-ident-plus-PSG and drop-VDP reproducers. A half-loaded core is not a machine in any state the
+    // caller asked for, so the walk requires the console's own section set (genesis_serialize's order: 68000, Z80,
+    // VDP, YM2612, PSG, the bus arbiter, the three IO ports, main RAM and sound RAM) exactly once each.
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    const std::vector<RawSection> whole = splitSections(sys->saveStateBytes());
+    REQUIRE(whole.size() > 5);
+
+    std::vector<RawSection> onlyPsg;
+    for (const RawSection& s : whole) {
+        if (s.id == kSectionPsg) onlyPsg.push_back(s);
+    }
+    auto partial = boot(rp::blastem::test::fmPsgRom(), assembleSections(onlyPsg));
+    CHECK(partial->stateRefused());
+    CHECK(partial->activated());
+
+    std::vector<RawSection> noVdp;
+    for (const RawSection& s : whole) {
+        if (s.id != kSectionVdp) noVdp.push_back(s);
+    }
+    auto missing = boot(rp::blastem::test::fmPsgRom(), assembleSections(noVdp));
+    CHECK(missing->stateRefused());
+    CHECK(missing->activated());
+    CHECK(peak(run(*missing, 4)) > 0.01);  // the power-on machine
+}
+
+TEST_CASE("a state with a repeated or unknown section is refused", "[blastem][saves]") {
+    // A section is one piece of the console, so a second one of the same id is not a state BlastEm's own walk can
+    // produce, and neither is a section no handler in this build reads: both used to be skipped with a warning and the
+    // rest of the state accepted. The review's relabel reproducer renamed the 68000 section, which then left the 68k at
+    // power-on.
+    auto sys = boot(rp::blastem::test::fmPsgRom());
+    run(*sys, 2);
+    const std::vector<RawSection> whole = splitSections(sys->saveStateBytes());
+    REQUIRE(whole.size() > 5);
+
+    std::vector<RawSection> repeated = whole;
+    repeated.push_back(repeated[1]);  // a second 68000 section
+    auto dup = boot(rp::blastem::test::fmPsgRom(), assembleSections(repeated));
+    CHECK(dup->stateRefused());
+    CHECK(dup->activated());
+
+    std::vector<RawSection> relabelled = whole;
+    relabelled[0].id                   = 0x8000;  // no section this build knows
+    auto unknown                       = boot(rp::blastem::test::fmPsgRom(), assembleSections(relabelled));
+    CHECK(unknown->stateRefused());
+    CHECK(unknown->activated());
 }

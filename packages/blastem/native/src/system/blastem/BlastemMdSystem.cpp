@@ -20,17 +20,38 @@ static constexpr char kStateIdent[] = "BLSTSZ\x01\x07";
 // truncated or mis-sized body is visible before the serializer is asked to read it. The walk is what makes "refused"
 // mean refused rather than "partly loaded": the mirror's latch catches a short FIELD inside an otherwise well-formed
 // section, this catches everything else without touching the core.
-static bool sectionsFit(const std::uint8_t* bytes, std::size_t size) {
-    std::size_t at = 0;
+//
+// It also holds the stream to the section set a Genesis state has, which is genesis_serialize's own order: the 68k (1),
+// the Z80 (2), the VDP (3), the YM2612 (4), the PSG (5), the bus arbiter (6), the three IO ports (7, 8, 9), the main RAM
+// (10) and the sound RAM (11), each exactly once; the mapper's section (12) exactly when this cart is banked, because
+// its absence from a banked cart leaves the mapper at power-on; and the model's TMSS section (15) at most once. A
+// repeated section, a missing one, or an id this build does not read is a state from another console, another
+// serializer or another cart, and a console with a section of itself missing is only half a machine.
+static bool sectionsAreWhole(const std::uint8_t* bytes, std::size_t size, bool banked) {
+    constexpr std::uint16_t kFirstMandatory = 1;   // SECTION_68000
+    constexpr std::uint16_t kLastMandatory  = 11;  // SECTION_SOUND_RAM
+    constexpr std::uint16_t kMapper         = 12;  // SECTION_MAPPER
+    constexpr std::uint16_t kTmss           = 15;  // SECTION_TMSS
+    bool                    seen[kTmss + 1] = {};
+    std::size_t             at              = 0;
     while (at < size) {
         if (size - at < 6) return false;
+        const std::uint16_t id  = std::uint16_t(bytes[at] << 8 | bytes[at + 1]);
         const std::uint32_t len = (std::uint32_t(bytes[at + 2]) << 24) | (std::uint32_t(bytes[at + 3]) << 16) |
                                   (std::uint32_t(bytes[at + 4]) << 8) | std::uint32_t(bytes[at + 5]);
         at += 6;
         if (len > size - at) return false;
+        const bool mandatory = id >= kFirstMandatory && id <= kLastMandatory;
+        if (!mandatory && id != kMapper && id != kTmss) return false;
+        if (seen[id]) return false;
+        seen[id] = true;
         at += len;
     }
-    return at == size;
+    if (at != size) return false;
+    for (std::uint16_t id = kFirstMandatory; id <= kLastMandatory; ++id) {
+        if (!seen[id]) return false;
+    }
+    return seen[kMapper] == banked;
 }
 
 static std::uint8_t blastemRegion(std::uint32_t region) {
@@ -311,8 +332,8 @@ bool BlastemMdSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
         return false;
     }
     useInstance(this);  // the deserializers hand their consoles' audio sources to this instance's sink
-    if (!sectionsFit(bytes.data() + kIdent, bytes.size() - kIdent)) {
-        stateRefused_ = true;  // truncated, or its sizes are lies: nothing has been touched
+    if (!sectionsAreWhole(bytes.data() + kIdent, bytes.size() - kIdent, gen_->mapper_type != MAPPER_NONE)) {
+        stateRefused_ = true;  // truncated, mis-sized or not this console's section set: nothing has been touched
         return false;
     }
     deserialize_buffer buf;
