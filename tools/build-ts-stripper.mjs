@@ -32,7 +32,10 @@ mkdirSync(dirname(outFile), { recursive: true });
 
 // TypeScript's package references these four node builtins from its system/host layer. ts-blank-space
 // only ever reaches the PARSER, so they are never called; stub them so the bundle stays runtime-free.
-const stub = resolve(REPO, "build/native/ts-stripper-stub.js");
+//
+// The stub and the entry are written beside the OUTPUT rather than into the repository's build/native: the output path
+// is CMake's to choose, and a build directory outside the repository must leave the repository alone.
+const stub = resolve(dirname(outFile), "ts-stripper-stub.js");
 writeFileSync(stub, "export default {};\n");
 
 // The entry, written inline so the wrapper and its one critical detail live next to the explanation.
@@ -46,7 +49,7 @@ writeFileSync(stub, "export default {};\n");
 // reachable in this parser-only bundle. Note that TypeScript's node.pos includes LEADING TRIVIA - it
 // starts where the previous token ended - so it must be advanced past whitespace and comments first,
 // or an offending statement preceded by a comment block reports the comment's position instead.
-const entry = resolve(REPO, "build/native/ts-stripper-entry.mjs");
+const entry = resolve(dirname(outFile), "ts-stripper-entry.mjs");
 writeFileSync(
   entry,
   `import tsBlankSpace from "ts-blank-space";
@@ -95,6 +98,13 @@ globalThis.__stripTypes = (source, filename) => {
 buildSync({
   entryPoints: [entry],
   bundle: true,
+  // The alias below resolves its value from here, as every bare import does once the entry is outside the repository
+  // (tools/build-ui.js sets the same): the working directory is the build directory (CMake runs this from the
+  // package's own, under whatever build tree it is), so without one a build outside the repository finds neither.
+  absWorkingDir: REPO,
+  // The entry with the output has no node_modules above it, so ts-blank-space, which it imports by name, is looked for
+  // here as well.
+  nodePaths: [resolve(REPO, "node_modules")],
   format: "iife", // global code: JS_ReadObject + JS_EvalFunction, no module loader involved
   platform: "neutral",
   mainFields: ["module", "main"],
