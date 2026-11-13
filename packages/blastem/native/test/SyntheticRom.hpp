@@ -217,6 +217,31 @@ inline std::vector<std::uint8_t> syncEdgeRom() {
                   {{0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
 }
 
+// A cart that does three things a real one does when it is buggy or copied wrong, then runs normally: an unmapped 68k
+// WRITE, an unmapped 68k READ, and a READ of the PSG's port, which the VDP's port decoder has no answer for. Each is a
+// path BlastEm's own frontend would stop the machine on, so this is the image that says whether a host's machine keeps
+// running instead. The counter at $FF0002 proves the run carried on past all three, and the write table's PSG tone makes
+// the chips' survival audible.
+//
+//   $200  $C00011 <- $8E, $01, $90   PSG channel 0 at full volume, from the table below (24 bytes, so $218)
+//   $218  move.w #0,$B00000         an unmapped write (unused_write)
+//   $222  move.w $B00000,d0         an unmapped read (unused_read)
+//   $228  move.b d0,$FF0000
+//   $22E  move.b $C00011,d0         a read of a PSG port (vdp_port_read's illegal branch)
+//   $234  move.b d0,$FF0001
+//   $23A  addq.w #1,$FF0002         <- loop: the counter the case reads
+//   $240  bra.s  loop               ($F8: $23A - $242)
+inline std::vector<std::uint8_t> unmappedAccessRom() {
+    return image({0x33, 0xFC, 0x00, 0x00, 0x00, 0xB0, 0x00, 0x00,  // move.w #0,$B00000
+                  0x30, 0x39, 0x00, 0xB0, 0x00, 0x00,              // move.w $B00000,d0
+                  0x13, 0xC0, 0x00, 0xFF, 0x00, 0x00,              // move.b d0,$FF0000
+                  0x10, 0x39, 0x00, 0xC0, 0x00, 0x11,              // move.b $C00011,d0
+                  0x13, 0xC0, 0x00, 0xFF, 0x00, 0x01,              // move.b d0,$FF0001
+                  0x52, 0x79, 0x00, 0xFF, 0x00, 0x02,              // addq.w #1,$FF0002   <- loop
+                  0x60, 0xF8},                                     // bra.s  loop
+                 {{0xC00011, 0x8E}, {0xC00011, 0x01}, {0xC00011, 0x90}});
+}
+
 // A tiny assembler for the timing images below: big-endian words, an absolute label (`at`), and only the encodings the
 // list above names. A program's labels are stamped with `at` so a branch and its target cannot disagree.
 struct Asm {
