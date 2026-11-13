@@ -62,15 +62,16 @@ interface Run {
 }
 
 /** Run tools/build-ts-stripper.mjs once from a fresh directory outside the repository, writing its output there. */
-async function runOutsideRepo(): Promise<{ run: Run | null; err: string; status: number }> {
+async function runOutsideRepo(): Promise<{ run: Run | null; err: string }> {
   const script = [
     'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
     // The suite runs from packages/retroplug; the repository is two levels up.
     'const repo = path.resolve(process.cwd(), "../..");',
     'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-stripper-"));',
     'const out = path.join(work, "out", "stripper.js");',
+    'const hash = (b) => require("crypto").createHash("sha1").update(b).digest("hex");',
     'const stamp = (name) => { try { const b = fs.readFileSync(path.join(repo, "build/native", name));',
-    '  return b.length + ":" + require("crypto").createHash("sha1").update(b).digest("hex"); } catch { return null; } };',
+    '  return b.length + ":" + hash(b); } catch { return null; } };',
     'const snap = () => ({ stub: stamp("ts-stripper-stub.js"), entry: stamp("ts-stripper-entry.mjs") });',
     "const before = snap();",
     // cwd is what esbuild's default absWorkingDir is, and the script is outside it on purpose.
@@ -97,21 +98,23 @@ async function runOutsideRepo(): Promise<{ run: Run | null; err: string; status:
   const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
   const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
   // A child that died (a signal, a non-zero exit) and one that printed something else on stdout are both failures with
-  // a reason worth reading: neither may become a bare SyntaxError that never mentions the child's stderr.
+  // a reason worth reading: neither may become a bare SyntaxError that never mentions the child's stderr. The reason
+  // names the one that happened, because a child that exited was given no signal.
   if (status.term_signal || status.exit_status !== 0) {
-    return { run: null, err: err || `signal ${status.term_signal}`, status: status.exit_status };
+    const how = status.term_signal ? `signal ${status.term_signal}` : `exit ${status.exit_status}`;
+    return { run: null, err: err ? `${err.trim()} (${how})` : how };
   }
   try {
-    return { run: JSON.parse(out) as Run, err, status: 0 };
+    return { run: JSON.parse(out) as Run, err };
   } catch {
-    return { run: null, err: err || out, status: 0 };
+    return { run: null, err: err || out };
   }
 }
 
 test("the stripper builds outside the repository, with its stub and entry beside its output", async () => {
-  const { run, err, status } = await runOutsideRepo();
+  const { run, err } = await runOutsideRepo();
   if (!run) {
-    throw new Error(`the stripper did not build from outside the repository: ${err || "no output"} (exit ${status})`);
+    throw new Error(`the stripper did not build from outside the repository: ${err || "no output"}`);
   }
   // The bundle really was built, not the two side files alone: it is the minified iife that defines __stripTypes.
   expect(run.bytes > 100_000).toBe(true);
