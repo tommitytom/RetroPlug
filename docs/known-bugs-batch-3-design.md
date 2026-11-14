@@ -215,3 +215,67 @@ task and follow-up passes; an Opus final review. Work files in `.superpowers/kb3
 TSan and ASan; BlipToaster and NESVJ against the rebuilt CLI; the guarded SDL legs, `sdl:controller` among them since
 the stream and the hooks change), then the parallel kit. No run opens an audio, MIDI or serial device outside the guard
 and the fakes.
+
+## 10. As built
+
+The eight fixes landed as sections 1 to 8 describe them. The differences, and what the reviews found:
+
+- **Section 2: same-value writes are no edits either.** `setSection` snapshots the section before the contributor's
+  merge (a merge that edits in place made an applied edit look unchanged), and `setZoom` and `setEnumSetting` return
+  early on the value already set. A start-screen edit stays with its project when a system is added to it (Load mGB);
+  opening a ROM still resets the settings, as before the batch, now without a prompt.
+- **Section 3: a re-visit marks a saved device absent only on a list it fetched.** A saved sibling backend's device read
+  "(not present)" on every re-visit until its drivers were fetched again; the menu now carries which lists it knows.
+- **Section 4: the row says what is true for both refusals** (a newer build's read-only config and a failed write), and
+  a draft edited back to the saved value drops it. The store's `setSection` boolean stays `=== "written"`, used by tests
+  only; the host group binds `!== "refused"`.
+- **Section 5: the state read runs only while the menu is open**, a gate a test now pins; the native hook answers
+  `null` for a closed stream.
+- **Section 6: the writer's wake took four rounds.** Inline mode is unchanged and has no size limit, and the stream
+  reports a retiring writer's drops (`MIDI out (<port>): N message(s) dropped`), the flush's abandoned records counted
+  with them. The plan's wake, reviewed twice, had two lost wakes, found in execution: the counter snapshot was taken
+  after the ring check (a push between them was missed), and the producer cleared a sleep it had not seen published (a
+  delayed clear spent its notify). The writer now waits on the flag word, the counter detects a push in the decide
+  window, every operation is `seq_cst`, and `stop()` bumps the counter before it clears the flag (a stop missed on an
+  RCpc-acquire target hung `join()`). The proof is in `PortWriter.hpp`. The idle-wake test catches the second bug about
+  one run in six without the thread sanitizer and reliably under it. The record header carries no frame or block time:
+  spec/07's "SDL host MIDI out at block time" records that. In the threaded stream `RETROPLUG_MIDI_LOG` has no line for
+  the virtual output, whose send stays on the audio callback (docs/sdl-standalone.md).
+- **Section 7: the overrides went in section 8**, not 7, so the pump first had something pending to clear; the stop
+  check also asks txiki's `TJS_StopRequested`.
+- **Section 8: the exit is terminal, and txiki's rejection dispatch was fixed twice.** Built as designed, the hook broke
+  the CLI's own `--version`, `--help` and dispatcher exits (the module promise reported the marker): txiki keeps an
+  `exit_taken` flag that its eval, load event, drain, callbacks and rejection dispatch honour, and dpf.js's
+  `evalModuleBytecode` skips its load-event dump after an exit. The first exit wins and no JS runs after it, except what
+  quickjs-ng runs synchronously after swallowing the marker in a promise executor (spec/14). A Ctrl-C hook's exit keeps
+  its code. Two defects in the dispatch: the exit branch leaked the rejection's reason (an assertions build aborted at
+  `JS_FreeRuntime`), and upstream txiki freed an entry under itself when a listener handled the promise (a crash). The
+  CLI checks run against a Debug CLI by hand (`RETROPLUG_CLI=build-dbg/bin/retroplug-cli`, spec/06) because the release
+  build cannot see a leak. Left as they are: txiki's posix-socket poll callback and `TJS_Run` do not look at a taken
+  exit, and neither is reachable from RetroPlug's hosts.
+- **Section 1: the stripper test cleans up after a failure** and reports the child's exit.
+- **Docs beyond section 9's list:** spec/05 (what `setSection` answers), and the plan's links, written two directories
+  deep and committed into docs/, made relative to docs/.
+
+## 11. Execution
+
+- Design 080c0c0ba; plan 2cce39949, written and validated on the tree by DeepSeek Flash (a first run was stopped when
+  its own test respawned without limit; the second ran with depth guards and timeouts on every command), replayed from
+  its text to the identical tree, three Opus review rounds (C1 and I1-I7, then R1-R2, then R3, the threaded close case's
+  timer, which the controller fixed as step 7b).
+- Tasks, each by a Qwen3.8 Flash-Next implementer at xhigh, each tree checked byte-identical to the validated diff by a
+  script: 6c0902dbb, 31ea34739, 533b10806, b2ad0df1d, eab640989, 3fe4ba697, ab72bf25c, 4369fe158 (with txiki 38aef2d,
+  lv_binding_js d16343b, dpf.js 989aa1e), 34498f153. Code reviews by DeepSeek (tasks 1-5, 9) and Opus (6-8): task 5
+  and task 9 asked for changes (a missing gate test; a dead anchor and a teardown order stated backwards), task 6 for
+  the first lost wake.
+- Follow-ups: A (DeepSeek: the first lost wake, the drain, the minors) 5407f18b4, 22e6621ce, 22d8ee84e; B (DeepSeek: the
+  TS findings) a32e9ed73..9cf59ce0e; A2 (DeepSeek, after A's Opus review found a leak) 2afb02965, e86c9ab8e, 07b79df35,
+  453321c4c, which found the second lost wake; C (DeepSeek: docs and B's review) 6b65ed3ca..4f1c4559b; A3 (Opus, after
+  A2's review found the stop hang: the second DeepSeek native round to fail its review) a46397b14..cdb68ae84. The
+  submodule commits are on local `retroplug-exit-hook` branches in txiki (38aef2d, 4edae99, 4ae8453, 14b510d),
+  lv_binding_js (d16343b, ea9d3e4, abc7fdf, 3b0fea7) and dpf.js (989aa1e, 20ac8ee, fd147b6, a1724ee); none is pushed,
+  and CI cannot check RetroPlug out until they are. The Opus final review found the batch ready with minor fixes,
+  settled in 0628313a9.
+- Acceptance at cdb68ae84: the serial kit, 45 of 45 legs (strict parity with fixtures and `RP_FAIL_ON_SKIP=1`, 30
+  files, no skips; TSan and ASan; BlipToaster 57/57 and NESVJ 22/22 against the rebuilt CLI; `sdl:smoke`,
+  `sdl:controller` and SDL PipeWire 27/0/0 under the device guard, no card PCM opened).
