@@ -1045,3 +1045,39 @@ TEST_CASE("a threaded stream counts the messages a full ring drops, and says so 
     }
     CHECK(said);
 }
+
+TEST_CASE("a threaded stream's close reports the messages its flush abandoned on a wedged port") {
+    // The writer counts what a flush's deadline leaves in the ring only as it stops, so the stream has to stop it
+    // BEFORE it reads the count: read first, the line was missing exactly the Note Offs the close gave up on. Nothing
+    // here is refused by the ring (a handful of small messages), so every message the line counts is one the flush
+    // abandoned, and the number is exact.
+    Machine          machine;
+    FakeMidiBackend& backend = machine.backend;
+    backend.sendDelayMs      = 200;  // a wedged port: eight writes would take 1.6 s, the flush gives up after 0.5 s
+    backend.virtualPorts     = false;
+    MidiStream               stream(backend, rp::midi::OutputMode::Threaded);
+    std::mutex               linesMutex;
+    std::vector<std::string> lines;
+    stream.setLogSink([&](const std::string& line) {
+        std::lock_guard<std::mutex> lk(linesMutex);
+        lines.push_back(line);
+    });
+    stream.setOutputs({"Synth out"});
+    REQUIRE(stream.open());
+    const std::uint8_t note[3] = {0x80, 0x3C, 0x00};
+    constexpr int      kSent   = 8;
+    for (int i = 0; i < kSent; ++i) stream.send(note, 3);
+    CHECK(stream.droppedOutputCount() == 0);  // the ring took every one
+    stream.close();
+    const std::size_t written = backend.sentTo("Synth out").size();
+    REQUIRE(written < static_cast<std::size_t>(kSent));  // the deadline did run out
+    const std::string want =
+        "[retroplug-sdl] MIDI out (Synth out): " + std::to_string(kSent - written) + " message(s) dropped";
+    std::vector<std::string> got;
+    {
+        std::lock_guard<std::mutex> lk(linesMutex);
+        got = lines;
+    }
+    INFO("the line: " << want << "; lines: " << got.size());
+    CHECK(std::find(got.begin(), got.end(), want) != got.end());
+}
