@@ -27,8 +27,19 @@
 // be reordered - the writer would then sleep with a record queued, which x86 hides and AArch64 (the handheld and Pi
 // builds) does not. In the one total order either the exchange sees the writer's flag and wakes it, or the writer's
 // re-read sees the bumped counter. The snapshot that re-read compares against is taken at the TOP of each pass, before
-// the writer looks at the ring: one taken after that look does not cover the push that lands in between. stop() clears
-// the flag and notifies all as well, so a writer waiting with an empty ring is still joined.
+// the writer looks at the ring: one taken after that look does not cover the push that lands in between.
+//
+// stop() is a push with no record, so the same argument covers it: after it sets `stopping_` it bumps the counter, then
+// clears the flag and notifies all. The bump is for a writer that publishes its sleep after the clear: the clear, the
+// publish and the re-read are in that order in the total order, so the re-read sees the bump (or a later one) and the
+// writer does not wait, and the pass whose snapshot reads the bump synchronizes with it, so it sees `stopping_`. The
+// clear is for a writer that published before it: the clear is the first change to the flag after that publish (or a
+// push's exchange is, which wakes it the same way), its notify is eligible to unblock the wait, and the wait's load of
+// the cleared flag synchronizes with it, so the next pass sees `stopping_` too. The clear alone is not enough: for a
+// writer that publishes after it, two stores to the flag order nothing, and the C++ model lets an acquire load of
+// `stopping_` miss a release store no synchronization reached, so that writer could wait on 1 for ever and stop()'s
+// join never return. No test can show that: x86 never reorders it, and on AArch64 the seq_cst re-read in front of that
+// load happens to order it in today's code generation; the model's guarantee is what this relies on, not either.
 //
 // STOPPING. A port that leaves the selection, or the stream closing, stops its writer with a FLUSH: what a push has
 // queued is sent before the port goes, because a dropped Note Off is a stuck note. The flush is bounded by
@@ -129,8 +140,10 @@ private:
     std::atomic<std::uint64_t> dropped_{0};
 
     // The wake (see the header comment). The writer waits on `sleeping_`, which the producer clears to wake it; `wake_`
-    // counts pushes, so the writer can tell that one landed while it was deciding to sleep. Both are four bytes so the
-    // flag takes the platform's own wait (libstdc++'s futex path needs a word the size of an int).
+    // counts pushes (and the stop), so the writer can tell that one landed while it was deciding to sleep. Both are four
+    // bytes: libstdc++ then waits on the flag word itself with a futex (its direct path needs a word the size of an
+    // int) and MSVC with WaitOnAddress, while libc++ on Apple, whose native wait type is 64-bit, routes a 32-bit word
+    // through its contention table and waits there (correct, one indirection more).
     std::atomic<std::uint32_t> wake_{0};
     std::atomic<std::uint32_t> sleeping_{0};  // 1: the writer published that it is going to sleep; 0: it is not
     std::atomic<bool>          stopping_{false};

@@ -13,11 +13,14 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <string>
 #include <thread>
@@ -139,10 +142,11 @@ TEST_CASE("a push that lands as the writer goes idle is not lost: 50k single mes
     // AFTER the check can miss. Nothing calls stop() in between: a stop's own notify would wake the writer and hide the
     // lost one, and a lost wake is exactly the Note Off a burst ends with, held until the next message arrives.
     //
-    // It does catch one on this machine, which is what a soak is for: the pre-fix wait lost the race about once in
-    // fifty thousand rounds here (a spinning producer, a woken writer that had not reached the kernel yet), and this
-    // case found it before the wait moved onto the flag word. Under `tools/run-sanitizer.sh thread` the window is wider
-    // still, so that leg runs it too.
+    // It is a probabilistic guard, which is what a soak is: against the pre-fix wait (a spinning producer, a woken
+    // writer that had not reached the kernel yet) it failed about one run in six on the development machine without
+    // TSan, about once in 300k rounds, and found the lost wake before the wait moved onto the flag word. So CI holds a
+    // reintroduction only with that kind of chance per run (more on a small, oversubscribed runner, whose preemption
+    // is the window). Under `tools/run-sanitizer.sh thread` the window is wider still, so that leg runs it too.
     constexpr int kRounds = 50000;
     int           lost    = -1;
     int           refused = -1;
@@ -244,6 +248,68 @@ TEST_CASE("a stop flushes what queued before the port goes, and nothing is sent 
     CHECK(backend.sendsAfterClose() == 0);
     // A stopped writer takes nothing more: a push is refused rather than reaching a closed port.
     CHECK(!writer->push(note.data(), note.size()));
+}
+
+TEST_CASE("a stop that lands in any phase of the writer's pass joins it, and flushes what was queued") {
+    // stop() is a push with no record: it bumps the counter and clears the flag, so a writer that is sending, deciding,
+    // publishing its sleep or already asleep is joined. The hang this holds against (a writer that publishes after the
+    // stop's clear and reads `stopping_` stale) is a weak-memory reordering no x86 machine makes and today's AArch64 code
+    // does not either, so no run here can show it red; what the case does is put the stop in every phase of a pass,
+    // twenty thousand times, so the path the header's proof is about is run. A hang is a watchdog's abort naming the
+    // round, not a suite that never returns.
+    Rig                     rig;
+    auto&                   backend = rig.backend;
+    const Bytes             note    = {0x90, 0x3C, 0x7F};
+    constexpr int           kRounds = 20000;
+    std::atomic<int>        round{0};
+    std::mutex              doneMutex;
+    std::condition_variable doneWake;
+    bool                    done = false;
+    std::thread             watchdog([&] {
+        std::unique_lock<std::mutex> lk(doneMutex);
+        int                          last = -1;
+        while (!done) {
+            // 5 s with no round finished is a stop that never returned (a healthy round is microseconds).
+            if (doneWake.wait_for(lk, std::chrono::seconds(5), [&] { return done; })) break;
+            const int now = round.load();
+            if (now == last) {
+                std::fprintf(stderr, "PortWriter stop hung in round %d\n", now);
+                std::abort();
+            }
+            last = now;
+        }
+    });
+    int sent = 0;
+    for (int i = 0; i < kRounds; ++i) {
+        auto writer = rig.open();
+        // The phase: a stop before the writer's first pass, one while it sends, one as it leaves the send for the idle
+        // path, and one a varying while after it went idle (publishing its sleep, re-reading, or asleep).
+        switch (i % 4) {
+            case 0: break;
+            case 1:
+                REQUIRE(writer->push(note.data(), note.size()));
+                ++sent;
+                break;
+            case 2:
+            case 3:
+                REQUIRE(writer->push(note.data(), note.size()));
+                ++sent;
+                while (backend.sendsFinished.load(std::memory_order_acquire) < sent) std::this_thread::yield();
+                for (int spin = 0; spin < (i % 4 == 2 ? 0 : (i / 4) % 64); ++spin) std::this_thread::yield();
+                break;
+        }
+        writer->stop();
+        round.store(i + 1);
+    }
+    {
+        std::lock_guard<std::mutex> lk(doneMutex);
+        done = true;
+    }
+    doneWake.notify_all();
+    watchdog.join();
+    // Every pushed message was flushed by its stop (the port is instant, so no deadline ran out), and none after.
+    CHECK(backend.totalReceived() == static_cast<std::size_t>(sent));
+    CHECK(backend.sendsAfterClose() == 0);
 }
 
 TEST_CASE("a wedged port's stop returns by its deadline, and abandons the rest of the backlog") {

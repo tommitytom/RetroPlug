@@ -62,8 +62,13 @@ void PortWriter::stop() {
     flushDeadline_ = std::chrono::steady_clock::now() + kFlushDeadline;
     stopping_.store(true, std::memory_order_release);
     if (worker_.joinable()) {
-        // The clear is what the writer's wait compares against, so it is not enough to notify: a writer that has not
-        // reached the kernel yet must find the flag already cleared (the header comment).
+        // The stop is a push with no record, so the push's proof covers it (the header comment). The bump is for a
+        // writer that publishes its sleep AFTER the clear below: its seq_cst re-read sees the bump, and a pass whose
+        // snapshot read it synchronized with it and so sees `stopping_`. The clear is for a writer that published
+        // BEFORE it: it is what the wait compares against, so a writer that has not reached the kernel yet finds the
+        // flag already cleared. Without the bump, a writer that published after the clear could read `stopping_` stale
+        // (a release store does not order a later acquire load on another thread) and wait on 1 for ever.
+        wake_.fetch_add(1, std::memory_order_seq_cst);
         sleeping_.store(0, std::memory_order_seq_cst);
         sleeping_.notify_all();
         worker_.join();  // the writer flushes to flushDeadline_ and returns
