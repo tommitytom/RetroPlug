@@ -127,7 +127,17 @@ export interface TileView extends ViewBase {
   readonly visible?: Readable<boolean>;
 }
 
-export type ViewDef = WindowView | TileView;
+/** A view that takes a grid cell of its own, right after the tile of each system it is open for: a panel beside the
+ *  game rather than over it (the NES SD card's file list). The grid lays its cells out with the systems', so opening
+ *  one grows the window the way adding a system does. */
+export interface SideView extends ViewBase {
+  readonly placement: "side";
+  /** The systems it is open beside, by id. The shell follows each through `systems.currentId`, so a panel stays open
+   *  across its system's rebuild; one that is gone, or that `when` rejects, gets no cell. */
+  readonly openFor: Readable<readonly number[]>;
+}
+
+export type ViewDef = WindowView | TileView | SideView;
 
 /** One choice of a config row: the value the role schema stores and the label the cycler shows. */
 export interface ConfigChoice {

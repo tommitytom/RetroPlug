@@ -236,6 +236,9 @@ importers:
       '@retroplug/ui':
         specifier: workspace:*
         version: link:../ui
+      '@retroplug/ui-react':
+        specifier: workspace:*
+        version: link:../ui-react
       zod:
         specifier: ^4.4.3
         version: 4.4.3

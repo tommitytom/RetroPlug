@@ -133,3 +133,20 @@ export function hitTestTile(
   const index = Math.floor(gy / th) * shape.cols + Math.floor(gx / tw);
   return index >= 0 && index < count ? index : null;
 }
+
+/** One cell of the grid: a system's tile, or a side view's panel right after the tile of the system it is open beside.
+ *  `index` is the system's index in slot order either way, which a tile's test ids and its focus are keyed by. */
+export type GridCell<S, V> =
+  | { readonly kind: "system"; readonly system: S; readonly index: number }
+  | { readonly kind: "side"; readonly system: S; readonly index: number; readonly view: V };
+
+/** The grid's cells in order: each system's tile, then the side views open beside it in the order `sidesFor` gives
+ *  them. Every size and hit test is over these, so a panel takes a place in the layout exactly as a system does. */
+export function gridCells<S, V>(systems: readonly S[], sidesFor: (system: S) => readonly V[]): GridCell<S, V>[] {
+  const cells: GridCell<S, V>[] = [];
+  systems.forEach((system, index) => {
+    cells.push({ kind: "system", system, index });
+    for (const view of sidesFor(system)) cells.push({ kind: "side", system, index, view });
+  });
+  return cells;
+}

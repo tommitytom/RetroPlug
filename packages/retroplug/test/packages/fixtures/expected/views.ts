@@ -21,12 +21,12 @@ export const VIEWS: readonly { pkg: string; view: ViewDef }[] = VIEW_CONTRIBUTIO
 // A view's id is its test id and the id host.views.open names, so it is unique across the product; its
 // placement and its body's kind are the two data fields the type cannot hold a package to at load.
 const viewOwners = new Map<string, string>();
-const viewPlacements = new Set<string>(["window", "tile"]);
+const viewPlacements = new Set<string>(["window", "tile", "side"]);
 const bodyKinds = new Set<string>(["pixels", "readout", "component"]);
 
 /** One contributed view: its id unique across the product, its placement one the shell has, its body kind
  *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and
- *  no `visible` on a window view (the type refuses that; this backs the type). */
+ *  no `visible` on a window or side view (the type refuses that; this backs the type), and a side view's `openFor`. */
 function checkView(pkg: string, view: ViewDef): void {
   const owner = viewOwners.get(view.id);
   if (owner !== undefined) {
@@ -37,7 +37,7 @@ function checkView(pkg: string, view: ViewDef): void {
   viewOwners.set(view.id, pkg);
   if (!viewPlacements.has(view.placement)) {
     throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +
-      `which is no placement (the placements are window, tile)`);
+      `which is no placement (the placements are window, tile, side)`);
   }
   const kind = view.body?.kind;
   if (!bodyKinds.has(kind)) {
@@ -55,8 +55,12 @@ function checkView(pkg: string, view: ViewDef): void {
       `(a ${kind} body's open is what the shell calls)`);
   }
   if (view.placement !== "tile" && (view as { readonly visible?: unknown }).visible !== undefined) {
-    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +
-      `a tile view has`);
+    throw new Error(`the package ${pkg} declares the ${view.placement} view ${view.id} with a visible flag, ` +
+      `which only a tile view has`);
+  }
+  if (view.placement === "side" && typeof (view as { readonly openFor?: { readonly get?: unknown } }).openFor?.get !== "function") {
+    throw new Error(`the package ${pkg} declares the side view ${view.id} with no openFor, which says the ` +
+      `systems it is open beside`);
   }
 }
 

@@ -6,12 +6,13 @@
     "typecheck": "node ../retroplug/scripts/lib/packages.mjs && tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "The Mesen core's half of the app: the mesen core-config role every Mesen system carries (NES, GBA, SMS/GG) - region, sprite limit, FM, APU latency, the cartridge-accuracy switches, expansion volume, the per-channel export mode, the emulated N8's SD root, FIFO profile and reliable link, and driving a real cart - the settings enums its schema reads; and its native half, the three consoles, their build functions and the rp.mesen.nes / .gba / .sms nodes.",
+  "description": "The Mesen core's half of the app: the mesen core-config role every Mesen system carries (NES, GBA, SMS/GG) - region, sprite limit, FM, APU latency, the cartridge-accuracy switches, expansion volume, the per-channel export mode, the emulated N8's SD root, FIFO profile and reliable link, and driving a real cart - the settings enums its schema reads; its System submenu rows, the SD card folder picker among them, and the \"nes-sd-files\" side view listing the card beside the game; and its native half, the three consoles, their build functions and the rp.mesen.nes / .gba / .sms nodes.",
   "exports": {
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
     "./consoles": "./ts/consoles.ts",
     "./ui": "./ts/ui/index.ts",
+    "./views": "./ts/ui/views.ts",
     "./enums": "./ts/enums.ts"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "@retroplug/node-sdk": "workspace:*",
     "@retroplug/system": "workspace:*",
     "@retroplug/ui": "workspace:*",
+    "@retroplug/ui-react": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -29,12 +31,13 @@
   "retroplug": {
     "app": "ts/app.ts",
     "ui": "ts/ui/index.ts",
+    "views": "ts/ui/views.ts",
     "consoles": "ts/consoles.ts",
     "native": { "target": "retroplug-mesen", "entry": "rp_mesen_package", "device": false },
     "examples": [
       { "name": "export-nes-channels", "entry": "examples/export-nes-channels.ts" },
       { "name": "export-nes-mono", "entry": "examples/export-nes-mono.ts" }
     ],
-    "host": ["retroplug-cli"]
+    "host": ["retroplug-cli", "react", "react/jsx-runtime"]
   }
 }

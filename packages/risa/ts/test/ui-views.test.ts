@@ -42,6 +42,7 @@ function hostWith(state: {
       writeFile: unused,
       writeFileAtomic: unused,
       fileExists: unused,
+      listDir: unused,
     },
     systems: {
       view: () => state.systems ?? [system()],
@@ -52,6 +53,7 @@ function hostWith(state: {
       loadSram: unused,
       savPathOf: unused,
       nodeIdOf: unused,
+      currentId: unused,
       drivenCart: unused,
       stageNodeMidi: unused,
       capability: unused,

@@ -11,7 +11,9 @@
 // reader, its `signature` and its `close` all run inside the shell's render or its frame loop, and a throw in one of
 // them must cost that view only. A guard reports and then answers what "no" answers, so the rest of the UI carries on.
 import type { SystemInfo } from "@retroplug/core/host";
-import type { PixelSession, ReadoutFrame, ReadoutSampler, UiHost, ViewDef } from "@retroplug/ui/contribution";
+import type {
+  PixelSession, ReadoutFrame, ReadoutSampler, SideView, UiHost, ViewDef,
+} from "@retroplug/ui/contribution";
 
 /** What a session can do on close; both contracts make it optional. */
 export interface ViewSession {
@@ -99,6 +101,27 @@ export function subscribeViewShown(view: ViewDef, onChange: () => void): () => v
     return view.visible.subscribe(onChange);
   } catch (error) {
     reportOnce(view, "visible", `[views] ${view.id}: its visible threw: ${message(error)}`);
+    return () => {};
+  }
+}
+
+/** The systems a side view is open beside, as the grid reads them: a throw in its `get` reads as open beside none and
+ *  is reported, so a broken panel costs its own cells only. */
+export function sideOpenFor(view: SideView): readonly number[] {
+  try {
+    return view.openFor.get();
+  } catch (error) {
+    reportOnce(view, "openFor", `[views] ${view.id}: its openFor threw: ${message(error)}`);
+    return [];
+  }
+}
+
+/** Subscribe to a side view's `openFor`, a throwing subscribe reported and treated as nothing to watch. */
+export function subscribeSideOpenFor(view: SideView, onChange: () => void): () => void {
+  try {
+    return view.openFor.subscribe(onChange);
+  } catch (error) {
+    reportOnce(view, "openFor", `[views] ${view.id}: its openFor threw: ${message(error)}`);
     return () => {};
   }
 }

@@ -2,7 +2,7 @@
 // views module, in product order, is the one place a package's views are read from. Apart from menuContributions' menus
 // module on purpose: a component view imports React, and only the UI bundle resolves it, so a menu module that reached
 // this one would put React in every pure-tier test that builds a menu.
-import type { TileView, ViewDef, WindowView } from "@retroplug/ui/contribution";
+import type { SideView, TileView, ViewDef, WindowView } from "@retroplug/ui/contribution";
 import { VIEWS } from "../generated/views";
 
 /** The view a package registers under `id`, with the package it came from, or undefined. The generated module has
@@ -32,4 +32,10 @@ export function windowViewOrReport(id: string): { view: WindowView } | { report:
  *  whose system the view's `when` accepts. */
 export function tileViews(): readonly { pkg: string; view: TileView }[] {
   return VIEWS.filter((entry): entry is { pkg: string; view: TileView } => entry.view.placement === "tile");
+}
+
+/** Every side view, in product order: the panels SystemGrid gives a cell of their own beside each system a view's
+ *  `openFor` names. */
+export function sideViews(): readonly { pkg: string; view: SideView }[] {
+  return VIEWS.filter((entry): entry is { pkg: string; view: SideView } => entry.view.placement === "side");
 }

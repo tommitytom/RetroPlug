@@ -9,13 +9,13 @@
 // descriptor names that field as this row's key, and mesen's ts/test/ui.test.ts pins the two spellings together.
 //
 // The NES SD card's folder is the one knob a row cannot hold (a path, picked through a dialog), so it is a builder at
-// the system.settings placement instead, drawn right after the rows.
+// the system.settings placement instead, drawn right after the rows, with the row that opens the card's file list.
 import type { SystemInfo } from "@retroplug/core/host";
 import { shortenMiddle } from "@retroplug/core/path";
-import { findRole } from "@retroplug/core/systemRoles";
 import { defineUi, type MenuBuilder, type RoleRow, type UiHost } from "@retroplug/ui/contribution";
-import { action, browseThen, type MenuItem } from "@retroplug/ui/menu";
+import { action, browseThen, cycler, type MenuItem } from "@retroplug/ui/menu";
 import { REGION_VALUES } from "../enums";
+import { sdFilesShown, sdRootOf, setSdFilesShown } from "./sdCard";
 
 /** Console region (ConsoleRegion 0..4), the "mesen" role's region knob. */
 const REGION_NAMES = ["Auto", "NTSC", "PAL", "Dendy", "NTSC-J"];
@@ -83,16 +83,11 @@ export const MESEN_ROWS: readonly RoleRow[] = [
  *  default window size with the prefix. */
 const SD_LABEL_MAX = 38;
 
-/** The folder the emulated N8's SD card maps to, as the mesen role holds it ("" = the per-process scratch card). */
-export function sdRootOf(sys: SystemInfo): string {
-  const root = findRole(sys.roles, "mesen")?.config.sdRoot;
-  return typeof root === "string" ? root : "";
-}
-
-/** The NES's SD card rows: the folder the card maps to, picked with the host's folder dialog, and a row that puts it
- *  back on the scratch card. `sdRoot` is construct-time, so a pick rebuilds the system (setRoleConfig does), carrying
- *  the battery: a ROM that reads its card at boot reads the new one. A builder rather than a row because a row is a
- *  cycler over fixed values, and this one is a path. */
+/** The NES's SD card rows: the folder the card maps to, picked with the host's folder dialog, a row that puts it back
+ *  on the scratch card, and SD Card Files, which opens the card's file list in a cell beside the game (views.ts).
+ *  `sdRoot` is construct-time, so a pick rebuilds the system (setRoleConfig does), carrying the battery: a ROM that
+ *  reads its card at boot reads the new one. A builder rather than a row because a row is a cycler over fixed values,
+ *  and this one is a path. */
 export function sdCardRows(host: UiHost, sys: SystemInfo): MenuItem[] {
   const root = sdRootOf(sys);
   const prefix = "SD Card: ";
@@ -104,11 +99,15 @@ export function sdCardRows(host: UiHost, sys: SystemInfo): MenuItem[] {
     ),
     keepOpen: true,
   };
-  if (!root) return [pick];
+  const shown = sdFilesShown(host.systems, sys.id);
+  const files = cycler("sys-nes-sdfiles", "SD Card Files", ["Off", "On"], shown ? 1 : 0, (step) =>
+    setSdFilesShown(host.systems, sys.id, step === 1),
+  );
+  if (!root) return [pick, files];
   const clear = action("sys-nes-sdroot-clear", "Use Scratch SD Card", () =>
     host.systems.setRoleConfig(sys.id, "mesen", { sdRoot: "" }),
   );
-  return [pick, { ...clear, keepOpen: true }];
+  return [pick, { ...clear, keepOpen: true }, files];
 }
 
 const SD_CARD_MENU: MenuBuilder = {

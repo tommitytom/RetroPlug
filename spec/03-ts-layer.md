@@ -498,10 +498,15 @@ instance/zoom change unless a tiling WM owns geometry (`isWindowSizeControlled()
 
 ### The grid - [`screens/grid/`](../packages/retroplug/ui/screens/grid)
 
-- [`SystemGrid.tsx`](../packages/retroplug/ui/screens/grid/SystemGrid.tsx) renders one tile per system from
-  `useSystems()`. `fitZoom` ([SystemGrid.tsx:25](../packages/retroplug/ui/screens/grid/SystemGrid.tsx#L25)) caps zoom to
-  keep the whole grid visible. Each tile is wrapped in a `StableSlot key={slot-${sys.id}}`; the slot matching
-  `menuSystemId` swaps its single child EmulatorTile↔`<Menu>` so sibling tiles keep rendering.
+- [`SystemGrid.tsx`](../packages/retroplug/ui/screens/grid/SystemGrid.tsx) renders the grid's CELLS: one tile per
+  system from `useSystems()`, and after a system's tile a cell for each side view open beside it (a package's panel,
+  such as the NES SD card's file list), which `useGridCells` ([SideViews.tsx](../packages/retroplug/ui/views/SideViews.tsx))
+  builds and App's window fit and hit tests count too, so a panel takes a grid place exactly as a system does.
+  `fitZoom` caps zoom to keep the whole grid visible. Each grid POSITION is a `StableSlot key={cell-${column}}` whose
+  one child is keyed by the cell it holds, so a panel opening (which shifts the cells after it) swaps children in
+  place rather than inserting mid-row; the system matching `menuSystemId` shows `<Menu>` in place of its EmulatorTile
+  so sibling tiles keep rendering. A side view names the systems it is open beside by id, and the grid follows each
+  through `currentId`, so a panel stays open across its system's rebuild.
 - [`EmulatorTile.tsx`](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx) pulls `backend.getFrame(systemId)` on
   each native `"frame"` event and blits it into an LVGL `Canvas` via `setBuffer`
   ([EmulatorTile.tsx:50](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx#L50)). Click → `setFocus`; an unfocused
@@ -512,7 +517,7 @@ instance/zoom change unless a tiling WM owns geometry (`isWindowSizeControlled()
   their carts' packages now (`lsdj-overlay`, `risa-overlay`), and the slot's fixed place is what keeps a strip that
   appears late from landing over the border and the render badge.
 - [`layout.ts`](../packages/retroplug/ui/screens/grid/layout.ts) is pure grid math (`GB_NATIVE_W/H`, `shapeFor`,
-  `gridContentSize`, `getTileBounds`).
+  `gridContentSize`, `getTileBounds`, and `gridCells`, the tiles and the panels in order).
 
 **Why `StableSlot`.** lv_binding_js always appends ([Framework gotchas](#framework-gotchas)), and
 [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx) is the workaround: a fixed-position wrapper whose

@@ -98,6 +98,9 @@ export interface FilesHost {
   writeFile(path: string, bytes: Uint8Array): boolean;
   writeFileAtomic(path: string, bytes: Uint8Array): boolean;
   fileExists(path: string): boolean;
+  /** The names directly in a directory, in no set order, a subdirectory marked with a trailing "/"; empty when it
+   *  cannot be read. */
+  listDir(dir: string): string[];
 }
 
 /** The PNG codec: a font override decodes a linked image, a font export encodes one. */
@@ -117,6 +120,10 @@ export interface KitsHost {
 export interface SystemsHost {
   /** The live systems, in slot order. */
   view(): readonly SystemInfo[];
+  /** The id system `id` goes by now: a rebuild (a reset, a construct-time setting, a loaded battery) builds the system
+   *  again under a new id in the same slot, so a package holding an id follows it here. `id` itself while it is live;
+   *  null once the system is gone. */
+  currentId(id: number): number | null;
   setRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
   /** Reboot a system in place from what it holds (the one rebuild a keep-open row ends in). */
   reload(id: number): unknown;

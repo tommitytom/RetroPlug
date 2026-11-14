@@ -40,6 +40,7 @@ import { contributedActionIds, contributedActions } from "./host/menuContributio
 import { windowViewOrReport, windowViewOf } from "./host/viewContributions";
 import { runActions } from "./input/appActions";
 import { withActionDefaults } from "../src/bindingMap";
+import { useGridCells } from "./views/SideViews";
 import { ViewWindow } from "./views/ViewWindow";
 import { viewAppliesTo } from "./views/viewSession";
 import { resolveTracker } from "../src/trackerRegistry";
@@ -49,6 +50,8 @@ const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=
 export function App() {
   const stores = useStores();
   const systems = useSystems();
+  // The grid's cells: the systems and the side panels open beside them, which the window fit and the hit tests count.
+  const cells = useGridCells(systems);
   const settings = useProjectSettings();
   const userConfig = useUserConfig();
   const recent = useRecent();
@@ -193,9 +196,9 @@ export function App() {
   // pre-map by the editor (PluginUI::applyInitialWindowSize) so the window opens correct.
   useEffect(() => {
     if (empty || isWindowSizeControlled()) return;
-    const { width, height } = gridContentSize(systems.length, settings.layout as SystemLayout, resolvedZoom);
+    const { width, height } = gridContentSize(cells.length, settings.layout as SystemLayout, resolvedZoom);
     requestWindowSize(width, height);
-  }, [empty, systems.length, settings.layout, resolvedZoom]);
+  }, [empty, cells.length, settings.layout, resolvedZoom]);
 
   // Keep the OS window title in sync with the project name / version.
   useEffect(() => setWindowTitle(windowTitle), [windowTitle]);
@@ -264,9 +267,9 @@ export function App() {
   useNativeEvent("mouse", (button, press, x, y) => {
     if (button !== MOUSE_BUTTON_RIGHT || !press) return;
     if (empty || isMenuModalActive() || overlay) return;
-    const idx = hitTestTile(x, y, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
-    if (idx == null) return; // must land on an instance
-    const targetId = systems[idx].id;
+    const idx = hitTestTile(x, y, cells.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    if (idx == null) return; // must land on an instance, or a panel beside one (its menu is the system's)
+    const targetId = cells[idx].system.id;
     stores.project.systems.setFocus(targetId); // focus the right-clicked instance, then anchor its menu
     setMenuSystemId(targetId);
     setMenuOpen(true);
@@ -280,7 +283,9 @@ export function App() {
   useNativeEvent("file-drop", (joined, x, y) => {
     const paths = String(joined ?? "").split("\n").filter((p) => p.length > 0);
     if (paths.length === 0) return;
-    const idx = hitTestTile(x, y, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    // Only a tile is a drop target: a file dropped on a panel beside it lands as if dropped off the grid.
+    const cellIdx = hitTestTile(x, y, cells.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    const idx = cellIdx != null && cells[cellIdx].kind === "system" ? cells[cellIdx].index : null;
     const targetId = idx != null ? systems[idx].id : stores.project.systems.focused();
     const target = systems.find((s) => s.id === targetId);
     const action = resolveDropAction(

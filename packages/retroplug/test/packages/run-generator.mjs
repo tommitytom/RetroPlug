@@ -39,7 +39,7 @@
 //   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
 //   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service | views | views-duplicate-id |
 //   views-duplicate-across | views-bad-placement | views-bad-kind | views-no-body | views-no-open |
-//   views-no-component | views-window-visible | views-outside-ui | ui-outside-ui
+//   views-no-component | views-window-visible | views-side-no-openfor | views-outside-ui | ui-outside-ui
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
 //   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
@@ -763,6 +763,19 @@ try {
         "alpha",
         'const visible = { get: () => true, subscribe: () => () => {} };\n' +
           'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "window", visible, ' +
+          'body: { kind: "readout", open: () => null } }] };\n',
+      );
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-side-no-openfor":
+      viewsModule(
+        "alpha",
+        'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "side", ' +
           'body: { kind: "readout", open: () => null } }] };\n',
       );
       generate({ root });

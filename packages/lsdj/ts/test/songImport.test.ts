@@ -46,6 +46,7 @@ class FakeHost {
         writeFile: (path, bytes) => this.write(path, bytes),
         writeFileAtomic: (path, bytes) => this.writeFileAtomic(path, bytes),
         fileExists: (path) => this.files.has(path),
+        listDir: () => [],
       },
       png: { encode: () => null, decode: () => null },
       systems: {
@@ -57,6 +58,7 @@ class FakeHost {
         loadSram: (id, path) => this.loadSram(id, path),
         savPathOf: () => this.savPathOf(),
         nodeIdOf: (id) => `sys-${id}`,
+        currentId: (id) => id,
         drivenCart: () => null,
         stageNodeMidi: () => false,
         capability: () => Promise.reject(new Error("a song import runs no capability job")),

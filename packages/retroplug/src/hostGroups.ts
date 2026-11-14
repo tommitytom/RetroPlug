@@ -7,7 +7,7 @@ import type { HostBackend } from "./backend";
 /** The backend's file I/O as core's files group. The methods are wrapped rather than handed over, so what a hook
  *  receives is a table it cannot reach the rest of the backend through. */
 export function filesHost(
-  backend: Pick<HostBackend, "readFile" | "readFilePrefix" | "writeFile" | "writeFileAtomic" | "fileExists">,
+  backend: Pick<HostBackend, "readFile" | "readFilePrefix" | "writeFile" | "writeFileAtomic" | "fileExists" | "listDir">,
 ): FilesHost {
   return {
     readFile: (path) => backend.readFile(path),
@@ -15,6 +15,7 @@ export function filesHost(
     writeFile: (path, bytes) => backend.writeFile(path, bytes),
     writeFileAtomic: (path, bytes) => backend.writeFileAtomic(path, bytes),
     fileExists: (path) => backend.fileExists(path),
+    listDir: (dir) => backend.listDir(dir),
   };
 }
 
@@ -30,7 +31,7 @@ export function pngHost(backend: Pick<HostBackend, "pngEncode" | "pngDecode">): 
 export function filesPngHost(
   backend: Pick<
     HostBackend,
-    "readFile" | "readFilePrefix" | "writeFile" | "writeFileAtomic" | "fileExists" | "pngEncode" | "pngDecode"
+    "readFile" | "readFilePrefix" | "writeFile" | "writeFileAtomic" | "fileExists" | "listDir" | "pngEncode" | "pngDecode"
   >,
 ): Host<"files" | "png"> {
   return { files: filesHost(backend), png: pngHost(backend) };

@@ -59,6 +59,7 @@ function hostWith(state: {
       writeFile: unused,
       writeFileAtomic: unused,
       fileExists: unused,
+      listDir: unused,
     },
     png: { encode: unused, decode: unused },
     systems: {
@@ -73,6 +74,7 @@ function hostWith(state: {
       loadSram: unused,
       savPathOf: unused,
       nodeIdOf: unused,
+      currentId: unused,
       drivenCart: unused,
       stageNodeMidi: unused,
       capability: unused,

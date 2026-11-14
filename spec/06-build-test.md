@@ -492,8 +492,9 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
 12. A **view** is declared in the package's `retroplug.views` module (`defineViews({ views })`, under `ts/ui/`), which
     the generator writes into `ui/generated/views.ts` - apart from the menus' module, so the pure tier never bundles a
     React view - not coded in the shell: an
-    id, a label, `placement` `window` or `tile`, an optional `when(sys)` gate, an optional `visible` flag (a tile view
-    only), and one body kind. Two need nothing but plain TypeScript: a `pixels` body's `open` returns a session whose
+    id, a label, `placement` `window`, `tile` or `side`, an optional `when(sys)` gate, an optional `visible` flag (a
+    tile view only), for a side view its `openFor` (a readable list of the system ids it is open beside: the grid gives
+    it a cell right after each one's tile, as the mesen package's `nes-sd-files` panel has), and one body kind. Two need nothing but plain TypeScript: a `pixels` body's `open` returns a session whose
     `frame()` is the next `{ pixels, width, height }` (or null when nothing moved), and a `readout` body's `open`
     returns a sampler whose `sample()` is the strip's lines and playing flag (null = an unsupported cart, undefined =
     unreadable this frame). The shell renders both. A `component` body is React and is built with `reactView` from
@@ -510,7 +511,7 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
     live in the package's `ts/test/` over a fake host, as
     [ui-views.test.ts](../packages/lsdj/ts/test/ui-views.test.ts) does. The generated registry refuses a duplicate view
     id (naming both packages), a placement or body kind the shell has not, a session body with no `open` or a component
-    body with no `component`, and a `visible` on a window view. The `lvgljs-ui` widgets a component draws through are the
+    body with no `component`, a `visible` on a window or side view, and a side view with no `openFor`. The `lvgljs-ui` widgets a component draws through are the
     SHELL's type slice ([lvgljs-ui.d.ts](../packages/retroplug/ui/types/lvgljs-ui.d.ts)), since the package ships
     TypeScript source and the slice is what `tsc` reads: a component pack that needs a widget the slice lacks extends
     that shell file, which is the one thing about a component view a package cannot do alone.

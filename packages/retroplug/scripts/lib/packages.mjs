@@ -1324,12 +1324,12 @@ function renderViews({ packages, outDir, product }) {
   lines.push("// A view's id is its test id and the id host.views.open names, so it is unique across the product; its");
   lines.push("// placement and its body's kind are the two data fields the type cannot hold a package to at load.");
   lines.push("const viewOwners = new Map<string, string>();");
-  lines.push('const viewPlacements = new Set<string>(["window", "tile"]);');
+  lines.push('const viewPlacements = new Set<string>(["window", "tile", "side"]);');
   lines.push('const bodyKinds = new Set<string>(["pixels", "readout", "component"]);');
   lines.push("");
   lines.push("/** One contributed view: its id unique across the product, its placement one the shell has, its body kind");
   lines.push(" *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and");
-  lines.push(" *  no `visible` on a window view (the type refuses that; this backs the type). */");
+  lines.push(" *  no `visible` on a window or side view (the type refuses that; this backs the type), and a side view's `openFor`. */");
   lines.push("function checkView(pkg: string, view: ViewDef): void {");
   lines.push("  const owner = viewOwners.get(view.id);");
   lines.push("  if (owner !== undefined) {");
@@ -1340,7 +1340,7 @@ function renderViews({ packages, outDir, product }) {
   lines.push("  viewOwners.set(view.id, pkg);");
   lines.push("  if (!viewPlacements.has(view.placement)) {");
   lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +");
-  lines.push('      `which is no placement (the placements are window, tile)`);');
+  lines.push('      `which is no placement (the placements are window, tile, side)`);');
   lines.push("  }");
   lines.push("  const kind = view.body?.kind;");
   lines.push("  if (!bodyKinds.has(kind)) {");
@@ -1358,8 +1358,12 @@ function renderViews({ packages, outDir, product }) {
   lines.push('      `(a ${kind} body\'s open is what the shell calls)`);');
   lines.push("  }");
   lines.push('  if (view.placement !== "tile" && (view as { readonly visible?: unknown }).visible !== undefined) {');
-  lines.push("    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +");
-  lines.push('      `a tile view has`);');
+  lines.push("    throw new Error(`the package ${pkg} declares the ${view.placement} view ${view.id} with a visible flag, ` +");
+  lines.push('      `which only a tile view has`);');
+  lines.push("  }");
+  lines.push('  if (view.placement === "side" && typeof (view as { readonly openFor?: { readonly get?: unknown } }).openFor?.get !== "function") {');
+  lines.push("    throw new Error(`the package ${pkg} declares the side view ${view.id} with no openFor, which says the ` +");
+  lines.push('      `systems it is open beside`);');
   lines.push("  }");
   lines.push("}");
   lines.push("");

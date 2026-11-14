@@ -132,6 +132,7 @@ function systemsHost(backend: ControlPlaneBackend, systems: SystemsStore): Syste
   const view = () => systems.view();
   return {
     view,
+    currentId: (id) => systems.currentId(id),
     setRoleConfig: (id, kind, config) => systems.setRoleConfig(id, kind, config),
     reload: (id) => systems.reloadSystem(id),
     readSram: (id) => systems.readSram(id),

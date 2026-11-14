@@ -11,6 +11,7 @@ const files: FilesHost = {
   writeFile: () => true,
   writeFileAtomic: () => true,
   fileExists: () => false,
+  listDir: () => [],
 };
 const png: PngHost = {
   encode: () => null,

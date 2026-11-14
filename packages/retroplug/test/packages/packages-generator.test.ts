@@ -239,7 +239,7 @@ test("the generated menus module refuses a view at a placement no placement has"
   console.log(`# unknown view placement: ${error}`);
   expect(error).toBe(
     "the package alpha declares the view alpha-view at the placement float, which is no placement (the placements " +
-      "are window, tile)",
+      "are window, tile, side)",
   );
 });
 
@@ -286,6 +286,14 @@ test("the generated menus module refuses a visible flag on a window view", async
   console.log(`# window view visible: ${error}`);
   expect(error).toBe("the package alpha declares the window view alpha-view with a visible flag, which only a tile " +
     "view has");
+});
+
+test("the generated menus module refuses a side view with no openFor", async () => {
+  // A side view's cells are the systems its openFor names, so one without it could never be drawn.
+  const { error } = await drive("views-side-no-openfor");
+  console.log(`# side view with no openFor: ${error}`);
+  expect(error).toBe("the package alpha declares the side view alpha-view with no openFor, which says the systems it " +
+    "is open beside");
 });
 
 test("the generator refuses a views module named outside the package's ts/ui/ tree", async () => {
