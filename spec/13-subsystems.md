@@ -227,7 +227,7 @@ MIDI OUT LEAVES THE AUDIO CALLBACK here, and only here: this app drains the Engi
 word with a message counter beside it: the writer's snapshot of the counter is taken at the TOP of each pass, before it
 looks at the ring, and all four operations are `seq_cst`, so a push that lands as the writer goes idle wakes it or is
 caught by the re-read (a snapshot taken after the look leaves the record queued). A message that does not fit is
-dropped whole and counted, and `droppedOutputCount()` is read by the stream itself, which prints one
+dropped whole and counted, and the stream reads each writer's `dropped()` itself, printing one
 `MIDI out (<port>): N message(s) dropped` line when it lets a writer go, so a lost message is not invisible outside the
 tests. A port leaving the selection, or the stream closing, stops its writer with a bounded FLUSH, because a dropped
 Note Off is a stuck note: `kFlushDeadline` counts 500 ms from the stop, with up to two sends on top (one already

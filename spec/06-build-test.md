@@ -422,7 +422,7 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    doc states the file rules). Two differences from a project section, both because the file is shared by builds of
    different ages: an absent key reads the defaults but is NOT written until `setSection`, and a block this session did
    not set is written back VERBATIM, so an additive field a newer build wrote survives. A section's parse should
-   therefore drop nothing it cannot keep: the `midi` section keeps each entry's unknown fields (`{ name, ...rest })`
+   therefore drop nothing it cannot keep: the `midi` section keeps each entry's unknown fields (`{ name, ...rest }`)
    for exactly that reason. The audio package's `audio` section and the Launchpad pack's `controlSurface` are the two
    in tree, and `test/config/config-sections.test.ts` holds the rules (a core key refused, a duplicate refused,
    refuse-newer over the re-read file, a verbatim block, a session-set block, the core-key list against the

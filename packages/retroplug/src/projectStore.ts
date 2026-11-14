@@ -883,8 +883,9 @@ export class ProjectStore {
    *  project (Settings > MIDI's picks, Layout, Zoom, the MIDI and audio routings), and a prompt to save one protects
    *  nothing: opening a ROM starts a new project anyway (openRom calls newProject, which resets the settings), and a
    *  close that saved one would write a .rplg holding only settings. The edit itself is kept, so it applies to the audio
-   *  and MIDI streams as it lies, and reaches the project a system is later added to. A pathless project WITH systems
-   *  is a project: it is what the close guard exists for. */
+   *  and MIDI streams as it lies, and stays with this project when a system is added to it (Load mGB adds one); opening
+   *  a ROM resets it with the rest of the settings. A pathless project WITH systems is a project: it is what the close
+   *  guard exists for. */
   private isPristine(): boolean {
     return this.systems.systems().length === 0 && this.path === "" && this.projectName === "";
   }

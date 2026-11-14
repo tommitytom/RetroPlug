@@ -249,17 +249,17 @@ the audio thread (the CLI declares it after `teardown` for that reason), then th
 link writes its close bytes and gives the device back), and the runtime is freed. That is the path a thrown session and
 Ctrl-C already took. A Ctrl-C hook that ends the session itself (`tjs.exit(130)` from `__rp_onInterrupt`, say) is the
 exit and not a thrown hook: the process ends with the hook's own code, and the exit's unwinding is not reported as an
-error. Nor is one a listener takes (`unhandledrejection`, or a module's `load` listener): the rejection's reason stays
-pending for the embedder and is freed there, so the exit answers with its code and a quiet stderr. A host with no hook
-(the plugin, the SDL standalone, the stock `tjs` binary) keeps the old `exit()`: the process ends inside the call and no
-caller's stack unwinds. One limit is the engine's, not the hook's: quickjs-ng takes an executor's exception with
-`JS_GetException` and without the uncatchable check (the promise constructor, and the same shape in
-`js_promise_resolve_thenable_job` and an async generator's resume), so code after `new Promise(() => tjs.exit(0))`
-still runs synchronously until control returns to the C caller. Nothing runs after that: the drain
-(`tjs__drain_microtasks`) checks the exit on every pass, so a job queued behind the one that exited does not run
-either. Those cases run against `build/bin/retroplug-cli`; `RETROPLUG_CLI=build-dbg/bin/retroplug-cli` runs the same
-script against an assertions build, where a reference an exit path leaks aborts `JS_FreeRuntime`'s gc-list check at
-exit, which the release build cannot see. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print `teardown: graph cleared,
-providers stopped`, and the test host print every message its scripted Pro MK3 was sent plus `teardown: providers
-stopped`, which is how [test-native/session-pump.test.ts](../packages/retroplug/test-native/session-pump.test.ts)
-holds a claimed Launchpad's close bytes from a child process's exit.
+error. Nor is one a listener takes (`unhandledrejection`, or a module's `load` listener): txiki frees the rejection's
+reason itself, what stays pending for the embedder is the exit's marker, and the exit answers with its code and a quiet
+stderr. A host with no hook (the plugin, the SDL standalone, the stock `tjs` binary) keeps the old `exit()`: the process
+ends inside the call and no caller's stack unwinds. One limit is the engine's, not the hook's: quickjs-ng takes an
+executor's exception with `JS_GetException` and without the uncatchable check (the promise constructor, and the same
+shape in `js_promise_resolve_thenable_job` and an async generator's resume), so code after `new Promise(() =>
+tjs.exit(0))` still runs synchronously until control returns to the C caller. Nothing runs after that: the drain
+(`tjs__drain_microtasks`) checks the exit on every pass, so a job queued behind the one that exited does not run either.
+Those cases run against `build/bin/retroplug-cli`; `RETROPLUG_CLI=build-dbg/bin/retroplug-cli` runs the same script
+against an assertions build, where a reference an exit path leaks aborts `JS_FreeRuntime`'s gc-list check at exit, which
+the release build cannot see. `RETROPLUG_TEARDOWN_TRACE=1` makes the CLI print `teardown: graph cleared, providers
+stopped`, and the test host print every message its scripted Pro MK3 was sent plus `teardown: providers stopped`, which
+is how [test-native/session-pump.test.ts](../packages/retroplug/test-native/session-pump.test.ts) holds a claimed
+Launchpad's close bytes from a child process's exit.
