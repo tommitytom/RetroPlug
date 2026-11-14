@@ -22,6 +22,8 @@ if [ ! -x "$CLI" ]; then
 	echo "error: $CLI not found (cmake --build build --target retroplug-cli)" >&2
 	exit 2
 fi
+# Absolute, so a relative RETROPLUG_CLI still names the binary in the cases that change directory (6d's renders).
+CLI="$(cd "$(dirname "$CLI")" && pwd)/$(basename "$CLI")"
 
 fails=0
 check() { # check <label> <expected-exit> <actual-exit>

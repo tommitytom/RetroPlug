@@ -999,7 +999,12 @@ process inside the call ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test
 counts as evaluated, and no JS runs after the exit). A pointer bump reaches all of that in three commits - txiki, then
 `dpf.js/deps/lv_binding_js`, then `deps/dpf.js` - because each nested submodule records the one below it;
 nothing is pushed without the owner's word, and until the fork's commit is pushed CI cannot check out the RetroPlug one.
-With no hook installed (the plugin, the SDL standalone, the stock `tjs`) the exit is upstream's `exit()`.
+With no hook installed (the plugin, the SDL standalone, the stock `tjs`) the exit is upstream's `exit()`. A change to the
+fork's exit or rejection paths is proved by a by-hand leg as well as `pnpm test:cli-ts`: the release CLI is `NDEBUG`, so
+a JS reference such a path leaks is invisible to it, and only an assertions build's `JS_FreeRuntime` gc-list check aborts
+on one. Build `retroplug-cli` in `build-dbg/` (`cmake -B build-dbg -DCMAKE_BUILD_TYPE=Debug`) and run
+`RETROPLUG_CLI=build-dbg/bin/retroplug-cli tools/run-cli-ts-tests.sh`; CI has no Debug tree, so this is not CI
+([A session's exit](14-hosts-harnesses.md#a-sessions-exit)).
 
 The shared C++ contract (`SystemBase`, the capabilities, the build request) is `retroplug-system`'s, and each console's
 core is its package's (`retroplug-sameboy`, `retroplug-mesen`); the transport primitives the cores and the host share
