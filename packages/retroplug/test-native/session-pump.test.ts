@@ -119,10 +119,10 @@ if (CHILD === "module") {
 } else if (CHILD === "kept-alive") {
   __rp_keepAlive();
   // Three seconds is 3 s after the LOOP WAS MADE, not after this call: txiki's timers count from uv_loop_init (as the
-  // microtask child's comment says), which is why the deadline is a throw and not a race with startup. It is still after
-  // the host's bounded spin, which ends in well under a second, so the throw lands in the KEEP-ALIVE loop, which is what
-  // the bug was about (it pumped a thrown session to the 30-minute deadline). A throw at 0 is run by the spin instead,
-  // and would only prove that the loop is not entered once the session has already thrown.
+  // microtask child's comment says), so the 3 s is measured from startup, and still lands after the host's bounded
+  // spin, which ends in well under a second. The throw therefore lands in the KEEP-ALIVE loop, which is what the bug
+  // was about (it pumped a thrown session to the 30-minute deadline). A throw at 0 is run by the spin instead, and would
+  // only prove that the loop is not entered once the session has already thrown.
   setTimeout(() => {
     throw new Error("boom while kept alive");
   }, 3000);
