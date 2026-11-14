@@ -990,15 +990,19 @@ nested `deps/dpf.js` submodule (documented in its own README), consumed through 
 4. **Use of `${DPFJS_PATH}`**: the shell's `retroplug-tjs-runtime` library compiles the shared txiki host `TjsHostRuntime.cpp` and links `tjs`; the backend takes the bare QuickJS headers (`quickjs.h`) and links `qjs`; the plugin embeds the generic `dpf-widgets/generic/LVGL.cpp` and links `dpfjs::core` + `lvgl-js-native` + `retroplug-tjs-runtime`. All in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt).
 5. **React resolution** — the UI ([ui/main.tsx](../packages/retroplug/ui/main.tsx)) is bundled by the shared [tools/build-ui.js](../tools/build-ui.js), which resolves `react`/`react-reconciler`/`lvgljs-ui` from dpf.js's own pnpm workspace under `deps/dpf.js/deps/lv_binding_js/node_modules`.
 
-**The txiki fork's one addition.** The nested `deps/dpf.js/deps/lv_binding_js/deps/txiki` is a fork of
+**The txiki fork's own patches.** The nested `deps/dpf.js/deps/lv_binding_js/deps/txiki` is a fork of
 `tommitytom/txiki.js` (MSVC fixes on top of upstream), and RetroPlug carries one patch of its own there: the embedder
 exit hook (`TJS_SetExitHook` / `TJS_StopRequested` / `TJS_ExitTaken`, `src/tjs.h`, `src/private.h`, `src/mod_os.c`,
 `src/eval.c`, `src/utils.c`, `src/vm.c`), which is what lets a session's `tjs.exit` unwind instead of ending the
 process inside the call ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)); `deps/dpf.js`'s own
 `TjsHostRuntime.cpp` matches it, skipping the bytecode module's `load` event once an exit has been taken (the module
-counts as evaluated, and no JS runs after the exit). A pointer bump reaches all of that in three commits - txiki, then
-`dpf.js/deps/lv_binding_js`, then `deps/dpf.js` - because each nested submodule records the one below it;
-nothing is pushed without the owner's word, and until the fork's commit is pushed CI cannot check out the RetroPlug one.
+counts as evaluated, and no JS runs after the exit). The fork also fixes one upstream bug in `src/vm.c`: the
+unhandled-rejection dispatch takes each entry off its list before the event goes out, because a listener that handles a
+promise (`e.promise.catch()`, or a `.catch` on one still queued) makes the tracker free that entry, which the old
+in-place walk then used and freed again (a segfault; `pnpm test:cli-ts` section 6h holds it). A pointer bump reaches all
+of that in three commits - txiki, then `dpf.js/deps/lv_binding_js`, then `deps/dpf.js` - because each nested submodule
+records the one below it; nothing is pushed without the owner's word, and until the fork's commit is pushed CI cannot
+check out the RetroPlug one.
 With no hook installed (the plugin, the SDL standalone, the stock `tjs`) the exit is upstream's `exit()`. A change to the
 fork's exit or rejection paths is proved by a by-hand leg as well as `pnpm test:cli-ts`: the release CLI is `NDEBUG`, so
 a JS reference such a path leaks is invisible to it, and only an assertions build's `JS_FreeRuntime` gc-list check aborts

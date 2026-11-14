@@ -678,6 +678,50 @@ out="$TMP/run-exit-listener.log"
 timeout 20 "$CLI" "$EX/listener-exit.js" >"$out" 2>&1
 check "an unhandledrejection listener that exits ends the session with its code" 2 $?
 quiet "...and the exit's marker is not printed as an error" "$out"
+#     A listener that HANDLES a rejection: e.promise.catch() (or a .catch on one still queued) makes quickjs-ng tell the
+#     tracker the promise is handled, which removes and frees that promise's entry. The dispatch used to walk the list in
+#     place, so it then read, unlinked and freed the entry it was dispatching again (a segfault here), or held a pointer
+#     to the next one; the fork's dispatch now takes each entry off the list before its event goes out.
+printf '%s\n' '__rp_keepAlive();' 'addEventListener("unhandledrejection", (e) => {' \
+	'  e.preventDefault();' '  e.promise.catch(() => {});' \
+	'  setTimeout(() => { console.log("handled in its own listener"); tjs.exit(0); }, 100);' '});' \
+	'Promise.reject(new Error("caught by its listener"));' >"$EX/listener-catch.js"
+out="$TMP/run-listener-catch.log"
+timeout 20 "$CLI" "$EX/listener-catch.js" >"$out" 2>&1
+check "a listener that catches its own event's promise and cancels it goes on" 0 $?
+contains "...and the session ran to its own exit" "$out" "handled in its own listener"
+printf '%s\n' 'addEventListener("unhandledrejection", (e) => { e.promise.catch(() => {}); });' \
+	'Promise.reject(new Error("caught but not cancelled"));' >"$EX/listener-catch-uncancelled.js"
+out="$TMP/run-listener-catch-uncancelled.log"
+timeout 20 "$CLI" "$EX/listener-catch-uncancelled.js" >"$out" 2>&1
+check "a listener that catches its event's promise but does not cancel it aborts on the reason" 1 $?
+contains "...and prints the reason" "$out" "Error: caught but not cancelled"
+printf '%s\n' '__rp_keepAlive();' 'const seen = [];' 'Promise.reject(new Error("first"));' \
+	'const second = Promise.reject(new Error("second"));' 'addEventListener("unhandledrejection", (e) => {' \
+	'  seen.push(e.reason.message);' '  e.preventDefault();' '  second.catch(() => {});' \
+	'  setTimeout(() => { console.log("events: " + seen.join(" ")); tjs.exit(0); }, 100);' '});' \
+	>"$EX/listener-catch-later.js"
+out="$TMP/run-listener-catch-later.log"
+timeout 20 "$CLI" "$EX/listener-catch-later.js" >"$out" 2>&1
+check "a listener that catches a rejection still queued behind its own goes on" 0 $?
+contains_line "...and the one it caught is never dispatched" "$out" "events: first"
+printf '%s\n' 'addEventListener("unhandledrejection", (e) => { e.promise.catch(() => {}); tjs.exit(3); });' \
+	'Promise.reject(new Error("caught, then exited"));' >"$EX/listener-catch-exit.js"
+out="$TMP/run-listener-catch-exit.log"
+timeout 20 "$CLI" "$EX/listener-catch-exit.js" >"$out" 2>&1
+check "a listener that catches its event's promise and then exits ends with its code" 3 $?
+quiet "...and prints nothing" "$out"
+#     A rejection a listener queues waits for the NEXT pass (as one queued behind the last entry always did): a listener
+#     that queues one on every event must not keep a single pass, and so the loop's timers, from ever ending.
+printf '%s\n' '__rp_keepAlive();' 'let events = 0;' 'addEventListener("unhandledrejection", (e) => {' \
+	'  events++;' '  e.preventDefault();' '  Promise.reject(new Error("again"));' '});' \
+	'Promise.reject(new Error("first"));' \
+	'setTimeout(() => { console.log(events > 0 ? "the loop still turns" : "no event"); tjs.exit(0); }, 50);' \
+	>"$EX/listener-requeue.js"
+out="$TMP/run-listener-requeue.log"
+timeout 20 "$CLI" "$EX/listener-requeue.js" >"$out" 2>&1
+check "a listener that queues a rejection on every event does not hold the loop" 0 $?
+contains "...and the loop's timer still fired after an event" "$out" "the loop still turns"
 printf '%s\n' 'addEventListener("load", () => tjs.exit(4));' >"$EX/load-exit.js"
 out="$TMP/run-exit-load.log"
 timeout 20 "$CLI" "$EX/load-exit.js" >"$out" 2>&1
