@@ -14,6 +14,7 @@ import "../../../src/generated/packages";
 // a test process does the same, with the app the documents below name.
 import { registerControllerApps } from "@retroplug/launchpad/apps";
 import lsdjMidiMapRuntime from "@retroplug/lsdj-launchpad/appRuntime";
+import type { Quantise } from "@retroplug/lsdj-launchpad/lsdjMidiMap";
 import { songRowTicks } from "@retroplug/lsdj/playback";
 import { SongSchema } from "@retroplug/lsdj/model";
 import { PRO_MK3, Palette, enterProgrammerMode, padIndex } from "@retroplug/launchpad";
@@ -476,6 +477,19 @@ test("a divisor changed while a song plays reaches the running session at its ne
   expect(reached).toEqual([96]);
 });
 
+test("a cue made before a divisor change fires on the CART's new boundary, not the one it was made at", () => {
+  // The press's tick is kept and its boundary re-derived every block, so a divisor changed while the row still pulses
+  // yellow moves the bar with it: the press at host tick 48 is cued for the cart's bar at 96 on divisor 1, and for 192
+  // once the cart is clocked at half. Firing at 96 lands in the middle of the cart's phrase, which is the defect the
+  // divisor's whole plumbing exists to remove.
+  const w = new Wired({ appConfig: parsed({ quantise: "bar" }) });
+  w.run({ ppq: 0, surface: [PRESS_ROW_0] }); // nothing was playing: launched at once, and now it is
+  w.run({ ppq: 2, surface: [press(9)] }); // host tick 48, cued for the bar
+  expect(w.controller.set(settingsOf({ appConfig: parsed({ quantise: "bar" }), tickDivisor: 2 }))).toBe(true);
+  expect(at(w.run({ ppq: 4 }).controller, "launches")).toEqual([]); // the old bar line, no longer the cart's
+  expect(at(w.run({ ppq: 8 }).controller, "launches")).toEqual([[0x90, 9, 100]]); // the cart's, at 192
+});
+
 test("an app knob changes behaviour on the next block", () => {
   const secondLaunchFires = (appConfig: Record<string, unknown>): boolean => {
     const rig = quiet();
@@ -493,11 +507,11 @@ test("a bar launch counts the CART's bar: the divisor reaches the app on its con
   // The cart clocks at 24 / tickDivisor ticks a quarter, so at divisor 2 its bar is 192 host ticks while the host's
   // stays 96: a `bar` launch cued at host tick 48 must wait for the cart's, and `hostBar` for the host's. The divisor
   // rides the controller context (ControllerCtx.tickDivisor), read every block, so no rebuild is involved.
-  const firesAt = (quantise: string, tickDivisor: number): number => {
+  const firesAt = (quantise: Quantise, tickDivisor: number, pressPpq = 2): number => {
     const w = new Wired({ appConfig: parsed({ quantise }), tickDivisor });
     w.run({ ppq: 0, surface: [PRESS_ROW_0] }); // nothing was playing: launched at once, and now it is
-    w.run({ ppq: 2, surface: [press(9)] }); // host tick 48, not on either bar line
-    for (const tick of [96, 192]) {
+    w.run({ ppq: pressPpq, surface: [press(9)] }); // host tick 48 at ppq 2, not on either bar line
+    for (const tick of [72, 96, 192]) {
       if (at(w.run({ ppq: tick / 24 }).controller, "launches").length) return tick;
     }
     return -1;
@@ -506,6 +520,10 @@ test("a bar launch counts the CART's bar: the divisor reaches the app on its con
   expect(firesAt("bar", 2)).toBe(192);
   expect(firesAt("hostBar", 2)).toBe(96);
   expect(firesAt("hostBar", 3)).toBe(96);
+  // A beat, both clocks at divisor 3, from a press at host tick 52: the cart's next beat is 72 and the host's next is
+  // 72 too, from grids of 72 and 24.
+  expect(firesAt("beat", 3, 52 / 24)).toBe(72);
+  expect(firesAt("hostBeat", 3, 52 / 24)).toBe(72);
 });
 
 test("a rebuilt session re-takes the device rather than diffing against a surface it never painted", () => {
