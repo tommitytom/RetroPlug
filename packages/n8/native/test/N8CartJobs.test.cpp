@@ -84,6 +84,15 @@ struct Rig {
         REQUIRE(host.link().isConnected());
         host.link().setLookaheadMs(0);
     }
+    // Connect on a cart running a game (the fake's config block then names mapper 0): the menu reads the FIFO as its
+    // own commands, so a streamed message goes nowhere there and a case that pushes MIDI while it streams starts here.
+    void connectGame() {
+        {
+            std::lock_guard<std::mutex> l(dev.mu);
+            dev.menu = false;
+        }
+        connect();
+    }
     bool submit(const JobRequest& r, Job& job, std::string* error = nullptr) {
         // As Engine::submitDeviceJob hands it over: the request as C, the record as its rp_job handle, and the report
         // interface over that record (FakeJobs.hpp's, a host's own, as the engine's is its own).
@@ -133,19 +142,27 @@ JobRequest uploadOf(const Bytes& rom) {
 
 }  // namespace
 
-TEST_CASE("a dump job pauses streaming on the port it has, delivers what was pushed first, reads the battery file "
-          "with progress, and resumes before it completes", "[n8][cart-jobs]") {
+TEST_CASE("a dump job pauses streaming on the port it has, reads the battery file with progress, and resumes before "
+          "it completes", "[n8][cart-jobs]") {
     Rig rig;
     const Bytes save = saveOf(3000, 7);
     rig.dev.files[kGameBattery] = save;
     rig.dev.fileReadDelayMs = 20;
-    rig.connect();
+    rig.connectGame();
 
     // A note pushed 20 ms ahead and then a job at once: the note goes out at its own time, before the first read.
     rig.host.link().setLookaheadMs(20);
     rig.push({0x90, 0x3C, 0x7F});
     rig.push({0x80, 0x3C, 0x00});
     rig.host.link().setLookaheadMs(0);
+    // Both notes are out before the console goes to its menu, which is the only place the SD card is reachable: the
+    // guard reads that state between chunks, and from then on the stream is dropped rather than read as commands.
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu = true;
+    }
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
     Job job;
     REQUIRE(rig.submit(battery("dump"), job));
     REQUIRE(rig.host.cartJobBusy());
@@ -161,8 +178,10 @@ TEST_CASE("a dump job pauses streaming on the port it has, delivers what was pus
     CHECK(job.result == save);
     CHECK(job.total.load() == save.size());     // a block a step, in bytes
     CHECK(job.progress.load() == save.size());
-    // Completed after streaming resumed, on the one port the link opened.
-    CHECK(rig.cart.connected());
+    // Completed after streaming resumed, on the one port the link opened. The cart reads disconnected at its menu: what
+    // a cart node shows there, since the FIFO is a command parser, not a MIDI stream.
+    CHECK(rig.host.link().isConnected());
+    CHECK_FALSE(rig.cart.connected());
     CHECK_FALSE(rig.host.cartJobBusy());
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
@@ -178,9 +197,13 @@ TEST_CASE("a dump job pauses streaming on the port it has, delivers what was pus
     CHECK(rig.dev.count("file-rd") == (save.size() + 511) / 512);  // one 512-byte block a step
     CHECK(rig.dev.count("srm-") == 0);                              // the cart's own battery: never
     CHECK(rig.dev.count("fifo:90 40") == 0);  // the push the pause dropped never reached the cart
+    CHECK(rig.cart.dropped() == 1);            // ...counted, and nothing else was lost
 
+    // And a message pushed now goes nowhere: the guard has the menu, so the push is dropped and counted.
     rig.push({0x91, 0x41, 0x7F});
-    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:91 41 7F") == 1; }));
+    CHECK(rig.cart.dropped() == 2);  // the pause's push, and this one
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(rig.dev.count("fifo:91 41 7F") == 0);
 }
 
 TEST_CASE("a restore job writes the battery file, creating the folder, for the game's next boot", "[n8][cart-jobs]") {
@@ -202,7 +225,8 @@ TEST_CASE("a restore job writes the battery file, creating the folder, for the g
         CHECK(rig.dev.files["EDN8/gamedata/fresh.nes/bram.srm"] == save);
     }
     CHECK(rig.dev.count("srm-") == 0);
-    CHECK(rig.cart.connected());
+    CHECK(rig.host.link().isConnected());
+    CHECK_FALSE(rig.cart.connected());  // the menu: attached, streaming nothing
 
     // A dump reads back what the restore wrote.
     Job back;
@@ -258,7 +282,9 @@ TEST_CASE("battery jobs refuse a running game before the stream pauses, so the g
     REQUIRE(waitUntil([&] { return missing.finished(); }));
     CHECK(missing.state.load() == Job::Failed);
     CHECK(missing.error == "no battery file for never.nes (EDN8/gamedata/never.nes/bram.srm)");
-    CHECK(rig.cart.connected());
+    CHECK(rig.host.link().isConnected());
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+    CHECK_FALSE(rig.cart.connected());  // the menu, once the guard has read it
 }
 
 TEST_CASE("one cart job at a time, none while disconnected, and an operation the cart does not have is refused",
@@ -372,6 +398,9 @@ TEST_CASE("the reliable link keeps its sequence across a pause: no new sync, the
     // pause), and it is what this case pins: the pause keeps the sequence state.
     rig.dev.cfg[0] = 0xFF;  // map_idx 255: the menu, which the job's own first step checks again
     rig.dev.cfg[2] = 0;
+    // This combination - a game's link with the config block saying the menu - is the fake's, and one the guard
+    // refuses: it seeds the state at connect. The case is the pause's sequence state, so the guard is off.
+    rig.host.link().setMenuCheck({});
     rig.connect();
     REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
 
@@ -398,7 +427,7 @@ TEST_CASE("the reliable link keeps its sequence across a pause: no new sync, the
     CHECK(rig.host.link().reliable());
 }
 
-TEST_CASE("the menu probe waits out an ack the game still owes, so its config read sees only its reply",
+TEST_CASE("the menu guard reads the cart's state between chunks, so a streamed frame never reaches a menu",
           "[n8][cart-jobs]") {
     using Clock = std::chrono::steady_clock;
     const auto ms = [](Clock::time_point t) {
@@ -426,6 +455,9 @@ TEST_CASE("the menu probe waits out an ack the game still owes, so its config re
         cfgTail(rig.dev);
         rig.dev.linkAckDelayMs = 60;
         rig.dev.files[kGameBattery] = saveOf(1024, 3);
+        // The fake's inconsistent combination - a game's link with the config block saying the menu - is one the guard
+        // refuses, and it seeds that state at connect: off, for this section, which is the probe's own wait.
+        rig.host.link().setMenuCheck({});
         rig.connect();
         REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
 
@@ -445,6 +477,30 @@ TEST_CASE("the menu probe waits out an ack the game still owes, so its config re
         CHECK(rig.dev.frameSeqs == std::vector<int>{0});
         CHECK(rig.dev.syncs == 2);
         CHECK(rig.dev.applied == std::vector<Bytes>{Bytes{0x90, 0x3C, 0x7F}});
+    }
+
+    SECTION("a frame pushed at the menu goes nowhere, and the job's probe still reads it") {
+        Rig rig;
+        rig.dev.linkRom = true;  // a game's link, stale after the console went back to its menu
+        cfgTail(rig.dev);
+        rig.dev.files[kGameBattery] = saveOf(1024, 3);
+        rig.connect();  // at the menu: the guard reads that off the config block before anything may stream
+        // A message pushed now would be read as one of the menu's commands, so it is dropped rather than framed, and
+        // nothing is left outstanding for a re-send to carry into the menu.
+        rig.push({0x90, 0x3C, 0x7F});
+        CHECK(rig.host.link().linkOutstanding() == 0);
+        Job job;
+        const auto t0 = Clock::now();
+        REQUIRE(rig.submit(battery("dump"), job));
+        CHECK(ms(t0) < 1000);  // nothing outstanding to wait out: the menu owes no ack
+        REQUIRE(waitUntil([&] { return job.finished(); }));
+        CHECK(job.state.load() == Job::Done);
+        CHECK(job.result == saveOf(1024, 3));
+        CHECK(rig.host.link().linkOutstanding() == 0);
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        CHECK(rig.dev.frameSeqs.empty());  // no frame was ever written, so none was re-sent
+        CHECK(rig.dev.syncs == 0);
+        CHECK(rig.dev.applied.empty());
     }
 
     SECTION("the volume's Auto read waits for it too") {
@@ -507,11 +563,17 @@ TEST_CASE("a port that throws after a job ran still posts its outcome, and the l
           "[n8][cart-jobs]") {
     Rig rig;
     rig.dev.files[kGameBattery] = saveOf(1024, 3);
+    rig.dev.fileReadDelayMs     = 20;  // long enough to arm the failure while the job is inside its run
     rig.connect();
-    // The flush after the job throws: the transfer itself completed, so its completion is the one that was decided.
-    rig.dev.failOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after it ran
     Job job;
     REQUIRE(rig.submit(battery("dump"), job));
+    REQUIRE(waitUntil([&] { return rig.dev.count("file-rd") > 0; }));
+    // The flush after the job throws: the transfer itself completed, so its completion is the one that was decided. No
+    // other flush can take it: the job owns the port while it runs, so the stream's own reads (and their flushes) wait.
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.failOnFlushInput = 1;
+    }
     REQUIRE(waitUntil([&] { return job.finished(); }));
     CHECK(job.state.load() == Job::Done);
     CHECK(job.result == saveOf(1024, 3));
@@ -523,7 +585,9 @@ TEST_CASE("a port that throws after a job ran still posts its outcome, and the l
 TEST_CASE("an upload whose trailing flush throws still closes the port it booted from", "[n8][cart-jobs]") {
     Rig rig;
     rig.connect();
-    rig.dev.failOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after the boot
+    // The flush after the boot throws: the boot itself is decided, so its completion is the one that was decided (the
+    // port stays closed after it, so every later flush would fail too).
+    rig.dev.failFlushAtGame = true;
     Job job;
     REQUIRE(rig.submit(uploadOf(inesImage(8)), job));
     REQUIRE(waitUntil([&] { return job.finished() && !rig.host.cartJobBusy(); }));
@@ -553,7 +617,8 @@ TEST_CASE("a job its node abandons fails at once, stops at its next chunk, and t
     const std::uint32_t progressAtAbandon = job.progress.load();
 
     REQUIRE(waitUntil([&] { return !rig.host.cartJobBusy(); }));
-    CHECK(rig.cart.connected());                      // nothing booted: streaming resumed to the menu, as it was
+    CHECK(rig.host.link().isConnected());             // nothing booted: the link is up, at the menu it resumed to
+    CHECK_FALSE(rig.cart.connected());                // ...which a cart node reads as disconnected
     CHECK(rig.dev.count("file-wr") < 8);              // it stopped early
     CHECK(job.progress.load() == progressAtAbandon);  // and reported nothing more into the record
     {
@@ -597,7 +662,8 @@ TEST_CASE("an upload abandoned after its last chunk still boots nothing, and its
     rig.cart.abandonJobs(&rig.owner);
     REQUIRE(waitUntil([&] { return !rig.host.cartJobBusy(); }));
     CHECK(job.failure.load() == Job::Removed);
-    CHECK(rig.cart.connected());
+    CHECK(rig.host.link().isConnected());
+    CHECK_FALSE(rig.cart.connected());  // the menu the abandoned upload left the cart at
     std::lock_guard<std::mutex> l(rig.dev.mu);
     CHECK(rig.dev.menu);
     CHECK(rig.dev.booted.empty());
@@ -646,7 +712,8 @@ TEST_CASE("a connect forgets what this host booted once the cart runs something 
         rig.dev.files[kGameBattery] = saveOf(1024, 11);
     }
     rig.host.connect(true);
-    REQUIRE(rig.cart.connected());
+    REQUIRE(rig.host.link().isConnected());
+    REQUIRE_FALSE(rig.cart.connected());  // the menu: connected reads 0 there
     Job after;
     std::string why;
     CHECK_FALSE(rig.submit(request(RP_SYSTEM_ROM_INTERFACE, "header"), after, &why));
@@ -674,6 +741,8 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
         // case for why that combination is the fake's, not a real cart's).
         rig.dev.cfg[0] = 0xFF;
         rig.dev.cfg[2] = 0;
+        // The fake's combination is one the guard refuses, and it seeds its state at connect: off, for this case.
+        rig.host.link().setMenuCheck({});
         rig.connect();
         REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
         {
@@ -699,6 +768,8 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
         rig.dev.linkRom = true;
         rig.dev.cfg[0] = 0xFF;
         rig.dev.cfg[2] = 0;
+        // The fake's combination is one the guard refuses, and it seeds its state at connect: off, for this case.
+        rig.host.link().setMenuCheck({});
         rig.connect();
         REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
         {
@@ -735,17 +806,25 @@ TEST_CASE("a cart reset to its menu with a frame its game never acknowledged sti
         return rig.dev.applied.size() == 1;  // the game read it and has acknowledged it
     }));
 
-    // The console's reset button: the N8 goes back to its menu with USB still up, so the link and its sequence state
-    // stay, and the menu acknowledges nothing (it skips every byte that is not one of its commands). The next frame is
-    // outstanding for good, re-sent whenever the cart says nothing for the link's timeout.
+    // The console's reset button: the N8 goes back to its menu with USB still up, and the menu acknowledges nothing (it
+    // skips every byte that is not one of its commands). The guard reads that between chunks - the frame below is due
+    // to be re-sent, the cart has been silent, so it looks - and the stale window is reset there rather than re-sent
+    // into a command parser.
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
         rig.dev.menu = true;
     }
     rig.push({0x80, 0x3C, 0x00});
-    REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
-    // The probe reads once the cart has been silent for the drain's bound since that frame went out, the menu answers,
-    // and the job runs after the pause's own bounded wait for the same ack.
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+    CHECK(rig.host.link().linkOutstanding() == 0);  // the stale frame went with the window
+    CHECK(rig.host.link().linkResends() == 0);      // held, not re-sent into the menu
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        // The fake's menu branch returns before it reads a frame, so this says only that no frame reached a GAME after
+        // the reset; the linkResends() line above is what says none was written into the menu.
+        CHECK(rig.dev.frameSeqs == std::vector<int>{0});
+    }
+    // The probe reads the menu and the job runs; the pause's own drain finds nothing to deliver, which is the point.
     Job job;
     std::string why;
     const auto t0 = Clock::now();
@@ -754,8 +833,8 @@ TEST_CASE("a cart reset to its menu with a frame its game never acknowledged sti
     REQUIRE(waitUntil([&] { return job.finished(); }));
     CHECK(job.state.load() == Job::Done);
     CHECK(job.result == saveOf(1024, 5));
-    REQUIRE(waitUntil([&] { return rig.cart.connected(); }));  // streaming resumed to the menu
-    CHECK(rig.host.link().linkOutstanding() == 1);              // still owed: the menu will never acknowledge it
+    CHECK(rig.host.link().isConnected());
+    CHECK_FALSE(rig.cart.connected());  // the menu, where streaming stays off
 }
 
 TEST_CASE("a probe on a link that never goes quiet is refused for that, not as a config block that did not answer",
@@ -766,20 +845,25 @@ TEST_CASE("a probe on a link that never goes quiet is refused for that, not as a
     rig.dev.linkRom = true;
     rig.dev.cfg[0] = 69;
     rig.dev.cfg[2] = 0;
+    rig.dev.linkAckDelayMs = 30;  // a game that answers, but not instantly
     rig.connect();
     REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
-    {
-        std::lock_guard<std::mutex> l(rig.dev.mu);
-        rig.dev.linkDamaged = true;
-    }
-    // Every copy of the frame reaches the game damaged and is reported at once, so it is re-sent at once: the cart
-    // never stops acknowledging and the frame never stops being outstanding, so no turn is quiet for a read.
-    rig.push({0x90, 0x3C, 0x7F});
-    REQUIRE(waitUntil([&] { return rig.host.link().linkResends() >= 3; }));
+    // A stream the game keeps acknowledging: every turn has an ack in the last ack bound, so no turn is quiet for a
+    // config read, and the cart is answering as a game (its window moves), so the guard has nothing to look for either.
+    std::atomic<bool> streaming{true};
+    std::thread feeder([&] {
+        while (streaming.load(std::memory_order_relaxed)) {
+            rig.push({0x90, 0x3C, 0x7F});
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // acks in flight before the probe asks
     Job job;
     std::string why;
     const auto t0 = Clock::now();
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));
+    streaming.store(false, std::memory_order_relaxed);
+    feeder.join();
     CHECK(why == "the reliable link never went quiet for the cart's config read: the cart kept acknowledging the "
                  "stream");
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 900);  // its deadline
@@ -867,7 +951,8 @@ TEST_CASE("a restore whose write fails says the battery file is replaced and inc
     CHECK(job.state.load() == Job::Failed);
     CHECK(job.error.rfind("the battery file EDN8/gamedata/game.nes/bram.srm was replaced and is incomplete: restore "
                           "again (", 0) == 0);
-    CHECK(rig.cart.connected());
+    CHECK(rig.host.link().isConnected());
+    CHECK_FALSE(rig.cart.connected());  // the menu
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
         CHECK(rig.dev.filesOpen == 0);                 // closed on the failure path
@@ -1049,7 +1134,7 @@ TEST_CASE("the notes a leaving cart node held get their note-offs from the seria
           "[n8][cart-release]") {
     SECTION("raw: after a note-on still waiting for its release time") {
         Rig rig;
-        rig.connect();
+        rig.connectGame();
         // The note-on is due 200 ms out (a lookahead and a late frame), so it is still in the ring when the node's
         // destroy hands over its books: its note-off must not overtake it.
         const Bytes on{0x90, 0x3C, 0x7F};
@@ -1079,11 +1164,11 @@ TEST_CASE("the notes a leaving cart node held get their note-offs from the seria
         CHECK(rig.dev.applied[1] == Bytes{0x80, 0x3C, 0x00});
         CHECK(rig.dev.applied[2] == Bytes{0x81, 0x43, 0x00});
     }
-    SECTION("a job's pause: none while it holds the port, all on the first streaming turn after it") {
+    SECTION("a job's pause: nothing is written while the cart is at its menu") {
         Rig rig;
         rig.dev.files[kGameBattery] = saveOf(3000, 7);
         rig.dev.fileReadDelayMs     = 20;
-        rig.connect();
+        rig.connect();  // the menu, where a battery job runs
         Job job;
         REQUIRE(rig.submit(battery("dump"), job));
         REQUIRE(waitUntil([&] { return rig.dev.count("file-rd") > 0; }));
@@ -1092,17 +1177,14 @@ TEST_CASE("the notes a leaving cart node held get their note-offs from the seria
         CHECK(rig.dev.count("fifo:8") == 0);
         REQUIRE(waitUntil([&] { return job.finished(); }));
         CHECK(job.state.load() == Job::Done);
-        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:81 43 00") == 1; }));
-        CHECK(rig.dev.count("fifo:80 3C 00") == 1);
         CHECK(rig.dev.count("file-rd") == 6);
-        std::lock_guard<std::mutex> l(rig.dev.mu);
-        const auto lastRead = std::find(rig.dev.log.rbegin(), rig.dev.log.rend(), "file-rd");
-        const auto release  = std::find(rig.dev.log.rbegin(), rig.dev.log.rend(), "fifo:80 3C 00");
-        CHECK(release < lastRead);  // reversed: the note-off is the later entry
+        // The release was dropped with the ring when the guard read the menu: a menu holds no notes, and its FIFO is a
+        // command parser. Nothing of it reached the cart, before or after the job.
+        CHECK(rig.dev.count("fifo:8") == 0);
     }
     SECTION("a disconnect writes a release still waiting before the port closes; a link that is down drops one") {
         Rig rig;
-        rig.connect();
+        rig.connectGame();
         // A note-on due a second out never goes (the disconnect throws the ring away), and the release does not wait
         // for it: a note-off for a note that never sounded is harmless, a held one left behind is not.
         const Bytes on{0x90, 0x3C, 0x7F};
@@ -1116,7 +1198,7 @@ TEST_CASE("the notes a leaving cart node held get their note-offs from the seria
         // Down: nothing runs to write it, and the next connect does not either (the console it reaches may have been
         // power-cycled since, and a cart node that still drives it keeps its own books).
         rig.cart.releaseNotes(heldNotes());
-        rig.connect();
+        rig.connectGame();
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         CHECK(rig.dev.count("fifo:80 3C 00") == 1);
     }
@@ -1131,7 +1213,7 @@ TEST_CASE("a handover releases only the notes the leaving node left, not a key t
     // keeps the index of the chunk whose note-on it last wrote for each key.
     SECTION("raw: the new node struck one of the keys the old one held") {
         Rig rig;
-        rig.connect();
+        rig.connectGame();
         rig.push({0x90, 0x3C, 0x7F});  // the leaving node, key 60
         rig.push({0x90, 0x43, 0x7F});  // ... and key 67
         REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 43 7F") == 1; }));
@@ -1148,7 +1230,7 @@ TEST_CASE("a handover releases only the notes the leaving node left, not a key t
     }
     SECTION("raw: the new node's note-on is still waiting for its release time when the release runs") {
         Rig rig;
-        rig.connect();
+        rig.connectGame();
         rig.push({0x90, 0x3C, 0x7F});
         REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
         const std::uint64_t mark = rig.cart.pushMark();
@@ -1164,7 +1246,7 @@ TEST_CASE("a handover releases only the notes the leaving node left, not a key t
     }
     SECTION("raw: a release waits for a SysEx the bytes port split across chunks") {
         Rig rig;
-        rig.connect();
+        rig.connectGame();
         // A node's bytes port can hand over half a SysEx: the cart's parser is inside a message until the F7, so a
         // note-off written between the halves is payload, not a message, and the key it meant to release stays down.
         rig.push({0xF0, 0x7E, 0x7F});  // the first half: F0 and two of its data bytes
@@ -1209,4 +1291,278 @@ TEST_CASE("a handover releases only the notes the leaving node left, not a key t
             CHECK_FALSE(cutsKey60);
         }
     }
+}
+
+TEST_CASE("a menu episode does not leave a release waiting behind the chunks it dropped", "[n8][cart-release]") {
+    // The guard drops the ring at the menu, and a release waits until the serial thread has taken that many chunks off
+    // it (chunksWritten_ reaching the push count it was asked at). A chunk the guard drops is a chunk gone, so the
+    // count has to include it: otherwise every later release on this connection waits for chunks nobody will push - the
+    // console holding a tone until the link ends - and every later handover reads the new node's note-on as older than
+    // the mark it waits behind, which is the key-cutting bug this release exists to stop.
+    SECTION("raw: the leaving node's last push never went, so its release waits for a count that includes it") {
+        Rig rig;
+        rig.connectGame();
+        // Still in the ring when the console goes to its menu: the lookahead keeps it there, and the trip drops it.
+        rig.host.link().setLookaheadMs(1000);
+        rig.push({0x90, 0x3C, 0x7F});
+        {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            rig.dev.menu = true;  // the menu, and the chunk in flight is dropped with the ring
+        }
+        REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+        REQUIRE(waitUntil([&] { return !rig.cart.connected(); }));
+        // A game booted by hand from the cart's own browser, which is the state read back a game again.
+        {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            rig.dev.menu   = false;
+            rig.dev.cfg[0] = 69;
+            rig.dev.cfg[2] = 0;
+        }
+        REQUIRE(waitUntil([&] { return rig.cart.connected(); }));
+        rig.host.link().setLookaheadMs(0);
+        rig.push({0x90, 0x3E, 0x7F});  // one chunk written after the trip, so the ring is empty again
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3E 7F") == 1; }));
+        // The node that pushed it leaves with no successor (the setting off, the system removed): its release waits for
+        // every push, and every push has gone, dropped or written, so the note-offs go.
+        rig.cart.releaseNotes(heldNotes());
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+    }
+    SECTION("raw: a handover after the trip still keeps the new node's key") {
+        Rig rig;
+        rig.connectGame();
+        rig.host.link().setLookaheadMs(1000);
+        rig.push({0x90, 0x3C, 0x7F});  // the leaving node, key 60, still in the ring at the trip
+        const std::uint64_t mark = rig.cart.pushMark();
+        {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            rig.dev.menu = true;
+        }
+        REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+        {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            rig.dev.menu   = false;
+            rig.dev.cfg[0] = 69;
+            rig.dev.cfg[2] = 0;
+        }
+        REQUIRE(waitUntil([&] { return rig.cart.connected(); }));
+        rig.host.link().setLookaheadMs(0);
+        rig.push({0x90, 0x3C, 0x7F});  // the node taking over, on the key the old one held
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
+        rig.cart.releaseNotes(heldNotes(), mark);
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:81 43 00") == 1; }));  // the old node's other key went
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 0);  // and the new node's is still down
+        CHECK(rig.cart.connected());
+    }
+}
+
+TEST_CASE("a clock between a message's halves is not a message boundary", "[n8][cart-release]") {
+    // A real-time byte (0xF8 and up) may stand between any two bytes of a message without ending it, so the tracker of
+    // what the cart's parser is inside must step over one. Read as a status it would look like a boundary, and a
+    // leaving node's note-off written there would land inside the message as its payload.
+    Rig rig;
+    rig.connectGame();
+    rig.push({0x90, 0x3C});  // half a note-on: the parser is inside a message
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C") == 1; }));
+    rig.push({0xF8});  // a clock
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F8") == 1; }));
+    rig.cart.releaseNotes(heldNotes());
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(rig.dev.count("fifo:80 3C 00") == 0);  // held: the message is not finished
+    rig.push({0x7F});                             // its tail, which completes it
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
+    CHECK(rig.dev.count("fifo:81 43 00") == 1);
+}
+
+TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser there", "[n8][menu-guard]") {
+    // The N8 menu reads the same FIFO a game reads MIDI from, so a data pair inside a message - 0x2A 0x73, say - is its
+    // '*s': start an app. The guard reads where the cart runs from the FPGA config block (a system-region read: no bus,
+    // no FIFO), and drops rather than streams while that says menu.
+    Rig rig;
+    rig.connect();  // at its menu: the fake's default
+    // The connect-time link probe holds the serial thread for up to 100 ms, and a push waits in the ring behind it:
+    // wait it out, so a failing run shows the cart reading the bytes rather than the test outrunning the link.
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    const Bytes on{0x90, 0x2A, 0x73};
+    CHECK_FALSE(rig.cart.push(0, on.data(), on.size(), false, 48000.0));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK(rig.dev.menu);  // nothing booted it
+    CHECK(rig.dev.booted.empty());
+    CHECK(rig.dev.count("fifo:90 2A 73") == 0);
+    CHECK_FALSE(rig.cart.connected());  // attached, streaming nothing: what a cart node reads
+
+    // A game booted by hand is streamed to, and reads connected again.
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu = false;  // the user started a game from the cart's own browser
+    }
+    REQUIRE(waitUntil([&] { return rig.cart.connected(); }));
+    rig.push({0x90, 0x2A, 0x73});
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 2A 73") == 1; }));
+    // And once the guard has read the menu during a stream, what is pushed goes nowhere and is counted: the cart reads
+    // disconnected the moment the read lands, which is how this waits for it.
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu = true;
+    }
+    REQUIRE(waitUntil([&] { return !rig.cart.connected(); }));
+    const std::uint64_t dropped = rig.cart.dropped();
+    rig.push({0x90, 0x2A, 0x73});
+    CHECK(rig.cart.dropped() == dropped + 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(rig.dev.count("fifo:90 2A 73") == 1);
+}
+
+TEST_CASE("a job submitted while the ring holds a push, right after the console resets to its menu, writes nothing "
+          "into the menu",
+          "[n8][menu-guard]") {
+    // The job's own menu probe reads the config block, and that read is the guard's chance to see the reset: it must
+    // trip before the pause delivers what the ring still holds, or the menu reads a note-on as its own commands.
+    Rig rig;
+    rig.connectGame();
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu = true;  // the console's reset button, a moment before the submission
+        rig.dev.files[kGameBattery] = saveOf(1024, 13);
+    }
+    // Still in the ring when the job is taken: a lookahead this long is what the pause's drain would deliver first.
+    rig.host.link().setLookaheadMs(200);
+    rig.push({0x91, 0x41, 0x7F});
+    Job job;
+    REQUIRE(rig.submit(battery("dump"), job));
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Done);
+    CHECK(job.result == saveOf(1024, 13));
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(rig.dev.count("fifo:91 41 7F") == 0);  // the ring it held went nowhere
+}
+
+TEST_CASE("leaving the menu re-probes the link, so a game the user starts by hand streams framed", "[n8][menu-guard]") {
+    Rig rig;
+    rig.dev.linkRom = true;  // BlipToaster, which answers the probe
+    rig.connect();           // at its menu: the probe finds nothing, and the link stays raw
+    REQUIRE(waitUntil([&] { return !rig.cart.connected(); }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu = false;  // the user started a game from the cart's own browser
+        rig.dev.cfg[0] = 69;
+        rig.dev.cfg[2] = 0;
+    }
+    // The guard's next read sees a game, and leaving the menu runs the link probe again: the frames start.
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;
+    }));
+}
+
+TEST_CASE("a job submitted under a stream into the menu is accepted, and the stream is dropped there",
+          "[n8][menu-guard]") {
+    // The design's starvation case: a framed link whose game reset to its menu keeps a stale window that is re-sent and
+    // re-stamped on every turn, so at about 200 messages a second no turn was quiet for the probe. Once the guard has
+    // the menu, nothing is framed, the window is reset and every turn is quiet.
+    Rig rig;
+    rig.dev.menu    = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0]  = 69;
+    rig.dev.cfg[2]  = 0;
+    rig.dev.files[kGameBattery] = saveOf(1024, 9);
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;
+    }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu = true;  // the console's reset button: the game is gone, and the link is still framed
+    }
+    std::atomic<bool> streaming{true};
+    std::thread feeder([&] {
+        while (streaming.load(std::memory_order_relaxed)) {
+            rig.push({0x90, 0x3C, 0x7F});
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));  // about 200 messages a second
+        }
+    });
+    Job job;
+    const auto t0       = std::chrono::steady_clock::now();
+    const bool accepted = rig.submit(battery("dump"), job);
+    const auto waited =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    streaming.store(false, std::memory_order_relaxed);
+    feeder.join();
+    CHECK(accepted);
+    CHECK(waited < 900);  // a turn was quiet for the read, rather than the probe waiting out its deadline
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Done);
+    CHECK(job.result == saveOf(1024, 9));
+    CHECK_FALSE(rig.cart.connected());  // the menu: attached, streaming nothing
+}
+
+TEST_CASE("a menu that never goes quiet is read anyway after about a second", "[n8][menu-guard]") {
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.dev.menu    = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0]  = 69;
+    rig.dev.cfg[2]  = 0;
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;
+    }));
+    // The console resets to its menu, and the menu chatters on the back-channel: the quiet rule stamps the last heard
+    // on ANY byte, so the turn never goes quiet and only the hold's bound can end it.
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu      = true;
+        rig.dev.chatterMs = 40;
+    }
+    rig.push({0x90, 0x3E, 0x7F});  // an unacknowledged frame: this is what a re-send would take into the menu
+    // A second message pushed while the hold waits for its read, a lookahead out so it is still in the ring (or in
+    // hand) at the trip: the trip drops it, and nothing may write it afterwards. It is what the FIFO count below is for
+    // - a frame the fake's menu branch never reads cannot show it.
+    rig.host.link().setLookaheadMs(1100);
+    rig.push({0x90, 0x41, 0x7F});
+    rig.host.link().setLookaheadMs(0);
+    const auto t0 = Clock::now();
+    REQUIRE(waitUntil([&] { return !rig.cart.connected(); }, 4000));  // the trip, which is the read landing
+    const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count();
+    CHECK(waited >= 900);    // it waited out the bound rather than reading on a hunch with a frame in flight
+    CHECK(waited < 2500);
+    // The frame was held, not re-sent, on every turn of the wait: the menu would have read a re-send as a command.
+    CHECK(rig.host.link().linkResends() == 0);
+    // And nothing more goes to the cart's FIFO after the trip. The fake's frameSeqs cannot say this (its menu branch
+    // returns before it reads a frame), so this counts what the host WROTE, which a re-send would add to.
+    const std::size_t writes = rig.dev.count("fifo:");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK(rig.dev.count("fifo:") == writes);  // nothing more was written after the trip
+    CHECK(rig.dev.menu);
+    CHECK(rig.dev.booted.empty());
+}
+
+TEST_CASE("a menu whose chatter lands ahead of its answers is read as a menu, not as a game", "[n8][menu-guard]") {
+    // The guard's read of the config block takes the reply's first bytes as they come. A cart that talks while the host
+    // is not reading leaves bytes in the input, and a reply read behind them is garbled: map_idx 255 with one status
+    // byte in front of it reads as a game, which would leave the guard streaming into the menu. Flushing the input
+    // before the read is what keeps the answer the cart's own.
+    Rig rig;
+    rig.dev.chatterMs      = 40;  // one byte whenever the cart owes the host no reply
+    rig.dev.chatterGarbles = true;  // ... left in the input for the next read, as one said between reads is
+    rig.connect();                  // at its menu: the fake's default, so the connect-time read seeds "menu"
+    REQUIRE(rig.host.link().atMenu());
+    rig.push({0x90, 0x2A, 0x73});  // '*s' if the menu ever read it
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));  // several read cadences
+    CHECK(rig.host.link().atMenu());
+    CHECK_FALSE(rig.cart.connected());
+    CHECK(rig.dev.menu);
+    CHECK(rig.dev.booted.empty());
+    CHECK(rig.dev.count("fifo:90 2A 73") == 0);
 }

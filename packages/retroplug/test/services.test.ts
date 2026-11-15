@@ -80,7 +80,16 @@ test("the product contributes a card-row service and a control-surface service a
 test("the N8 card poll repaints only when the job's snapshot moves, and a job does move it", () => {
   const { host } = rig();
   setN8LinkClient({
-    linkConfig: () => ({ ports: [], selectedPort: "", connected: false, enabled: false, lookaheadMs: 10, bytes: 0, error: "" }),
+    linkConfig: () => ({
+      ports: [],
+      selectedPort: "",
+      connected: false,
+      atMenu: false,
+      enabled: false,
+      lookaheadMs: 10,
+      bytes: 0,
+      error: "",
+    }),
     setPort: () => {},
     connect: () => {},
     setLookahead: () => {},

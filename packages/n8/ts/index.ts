@@ -40,6 +40,7 @@ export interface N8LinkConfig {
   ports: N8Port[]; // available serial ports
   selectedPort: string; // "" = none chosen (connect auto-picks the attached N8)
   connected: boolean; // the serial link is open + handshaken
+  atMenu: boolean; // the cart is at its menu: the link is up, and nothing is streamed to it (its FIFO is a command parser)
   enabled: boolean; // the user's "stream to the N8" toggle
   lookaheadMs: number; // timed-release latency the serial thread applies
   bytes: number; // bytes forwarded since connect (status)
@@ -191,6 +192,7 @@ function readConfig(raw: unknown): N8LinkConfig {
     ports,
     selectedPort: typeof c.selectedPort === "string" ? c.selectedPort : "",
     connected: !!c.connected,
+    atMenu: !!c.atMenu,
     enabled: !!c.enabled,
     lookaheadMs: typeof c.lookaheadMs === "number" ? c.lookaheadMs : 0,
     bytes: typeof c.bytes === "number" ? c.bytes : typeof c.bytes === "bigint" ? Number(c.bytes) : 0,

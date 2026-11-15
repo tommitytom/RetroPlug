@@ -104,6 +104,7 @@ const N8_CONFIG = {
   ports: [{ port: "/dev/ttyACM0", isN8: true }],
   selectedPort: "/dev/ttyACM0",
   connected: true,
+  atMenu: false,
   enabled: true,
   lookaheadMs: 10,
   bytes: 0,

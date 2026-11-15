@@ -53,9 +53,13 @@ function n8MenuChildren(host: UiHost, cfg: N8Config, ctx: MenuBuildContext): Men
   }
   const portName = (n: number) => (n === 0 ? "" : portValues[n - 1] ?? cfg.selectedPort);
   const laIdx = Math.max(0, N8_LOOKAHEADS.indexOf(cfg.lookaheadMs));
+  // The cart at its menu is attached and streaming nothing: its FIFO reads MIDI as the menu's own '*' commands, so the
+  // link drops rather than delivers, and the status says where the cart is instead of counting bytes that are not going.
   const status = cfg.enabled
     ? cfg.connected
-      ? `Streaming (${cfg.bytes} bytes)`
+      ? cfg.atMenu
+        ? "At the N8 menu (not streaming)"
+        : `Streaming (${cfg.bytes} bytes)`
       : cfg.error
         ? `Error: ${cfg.error}`
         : "Connecting..."

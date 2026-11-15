@@ -79,6 +79,10 @@ constexpr int kProbeLinkBusy = -3;
 // a control thread (the DAW's) from waiting out the read's own 2 s timeout to learn it.
 constexpr int kMenuProbeMs = 1000;
 
+// How long the menu guard's own read of the config block may wait for the cart: it runs between chunks on the serial
+// thread, so a cart that stopped answering must cost the stream a fraction of the read timeout (2 s), not all of it.
+constexpr std::uint32_t kMenuReadMs = 100;
+
 // Why a battery job refuses a running game: the battery file lives on the SD card, which only the menu's file API
 // reaches (a running game has no menu), and the cart's own battery is never touched over USB (on the real cart one
 // read of it wedged a running BlipToaster, and one at the menu left the menu deaf to its commands).
@@ -184,6 +188,22 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
     // A value a param changed while the link is up: the serial thread owns the port, so it writes the standing value
     // on its own turn, between MIDI chunks, and marks the generation it wrote. A throw leaves the generation behind,
     // so the next turn tries again (N8Link catches it: a config write must not take the MIDI link down).
+    // Where the cart runs, for the link's menu guard (N8Link::MenuCheck): the config block's map_idx, 255 while the N8
+    // OS's own menu shows. A system-region read, so it touches neither the cart's bus nor a running game's FIFO, and it
+    // takes a short timeout: it is made between chunks, and a cart silent for two seconds per turn would stall the
+    // stream. -1 (the block did not answer) leaves the link's state as it was.
+    link_.setMenuCheck([](Edio& edio) {
+        // The short timeout is this call's, not the Edio's from here on: a scope guard puts the table back however the
+        // read ends, a throw from the port included, so no later call inherits a 100 ms reply timeout.
+        struct ReadMs {
+            rp::n8::Timeouts& table;
+            rp::n8::Timeouts  saved;
+            ~ReadMs() { table = saved; }
+        } restore{edio.timeouts(), edio.timeouts()};
+        restore.table.readMs = kMenuReadMs;
+        const int mapper = runningMapper(edio);
+        return mapper < 0 ? -1 : (mapper == kMenuMapper ? 1 : 0);
+    });
     link_.setOnControl([this](Edio& edio, bool backChannelQuiet) {
         // The config block a submission's refusal reads (probeMenu). Taken here, between chunks, for the reason the
         // volume is: a system-region read on the thread that owns the port, putting no byte in a running game's FIFO.
@@ -197,7 +217,13 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
         // covers a cart that keeps acknowledging.
         const unsigned probe = menuProbeGeneration_.load(std::memory_order_acquire);
         if (backChannelQuiet && probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
-            menuProbeIndex_.store(runningMapper(edio), std::memory_order_relaxed);
+            const int mapper = runningMapper(edio);
+            menuProbeIndex_.store(mapper, std::memory_order_relaxed);
+            // The same read tells the guard the cart is at its menu, and it does so before the submission that asked
+            // for it can hand over a job: a pause's drain must not write the ring into a menu the probe has just seen.
+            // Only that way round: this read is not flushed first, as the guard's own are, so a chattering cart's byte
+            // could make a menu read as a game, and only the guard's flushed read may re-enable the stream.
+            if (mapper == kMenuMapper) link_.reportMenuState(true);
             menuProbeApplied_.store(probe, std::memory_order_release);
         }
         const unsigned generation = expVolGeneration_.load(std::memory_order_acquire);
@@ -219,6 +245,7 @@ N8ConfigDto N8Host::getConfig() {
     c.ports        = lister_ ? lister_() : std::vector<N8PortDto>{};
     c.selectedPort = port_;
     c.connected    = link_.isConnected();
+    c.atMenu       = link_.atMenu();
     c.enabled      = enabled_;
     c.lookaheadMs  = link_.lookaheadMs();
     c.bytes        = link_.bytesForwarded();

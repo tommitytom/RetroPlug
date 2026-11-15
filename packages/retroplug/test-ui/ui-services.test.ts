@@ -70,6 +70,7 @@ const n8Link: N8LinkClient = {
     ports: [{ port: "/dev/ttyACM0", isN8: true }],
     selectedPort: n8State.selectedPort,
     connected: n8State.connected,
+    atMenu: false,
     enabled: n8State.enabled,
     lookaheadMs: 10,
     bytes: 0,

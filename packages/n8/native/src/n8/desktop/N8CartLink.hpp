@@ -34,7 +34,10 @@ public:
         dropped_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    bool          connected() const override { return host_.link().isConnected(); }
+    // What a cart NODE reads as connected: the link is up AND the cart is running a game. A menu is attached and
+    // streaming nothing (its FIFO is a command parser there), so a node treats it as disconnected and owes its notes no
+    // further - the existing disconnected rule - which is what "at the menu" means to the graph.
+    bool          connected() const override { return host_.link().isConnected() && !host_.link().atMenu(); }
     // [audio] N8Link::chunksPushed: the queue's own count, which the node reads after each of its pushes.
     std::uint64_t pushMark() const override { return host_.link().chunksPushed(); }
     // Every push of this adapter that lost its bytes, plus the chunks a stream stopped after a job found in its ring

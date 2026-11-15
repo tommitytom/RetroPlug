@@ -52,12 +52,15 @@ struct FakeN8 {
     bool                     linkDeaf = false;      // ... until it stops answering (it read no frame and acks nothing)
     int                      linkAckDelayMs = 0;    // how long the game takes to write a frame's ack back
     bool                     linkDamaged = false;   // every frame reaches the game damaged, and it says so each time
+    int                      chatterMs = 0;          // writes a byte on the back-channel this often (0: never)
+    bool                     chatterGarbles = false; // ... left for the host's next read, as one said between reads is
     int                      refuseExpVolWrites = 0; // the next N expansion-volume writes fail in the port
     int                      expVolAttempts = 0;    // every expansion-volume write the host made
     int                      fileDelayMs = 0;       // likewise each SD file write
     int                      fileReadDelayMs = 0;   // likewise each SD file read block
     bool                     failNextWrite = false; // the next SD file write answers its first block with an error
     int                      failOnFlushInput = 0;  // the Nth flushInput from now fails, as a port that just died does
+    bool                     failFlushAtGame = false; // every flush after the cart booted fails (an upload's last)
     bool                     failNextRead = false;  // the next SD file read block answers an error
     bool                     failNextList = false;  // the next directory load answers a disk error
     int                      filesOpen = 0;         // files opened on the card and not yet closed
@@ -127,10 +130,29 @@ struct FakeN8Port : PortTransport {
         std::lock_guard<std::mutex> l(dev_.mu);
         failure_.clear();
         releaseAcks(true);  // whatever the game has had time to write since the last read
+        // A menu that never goes quiet: one byte whenever the cart owes the host no reply, which the link reads as it
+        // having said something (its quiet rule stamps the last heard on ANY byte). It is handed back in this read, so
+        // a reply the cart owes is never garbled by one - unless chatterGarbles, which leaves it in the input for the
+        // next read instead, as a cart that talks while the host is not reading does: the reply is then behind it, and
+        // a flush of the input is the only thing that gets it out of the way.
+        if (dev_.chatterMs > 0 && !dev_.chatterGarbles && out_.empty()) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= chatterDue_) {
+                out_.push_back(0xB0);  // a status byte the ack parser skips
+                chatterDue_ = now + std::chrono::milliseconds(dev_.chatterMs);
+            }
+        }
         std::size_t i = 0;
         while (i < n && !out_.empty()) {
             b[i++] = out_.front();
             out_.pop_front();
+        }
+        if (dev_.chatterMs > 0 && dev_.chatterGarbles) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= chatterDue_) {
+                out_.push_front(0xB0);  // said while the host was not reading: the next read meets it first
+                chatterDue_ = now + std::chrono::milliseconds(dev_.chatterMs);
+            }
         }
         return i;
     }
@@ -138,7 +160,10 @@ struct FakeN8Port : PortTransport {
         std::lock_guard<std::mutex> l(dev_.mu);
         failure_.clear();
         out_.clear();
-        if (dev_.failOnFlushInput > 0 && --dev_.failOnFlushInput == 0) failure_ = "fake port: flushInput failed";
+        if (dev_.failFlushAtGame && !dev_.booted.empty())
+            failure_ = "fake port: flushInput failed";
+        else if (dev_.failOnFlushInput > 0 && --dev_.failOnFlushInput == 0)
+            failure_ = "fake port: flushInput failed";
     }
     std::string failure() const override {
         std::lock_guard<std::mutex> l(dev_.mu);
@@ -452,6 +477,7 @@ private:
     std::size_t              fileLeft_ = 0, blockLeft_ = 0;
     Bytes                    menu_;
     std::deque<PendingAck>   acks_;  // what the game owes the link, in the order it will write it
+    std::chrono::steady_clock::time_point chatterDue_{};  // the next unsolicited back-channel byte
     std::string              menuPath_;
     enum { Idle, WantSync, WantSeq, InMsg, WantSum } link_ = Idle;
     std::uint8_t             next_ = 0, seq_ = 0;

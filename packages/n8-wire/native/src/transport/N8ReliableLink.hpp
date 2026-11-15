@@ -129,6 +129,15 @@ public:
     }
 
     std::size_t outstanding() const { return window_.size(); }
+    // Whether the window has stopped MOVING: the oldest outstanding frame first went out at least timeoutNs ago, and
+    // nothing has acknowledged it since (an ack that advances the window makes a newer frame the oldest, with a newer
+    // first send). This is not the re-send question above, which measures from the last thing the cart said: a
+    // back-channel that chatters keeps that fresh for ever, and a transport that must look before it re-sends - a cart
+    // at its menu reads a stale frame as one of its commands - needs the progress, not the silence.
+    bool progressOverdue(std::int64_t nowNs) const {
+        const std::int64_t first = oldestFirstSentNs();
+        return first != kNever && nowNs - first >= timing_.timeoutNs;
+    }
     // When the cart last said anything on the back-channel (an ack or not), and when the oldest outstanding frame first
     // went out (a re-send does not move it): with both far enough behind, a cart is not acknowledging anything, so a
     // transport may read a reply off the same channel. kNever while nothing is outstanding or that frame has not left;

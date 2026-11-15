@@ -167,16 +167,16 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
         std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
         withRoms(e, systems, roms);
         REQUIRE(e.setGraph(withCart(systems)).ok);
+        {
+            // A game, not the menu: the note this case stages first has to reach the cart, and a menu is where a
+            // streamed message does not go. Set before the connect, which is where the link's guard reads it.
+            std::lock_guard<std::mutex> l(dev.mu);
+            dev.menu = false;
+        }
         host.setPort("/dev/fake");
         host.connect(true);
         REQUIRE(host.link().isConnected());
         host.link().setLookaheadMs(0);
-        {
-            // A game, not the menu: the note this case stages first has to reach the cart, and a menu is where a
-            // streamed message does not go.
-            std::lock_guard<std::mutex> l(dev.mu);
-            dev.menu = false;
-        }
 
         // A note staged at the engine reaches the cart's FIFO, through the node, N8CartLink and N8Link.
         e.stageMidi(0, Bytes{0x90, 60, 100});
@@ -206,11 +206,22 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
                 dev.menu = true;
             }
 
-            // A dump at the menu is taken; a replan without the cart node abandons it at reclaim (Removed, through the
-            // engine's record), and the note the node still held (62) gets its note-off once streaming resumes.
+            // A note the node holds while the cart is still a game, then the console's menu for the dump: the guard
+            // reads it between chunks, and from then on nothing is streamed.
             e.stageMidi(0, Bytes{0x90, 62, 100});
             block(e);
             REQUIRE(waitUntil([&] { return dev.count("fifo:90 3E 64") == 1; }));
+            {
+                std::lock_guard<std::mutex> l(dev.mu);
+                dev.menu = true;
+            }
+            // The guard reads the cart's state between chunks, so give it the read before anything is expected of the
+            // menu: a message pushed in the window before it is a message the menu may read.
+            REQUIRE(waitUntil([&] { return host.link().atMenu(); }));
+            // A dump at the menu is taken; a replan without the cart node abandons it at reclaim (Removed, through the
+            // engine's record), and the note the node still held (62) is dropped with the stream: the menu reads the
+            // note-off as one of its own commands. Nothing sounds for it either way: the console is in its menu, not in
+            // the game that started the note.
             const auto dump = e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump", "game.nes"));
             REQUIRE(dump.id != 0);
             REQUIRE(waitUntil([&] { return dev.count("file-rd") >= 1; }));
@@ -222,9 +233,9 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             CHECK_FALSE(removed->ok);
             CHECK(removed->error == "node cart left the plan before the job completed");
             REQUIRE(waitUntil([&] { return !host.cartJobBusy(); }));
-            REQUIRE(waitUntil([&] { return dev.count("fifo:80 3E 00") == 1; }));
-            CHECK(dev.count("file-rd") < 8);  // it stopped early
-            CHECK(logIndex(dev, "file-rd") < logIndex(dev, "fifo:80 3E 00"));
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            CHECK(dev.count("fifo:80 3E 00") == 0);  // at the menu nothing was written for it
+            CHECK(dev.count("file-rd") < 8);         // it stopped early
             CHECK(host.link().isConnected());
 
             // The node again, and an upload through it: the menu installs and boots the image, streaming stops, and the

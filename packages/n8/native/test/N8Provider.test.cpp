@@ -301,7 +301,9 @@ TEST_CASE("the N8 provider installs its cart link, restores n8.cfg and clears th
     provider->restore(self);
     CHECK(n8.getConfig().connected);
     CHECK(n8.getConfig().lookaheadMs == 0);
-    CHECK(cart->connected());
+    CHECK(n8.getConfig().atMenu);        // the fake cart sits at its menu: the guard says so
+    CHECK_FALSE(cart->connected());      // ...which a cart node reads as disconnected
+    CHECK(n8.link().isConnected());      // the port is up all the same
 
     // The facet's service is the provider's, over the same host.
     auto* rpc = static_cast<rp::n8::N8Rpc*>(provider->rpc_service(self));
@@ -311,7 +313,7 @@ TEST_CASE("the N8 provider installs its cart link, restores n8.cfg and clears th
     void* const installed = registry.link;
     provider->destroy(self);
     CHECK(registry.cleared == std::vector<void*>{installed});
-    CHECK(registry.connectedAtClear == std::vector<bool>{true});  // read through the link, still streaming
+    CHECK(registry.connectedAtClear == std::vector<bool>{false});  // read through the link: at the menu, so not streaming
 }
 
 TEST_CASE("the N8 provider refuses another ABI, and one whose link the registry refuses clears nothing",

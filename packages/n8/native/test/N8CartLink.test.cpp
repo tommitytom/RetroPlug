@@ -201,6 +201,7 @@ TEST_CASE("N8CartLink: a push reaches the cart as FIFO writes, timed at the bloc
     FakeDevice dev;
     N8Host     host(factoryFor(dev), noPorts(), tempCfgDir());
     host.link().setLinkAllowed(false);  // no probe: the wire below is the pushes alone
+    host.link().setMenuCheck({});       // nor a menu guard: its own config reads would be among the wire this counts
     REQUIRE(host.link().connect("fake"));
     N8CartLink link(host);
     REQUIRE(link.connected());

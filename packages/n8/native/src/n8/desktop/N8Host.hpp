@@ -27,6 +27,9 @@ struct N8ConfigDto {
     std::string            selectedPort;
     bool                   connected = false;
     bool                   enabled = false;
+    // The cart is at its menu (N8Link::atMenu): the link is up, and the stream is dropped rather than delivered, since
+    // a menu reads the FIFO as commands. Settings > N8 says so, and a cart node's connected reads 0.
+    bool                   atMenu = false;
     int                    lookaheadMs = 0;
     std::uint64_t          bytes = 0;
     std::string            error;

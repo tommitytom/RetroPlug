@@ -65,6 +65,7 @@ interface CfgStub {
   ports: { port: string; isN8: boolean }[];
   selectedPort: string;
   connected: boolean;
+  atMenu: boolean;
   enabled: boolean;
   lookaheadMs: number;
   bytes: number;
@@ -77,6 +78,7 @@ const DEFAULT_CFG: CfgStub = {
   ports: [{ port: "/dev/ttyACM0", isN8: true }],
   selectedPort: "/dev/ttyACM0",
   connected: true,
+  atMenu: false,
   enabled: true,
   lookaheadMs: 10,
   bytes: 0,
@@ -451,5 +453,26 @@ test("a persisted port that isn't currently detected is still shown, tagged '(no
     expect(findItem(n8Submenu(stores, be), "n8-port")!.label).toBe("Port: /dev/ttyOLD (not detected)");
   } finally {
     env.restore();
+  }
+});
+
+test("the status row says where the cart is: streaming, or at its menu with nothing going to it", () => {
+  // A cart at its menu is attached and streaming nothing: its FIFO reads MIDI as the menu's own '*' commands, so the
+  // native link drops it. The row says the menu rather than counting bytes the cart is not hearing.
+  const streaming = installN8({ bytes: 1234 });
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    expect(findItem(n8Submenu(stores, be), "n8-status")?.label).toBe("Status: Streaming (1234 bytes)");
+  } finally {
+    streaming.restore();
+  }
+  const atMenu = installN8({ atMenu: true, bytes: 1234 });
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    expect(findItem(n8Submenu(stores, be), "n8-status")?.label).toBe("Status: At the N8 menu (not streaming)");
+  } finally {
+    atMenu.restore();
   }
 });

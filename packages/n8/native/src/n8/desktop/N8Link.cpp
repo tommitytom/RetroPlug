@@ -13,6 +13,14 @@ namespace retroplug {
 
 namespace {
 using steady = std::chrono::steady_clock;
+// How often the cart's at-menu state is read on a quiet turn while streaming (raw, framed and idle, or already at the
+// menu); how long a stream whose window has stopped moving waits for a quiet turn before it is read anyway (a menu that
+// chatters on the back-channel keeps the quiet rule fresh for ever, so only this bound ends it); and how long a read
+// that did not answer holds the next one off, so a port that keeps timing out costs the stream 100 ms a second, not
+// 100 ms in every 250. The bound is also the job probe's own deadline (N8Host's kMenuProbeMs).
+constexpr std::int64_t kMenuReadNs = 250'000'000;
+constexpr std::int64_t kMenuHoldNs = 1'000'000'000;
+constexpr std::int64_t kMenuReadFailNs = 1'000'000'000;
 // RP_N8LINK_TRACE=1 logs every byte the link writes and every back-channel byte it reads (stderr) - read once.
 bool traceOn() {
     static const bool on = std::getenv("RP_N8LINK_TRACE") != nullptr;
@@ -99,6 +107,27 @@ bool N8Link::connect(const std::string& port) {
     { TimedChunk drop; while (ring_.tryPop(drop)) {} }
     chunksWritten_ = chunksPushed_.load(std::memory_order_acquire);  // the ring is empty: nothing pushed is still to go
     std::fill(std::begin(lastOn_), std::end(lastOn_), kNoChunk);     // a fresh connection's cart holds no note of ours
+    // Nor is a prior connection's message still open on this one's wire: a port that ended mid-SysEx would otherwise
+    // hold the release gate open until an F7 that is never coming.
+    wireExpect_      = 0;
+    wireSysex_       = false;
+    wireOpenSinceNs_ = 0;
+    // The cart's at-menu state, on the fresh port and before any producer may push: a menu reads the FIFO as commands,
+    // so the state decides whether anything may be streamed at all. A check that fails to answer leaves the state as it
+    // was (not the menu), which streams as the link always did.
+    atMenu_.store(false, std::memory_order_relaxed);
+    menuHoldSince_  = 0;
+    menuReadDueNs_  = 0;
+    menuGameUntilNs_ = 0;
+    if (menuCheck_) {
+        try {
+            // What the cart said after the handshake is not this read's reply: a flush keeps a chattering cart's byte
+            // out of the block's first byte, which would read as a game (see readMenuState).
+            flushPort();
+            atMenu_.store(menuCheck_(*edio_) == 1, std::memory_order_relaxed);
+        } catch (const std::exception&) {
+        }
+    }
     bytesForwarded_.store(0, std::memory_order_relaxed);
     controlRetryAtNs_ = 0;  // a prior connection's failed control write does not hold this one's first turn back
     backChannelQuiet_.store(true, std::memory_order_relaxed);
@@ -115,6 +144,11 @@ bool N8Link::connect(const std::string& port) {
 void N8Link::disconnect() {
     running_.store(false, std::memory_order_release);
     if (thread_.joinable()) thread_.join();  // the serial thread stops touching edio_ before we reset it
+    // Where the OLD cart ran says nothing about the next one: a status read while the link is down must not keep saying
+    // "at the menu" for a port that has been closed.
+    atMenu_.store(false, std::memory_order_relaxed);
+    menuHoldSince_   = 0;
+    menuGameUntilNs_ = 0;
     rel_.reset();
     reliable_.store(false, std::memory_order_release);
     connected_.store(false, std::memory_order_release);
@@ -124,7 +158,9 @@ void N8Link::disconnect() {
 
 bool N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::size_t n, double sampleRate) {
     if (n == 0) return true;
-    if (!connected_.load(std::memory_order_acquire)) {
+    if (!connected_.load(std::memory_order_acquire) || atMenu_.load(std::memory_order_relaxed)) {
+        // The menu reads the same FIFO a game takes MIDI from, so a message is a command there: dropped, not held (a
+        // game booted later starts fresh, and a console reset's game held the notes, not this one).
         pushesDropped_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
@@ -152,7 +188,7 @@ void N8Link::releaseNotes(const NoteSet& notes) {
 }
 
 void N8Link::releaseNotes(const NoteSet& notes, std::uint64_t mark) {
-    if (notes.none()) return;
+    if (notes.none() || atMenu_.load(std::memory_order_relaxed)) return;  // a menu holds no notes of ours
     std::lock_guard<std::mutex> l(jobMutex_);
     if (!acceptingJobs_) return;  // no serial thread to write them: the link is down
     releasePending_ |= notes;
@@ -166,9 +202,12 @@ void N8Link::releaseNotes(const NoteSet& notes, std::uint64_t mark) {
 
 void N8Link::writeReleases(bool stopping) {
     if (!releaseWanted_.load(std::memory_order_acquire)) return;
-    // Between two messages only: a note-off written inside one the bytes port split across chunks is not a message the
-    // cart's parser sees (a SysEx above all - a note-off inside an F0..F7 run is payload). A stream left mid-message
-    // holds it only until kMidMessageNs, so a node that dies mid-SysEx still gets its notes released.
+    // At the menu nothing goes, stopping or not: a menu holds no notes of ours, and its FIFO reads a note-off as its
+    // own commands.
+    if (atMenu_.load(std::memory_order_relaxed)) return;
+    // And between two messages only: a note-off written inside one the bytes port split across chunks is not a message
+    // the cart's parser sees (a SysEx above all - a note-off inside an F0..F7 run is payload). A stream left
+    // mid-message holds it only until kMidMessageNs, so a node that dies mid-SysEx still gets its notes released.
     if (!stopping && !atMessageBoundary(nowNs())) return;
     NoteSet      notes;
     std::uint64_t after = 0;
@@ -264,7 +303,14 @@ void N8Link::writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>&
     bytesForwarded_.fetch_add(out.size(), std::memory_order_relaxed);
 }
 
-void N8Link::serviceLink() {
+void N8Link::serviceLink(std::int64_t now) {
+    serviceLinkAcks();
+    serviceLinkResends(now);
+}
+
+// Acks in, and nothing out: the quiet test a turn's read is given must see what the cart has actually said, and a
+// reply read before it can have an ack land inside.
+void N8Link::serviceLinkAcks() {
     const std::int64_t now = nowNs();
     std::uint8_t buf[64];
     const std::size_t n = readPort(buf, sizeof buf, 0);   // whatever the cart has said: never waits
@@ -274,6 +320,13 @@ void N8Link::serviceLink() {
         std::fprintf(stderr, "\n");
     }
     if (n) rel_->onBackChannel(buf, n, now);
+}
+
+// Whatever the reliable link is due to re-send at `now`, out. Held while the menu guard looks (menuHold): a cart at its
+// menu reads a stale frame as a command. `now` is the turn's timestamp, the one the guard judged: the poll's timeout
+// and the guard's own threshold are the same instant for a frame that was never re-sent, so a second reading of the
+// clock here would let a turn just short of the threshold re-send on the far side of it, into the menu.
+void N8Link::serviceLinkResends(std::int64_t now) {
     std::vector<std::uint8_t> out;
     std::vector<int> seqs;
     rel_->poll(now, [&](const std::uint8_t* d, std::size_t k, int seq) {
@@ -284,6 +337,125 @@ void N8Link::serviceLink() {
     linkResends_.store(rel_->resends(), std::memory_order_relaxed);
     linkOutstanding_.store(rel_->outstanding(), std::memory_order_relaxed);
     linkRttMinNs_.store(rel_->rttMinNs(), std::memory_order_relaxed);
+}
+
+// The cart's at-menu state for this turn (see MenuCheck). Two things ask for a read: the cadence, on a turn quiet
+// enough for one; and a framed window that has STOPPED MOVING - the oldest frame unacknowledged past the link's own
+// timeout - which is the console reset, and whose re-send a menu would read as one of its commands. The second holds
+// the stream until the read answers. A cart that chatters cannot postpone that for ever: the quiet rule stamps the last
+// heard on any byte, so its bound, not the silence, is what ends it (kMenuHoldNs), after a flush of what it said.
+bool N8Link::menuHold(std::int64_t now, bool quiet) {
+    if (!menuCheck_) return false;
+    if (atMenu_.load(std::memory_order_relaxed)) {
+        menuHoldSince_ = 0;
+        // Still look, every cadence: a game the user starts from the cart's own browser is only visible in the config
+        // block, and nothing is outstanding at a menu, so a turn is always quiet for the read.
+        if (now >= menuReadDueNs_) readMenuState(now);
+        return atMenu_.load(std::memory_order_relaxed);  // nothing new goes out while it says menu
+    }
+    if (rel_ && rel_->progressOverdue(now) && now >= menuGameUntilNs_) {
+        const bool forced = menuHoldSince_ != 0 && now - menuHoldSince_ >= kMenuHoldNs;
+        if (quiet || forced) {
+            const bool answered = readMenuState(now);
+            menuHoldSince_ = 0;
+            if (atMenu_.load(std::memory_order_relaxed)) return true;
+            // The cart answered as a game: its acks are merely lost or damaged, and the stream goes on as it always
+            // did, at one read a second rather than one a turn. A read that did NOT answer waits the same (its own
+            // failure bound), so a window that keeps timing out costs the stream one read a second, not 100 ms a turn.
+            menuGameUntilNs_ = now + (answered ? kMenuHoldNs : kMenuReadFailNs);
+            return false;
+        }
+        if (menuHoldSince_ == 0) menuHoldSince_ = now;
+        return true;  // hold the re-send until the guard has looked
+    }
+    menuHoldSince_ = 0;
+    if (quiet && now >= menuReadDueNs_) readMenuState(now);
+    return atMenu_.load(std::memory_order_relaxed);
+}
+
+// One read of where the cart runs. True when it answered; a read that did not leaves the state as it was and holds the
+// next one off for a second (see kMenuReadFailNs).
+bool N8Link::readMenuState(std::int64_t now) {
+    menuReadDueNs_ = now + kMenuReadNs;
+    // Whatever the cart has already said goes first: the reply to this read must not begin with bytes a chattering cart
+    // left in the input, which would take the place of the reply's own (map_idx 255 behind one status byte reads as a
+    // game, and a game re-enables the stream into the menu). Every path flushes, not only the forced read: a raw link
+    // has nothing else draining its input between turns.
+    try {
+        flushPort();
+    } catch (const std::exception&) {
+        menuReadDueNs_ = now + kMenuReadFailNs;  // as a read that did not answer: the state stands, and the next waits
+        return false;
+    }
+    int answer = -1;
+    try {
+        answer = menuCheck_(*edio_);
+    } catch (const std::exception&) {
+        return false;  // the port's failure is the stream's to report at its next write; the state stands
+    }
+    if (answer < 0) {
+        menuReadDueNs_ = now + kMenuReadFailNs;
+        return false;
+    }
+    reportMenuState(answer != 0);
+    return true;
+}
+
+void N8Link::reportMenuState(bool menu) {
+    // A link with no MenuCheck has no guard - a fake device's, or a case that turned it off on purpose - so there is
+    // nothing for a probe's answer to feed.
+    if (!menuCheck_) return;
+    if (menu == atMenu_.load(std::memory_order_relaxed)) return;
+    atMenu_.store(menu, std::memory_order_relaxed);
+    if (menu)
+        enterMenu();
+    else
+        leaveMenu();
+}
+
+void N8Link::enterMenu() {
+    // Drop, not hold: a console reset left the game that held these notes, the menu holds none, and a game booted later
+    // starts fresh. The ring, the reliable window, any pending release and the books on what the cart's parser was
+    // inside go with it: a menu's FIFO is a command parser, not the game's stream.
+    discardRing();
+    std::fill(std::begin(lastOn_), std::end(lastOn_), kNoChunk);  // a menu holds no note of ours to skip a release for
+    wireExpect_      = 0;
+    wireSysex_       = false;
+    wireOpenSinceNs_ = 0;
+    if (rel_) {
+        rel_->reset();
+        reliable_.store(false, std::memory_order_release);
+        linkOutstanding_.store(0, std::memory_order_relaxed);
+    }
+    {
+        std::lock_guard<std::mutex> l(jobMutex_);
+        releasePending_.reset();
+        releaseAfter_ = 0;
+        releaseWanted_.store(false, std::memory_order_relaxed);
+    }
+    menuHoldSince_   = 0;
+    menuGameUntilNs_ = 0;
+    if (traceOn()) std::fprintf(stderr, "[n8link] the cart is at its menu: the stream is dropped\n");
+}
+
+void N8Link::leaveMenu() {
+    if (traceOn()) std::fprintf(stderr, "[n8link] the cart runs a game: streaming, and probing the link\n");
+    menuHoldSince_   = 0;
+    menuGameUntilNs_ = 0;
+    // A game started from the cart's own browser may speak the reliable link, and the connect-time probe could not have
+    // told: the frames it would carry start from a sync here.
+    if (linkAllowed_) probeLink();
+}
+
+void N8Link::discardRing() {
+    TimedChunk drop;
+    while (ring_.tryPop(drop)) {
+        // Taken off the ring is gone: a release's mark is a push count, so a dropped chunk counts as written, or every
+        // later release would wait for one nobody will ever push.
+        ++chunksWritten_;
+        chunksDiscarded_.fetch_add(1, std::memory_order_relaxed);
+        pushesDropped_.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
 bool N8Link::quietForRead(std::int64_t now) const {
@@ -325,7 +497,8 @@ void N8Link::serialLoop() {
 
 void N8Link::streamLoop() {
     try {
-        if (linkAllowed_) probeLink();
+        // Not into a menu: the seed above knows where the cart runs, and the probe's sync is bytes its parser reads.
+        if (linkAllowed_ && !atMenu_.load(std::memory_order_relaxed)) probeLink();
     } catch (const std::exception& e) {
         setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
         connected_.store(false, std::memory_order_release);
@@ -336,12 +509,15 @@ void N8Link::streamLoop() {
     bool have = false;
     while (running_.load(std::memory_order_acquire)) {
         try {
-            // Acks in, re-sends out, before anything else this turn: the control turn below can read a reply, and an
-            // ack that answered an outstanding frame must be behind us before it does.
-            if (rel_) serviceLink();
+            // Acks in first, then the quiet test, then the menu guard, then the re-sends it may hold: the control turn
+            // below can read a reply, so an ack that answered an outstanding frame must be behind us before it does,
+            // and the guard's own read must not have one land inside it.
+            if (rel_) serviceLinkAcks();
             const std::int64_t turnNs = nowNs();
             const bool         quiet  = quietForRead(turnNs);
             backChannelQuiet_.store(quiet, std::memory_order_relaxed);
+            const bool menuHeld = menuHold(turnNs, quiet);
+            if (rel_ && !menuHeld) serviceLinkResends(turnNs);
             // A setting that lives in an atomic (see OnControl) is applied between chunks, on the thread that owns the
             // port. Best-effort, like the connect-time write: a config register must not take the MIDI link down. A
             // wake is spent only on a quiet turn, the only kind its caller's read can use: a busy turn whose write
@@ -359,10 +535,31 @@ void N8Link::streamLoop() {
                 }
             }
             // A leaving cart node's held notes (releaseNotes), once what was pushed before them has gone: on a
-            // streaming turn, never inside a job's pause, which only the job's own traffic may use.
-            writeReleases(false);
+            // streaming turn, never inside a job's pause, which only the job's own traffic may use, and never at a
+            // menu, which reads them as commands.
+            if (!menuHeld) writeReleases(false);
+            // Jobs still run at the menu: the battery files and an upload are exactly what its file API is for.
             if (jobPending_.load(std::memory_order_acquire)) {
                 runJob(chunk, have);
+                continue;
+            }
+            if (atMenu_.load(std::memory_order_relaxed)) {
+                // The cart is at its menu, so nothing the ring holds may go - now or when a game boots later - and the
+                // trip's own discard cannot see a push that raced it. Drop it here, and keep dropping until a game.
+                if (have) {
+                    have = false;
+                    ++chunksWritten_;  // gone with the rest of the ring: a release's mark counts pushes, not writes
+                    chunksDiscarded_.fetch_add(1, std::memory_order_relaxed);
+                    pushesDropped_.fetch_add(1, std::memory_order_relaxed);
+                }
+                discardRing();
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+                continue;
+            }
+            if (menuHeld) {
+                // A re-send is due and the guard has not been able to look yet. The chunk in hand is NOT lost: the cart
+                // may be a game that has been quiet for an ack bound, and its note-off must still go.
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
                 continue;
             }
             if (!have) have = ring_.tryPop(chunk);
@@ -431,6 +628,9 @@ void N8Link::writeChunk(const TimedChunk& chunk) {
 void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now) {
     for (std::size_t i = 0; i < n; ++i) {
         const std::uint8_t b = data[i];
+        // A real-time byte (0xF8 and up) may stand between any two bytes of a message and changes nothing: read as a
+        // status it would look like the message ended, and a release written there would be its payload.
+        if (b >= 0xF8) continue;
         if (wireSysex_) {
             if (b == 0xF7) wireSysex_ = false;
             continue;
@@ -453,7 +653,7 @@ void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t
 
 // One complete MIDI message's data bytes, from its status: 2 for most channel messages, 1 for programme and channel
 // pressure, and 0 for the System Common ones that carry none (a real-time byte is one on its own, and F0 is the SysEx
-// open this tracker follows instead).
+// open this tracker follows instead; noteWireBytes steps over real-time bytes, so none of them arrives here).
 std::size_t N8Link::wireDataBytes(std::uint8_t status) {
     switch (status & 0xF0) {
         case 0x80: case 0x90: case 0xA0: case 0xB0: case 0xE0: return 2;
@@ -475,10 +675,18 @@ bool N8Link::atMessageBoundary(std::int64_t now) const {
 }
 
 void N8Link::drainForJob(TimedChunk& chunk, bool& have) {
+    // At the menu nothing the ring still holds may go: the cart reads it as commands. The job's own transfers use the
+    // port directly, which is what a menu is for.
+    if (atMenu_.load(std::memory_order_relaxed)) {
+        if (have) ++chunksWritten_;  // a chunk taken off the ring and dropped has still gone (see discardRing)
+        have = false;
+        discardRing();
+        return;
+    }
     // What was pushed before the pause goes out first, each chunk at its own release time: at most the lookahead and a
     // block away, and a note-off among it must reach the cart.
     while (running_.load(std::memory_order_acquire)) {
-        if (rel_) serviceLink();
+        if (rel_) serviceLink(nowNs());
         if (!have) have = ring_.tryPop(chunk);
         if (!have) break;
         const std::int64_t now = nowNs();
@@ -496,7 +704,7 @@ void N8Link::drainForJob(TimedChunk& chunk, bool& have) {
     if (!rel_) return;
     const std::int64_t until = nowNs() + kAckWaitNs;
     while (running_.load(std::memory_order_acquire) && rel_->outstanding() > 0 && nowNs() < until) {
-        serviceLink();
+        serviceLink(nowNs());
         std::this_thread::sleep_for(std::chrono::microseconds(200));
     }
 }
