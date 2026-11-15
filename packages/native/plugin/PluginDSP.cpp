@@ -25,6 +25,7 @@
 
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
 #include "LastGoodState.hpp"   // keeps a failed project serialization from reporting "empty"
+#include "LifecycleHandoff.hpp" // the lifecycle policy: a foreign size/rate change parks instead of racing here
 
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
@@ -77,7 +78,7 @@ struct CcSlotDto {
     std::string   shortName;
 };
 
-class PluginDSP : public Plugin {
+class PluginDSP : public Plugin, private rp::plugin::HandoffHost {
     // Control-plane runtime (main-thread only): the txiki context + the backend service graph it drives
     // over __rpcSend. The plugin owns the Engine and drives it per audio block from run() directly (it
     // never routes audio through RPC), so it holds svc_.engine + the ONE invoker plus the host + emulator
@@ -89,6 +90,11 @@ class PluginDSP : public Plugin {
     // RETROPLUG_IDLE_RECLAIM_TEST: inert unless `tools/run-standalone.sh` arms it. Holds the editor's idle (the only
     // per-frame hook the plugin has) to the idle tick it owes the engine, which no in-process test can reach.
     retroplug::IdleReclaimProbe idleProbe_;
+    // What a host's buffer-size / sample-rate callback may do, and what run() does while one is pending: see
+    // LifecycleHandoff.hpp. Built on the thread DPF builds the plugin on, which is the thread it also runs the first
+    // activate() on. mutable because getState (DPF's signature is const) is one of the seams that applies a pending
+    // park, for a host that never calls the editor's idle.
+    mutable rp::plugin::LifecycleHandoff handoff_{*this, std::this_thread::get_id(), Engine::kDefaultMaxBlockFrames};
     // The device providers of the packages this product lists (rp_product_providers.hpp, generated): the N8 pack's,
     // the same one the SDL standalone starts, which owns the physical Everdrive N8 Pro's streaming link, its n8.cfg in
     // svc_.host's config dir and the cart link the engine hands rp.n8.nes by name. Nothing in run() pushes at it: the
@@ -258,6 +264,9 @@ protected:
     }
     String getState(const char* key) const override {
         if (std::strcmp(key, "project") != 0) return String();
+        // A host that changed the rate off its main thread and never called the editor's idle left a park pending, and
+        // everything below reads the script context: apply it here, on this (the control) thread.
+        handoff_.idleTick();
         const std::string& out =
             lastGoodProject_.offer(const_cast<PluginDSP*>(this)->callGlobal("__rp_saveProjectB64", nullptr));
         // Log the first substitution only: the host calls this on every save AND on editor connect, so
@@ -268,6 +277,7 @@ protected:
     }
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "project") != 0) return;
+        handoff_.idleTick();    // the same seam getState is, before a load reaches the script context
         callGlobal("__rp_loadProjectB64", value ? value : "");
         updateLatency();        // the loaded project's sync mode determines the compensable latency
         updateParameterMap();   // ...and its ROMs determine what the DAW's CC slots are called
@@ -276,38 +286,41 @@ protected:
     // --- audio lifecycle: DPF owns the audio thread and calls run(), so the plugin drives the Engine
     // directly here (mirrors AudioDriverRpcService's loop, minus the spawned thread). ---
     //
-    // activate and sampleRateChanged can re-activate the graph, so they assume DPF calls them on the control
-    // thread, as it does for CLAP, VST3 and AU. JACK does not: a buffer-size or sample-rate change runs deactivate(),
-    // the change, then activate() from its notification callback (DistrhoPluginJACK.cpp's jackBufferSizeCallback /
-    // jackSampleRateCallback -> setBufferSize(n, true)), and VST2 runs the same setBufferSize(n, true) from its own
-    // block-size opcode, on whichever thread its host calls that from. On a thread beside the main one, this is not a
-    // no-op to wave through: deactivate hands the engine back there (the ring's flush, the ownership flip, the drain,
-    // the release ring) with the editor's idle reclaiming and editing on this thread, which is spec/07's "The JACK
-    // standalone's control handoff" known bug, and only activate's setMaxBlockFrames is a no-op for a block within the
-    // plan's maximum - which is why that is the only part ever noticed. The hazard predates the graph engine. (The
-    // output shape is no longer set here: the control plane builds the graph for the plugin's outputs at boot.)
-    void activate() override {
-        // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
-        // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path
-        // flushed every push, so the command ring is empty at this handoff.) Then report PDC latency.
-        svc_.engine.setMaxBlockFrames(getBufferSize());
-        svc_.invoker.setAudioThreadOwns(true);
-        updateLatency();
-        updateParameterMap();
-    }
-    void deactivate() override {
-        // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again. Take
-        // the Engine back, apply any commands the last block didn't drain (no lost mutation), and reclaim
-        // the plans the audio thread handed back, freeing each core only they held (and its snapshot slot).
-        svc_.invoker.setAudioThreadOwns(false);
-        svc_.invoker.drainInto(svc_.engine);
-        svc_.invoker.reclaimReleased();
-    }
-    void sampleRateChanged(double newSampleRate) override { svc_.engine.setSampleRate(newSampleRate); }
+    // The four overrides below are the FORMAT's callbacks, and only some formats run them on the control thread. CLAP,
+    // VST3 and AU do. JACK does not: a buffer-size or sample-rate change runs deactivate(), the change and activate()
+    // from its notification callback (DistrhoPluginJACK.cpp's jackBufferSizeCallback / jackSampleRateCallback ->
+    // PluginExporter::setBufferSize(n, true)), and VST2 runs the same sequence from whichever thread its host
+    // dispatches the block-size and sample-rate opcodes on. Doing the engine work there races the editor's per-frame
+    // reclaim and its edits, and updateLatency / updateParameterMap would call into the QuickJS context this thread
+    // pumps every frame (spec/02-native-host.md's plugin lifecycle thread rule; PipeWire changes its quantum whenever
+    // any client asks for a different latency, so it is routine). So all four only RECORD what the format asked for and
+    // hand it to the policy: a size the plan already holds costs nothing, and a rate change or an over-plan size parks
+    // run() until this thread's idle tick (the editor's per-frame reclaimReleased) applies it quiescently.
+    // LifecycleHandoff.hpp is the whole argument, including what a format's activate and deactivate mean for who owns
+    // the engine.
+    void activate() override { handoff_.activate(getBufferSize()); }
+    void deactivate() override { handoff_.deactivate(); }
+    void bufferSizeChanged(uint32_t newBufferSize) override { handoff_.bufferSizeChanged(newBufferSize); }
+    void sampleRateChanged(double newSampleRate) override { handoff_.sampleRateChanged(newSampleRate); }
 
     // --- the per-block loop (replaces AudioDriverRpcService::audioLoop) ---
     void run(const float**, float** outputs, uint32_t frames,
              const MidiEvent* midiEvents, uint32_t midiEventCount) override {
+        // A park comes before anything that reaches the engine or the script context: this block is silence, its MIDI
+        // is held for the first resumed one, and nothing here allocates or takes a lock the audio thread would.
+        if (!handoff_.beginBlock()) {
+            holdMidi(midiEvents, midiEventCount);
+            for (uint32_t c = 0; c < DISTRHO_PLUGIN_NUM_OUTPUTS; ++c)
+                std::memset(outputs[c], 0, frames * sizeof(float));
+            return;
+        }
+
+        // What a park held, at frame 0 of this first resumed block, before the block's own messages: a note-off the
+        // host sent while parked must reach the cart before anything struck after it.
+        handoff_.replayHeld([this](const std::uint8_t* bytes, std::uint32_t size) {
+            svc_.engine.stageMidi(0, std::span<const std::uint8_t>(bytes, size));
+        });
+
         // Transport from the host. The Engine advances its own PPQ from bpm/transport, so pass those
         // two only (pushing host ppq too would double-count).
         double bpm = 120.0;
@@ -384,6 +397,41 @@ protected:
     }
 
 private:
+    // --- what the lifecycle policy may do to the engine (rp::plugin::HandoffHost), on the control thread only -------
+    void takeEngine() override {
+        // DPF guarantees no run() while the engine is taken: flip the ownership, then apply any commands the last block
+        // did not drain (no lost mutation).
+        svc_.invoker.setAudioThreadOwns(false);
+        svc_.invoker.drainInto(svc_.engine);
+    }
+    std::size_t reclaimReleases() override { return svc_.reclaimOnIdle(); }
+    void giveEngine() override { svc_.invoker.setAudioThreadOwns(true); }
+    void setMaxBlockFrames(std::uint32_t frames) override { svc_.engine.setMaxBlockFrames(frames); }
+    void setSampleRate(double rate) override { svc_.engine.setSampleRate(rate); }
+    void updateControlPlane() override {
+        updateLatency();
+        updateParameterMap();
+    }
+    void parkOverdue(double seconds) override {
+        d_stderr("[retroplug] a lifecycle handoff stayed parked for %.1f s: no idle tick and no state save applied it",
+                 seconds);
+    }
+    void midiDropped(std::uint64_t count) override {
+        d_stderr("[retroplug] a parked block dropped %llu MIDI message(s): they did not fit the hold",
+                 static_cast<unsigned long long>(count));
+    }
+
+    // Copy a parked block's MIDI into the policy's fixed buffer (LifecycleHandoff.hpp): a message longer than DPF's
+    // inline data is not held, and past the buffer a message is dropped and counted rather than allocated for.
+    void holdMidi(const MidiEvent* events, uint32_t count) {
+        for (uint32_t i = 0; i < count; ++i) {
+            const MidiEvent& e = events[i];
+            if (e.size < 1) continue;
+            const std::uint8_t* bytes = e.size <= MidiEvent::kDataSize ? e.data : e.dataExt;
+            if (bytes != nullptr) handoff_.holdMidi(bytes, e.size);
+        }
+    }
+
     // Bring up the control-plane runtime: bind __rpcSend, eval the bundle, autoload.
     void bootControlPlane() {
         if (!host_.init()) { d_stderr("[retroplug] TjsHostRuntime init failed"); return; }
@@ -431,7 +479,9 @@ private:
         // The editor's per-frame hand-back, through the one idle seam both hosts call (the SDL standalone's loop is the
         // other). The probe rides it so a host that stops calling it goes red in its own smoke.
         shared_.reclaimReleased  = [this] {
-            const std::size_t freed = svc_.reclaimOnIdle();
+            // The idle tick also applies a lifecycle handoff a foreign callback parked for, which is why the policy's
+            // tick is the one seam (see LifecycleHandoff.hpp).
+            const std::size_t freed = handoff_.idleTick();
             idleProbe_.tick(freed);
             return freed;
         };

@@ -14,14 +14,18 @@
 
 
 # Pure-C++ Catch2 checks for plugin/ mechanisms that need real JSContexts but no LVGL/txiki host —
-# currently the per-context window-hook routing (ContextTargets.hpp) and the last-good project-state
-# cache (LastGoodState.hpp). Links bare quickjs (qjs) + Catch2.
+# currently the per-context window-hook routing (ContextTargets.hpp), the last-good project-state
+# cache (LastGoodState.hpp) and the lifecycle handoff policy (LifecycleHandoff.hpp). Links bare
+# quickjs (qjs) + Catch2; the handoff's own case drives it from a std::thread, as JACK's callback does.
+find_package(Threads REQUIRED)
 retroplug_add_test_binary(
     NAME     retroplug-plugin-test
     SOURCES  test/plugin/ContextTargets.test.cpp
              test/plugin/LastGoodState.test.cpp
+             test/plugin/LifecycleHandoff.test.cpp
     LIBS     qjs                                        # bare quickjs: JS_* + ArrayBuffer / CFunctionData
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/plugin         # ContextTargets.hpp
+             Threads::Threads                           # LifecycleHandoff.test.cpp's std::thread
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/plugin         # ContextTargets.hpp, LifecycleHandoff.hpp
              ${RP_QUICKJS_INCLUDE})                     # quickjs.h
 
 # Guards the dynamic-parameter diff classifier in the DPF fork (PluginExporter::reinitParameters —
