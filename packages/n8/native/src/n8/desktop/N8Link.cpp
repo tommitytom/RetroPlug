@@ -113,6 +113,7 @@ bool N8Link::connect(const std::string& port) {
     wireSysex_       = false;
     wireOpenSinceNs_ = 0;
     wireStatus_      = 0;
+    streamStatus_    = 0;
     // The cart's at-menu state, on the fresh port and before any producer may push: a menu reads the FIFO as commands,
     // so the state decides whether anything may be streamed at all. A check that fails to answer leaves the state as it
     // was (not the menu), which streams as the link always did.
@@ -431,6 +432,7 @@ void N8Link::enterMenu() {
     wireSysex_       = false;
     wireOpenSinceNs_ = 0;
     wireStatus_      = 0;
+    streamStatus_    = 0;
     if (rel_) {
         rel_->reset();
         reliable_.store(false, std::memory_order_release);
@@ -643,14 +645,30 @@ void N8Link::writeChunk(const TimedChunk& chunk, bool wholeMessage) {
         // alone: what a frame's payload spells is no more a message to the cart than it is to the tracker.
         writeFramed(out, seqs, now, false);
     } else {
-        noteWireBytes(chunk.data, chunk.len, now);
-        if (writeLog_) writeLog_(chunk.data, chunk.len, now, false);
-        check(edio_->fifoWR(chunk.data, chunk.len));
-        bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
+        // A release is the link's own message, and its status (8n) is what the cart's parser repeats afterwards: a
+        // streamed chunk that begins with data bytes (the bytes port may hand over part of a message that runs on the
+        // status before it) would be read as that status's data, and the tracker, which follows the wire, with it. The
+        // status the stream was running on goes out again, alone - a status with no data yet is no message - so both
+        // parsers read the chunk as the stream meant it. A chunk that begins with its own status needs nothing, and so
+        // does a stream that has set none yet, which has none to write back.
+        if (!wholeMessage && chunk.data[0] < 0x80 && streamStatus_ != 0 && wireStatus_ != streamStatus_) {
+            const std::uint8_t restore = streamStatus_;
+            writeRaw(&restore, 1, now, true);
+        }
+        writeRaw(chunk.data, chunk.len, now, !wholeMessage);
     }
 }
 
-void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now) {
+void N8Link::writeRaw(const std::uint8_t* data, std::size_t n, std::int64_t now, bool streamed) {
+    // The tracker first, as the raw path has always fed it: a write that throws stops the stream, so a chunk recorded
+    // as sent but not taken is never read again (the next connect resets the books).
+    noteWireBytes(data, n, now, streamed);
+    if (writeLog_) writeLog_(data, n, now, false);
+    check(edio_->fifoWR(data, n));
+    bytesForwarded_.fetch_add(n, std::memory_order_relaxed);
+}
+
+void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now, bool streamed) {
     for (std::size_t i = 0; i < n; ++i) {
         const std::uint8_t b = data[i];
         // A real-time byte (0xF8 and up) may stand between any two bytes of a message and changes nothing: read as a
@@ -682,12 +700,17 @@ void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t
             continue;
         }
         if (b == 0xF0) {
+            // A status ends the message the parser was inside, so nothing is owed behind the SysEx: a note-on cut short
+            // this way is gone from the wire, and a release written once the F7 has come is a message of its own.
             wireSysex_  = true;
+            wireExpect_ = 0;
             wireStatus_ = 0;  // a SysEx cancels running status, as it does on the wire
+            if (streamed) streamStatus_ = 0;
             continue;
         }
         wireStatus_ = (b & 0xF0) < 0xF0 ? b : 0;
         wireExpect_ = wireDataBytes(b);
+        if (streamed) streamStatus_ = wireStatus_;
     }
     const bool open = wireSysex_ || wireExpect_ > 0;
     if (!open) wireOpenSinceNs_ = 0;

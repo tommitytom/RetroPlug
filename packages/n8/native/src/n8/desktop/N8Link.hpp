@@ -218,10 +218,13 @@ private:
     // serial thread: one chunk out, framed when reliable. `wholeMessage`: framed as a message of its own, whatever the
     // sender is still collecting (see writeReleases).
     void writeChunk(const TimedChunk& chunk, bool wholeMessage = false);
+    // serial thread: bytes out on a raw link, the tracker's books first (see writeChunk). `streamed`: the STREAM's
+    // bytes, not a release's, so they leave streamStatus_ where the next chunk can find it.
+    void        writeRaw(const std::uint8_t* data, std::size_t n, std::int64_t now, bool streamed);
     void writeReleases(bool stopping);                   // serial thread: releaseNotes' note-offs, once they may go
     // serial thread: where the BYTE stream the cart is reading stands, so a release never goes between a status and its
     // data (see atMessageBoundary). wireDataBytes is one message's data bytes from its status.
-    void        noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now);
+    void        noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now, bool streamed);
     static std::size_t wireDataBytes(std::uint8_t status);
     bool        atMessageBoundary(std::int64_t now) const;
     void runJob(TimedChunk& chunk, bool& have);          // serial thread: pause, run the pending job, resume
@@ -281,6 +284,10 @@ private:
     bool                       wireSysex_     = false;
     std::int64_t               wireOpenSinceNs_ = 0;
     std::uint8_t               wireStatus_    = 0;
+    // The last channel status a chunk of the STREAM left running, which a release's own note-off does not overwrite: a
+    // streamed chunk that begins with data bytes is written back under this status when the wire has moved on to the
+    // release's (see writeChunk). Serial thread only, reset where wireStatus_ is.
+    std::uint8_t               streamStatus_  = 0;
     // The earliest moment OnControl runs again after a throw (see the loop in streamLoop), and a wake a caller asked
     // for since the last quiet turn: the first is serial-thread state, the second is stored from any thread.
     std::int64_t               controlRetryAtNs_ = 0;

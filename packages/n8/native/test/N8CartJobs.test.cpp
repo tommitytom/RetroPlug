@@ -1319,6 +1319,44 @@ TEST_CASE("a handover releases only the notes the leaving node left, not a key t
         CHECK(lastLogIndex(rig.dev, "fifo:7F") < lastLogIndex(rig.dev, "fifo:80 3C 00"));
         CHECK(rig.dev.count("fifo:81 43 00") == 1);
     }
+    SECTION("raw: running status a release interrupts: the stream's status goes out again before its next chunk") {
+        // A release is the link's own message, so it leaves the cart's parser repeating the note-off's status (8n). The
+        // bytes port may hand over a run of messages that repeat their status by running status, so the stream's next
+        // chunk can be data bytes alone, and the cart (and the tracker, which follows the same rule) would read them
+        // as note-offs of its own. The status the stream was running on is written again, alone, first: a status with
+        // no data yet is no message, and both parsers read the chunk as the stream meant it.
+        Rig rig;
+        rig.connectGame();
+        // Four programme changes, the last of them still running on C0 at the chunk's end (a message is a status and
+        // its one data byte, so the eight bytes land on message boundaries and the ninth continues C0).
+        rig.push({0xC0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07});
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:C0 01 02 03 04 05 06 07") == 1; }));
+        rig.cart.releaseNotes(heldNotes());
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:81 43 00") == 1; }));
+        rig.push({0x08});  // the ninth message's own byte, under running status
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:08") == 1; }));
+        CHECK(rig.dev.count("fifo:C0") == 2);  // the chunk's own run, and the one written back for it
+        CHECK(lastLogIndex(rig.dev, "fifo:C0") > lastLogIndex(rig.dev, "fifo:80 3C 00"));  // after the releases
+        CHECK(lastLogIndex(rig.dev, "fifo:C0") < lastLogIndex(rig.dev, "fifo:08"));
+    }
+    SECTION("raw: a SysEx cuts the message it interrupts, so a release need not wait out the bound") {
+        // A status byte ends a message the parser was inside and starts its own, so an F0 behind half a note-on leaves
+        // nothing open behind the SysEx: the note-on is gone from the wire. Counted as still owed once the F7 has
+        // closed the SysEx, the tracker reports a message open for the rest of its bound and holds a release that the
+        // cart would read as a message of its own at once.
+        Rig rig;
+        rig.connectGame();
+        rig.push({0x90, 0x3C});  // half a note-on
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C") == 1; }));
+        rig.push({0xF0, 0x7E, 0x7F, 0xF7});  // a SysEx, which cuts it short on the wire
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F F7") == 1; }));
+        rig.cart.releaseNotes(heldNotes());
+        // The SysEx is over and nothing is open behind it, so the note-offs go at the next turn rather than when the
+        // mid-message bound (250 ms) runs out: the short wait below is what tells those apart.
+        CHECK(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }, 150));
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+        CHECK(lastLogIndex(rig.dev, "fifo:F0 7E 7F F7") < lastLogIndex(rig.dev, "fifo:80 3C 00"));
+    }
     SECTION("framed: a release between a split SysEx's halves still delivers the whole SysEx") {
         Rig rig;
         rig.dev.menu    = false;
