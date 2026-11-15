@@ -69,10 +69,12 @@
 // A host with no idle tick at all (a VST2 host that changes the rate off its main thread with the editor closed) is
 // covered by getState and setState, which ask the policy to apply a pending park; their tick is the one that never runs
 // the grace-suspend, because a suspend made from a state call is undone by nothing (see stateTick). The editor's close
-// runs one idle tick, so closing the editor cannot strand a park that tick was there to apply. What remains uncovered
-// is a foreign activate with no editor ever opened and no state call after it: that plugin parks, silent, until one
-// comes. A park nobody applies is reported once after a second, from whichever control-thread entry comes next (there
-// is nothing else that could say it).
+// runs one idle tick, so it applies a park a block has already seen. It can do no more: a park whose first block has
+// not come is Requested, and the tick may not take an engine a block may be in, and a Suspended engine is left
+// suspended, because a grace-suspend is undone by nothing but an activate. What remains uncovered is a foreign
+// activate with no editor open after it and no state call either: that plugin parks, silent, until one comes. A park
+// nobody applies is reported once after a second, from whichever control-thread entry comes next (there is nothing else
+// that could say it).
 //
 // Nothing here touches DPF, so the policy is unit-tested without it (test/plugin/LifecycleHandoff.test.cpp) and
 // PluginDSP only implements HandoffHost over its engine and forwards its four lifecycle overrides.
