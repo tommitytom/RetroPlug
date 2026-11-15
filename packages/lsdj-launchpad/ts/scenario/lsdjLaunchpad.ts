@@ -172,4 +172,5 @@ for (const quantise of QUANTISE_VALUES) {
 const detached = new ControllerSession(lsdjMidiMap, {
   playback: runtime.playbackModel(table), target: nullTarget(LSDJ_MAX_ROW),
 });
-emit("null target session", detached.update({ input: [pad(0, 0, 127)], tick: 0, transport: false, ticks: 0, tickDivisor: 1 }).length);
+const detachedLed = detached.update({ input: [pad(0, 0, 127)], tick: 0, transport: false, ticks: 0, tickDivisor: 1 });
+emit("null target session", detachedLed.length);

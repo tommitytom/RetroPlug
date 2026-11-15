@@ -147,9 +147,11 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     there, raw or framed, and starts the app. The framed reset case therefore cannot be made airtight from this side -
     the first frames after a reset are written before anything can know a menu came back - and a config read per chunk,
     at a config read's 100 ms bound between messages, is the only full fix
-    ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). The overdue hold holds the ack-driven re-sends too:
-    a frame lost twice in a row (more than the link's 100 ms timeout after its first send) waits for a quiet turn
-    (250 ms of silence) or the hold's one-second bound before its recovery goes out, where it used to go out at once.
+    ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). The overdue hold holds the stream while the guard
+    looks, and its trigger is not a lost frame as such: it is the OLDEST outstanding frame unacknowledged 100 ms after
+    its first send. That covers a frame lost twice in a row, and equally a cart whose FIFO does not run empty for 100 ms
+    under a dense stream and so acks only then. Everything behind it waits for a quiet turn (250 ms of silence) or the
+    hold's one-second bound: the re-send, which used to go out at once, and the new chunks too.
     That is deliberate, since a re-send decided while the window has stopped moving is what a menu would read, so a slow
     recovery on a lossy NTSC link is that trade and not a new fault. The hardware check the quiet rule rests on is
     [spec/07](07-remaining-work.md#the-n8-menus-back-channel).

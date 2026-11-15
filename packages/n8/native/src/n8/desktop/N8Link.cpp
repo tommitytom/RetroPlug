@@ -198,7 +198,9 @@ void N8Link::releaseNotes(const NoteSet& notes, std::uint64_t mark) {
     // Behind the caller's own last push (the mark it recorded), not behind every push so far: a cart node's destroy
     // runs after the plan swap, so the node taking over has already pushed, and a release that waited for those would
     // go out behind a note-on it has to precede. Several leaving nodes' releases take the latest mark: a note-on
-    // between two of their marks belongs to a node that is leaving too.
+    // between two of their marks belongs to a node that is leaving too. The edge that trade leaves is two cart nodes on
+    // one link leaving in one swap: a key the incoming node struck between their marks reads as a leaving node's and
+    // is cut, which needs both of them on the one link.
     releaseAfter_ = std::max(releaseAfter_, mark);
     releaseWanted_.store(true, std::memory_order_release);
 }

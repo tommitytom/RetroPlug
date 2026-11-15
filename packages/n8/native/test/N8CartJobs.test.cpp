@@ -574,9 +574,9 @@ TEST_CASE("a port that throws as a job starts stops the link with the reason, an
     rig.connect();
     // The run's own pre-flush throws, as a USB unplug during a job does: the job never runs, so nothing addresses the
     // card, and its record must still carry a reason rather than the generic failure a job with no outcome gets. Every
-    // flush fails from here, not the next one only: the guard's cadence reads flush the input too, and on a loaded runner
-    // one of them lands between this and the job's own pre-flush and takes a one-shot failure with it (the job then runs
-    // and this case's whole tail reads a link that worked).
+    // flush fails from here, not the next one only: the guard's cadence reads flush the input too, and on a loaded
+    // runner one of them lands between this and the job's own pre-flush and takes a one-shot failure with it (the job
+    // then runs and this case's whole tail reads a link that worked).
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);  // the link's thread reads it under the lock
         rig.dev.failEveryFlush = true;
