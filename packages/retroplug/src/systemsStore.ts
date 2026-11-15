@@ -56,7 +56,7 @@ import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettings
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
 import type { Host } from "@retroplug/core/host";
 import { placedKinds, protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
-import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
+import { resolveSongCatalog, resolveTracker, TRACKER_MARKERS } from "./trackerRegistry";
 import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
 // Frames the slot watcher waits for a landed carry's queued writes to appear before it trusts the cart
@@ -73,6 +73,15 @@ const UNMATCHED_RECHECKS = 60;
 function parsedRoleConfig(registry: RoleRegistry | undefined, role: RoleInstance): Record<string, unknown> {
   const rt = registry?.roleType(role.kind);
   return rt ? (rt.schema.parse(role.config) as Record<string, unknown>) : role.config;
+}
+
+/** What a role kind competes for in SystemsStore.suggestedFirst: the system inputs its node writes, and - for a cart's
+ *  tracker marker - one place every marker kind shared. Two markers on one system are one ROM swapped for another's, and
+ *  resolveTracker reads the first of them in role order, so they collide the way two nodes writing one input do: the
+ *  marker today's ROM earns is moved ahead of the stale one, never deleted. */
+function occupied(kind: string): readonly string[] {
+  const writes: readonly string[] = protocolWrites(kind);
+  return TRACKER_MARKERS.has(kind) ? [...writes, "tracker-marker"] : writes;
 }
 
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
@@ -1428,8 +1437,8 @@ export class SystemsStore {
     const out = roles.slice();
     for (let i = 0; i < out.length; ++i) {
       if (!wanted.has(out[i].kind)) continue;
-      const writes = protocolWrites(out[i].kind);
-      const collides = (q: RoleInstance) => protocolWrites(q.kind).some((w) => writes.includes(w));
+      const writes = occupied(out[i].kind);
+      const collides = (q: RoleInstance) => occupied(q.kind).some((w) => writes.includes(w));
       const j = out.findIndex((q, k) => k < i && !wanted.has(q.kind) && collides(q));
       if (j >= 0) out.splice(j, 0, ...out.splice(i, 1));
     }

@@ -28,13 +28,14 @@ import { z } from "zod";
 import { clampedInt } from "@retroplug/core/configFields";
 import type { DefinedNode } from "@retroplug/core/defineNode";
 import { ROLE_NODES, type LeftOutRole } from "../../src/graph/protocolNodes";
+import { resolveTracker } from "../../src/trackerRegistry";
 import { SCRIPT_NODES_GLOBAL } from "@retroplug/core/register";
 import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
 // The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
 // of the script host's contexts.
 import "../../src/script/bundle";
 import { warned } from "../_warnings";
-import { blipToasterRom, gbRom, lsdjRom, nesRom, smsggdjRom } from "./fixtures";
+import { blipToasterRom, gbRom, lsdjRom, nesRom, risaRom, smsggdjRom } from "./fixtures";
 
 /** The project section the Launchpad pack contributes: a case sets it through the store, as the menu does. */
 const CONTROLLER_SECTION = "controller";
@@ -955,6 +956,70 @@ test("of two colliding roles neither of which the ROM calls for, the first in ro
   expect(be.protocolNodes(id)).toEqual([`sys-${id}/mgb`]);
   expect(sys.view()[0].roles.map((r) => r.kind)).toEqual(["sameboy", "mgb", "lsdj-sync"]); // as stored
   expect(warnings.length).toBe(1);
+});
+
+test("of two tracker markers, a loaded system resolves the one its ROM earns, and keeps the stale one", () => {
+  // risa's and BlipToaster's marker roles have no protocol node, so both count as placed whenever they are stored, and
+  // resolveTracker took the first in PRODUCT order: a NES project stored with risa whose path now holds BlipToaster kept
+  // resolving risa whatever the file was. The marker the ROM earns moves ahead of the stale one, as a colliding protocol
+  // role does, and resolveTracker reads the system's own order. Nothing is deleted, so a ROM swapped back swaps back.
+  const { be, sys } = project();
+  be.seed("/roms/bliptoaster.nes", blipToasterRom());
+  be.seed("/roms/risa.nes", risaRom());
+  const mesen: RoleInstance = { kind: "mesen", config: {} };
+  const risa: RoleInstance[] = [{ kind: "risa", config: {} }, { kind: "risa-assets", config: { overrides: [] } }];
+  const blip: RoleInstance[] = [
+    { kind: "bliptoaster", config: {} },
+    { kind: "bliptoaster-assets", config: { overrides: [] } },
+  ];
+  const cases: [string, RoleInstance[], string][] = [
+    ["/roms/bliptoaster.nes", [mesen, ...risa], "bliptoaster"],
+    ["/roms/risa.nes", [mesen, ...blip], "risa"],
+  ];
+  for (const [romPath, roles, earned] of cases) {
+    const { result: id } = warned(() => sys.adopt({ romPath, core: "mesen", roles })!);
+    const stored = sys.view().find((v) => v.id === id)!.roles;
+    expect(resolveTracker(stored)?.id).toBe(earned);
+    // The stale marker and its asset overrides stay on the system, which is what a save then writes.
+    const stale = earned === "bliptoaster" ? "risa" : "bliptoaster";
+    expect(stored.map((r) => r.kind).includes(stale)).toBe(true);
+    sys.removeSystem(id!);
+  }
+});
+
+test("a ROM that earns no tracker marker leaves the stored marker order standing, either way round", () => {
+  // A ROM neither provider recognises earns no marker, so there is nothing to move ahead of anything and the first
+  // marker STORED is the system's tracker. The embedded iteration is the same case with no bytes to read at all: a
+  // declared image is never detected, and the ROM providers earn nothing from it either. (A stored PATH whose file
+  // has gone cannot reach this at all: the store refuses to place a system whose ROM it cannot read, so there is no
+  // order to resolve - the last assertion below is that refusal.)
+  const { be, sys } = project();
+  const mesen: RoleInstance = { kind: "mesen", config: {} };
+  const sameboy: RoleInstance = { kind: "sameboy", config: {} };
+  const orders: RoleInstance[][] = [
+    [{ kind: "risa", config: {} }, { kind: "bliptoaster", config: {} }],
+    [{ kind: "bliptoaster", config: {} }, { kind: "risa", config: {} }],
+  ];
+  be.seed("/roms/plain.nes", nesRom());
+  for (const order of orders) {
+    // Readable bytes no provider claims: classified from its iNES header, earned by nobody.
+    const { result: id } = warned(() =>
+      sys.adopt({ romPath: "/roms/plain.nes", core: "mesen", roles: [mesen, ...order] })!,
+    );
+    expect(resolveTracker(sys.view().find((v) => v.id === id)!.roles)?.id).toBe(order[0].kind);
+    sys.removeSystem(id!);
+    // And nothing to read: the embedded declaration names the platform, and no provider earns a marker.
+    const { result: embedded } = warned(() =>
+      sys.adopt({ core: "sameboy", embeddedRom: "mgb", roles: [sameboy, ...order] })!,
+    );
+    expect(resolveTracker(sys.view().find((v) => v.id === embedded)!.roles)?.id).toBe(order[0].kind);
+    sys.removeSystem(embedded!);
+  }
+  // No file, nothing to earn: the store places nothing, so no later load can resolve a tracker for it either.
+  const { result: absent } = warned(() =>
+    sys.adopt({ romPath: "/roms/gone.sms", core: "mesen", roles: [mesen, ...orders[0]] }),
+  );
+  expect(absent).toBe(null);
 });
 
 test("a collision's outcome survives a save and a load: the ROM's role first and placed, the stale one kept after it", () => {

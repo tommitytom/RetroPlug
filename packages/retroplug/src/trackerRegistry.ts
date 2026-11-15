@@ -10,18 +10,28 @@ import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import { TRACKER_INTEGRATIONS } from "./generated/packages";
 import { placedKinds } from "./graph/protocolNodes";
 
-/** Every tracker integration, in the product order: a system takes the first one whose markerRole its graph places. A
- *  marker has no protocol node, so it is placed whenever it is stored: a system storing two (a NES project stored with
- *  risa whose ROM is now BlipToaster) takes the first in this order. The generated list, re-exported below as a live
- *  binding. */
+/** Every tracker integration, in the product order. A system takes the first whose markerRole its graph places, in
+ *  the order its OWN roles name them (resolveTracker): of two markers a stored list carries, the load moves the one
+ *  today's ROM earns ahead of the stale one (SystemsStore.suggestedFirst), so this order decides only when the ROM
+ *  earns neither. A marker has no protocol node, so it is placed whenever it is stored. The generated list,
+ *  re-exported below as a live binding. */
 export { TRACKER_INTEGRATIONS };
 
-/** The tracker integration for a system, resolved from its roles: the integration whose markerRole the graph places
- *  (graph/protocolNodes.ts placedKinds). undefined for a non-tracker system, and for one whose stored marker the graph
- *  leaves out: an mGB cart still carrying lsdj-sync after a ROM swap is not an LSDj cart. */
+/** The role kinds a cart's tracker is marked by: one per integration, refused twice over by the generated list. */
+export const TRACKER_MARKERS: ReadonlySet<string> = new Set(TRACKER_INTEGRATIONS.map((t) => t.markerRole));
+
+/** The tracker integration for a system, resolved from its roles: the first of its PLACED markers in role order, as
+ *  graph/protocolNodes.ts placedKinds lists them. undefined for a non-tracker system, and for one whose stored marker
+ *  the graph leaves out: an mGB cart still carrying lsdj-sync after a ROM swap is not an LSDj cart. Role order rather
+ *  than product order, because a stored system can hold two markers (a NES project stored with risa whose path now
+ *  holds BlipToaster) and only the load knows which one the file earns. */
 export function resolveTracker(roles: readonly RoleInstance[]): TrackerIntegration | undefined {
   const placed = placedKinds(roles);
-  return TRACKER_INTEGRATIONS.find((t) => placed.includes(t.markerRole));
+  for (const kind of placed) {
+    const integration = TRACKER_INTEGRATIONS.find((t) => t.markerRole === kind);
+    if (integration) return integration;
+  }
+  return undefined;
 }
 
 /** The song catalog for a system (convenience over resolveTracker) - used by the recent list. */
