@@ -448,6 +448,11 @@ test("at tickDivisor 2 the predictor walks half the ticks a block, as the cart c
   };
   expect(lit(2)).toBe(2);
   expect(lit(1)).toBe(4);
+  // The setting is a bare number, so a stored or pushed 2.5, 0 or 1e999 (JSON's Infinity) can reach the node: it is
+  // floored and the non-finite and sub-1 values refused before it is both the walk's step and the app's divisor, so
+  // 2.5 clocks and counts as 2 - a cart bar of 192 ticks, not nine and a half ticks a quarter - and 0 as 1.
+  expect(lit(2.5)).toBe(2);
+  expect(lit(0)).toBe(4);
 });
 
 test("a divisor changed while a song plays reaches the running session at its next block, its cue kept", () => {

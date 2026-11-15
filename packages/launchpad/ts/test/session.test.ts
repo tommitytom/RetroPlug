@@ -285,10 +285,14 @@ test("config reaches the app unchanged", () => {
 test("an app reads the cart's tick divisor off its context, and a change reaches a running session", () => {
   // The divisor is the cart's own clock division (ControllerSessionSettings.tickDivisor): the node reads it every block
   // and it is deliberately not part of a session's shape, so an app that quantises a launch to the CART's bar needs it
-  // on each update rather than once at construction.
+  // on each update rather than once at construction. The ctx carries the session's normalisation of it, an integer of
+  // at least 1: a fractional setting is floored (a cart bar the app counts must be the one the cart was clocked by),
+  // and 0 is refused.
   const h = harness(noop);
   h.connect();
   h.run({ tickDivisor: 2 });
   h.run({ tickDivisor: 3 });
-  expect(h.seen.map((c) => c.tickDivisor)).toEqual([2, 3]);
+  h.run({ tickDivisor: 2.5 });
+  h.run({ tickDivisor: 0 });
+  expect(h.seen.map((c) => c.tickDivisor)).toEqual([2, 3, 2, 1]);
 });

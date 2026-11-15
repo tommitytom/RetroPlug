@@ -57,11 +57,13 @@ interface MapState {
   follow?: boolean;
   /** The row waiting for its quantise boundary, or null. */
   pending?: number | null;
-  /** The tick that pending fires at (beat/bar), or null for the rowEnd rule. */
+  /** The tick that pending fires at (beat/bar), or null for the rowEnd rule. Derived each update, never stored as
+   *  the cue's own: a reshaped boundary that is already behind the playhead is not allowed to fire off the grid. */
   pendingTick?: number | null;
-  /** The tick the press landed on (beat/bar), so a divisor changed during the wait re-derives pendingTick. */
+  /** The tick every press landed on, whatever the rule: the wait is re-derived from it each update, so a rule or a
+   *  divisor changed while the row pulses yellow moves the wait with it, in either direction. */
   pendingFromTick?: number | null;
-  /** The row the followed channel was on when a rowEnd launch was cued. */
+  /** The row the followed channel was on when every press landed, as pendingFromTick is: the rowEnd rule reads it. */
   pendingFromRow?: number | null;
   /** What the grid was last painted from - see needsPaint. */
   painted?: { page: number; follow: boolean; pending: number | null; revision: number; rows: number[] };
@@ -191,20 +193,28 @@ function handleInput(
       continue;
     }
 
+    // Both of the press's facts are kept, whatever the rule: resolvePending derives the wait from the rule in force
+    // on the block it reads, so the rule changing under a cued row is a re-derive and not a wait nothing ends.
     st.pending = row;
+    st.pendingFromTick = c.tick;
+    st.pendingFromRow = current;
     st.pendingTick = quantise === "rowEnd" ? null : boundaryTick(c.tick, quantise, c.tickDivisor);
-    st.pendingFromTick = quantise === "rowEnd" ? null : c.tick;
-    st.pendingFromRow = quantise === "rowEnd" ? current : null;
   }
 }
 
 function resolvePending(c: ControllerCtx, st: MapState, quantise: Quantise, current: number | null): void {
   if (st.pending === null || st.pending === undefined) return;
 
-  // The divisor is per block (ControllerCtx.tickDivisor), and a cart bar is 96 times it: one changed while this launch
-  // waits moves the boundary with it, so the tick is re-derived from the press rather than kept from it.
-  if (quantise !== "rowEnd" && st.pendingFromTick !== null && st.pendingFromTick !== undefined) {
-    st.pendingTick = boundaryTick(st.pendingFromTick, quantise, c.tickDivisor);
+  // The rule and the divisor are both per block (ControllerCtx.tickDivisor), and a cart bar is 96 times it: either
+  // changed while this launch waits moves the wait with it, so the fire tick is derived from the press each update
+  // rather than kept from the press. Kept MONOTONE, because a boundary the new grid has already passed - a divisor
+  // shrink, whose bar is behind the playhead - would otherwise fire off the grid in the middle of a phrase: the
+  // later of the two stands, and the launch waits for a boundary both clocks share.
+  if (quantise === "rowEnd") {
+    st.pendingTick = null;
+  } else if (st.pendingFromTick !== null && st.pendingFromTick !== undefined) {
+    const next = boundaryTick(st.pendingFromTick, quantise, c.tickDivisor);
+    st.pendingTick = st.pendingTick === null || st.pendingTick === undefined ? next : Math.max(st.pendingTick, next);
   }
 
   // rowEnd fires on the model's next row change, which works identically on the observed and predicted

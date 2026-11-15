@@ -274,6 +274,50 @@ test("a second press replaces the pending cue rather than queueing another launc
   expect(h.sent).toEqual([[0x90, 4, 100]]); // only the later choice launches
 });
 
+test("a quantise rule changed while a cue waits moves the wait with it, either way", () => {
+  // The rule is read on every update, so a settings row changed while the cued row pulses yellow must move the wait
+  // rather than leave it waiting for a boundary that rule no longer counts. Both of a press's facts are kept for it, so
+  // a rowEnd cue set to beat/bar fires on the boundary its tick asks for, and a boundary cue set to rowEnd fires on
+  // the next row change. The one-way version left a rowEnd cue pulsing for ever, and fired a bar cue at once.
+  const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
+  const config: Record<string, unknown> = { quantise: "rowEnd", follow: false };
+  const h = harness(model, config);
+  model.setRows([2, 2, 2, 2]);
+  h.run({ tick: 10 });
+  h.run({ tick: 11, input: [h.device.press(0, 6)] }); // cued for the row end
+  expect(h.sent.length).toBe(0);
+  config.quantise = "beat"; // the settings row, while the pad pulses
+  h.run({ tick: 23 });
+  expect(h.sent.length).toBe(0);
+  h.run({ tick: 24 }); // the next beat after the press at host tick 11
+  expect(h.sent).toEqual([[0x90, 6, 100]]);
+
+  config.quantise = "bar";
+  h.run({ tick: 30 });
+  h.run({ tick: 31, input: [h.device.press(0, 7)] }); // cued for the bar at 96
+  config.quantise = "rowEnd";
+  h.run({ tick: 40 });
+  expect(h.sent.length).toBe(1); // not at once, as it would be with no press row to compare
+  model.setRows([3, 3, 3, 3]); // the row turned over
+  h.run({ tick: 41 });
+  expect(h.sent).toEqual([[0x90, 6, 100], [0x90, 7, 100]]);
+});
+
+test("a divisor shrink does not fire a cued launch off the grid", () => {
+  // A press at host tick 51 is cued for the cart's bar at 192 at divisor 2. At divisor 1 the cart's bar is 96, already
+  // behind the playhead at 150: re-deriving alone would fire there, mid-phrase on the divisor-1 grid, where 192 is a
+  // bar on both grids. The derived tick is kept monotone, so the launch waits for the boundary both clocks share.
+  const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
+  const h = harness(model, { quantise: "bar", follow: false }, 2);
+  model.setRows([0, 0, 0, 0]);
+  h.run({ tick: 50 });
+  h.run({ tick: 51, input: [h.device.press(0, 5)] });
+  h.run({ tick: 150, tickDivisor: 1 });
+  expect(h.sent.length).toBe(0); // 96 is behind the playhead
+  h.run({ tick: 192, tickDivisor: 1 });
+  expect(h.sent).toEqual([[0x90, 5, 100]]);
+});
+
 test("releasing a pad does nothing - a release is not a stop", () => {
   // MEASURED (B5): the 0xFE handshake leaves the cart playing and stepping. Sending it on every pad
   // release would be protocol noise whose effect on other LSDj builds is unknown, and "let go to stop"

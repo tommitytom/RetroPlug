@@ -211,9 +211,13 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         // clocks across a seek and resyncs from the block's own start, and a loop wrap moves ppq backwards - so a
         // difference would read each of those as no time (or lose a block at a device swap) and leave the predicted
         // playhead behind the cart for good. Counting the walk gives the predictor exactly the ticks the cart heard.
+        // What the cart the launches drive divides its 24-tick clock by, normalised here for the walk and the app
+        // alike: a cart bar is 96 of the host's ticks times this on both sides. Floored, as the session floors the
+        // value it hands the app (session.ts): a fractional divisor would walk the cart at a resolution the app's
+        // integer bar cannot agree with, and a non-finite one (JSON's 1e999) would leave the walk a zero step.
         clock.begin(b);
         counted = 0;
-        const divisor = config.tickDivisor >= 1 ? config.tickDivisor : 1;
+        const divisor = config.tickDivisor >= 1 && isFinite(config.tickDivisor) ? Math.floor(config.tickDivisor) : 1;
         clock.walk(TICKS_PER_QUARTER / divisor, countTick);
         const elapsed = walked;
         walked = counted;
@@ -225,7 +229,8 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         frame.transport = b.transport.playing;
         frame.ticks = elapsed;
         // What the cart divides its clock by, on the app's context: a launch quantised to the cart's bar counts in
-        // cart bars, which at a divisor above 1 are several of the host's.
+        // cart bars, which at a divisor above 1 are several of the host's. The normalised value the walk used, so a
+        // floored setting reaches the app as the clock actually ran.
         frame.tickDivisor = divisor;
         const out = session.update(frame);
         for (let i = 0; i < out.length; i++) b.send("controllerOut", 0, out[i]);
