@@ -196,7 +196,7 @@ TEST_CASE("a dump job pauses streaming on the port it has, reads the battery fil
     }
     CHECK(rig.dev.count("file-rd") == (save.size() + 511) / 512);  // one 512-byte block a step
     CHECK(rig.dev.count("srm-") == 0);                              // the cart's own battery: never
-    CHECK(rig.dev.count("fifo:90 40") == 0);  // the push the pause dropped never reached the cart
+    CHECK(rig.dev.count("fifo:90 40") == 0);  // the push the pause dropped (or the menu refused) never reached the cart
     CHECK(rig.cart.dropped() == 1);            // ...counted, and nothing else was lost
 
     // And a message pushed now goes nowhere: the guard has the menu, so the push is dropped and counted.
@@ -427,8 +427,8 @@ TEST_CASE("the reliable link keeps its sequence across a pause: no new sync, the
     CHECK(rig.host.link().reliable());
 }
 
-TEST_CASE("the menu guard reads the cart's state between chunks, so a streamed frame never reaches a menu",
-          "[n8][cart-jobs]") {
+TEST_CASE("the menu guard reads the cart's state between chunks, so a streamed frame never reaches a menu, and a "
+          "read waits out an ack the game still owes", "[n8][cart-jobs]") {
     using Clock = std::chrono::steady_clock;
     const auto ms = [](Clock::time_point t) {
         return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count();
@@ -551,6 +551,10 @@ TEST_CASE("a port that throws as a job starts stops the link with the reason, an
     // start it afresh.
     CHECK(rig.host.link().lastError() == "serial write failed (N8 unplugged?): fake port: flushInput failed");
     CHECK_FALSE(rig.host.link().isConnected());
+    // A stream that stopped itself is not left saying "at the menu" (it was seeded there at connect, being the fake's
+    // default): what a status read answers until the next disconnect is where the cart runs now, which is unknown.
+    CHECK_FALSE(rig.host.link().atMenu());
+    CHECK_FALSE(rig.host.getConfig().atMenu);
     CHECK_FALSE(rig.host.cartJobBusy());
     CHECK(rig.dev.count("file-") == 0);
     Job again;
@@ -602,7 +606,7 @@ TEST_CASE("an upload whose trailing flush throws still closes the port it booted
     CHECK(rig.dev.booted == "usb-games/game.nes");
 }
 
-TEST_CASE("a job its node abandons fails at once, stops at its next chunk, and the cart resumes streaming",
+TEST_CASE("a job its node abandons fails at once, stops at its next chunk, and the link resumes, at the menu",
           "[n8][cart-jobs]") {
     Rig rig;
     rig.dev.fileDelayMs = 20;
@@ -1178,9 +1182,31 @@ TEST_CASE("the notes a leaving cart node held get their note-offs from the seria
         REQUIRE(waitUntil([&] { return job.finished(); }));
         CHECK(job.state.load() == Job::Done);
         CHECK(rig.dev.count("file-rd") == 6);
-        // The release was dropped with the ring when the guard read the menu: a menu holds no notes, and its FIFO is a
-        // command parser. Nothing of it reached the cart, before or after the job.
+        // The release was refused: the guard has the menu, and releaseNotes stops at its first line there (a menu
+        // holds no notes of ours, and its FIFO is a command parser). Nothing of it reached the cart, before or after
+        // the job.
         CHECK(rig.dev.count("fifo:8") == 0);
+    }
+    SECTION("a job's pause with the guard off: nothing while it holds the port, all on the first turn after it") {
+        // The same episode with no menu guard (a fake device's, or a case that turned it off): the cart reads connected
+        // at its menu, so the release queues, and the job's pause is the only thing that may use the port until it is
+        // done. This is the coverage the guard took away, since with it on every job runs at the menu.
+        Rig rig;
+        rig.dev.files[kGameBattery] = saveOf(3000, 7);
+        rig.dev.fileReadDelayMs     = 20;
+        rig.host.link().setMenuCheck({});
+        rig.connect();
+        Job job;
+        REQUIRE(rig.submit(battery("dump"), job));
+        REQUIRE(waitUntil([&] { return rig.dev.count("file-rd") > 0; }));
+        rig.cart.releaseNotes(heldNotes());
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:8") == 0);  // nothing inside the pause: only the job's own traffic uses the port
+        REQUIRE(waitUntil([&] { return job.finished(); }));
+        CHECK(job.state.load() == Job::Done);
+        CHECK(rig.dev.count("file-rd") == 6);
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));  // the first streaming turn
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
     }
     SECTION("a disconnect writes a release still waiting before the port closes; a link that is down drops one") {
         Rig rig;

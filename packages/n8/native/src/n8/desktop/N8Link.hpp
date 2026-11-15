@@ -122,8 +122,9 @@ public:
     bool          jobPending() const { return jobPending_.load(std::memory_order_acquire); }
     // [any] A disconnect has been asked for: a paused job checks this between its steps and stops early.
     bool          stopRequested() const { return !running_.load(std::memory_order_acquire); }
-    // Chunks a stream that stopped after a job (AfterJob::Stop) found in its ring and threw away: pushes that raced the
-    // pause's start, and so reached the ring after its drain. Counted in pushesDropped() too.
+    // Chunks the link took off its ring and threw away instead of writing them: what a stream that stopped after a job
+    // (AfterJob::Stop) found there (pushes that raced the pause's start, and so reached the ring after its drain), and
+    // what the menu guard dropped (discardRing, and the chunk in hand at the trip). Counted in pushesDropped() too.
     std::uint64_t chunksDiscarded() const { return chunksDiscarded_.load(std::memory_order_relaxed); }
     // The notes a cart holds, one bit a note (channel * 128 + note), as rp::n8::CartNotes.
     using NoteSet = std::bitset<16 * 128>;
@@ -161,10 +162,11 @@ public:
     bool          atMenu() const { return atMenu_.load(std::memory_order_relaxed); }
     std::string   portName() const;
     std::uint64_t bytesForwarded() const { return bytesForwarded_.load(std::memory_order_relaxed); }
-    // Pushes that lost their bytes: the link was down or a job held it, the ring was full, or a stopped stream threw
-    // a chunk away (chunksDiscarded). Written on the audio thread and by the serial thread's stopStreaming, read
-    // relaxed; a device link's own count is made of the `false` push() answers instead, and N8CartLink's dropped()
-    // adds the chunks a stopped stream discarded.
+    // Pushes that lost their bytes: the link was down or a job held it, the ring was full, or the link threw a chunk
+    // away instead of writing it (chunksDiscarded: a stopped stream's, the menu guard's). Written on the audio thread
+    // and by the serial thread (stopStreaming, discardRing, the at-menu chunk in hand), read relaxed; a device link's
+    // own count is made of the `false` push() answers instead, and N8CartLink's dropped() adds the chunks those
+    // discards threw away.
     std::uint64_t pushesDropped() const { return pushesDropped_.load(std::memory_order_relaxed); }
     std::string   lastError() const;
     void          setLookaheadMs(int ms) { lookaheadNs_.store(std::int64_t(ms) * 1'000'000, std::memory_order_relaxed); }
@@ -287,6 +289,9 @@ private:
     std::int64_t               menuReadDueNs_ = 0;
     std::int64_t               menuHoldSince_ = 0;
     std::int64_t               menuGameUntilNs_ = 0;  // a read answered "a game" here: no hold before this moment
+    // A menu read timed out and its reply may still be arriving: the next turn flushes the port instead of parsing what
+    // it said as acks (readMenuState, streamLoop). Serial thread, reset at each connect.
+    bool                       menuFlushNext_ = false;
     std::atomic<bool>          controlWanted_{false};
     std::atomic<bool>          backChannelQuiet_{true};  // the last turn's quietForRead, for other threads
 

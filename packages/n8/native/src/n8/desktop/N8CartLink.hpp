@@ -35,14 +35,15 @@ public:
         return false;
     }
     // What a cart NODE reads as connected: the link is up AND the cart is running a game. A menu is attached and
-    // streaming nothing (its FIFO is a command parser there), so a node treats it as disconnected and owes its notes no
-    // further - the existing disconnected rule - which is what "at the menu" means to the graph.
+    // streaming nothing (its FIFO is a command parser there), so a node reads it as disconnected: what it pushes there
+    // is refused, and a note-off it loses stays owed until a game reads connected again (a note-off to a game that
+    // never sounded the note is harmless), which is what "at the menu" means to the graph.
     bool          connected() const override { return host_.link().isConnected() && !host_.link().atMenu(); }
     // [audio] N8Link::chunksPushed: the queue's own count, which the node reads after each of its pushes.
     std::uint64_t pushMark() const override { return host_.link().chunksPushed(); }
-    // Every push of this adapter that lost its bytes, plus the chunks a stream stopped after a job found in its ring
-    // (N8Link::chunksDiscarded: pushes that reached the ring after the pause's drain, whose caller the link cannot
-    // tell). A node keeps its own books on push()'s answer; this is the count for a caller that reads the link.
+    // Every push of this adapter that lost its bytes, plus the chunks the link took off its ring and threw away
+    // instead of writing (N8Link::chunksDiscarded: a stopped stream's and the menu guard's, whose caller the link
+    // cannot tell). A node keeps its own books on push()'s answer; this is the count for a caller that reads the link.
     std::uint64_t dropped() const override {
         return dropped_.load(std::memory_order_relaxed) + host_.link().chunksDiscarded();
     }

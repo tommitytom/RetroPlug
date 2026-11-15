@@ -40,7 +40,8 @@ export interface N8LinkConfig {
   ports: N8Port[]; // available serial ports
   selectedPort: string; // "" = none chosen (connect auto-picks the attached N8)
   connected: boolean; // the serial link is open + handshaken
-  atMenu: boolean; // the cart is at its menu: the link is up, and nothing is streamed to it (its FIFO is a command parser)
+  // The cart is at its menu: the link is up, and nothing is streamed to it (its FIFO is a command parser)
+  atMenu: boolean;
   enabled: boolean; // the user's "stream to the N8" toggle
   lookaheadMs: number; // timed-release latency the serial thread applies
   bytes: number; // bytes forwarded since connect (status)

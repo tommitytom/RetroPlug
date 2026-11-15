@@ -313,7 +313,8 @@ TEST_CASE("the N8 provider installs its cart link, restores n8.cfg and clears th
     void* const installed = registry.link;
     provider->destroy(self);
     CHECK(registry.cleared == std::vector<void*>{installed});
-    CHECK(registry.connectedAtClear == std::vector<bool>{false});  // read through the link: at the menu, so not streaming
+    // Read through the link at the clear: at the menu, so not streaming.
+    CHECK(registry.connectedAtClear == std::vector<bool>{false});
 }
 
 TEST_CASE("the N8 provider refuses another ABI, and one whose link the registry refuses clears nothing",

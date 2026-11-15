@@ -120,6 +120,7 @@ bool N8Link::connect(const std::string& port) {
     menuHoldSince_  = 0;
     menuReadDueNs_  = 0;
     menuGameUntilNs_ = 0;
+    menuFlushNext_  = false;  // a prior connection's unanswered read is not this one's input
     if (menuCheck_) {
         try {
             // What the cart said after the handshake is not this read's reply: a flush keeps a chattering cart's byte
@@ -399,6 +400,9 @@ bool N8Link::readMenuState(std::int64_t now) {
     }
     if (answer < 0) {
         menuReadDueNs_ = now + kMenuReadFailNs;
+        // A read that timed out may have taken only the first bytes of its reply: the rest is in the port's input, and
+        // the next turn's ack parse would read its tail as link traffic. That turn flushes instead (see streamLoop).
+        menuFlushNext_ = true;
         return false;
     }
     reportMenuState(answer != 0);
@@ -475,6 +479,10 @@ bool N8Link::quietForRead(std::int64_t now) const {
 
 void N8Link::serialLoop() {
     streamLoop();
+    // Where the cart ran says nothing about it now: the thread stops here for a disconnect, a write that failed, or a
+    // job that stopped streaming, and a status read until the next disconnect must not answer "connected false, at the
+    // menu" (the state a menu leaves behind, and the last thing that stream read before it stopped).
+    atMenu_.store(false, std::memory_order_relaxed);
     // The thread is going (a disconnect, a write that failed, a job that stopped streaming): no job is taken from here
     // on, and one taken that never ran is run now with no port, so its node hears it failed rather than waiting
     // forever.
@@ -517,7 +525,15 @@ void N8Link::streamLoop() {
             // Acks in first, then the quiet test, then the menu guard, then the re-sends it may hold: the control turn
             // below can read a reply, so an ack that answered an outstanding frame must be behind us before it does,
             // and the guard's own read must not have one land inside it.
-            if (rel_) serviceLinkAcks();
+            if (menuFlushNext_) {
+                // A menu read timed out on its last turn, and the rest of its reply may still be arriving: parsed as
+                // acks its tail could point the window past a frame that is still on its way. One turn's flush drops
+                // what is there instead, and an ack it loses costs a re-send (see readMenuState).
+                menuFlushNext_ = false;
+                flushPort();
+            } else if (rel_) {
+                serviceLinkAcks();
+            }
             const std::int64_t turnNs = nowNs();
             const bool         quiet  = quietForRead(turnNs);
             backChannelQuiet_.store(quiet, std::memory_order_relaxed);
