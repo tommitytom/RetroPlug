@@ -57,11 +57,13 @@ interface MapState {
   follow?: boolean;
   /** The row waiting for its quantise boundary, or null. */
   pending?: number | null;
-  /** The tick that pending fires at (beat/bar), or null for the rowEnd rule. Derived each update, never stored as
-   *  the cue's own: a reshaped boundary that is already behind the playhead is not allowed to fire off the grid. */
+  /** The tick that pending fires at (beat/bar), or null for the rowEnd rule. Derived each update from the press and
+   *  the rule in force; a boundary a rule or divisor change has MOVED behind the playhead is re-snapped from now, so
+   *  the launch never fires off the grid. */
   pendingTick?: number | null;
   /** The tick every press landed on, whatever the rule: the wait is re-derived from it each update, so a rule or a
-   *  divisor changed while the row pulses yellow moves the wait with it, in either direction. */
+   *  divisor changed while the row pulses yellow moves the wait with it, in either direction. Re-based to now when a
+   *  moved boundary is re-snapped, so a later block derives that same tick. */
   pendingFromTick?: number | null;
   /** The row the followed channel was on when every press landed, as pendingFromTick is: the rowEnd rule reads it. */
   pendingFromRow?: number | null;
@@ -207,14 +209,20 @@ function resolvePending(c: ControllerCtx, st: MapState, quantise: Quantise, curr
 
   // The rule and the divisor are both per block (ControllerCtx.tickDivisor), and a cart bar is 96 times it: either
   // changed while this launch waits moves the wait with it, so the fire tick is derived from the press each update
-  // rather than kept from the press. Kept MONOTONE, because a boundary the new grid has already passed - a divisor
-  // shrink, whose bar is behind the playhead - would otherwise fire off the grid in the middle of a phrase: the
-  // later of the two stands, and the launch waits for a boundary both clocks share.
+  // rather than kept from the press. A boundary the new grid has MOVED behind the playhead - a divisor shrink, a rule
+  // change to a grid the old tick is not on - is re-snapped forward on this grid, and the press is re-based to now so
+  // a later block derives the same tick: the old tick is off the new grid, and firing at once is no boundary at all.
+  // A boundary that did NOT change is left alone, even when a block (a large one, a seek) steps past it, so it fires
+  // on that block as it always did rather than a whole unit late.
   if (quantise === "rowEnd") {
     st.pendingTick = null;
   } else if (st.pendingFromTick !== null && st.pendingFromTick !== undefined) {
-    const next = boundaryTick(st.pendingFromTick, quantise, c.tickDivisor);
-    st.pendingTick = st.pendingTick === null || st.pendingTick === undefined ? next : Math.max(st.pendingTick, next);
+    let next = boundaryTick(st.pendingFromTick, quantise, c.tickDivisor);
+    if (next !== st.pendingTick && next < c.tick) {
+      st.pendingFromTick = c.tick;
+      next = boundaryTick(c.tick, quantise, c.tickDivisor);
+    }
+    st.pendingTick = next;
   }
 
   // rowEnd fires on the model's next row change, which works identically on the observed and predicted

@@ -305,8 +305,9 @@ test("a quantise rule changed while a cue waits moves the wait with it, either w
 
 test("a divisor shrink does not fire a cued launch off the grid", () => {
   // A press at host tick 51 is cued for the cart's bar at 192 at divisor 2. At divisor 1 the cart's bar is 96, already
-  // behind the playhead at 150: re-deriving alone would fire there, mid-phrase on the divisor-1 grid, where 192 is a
-  // bar on both grids. The derived tick is kept monotone, so the launch waits for the boundary both clocks share.
+  // behind the playhead at 150: re-deriving alone would fire there, mid-phrase on the divisor-1 grid. The boundary the
+  // divisor change MOVED behind the playhead is re-snapped from now onto the new grid, which is 192, the bar both
+  // clocks share.
   const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
   const h = harness(model, { quantise: "bar", follow: false }, 2);
   model.setRows([0, 0, 0, 0]);
@@ -315,6 +316,74 @@ test("a divisor shrink does not fire a cued launch off the grid", () => {
   h.run({ tick: 150, tickDivisor: 1 });
   expect(h.sent.length).toBe(0); // 96 is behind the playhead
   h.run({ tick: 192, tickDivisor: 1 });
+  expect(h.sent).toEqual([[0x90, 5, 100]]);
+});
+
+test("a divisor shrink re-snaps a boundary the new grid does not share", () => {
+  // At divisor 3 a press at 51 is cued for the cart's bar at 288. Divisor 2's bars are 192 apart, so 288 is no
+  // boundary on the new grid at all, and holding it would fire mid-phrase. The moved boundary is re-snapped from the
+  // playhead at 200, so the launch waits for the next divisor-2 bar, 384.
+  const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
+  const h = harness(model, { quantise: "bar", follow: false }, 3);
+  model.setRows([0, 0, 0, 0]);
+  h.run({ tick: 50 });
+  h.run({ tick: 51, input: [h.device.press(0, 5)] });
+  h.run({ tick: 200, tickDivisor: 2 });
+  expect(h.sent.length).toBe(0); // 192 is behind the playhead
+  h.run({ tick: 383, tickDivisor: 2 });
+  expect(h.sent.length).toBe(0); // 288 is not a divisor-2 boundary
+  h.run({ tick: 384, tickDivisor: 2 });
+  expect(h.sent).toEqual([[0x90, 5, 100]]);
+});
+
+test("a rule changed long after the press waits for the new grid, not the old boundary", () => {
+  // A rowEnd cue stores no boundary, so the first derive from a bar rule would take the bar of the tick the press
+  // landed on - 96 here, behind the playhead at 500, since a chain lasts many bars. That is the reachable form of the
+  // mid-phrase launch: the boundary only exists on the new grid because it moved there, so it re-snaps to 576.
+  const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
+  const config: Record<string, unknown> = { quantise: "rowEnd", follow: false };
+  const h = harness(model, config);
+  model.setRows([2, 2, 2, 2]);
+  h.run({ tick: 10 });
+  h.run({ tick: 11, input: [h.device.press(0, 6)] });
+  config.quantise = "bar";
+  h.run({ tick: 500 });
+  expect(h.sent.length).toBe(0);
+  h.run({ tick: 575 });
+  expect(h.sent.length).toBe(0);
+  h.run({ tick: 576 });
+  expect(h.sent).toEqual([[0x90, 6, 100]]);
+});
+
+test("a rule changed to a finer one fires on its own boundary, not the coarser one", () => {
+  // A bar cue pressed at 31 waits for 96, but the beat rule asks for the next beat, 48. The boundary is on the new
+  // grid and ahead of the playhead, so it is not re-snapped: the wait is simply the new rule's.
+  const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
+  const config: Record<string, unknown> = { quantise: "bar", follow: false };
+  const h = harness(model, config);
+  model.setRows([0, 0, 0, 0]);
+  h.run({ tick: 30 });
+  h.run({ tick: 31, input: [h.device.press(0, 6)] });
+  config.quantise = "beat";
+  h.run({ tick: 40 });
+  expect(h.sent.length).toBe(0);
+  h.run({ tick: 47 });
+  expect(h.sent.length).toBe(0);
+  h.run({ tick: 48 });
+  expect(h.sent).toEqual([[0x90, 6, 100]]);
+});
+
+test("a block that steps past an unchanged boundary fires on that block, not the next one", () => {
+  // An 8192-frame block or a forward seek can take the tick from 95 over the bar at 96 to 100. That boundary did not
+  // move, so it is not re-snapped: only a boundary a rule or divisor change HAS moved waits for a later one.
+  const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
+  const h = harness(model, { quantise: "bar", follow: false });
+  model.setRows([0, 0, 0, 0]);
+  h.run({ tick: 0 });
+  h.run({ tick: 1, input: [h.device.press(0, 5)] });
+  h.run({ tick: 95 });
+  expect(h.sent.length).toBe(0);
+  h.run({ tick: 100 });
   expect(h.sent).toEqual([[0x90, 5, 100]]);
 });
 
