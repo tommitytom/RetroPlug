@@ -538,7 +538,7 @@ TEST_CASE("a deactivate the audio thread could not apply is applied by the tick,
     LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
     handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
     host.reset();
-    // An AU reset on the render thread deactivates and activates again. This case drives the DEPLOYED half of the
+    // An AU reset on the render thread deactivates and activates again. This case drives the DEACTIVATE half of the
     // pair: the deactivate arrives while the control thread's tick is inside the take, so it may not wait for it (the
     // activate that follows, and the ORDER the two keep, is the next case).
     host.shutGate();
