@@ -7,6 +7,8 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "n8/CartLink.hpp"  // NoteEvent: the release tracker's books
+
 namespace retroplug {
 
 namespace {
@@ -22,6 +24,9 @@ std::int64_t nowNs() {
 // How long a cart may say nothing while a frame is outstanding before it is taken for one acknowledging nothing: the
 // pause's bounded wait for acks, and the silence after which a config read may go ahead of an outstanding frame.
 constexpr std::int64_t kAckWaitNs = 250'000'000;
+// How long a message the cart's parser is still inside may hold a leaving node's release: long enough for the next
+// chunk of a SysEx the bytes port split, short enough that a stream that died mid-message still releases its notes.
+constexpr std::int64_t kMidMessageNs = 250'000'000;
 }  // namespace
 
 N8Link::N8Link(PortFactory factory) : factory_(std::move(factory)) {}
@@ -93,6 +98,7 @@ bool N8Link::connect(const std::string& port) {
     // connection, then start the consumer thread BEFORE allowing producers.
     { TimedChunk drop; while (ring_.tryPop(drop)) {} }
     chunksWritten_ = chunksPushed_.load(std::memory_order_acquire);  // the ring is empty: nothing pushed is still to go
+    std::fill(std::begin(lastOn_), std::end(lastOn_), kNoChunk);     // a fresh connection's cart holds no note of ours
     bytesForwarded_.store(0, std::memory_order_relaxed);
     controlRetryAtNs_ = 0;  // a prior connection's failed control write does not hold this one's first turn back
     backChannelQuiet_.store(true, std::memory_order_relaxed);
@@ -142,30 +148,47 @@ bool N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::siz
 }
 
 void N8Link::releaseNotes(const NoteSet& notes) {
+    releaseNotes(notes, chunksPushed_.load(std::memory_order_acquire));
+}
+
+void N8Link::releaseNotes(const NoteSet& notes, std::uint64_t mark) {
     if (notes.none()) return;
     std::lock_guard<std::mutex> l(jobMutex_);
     if (!acceptingJobs_) return;  // no serial thread to write them: the link is down
     releasePending_ |= notes;
-    // Everything pushed so far, which the caller's own pushes are among: a cart node's destroy runs after the plan swap
-    // that ordered its last block before it.
-    releaseAfter_ = chunksPushed_.load(std::memory_order_acquire);
+    // Behind the caller's own last push (the mark it recorded), not behind every push so far: a cart node's destroy
+    // runs after the plan swap, so the node taking over has already pushed, and a release that waited for those would
+    // go out behind a note-on it has to precede. Several leaving nodes' releases take the latest mark: a note-on
+    // between two of their marks belongs to a node that is leaving too.
+    releaseAfter_ = std::max(releaseAfter_, mark);
     releaseWanted_.store(true, std::memory_order_release);
 }
 
 void N8Link::writeReleases(bool stopping) {
     if (!releaseWanted_.load(std::memory_order_acquire)) return;
-    NoteSet notes;
+    // Between two messages only: a note-off written inside one the bytes port split across chunks is not a message the
+    // cart's parser sees (a SysEx above all - a note-off inside an F0..F7 run is payload). A stream left mid-message
+    // holds it only until kMidMessageNs, so a node that dies mid-SysEx still gets its notes released.
+    if (!stopping && !atMessageBoundary(nowNs())) return;
+    NoteSet      notes;
+    std::uint64_t after = 0;
     {
         std::lock_guard<std::mutex> l(jobMutex_);
         // A chunk pushed before the release is still to go (a note-on waiting for its release time would otherwise
         // follow its own note-off and sound for good). A stopping link writes no more chunks, so it does not wait.
         if (!stopping && chunksWritten_ < releaseAfter_) return;
         notes = releasePending_;
+        // The mark THIS batch was taken at, copied under the lock that writes it: releaseNotes on the control thread
+        // can move the field while the loop below runs, and a newer mark must not decide about an older batch.
+        after = releaseAfter_;
         releasePending_.reset();
         releaseWanted_.store(false, std::memory_order_relaxed);
     }
     for (std::size_t i = 0; i < notes.size(); ++i) {
         if (!notes.test(i)) continue;
+        // A key whose last note-on went out at or past the mark is the node that took over's, and a note-off here would
+        // cut it. (A key it struck and released again is kNoChunk, so this is only ever the safe direction.)
+        if (lastOn_[i] != kNoChunk && lastOn_[i] >= after) continue;
         TimedChunk off;
         off.len     = 3;
         off.data[0] = static_cast<std::uint8_t>(0x80 | (i / 128));
@@ -377,6 +400,15 @@ void N8Link::streamLoop() {
 }
 
 void N8Link::writeChunk(const TimedChunk& chunk) {
+    // The tracker's books, before the bytes go: this chunk's index is chunksWritten_, which the caller bumps after this
+    // returns. A note-on is what a handover's release must not cut; a note-off leaves the key unheld. Only the first
+    // message of a chunk is read (noteEvent), which is every message a node pushes: pushMidi sends one at a time. A
+    // multi-message push is the BYTES port's, and its notes are not in this table, so a handover through that port
+    // cannot tell the new node's key from the old one's.
+    const rp::n8::NoteEvent note = rp::n8::noteEvent(chunk.data, chunk.len);
+    if (note.on) lastOn_[note.index] = chunksWritten_;
+    else if (note.off) lastOn_[note.index] = kNoChunk;
+    const std::int64_t now = nowNs();
     if (rel_) {
         std::vector<std::uint8_t> out;
         std::vector<int> seqs;
@@ -384,12 +416,62 @@ void N8Link::writeChunk(const TimedChunk& chunk) {
             if (seq >= 0) seqs.push_back(seq);
             out.insert(out.end(), d, d + k);
         });
-        writeFramed(out, seqs, nowNs(), false);
+        // What the cart's parser sees on this path is frames, which never leave a message open: the sender holds a
+        // split SysEx until its F7 and frames whole messages (transport/N8ReliableLink.hpp).
+        noteWireBytes(out.data(), out.size(), now);
+        writeFramed(out, seqs, now, false);
     } else {
-        if (writeLog_) writeLog_(chunk.data, chunk.len, nowNs(), false);
+        noteWireBytes(chunk.data, chunk.len, now);
+        if (writeLog_) writeLog_(chunk.data, chunk.len, now, false);
         check(edio_->fifoWR(chunk.data, chunk.len));
         bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
     }
+}
+
+void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now) {
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::uint8_t b = data[i];
+        if (wireSysex_) {
+            if (b == 0xF7) wireSysex_ = false;
+            continue;
+        }
+        if (wireExpect_ > 0 && b < 0x80) {
+            --wireExpect_;
+            continue;
+        }
+        if (b < 0x80) continue;  // data with no status behind it: nothing of ours is open
+        if (b == 0xF0) {
+            wireSysex_ = true;
+            continue;
+        }
+        wireExpect_ = wireDataBytes(b);
+    }
+    const bool open = wireSysex_ || wireExpect_ > 0;
+    if (!open) wireOpenSinceNs_ = 0;
+    else if (wireOpenSinceNs_ == 0) wireOpenSinceNs_ = now;
+}
+
+// One complete MIDI message's data bytes, from its status: 2 for most channel messages, 1 for programme and channel
+// pressure, and 0 for the System Common ones that carry none (a real-time byte is one on its own, and F0 is the SysEx
+// open this tracker follows instead).
+std::size_t N8Link::wireDataBytes(std::uint8_t status) {
+    switch (status & 0xF0) {
+        case 0x80: case 0x90: case 0xA0: case 0xB0: case 0xE0: return 2;
+        case 0xC0: case 0xD0: return 1;
+        default: break;
+    }
+    switch (status) {
+        case 0xF1: case 0xF3: return 1;
+        case 0xF2: return 2;
+        default: return 0;
+    }
+}
+
+bool N8Link::atMessageBoundary(std::int64_t now) const {
+    if (!wireSysex_ && wireExpect_ == 0) return true;
+    // A stream left open this long is one nothing is going to finish (a node that died mid-SysEx): its notes are
+    // released anyway, since a tone held on the console is the worse of the two.
+    return wireOpenSinceNs_ != 0 && now - wireOpenSinceNs_ >= kMidMessageNs;
 }
 
 void N8Link::drainForJob(TimedChunk& chunk, bool& have) {

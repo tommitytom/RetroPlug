@@ -35,6 +35,8 @@ public:
         return false;
     }
     bool          connected() const override { return host_.link().isConnected(); }
+    // [audio] N8Link::chunksPushed: the queue's own count, which the node reads after each of its pushes.
+    std::uint64_t pushMark() const override { return host_.link().chunksPushed(); }
     // Every push of this adapter that lost its bytes, plus the chunks a stream stopped after a job found in its ring
     // (N8Link::chunksDiscarded: pushes that reached the ring after the pause's drain, whose caller the link cannot
     // tell). A node keeps its own books on push()'s answer; this is the count for a caller that reads the link.
@@ -72,12 +74,23 @@ public:
         return taken;
     }
     void abandonJobs(const void* owner) override { host_.abandonCartJobs(owner); }
+    // Both releaseNotes forms are visible on this concrete type (a hidden overload would make a caller's marked
+    // release, the one a handover makes, fail to compile).
+    using rp::n8::CartLink::releaseNotes;
     // [control] N8Link::releaseNotes: the serial thread writes their note-offs behind what was already pushed.
     void releaseNotes(const rp::n8::CartNotes& notes) override {
         N8Link::NoteSet set;
         for (std::size_t i = 0; i < notes.size(); ++i)
             if (notes.test(i)) set.set(i);
         host_.link().releaseNotes(set);
+    }
+    // [control] The same, waiting behind the mark the leaving node recorded: a key the node taking over struck since is
+    // its own, and its note-off would cut it.
+    void releaseNotes(const rp::n8::CartNotes& notes, std::uint64_t mark) override {
+        N8Link::NoteSet set;
+        for (std::size_t i = 0; i < notes.size(); ++i)
+            if (notes.test(i)) set.set(i);
+        host_.link().releaseNotes(set, mark);
     }
 
 private:

@@ -1030,6 +1030,13 @@ rp::n8::CartNotes heldNotes() {
     return notes;
 }
 
+// Where `entry` last appears in the cart's log, or -1 when it never does.
+std::ptrdiff_t lastLogIndex(FakeN8& dev, const std::string& entry) {
+    std::lock_guard<std::mutex> l(dev.mu);
+    const auto it = std::find(dev.log.rbegin(), dev.log.rend(), entry);
+    return it == dev.log.rend() ? -1 : static_cast<std::ptrdiff_t>(dev.log.rend() - it - 1);
+}
+
 // Where `entry` first appears in the cart's log, or the log's length when it never does.
 std::ptrdiff_t logIndex(FakeN8& dev, const std::string& entry) {
     std::lock_guard<std::mutex> l(dev.mu);
@@ -1112,5 +1119,94 @@ TEST_CASE("the notes a leaving cart node held get their note-offs from the seria
         rig.connect();
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         CHECK(rig.dev.count("fifo:80 3C 00") == 1);
+    }
+}
+
+TEST_CASE("a handover releases only the notes the leaving node left, not a key the new one struck",
+          "[n8][cart-release]") {
+    // A cart node's destroy runs on the control thread after the plan swap, so the node taking over has already pushed.
+    // Its release therefore waits behind the LEAVING node's own last push (CartLink::pushMark) instead of behind
+    // everything pushed so far, and a key the new node struck since is skipped: a per-key holder count would be wrong
+    // (a node forwards the DAW's duplicate note-ons, so a count would rise and never come down), which is why the link
+    // keeps the index of the chunk whose note-on it last wrote for each key.
+    SECTION("raw: the new node struck one of the keys the old one held") {
+        Rig rig;
+        rig.connect();
+        rig.push({0x90, 0x3C, 0x7F});  // the leaving node, key 60
+        rig.push({0x90, 0x43, 0x7F});  // ... and key 67
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 43 7F") == 1; }));
+        const std::uint64_t mark = rig.cart.pushMark();
+        rig.push({0x90, 0x3C, 0x7F});  // the node taking over, on a key the old one held
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 2; }));
+        rig.cart.releaseNotes(heldNotes(), mark);
+        // Key 67 is the leaving node's alone, so its note-off goes; key 60 is the new node's, so none is written.
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:81 43 00") == 1; }));
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 0);
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+        CHECK(rig.cart.connected());
+    }
+    SECTION("raw: the new node's note-on is still waiting for its release time when the release runs") {
+        Rig rig;
+        rig.connect();
+        rig.push({0x90, 0x3C, 0x7F});
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
+        const std::uint64_t mark = rig.cart.pushMark();
+        // 200 ms out at 48 kHz: the node taking over's note-on is still in the ring, so the release goes out ahead of
+        // it, and the wire reads on, off, on - the key sounds, as the new node meant it to.
+        const Bytes on{0x90, 0x3C, 0x7F};
+        rig.cart.push(9600, on.data(), on.size(), false, 48000.0);
+        rig.cart.releaseNotes(heldNotes(), mark);
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 2; }));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 1);
+        CHECK(lastLogIndex(rig.dev, "fifo:80 3C 00") < lastLogIndex(rig.dev, "fifo:90 3C 7F"));
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+    }
+    SECTION("raw: a release waits for a SysEx the bytes port split across chunks") {
+        Rig rig;
+        rig.connect();
+        // A node's bytes port can hand over half a SysEx: the cart's parser is inside a message until the F7, so a
+        // note-off written between the halves is payload, not a message, and the key it meant to release stays down.
+        rig.push({0xF0, 0x7E, 0x7F});  // the first half: F0 and two of its data bytes
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
+        rig.cart.releaseNotes(heldNotes());
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 0);  // held: the message is not finished
+        rig.push({0x09, 0x01, 0xF7});                // and its tail, which completes it
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
+        CHECK(lastLogIndex(rig.dev, "fifo:09 01 F7") < lastLogIndex(rig.dev, "fifo:80 3C 00"));
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+    }
+    SECTION("framed: the reliable link delivers the same order") {
+        Rig rig;
+        rig.dev.menu    = false;
+        rig.dev.linkRom = true;  // BlipToaster, which answers the probe
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+        rig.push({0x90, 0x3C, 0x7F});
+        rig.push({0x90, 0x43, 0x7F});
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 2;
+        }));
+        const std::uint64_t mark = rig.cart.pushMark();
+        rig.push({0x90, 0x3C, 0x7F});
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 3;
+        }));
+        rig.cart.releaseNotes(heldNotes(), mark);
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 4;
+        }));
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        REQUIRE(rig.dev.applied.size() == 4);  // and the second note for key 60 never comes
+        CHECK(rig.dev.applied[3] == Bytes{0x81, 0x43, 0x00});
+        for (const Bytes& m : rig.dev.applied) {
+            const bool cutsKey60 = (m[0] & 0xF0) == 0x80 && m[1] == 0x3C;
+            CHECK_FALSE(cutsKey60);
+        }
     }
 }

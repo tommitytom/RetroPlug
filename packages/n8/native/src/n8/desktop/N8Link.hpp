@@ -123,6 +123,12 @@ public:
     // leaving the plan releases what it held: its destroy runs on the control thread, which may not push into the audio
     // thread's ring.
     void          releaseNotes(const NoteSet& notes);
+    // [control] As releaseNotes, waiting behind `mark` instead of behind every push so far: what a cart node hands over
+    // from its destroy, which runs after the plan swap and so after the node taking over has pushed. A key whose last
+    // note-on was written at or past the mark is the new node's, and is skipped rather than cut.
+    void          releaseNotes(const NoteSet& notes, std::uint64_t mark);
+    // [audio] Every chunk push() has put in the ring since the connect: the mark a node records after its own push.
+    std::uint64_t chunksPushed() const { return chunksPushed_.load(std::memory_order_acquire); }
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
     // Stop + join the serial thread, close the port. With a paused job running the join waits for the job's current
     // step to end (see PausedJob): a caller on a UI thread (Settings > N8's Connect and port rows) should not offer it
@@ -183,6 +189,11 @@ private:
     void streamLoop();                                   // serial thread: the probe, then stream until stopped
     void writeChunk(const TimedChunk& chunk);            // serial thread: one chunk out, framed when reliable
     void writeReleases(bool stopping);                   // serial thread: releaseNotes' note-offs, once they may go
+    // serial thread: where the BYTE stream the cart is reading stands, so a release never goes between a status and its
+    // data (see atMessageBoundary). wireDataBytes is one message's data bytes from its status.
+    void        noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now);
+    static std::size_t wireDataBytes(std::uint8_t status);
+    bool        atMessageBoundary(std::int64_t now) const;
     void runJob(TimedChunk& chunk, bool& have);          // serial thread: pause, run the pending job, resume
     void drainForJob(TimedChunk& chunk, bool& have);     // serial thread: what was pushed before the pause goes out
     void stopStreaming();                                // serial thread: stop and close the port (AfterJob::Stop)
@@ -216,6 +227,17 @@ private:
     // read when it was asked, so it goes out behind everything pushed before it.
     std::atomic<std::uint64_t> chunksPushed_{0};
     std::uint64_t              chunksWritten_ = 0;
+    // Per key (channel * 128 + note), the index of the chunk whose note-on the serial thread last wrote, or kNoChunk:
+    // cleared by a note-off it writes. It is what tells a release for a key the node taking over struck (at or past the
+    // mark it waits behind) from one for a key nothing holds any more. Serial thread only, reset at each connect.
+    static constexpr std::uint64_t kNoChunk = ~std::uint64_t{0};
+    static constexpr std::size_t   kNoteKeys = 16 * 128;
+    std::uint64_t              lastOn_[kNoteKeys] = {};
+    // The shape of the byte stream the cart has been sent (noteWireBytes): the data bytes still owed by the message
+    // open, whether a SysEx is one of them, and when that began (0: at a message boundary). Serial thread only.
+    int                        wireExpect_    = 0;
+    bool                       wireSysex_     = false;
+    std::int64_t               wireOpenSinceNs_ = 0;
     // The earliest moment OnControl runs again after a throw (see the loop in streamLoop), and a wake a caller asked
     // for since the last quiet turn: the first is serial-thread state, the second is stored from any thread.
     std::int64_t               controlRetryAtNs_ = 0;

@@ -69,6 +69,15 @@ Engine::GraphRequest withCart(std::vector<DocSystem>& systems) {
                                                            docWire("midi-in.midi", "cart.midi")}}),
                         {1});
 }
+// The same document with the cart node under another id: the node taking over across a replan, so the one it replaces
+// is destroyed later, at reclaim, while the new one is already pushing.
+Engine::GraphRequest withCartNode(std::vector<DocSystem>& systems, const std::string& id) {
+    return graphRequest(stereoDocument(systems, DocExtras{{docNode("midi-in", "rp.host.midi-in"),
+                                                           docNode(id.c_str(), "rp.n8.nes")},
+                                                          {docWire("midi-in.midi", "sys-1.midi"),
+                                                           docWire("midi-in.midi", id + ".midi")}}),
+                        {1});
+}
 Engine::GraphRequest withoutCart(std::vector<DocSystem>& systems) {
     return graphRequest(stereoDocument(systems, DocExtras{{docNode("midi-in", "rp.host.midi-in")},
                                                           {docWire("midi-in.midi", "sys-1.midi")}}),
@@ -104,6 +113,13 @@ std::optional<rp::host::JobCompletion> completion(Engine& e, std::uint32_t id) {
 std::ptrdiff_t logIndex(FakeN8& dev, const std::string& entry) {
     std::lock_guard<std::mutex> l(dev.mu);
     return std::find(dev.log.begin(), dev.log.end(), entry) - dev.log.begin();
+}
+
+// Where `entry` last appears in the cart's log, or -1 when it never does.
+std::ptrdiff_t lastLogIndex(FakeN8& dev, const std::string& entry) {
+    std::lock_guard<std::mutex> l(dev.mu);
+    const auto it = std::find(dev.log.rbegin(), dev.log.rend(), entry);
+    return it == dev.log.rend() ? -1 : static_cast<std::ptrdiff_t>(dev.log.rend() - it - 1);
 }
 
 // The provider a case started, stopped as a product stops it: the engine's plans first, while the link is installed,
@@ -155,6 +171,12 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
         host.connect(true);
         REQUIRE(host.link().isConnected());
         host.link().setLookaheadMs(0);
+        {
+            // A game, not the menu: the note this case stages first has to reach the cart, and a menu is where a
+            // streamed message does not go.
+            std::lock_guard<std::mutex> l(dev.mu);
+            dev.menu = false;
+        }
 
         // A note staged at the engine reaches the cart's FIFO, through the node, N8CartLink and N8Link.
         e.stageMidi(0, Bytes{0x90, 60, 100});
@@ -232,6 +254,34 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             // note held: the plans, then the providers.
             host.connect(true);
             REQUIRE(host.link().isConnected());
+            provider.stop();
+        }
+        SECTION("a cart node taking over keeps the key it struck, though the one it replaced held it") {
+            // The audio thread owns the engine, as it does in the plugin: a publish is adopted by a block, not by
+            // setGraph, and the plan it replaced stays alive until a reclaim. So the node taking over pushes its first
+            // block BEFORE the node it replaced is destroyed, which is the handover this case guards. (Quiescent, the
+            // publish itself would free the replaced plan, and the release would go out before the new node pushed -
+            // correct, but not the timing that cuts a key.)
+            struct Owned {
+                Engine& e;
+                explicit Owned(Engine& engine) : e(engine) { e.setAudioThreadOwns(true); }
+                ~Owned() { e.setAudioThreadOwns(false); }
+                Owned(const Owned&)            = delete;
+                Owned& operator=(const Owned&) = delete;
+            } owned(e);
+            REQUIRE(e.setGraph(withCartNode(systems, "cart-2")).ok);
+            e.stageMidi(0, Bytes{0x90, 60, 100});
+            e.drainCommands();  // the audio thread's drain: the swap is adopted and the staged note pushed
+            block(e);
+            REQUIRE(waitUntil([&] { return dev.count("fifo:90 3C 64") == 2; }));
+            // The replaced plan, and the node still holding key 60, are freed here, with the new node's push already
+            // among what the link has taken.
+            e.reclaim();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            const std::ptrdiff_t off = lastLogIndex(dev, "fifo:80 3C 00");
+            const std::ptrdiff_t on  = lastLogIndex(dev, "fifo:90 3C 64");
+            CHECK(on >= 0);
+            CHECK(off < on);  // what the cart last heard about key 60 is the new node's note-on
             provider.stop();
         }
         SECTION("a host's teardown with a note held: the plans first, then the links") {

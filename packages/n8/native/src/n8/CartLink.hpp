@@ -123,12 +123,27 @@ public:
     // removal) and the device reports into its record no more, stopping at the next point that leaves the device
     // coherent. Nothing when it holds no job.
     virtual void abandonJobs(const void* owner) { (void)owner; }
+    // [audio] How many chunks this link has taken from its producer since the connect. Only the audio thread pushes, so a
+    // node reads it exactly after its own push, and that reading is the mark a handover's release waits behind
+    // (releaseNotes(notes, mark)): the pushes a node taking over made between the swap and the leaving node's destroy are
+    // NOT among them. A link that cannot tell the pushes apart answers 0, and its releaseNotes(notes, mark) falls back
+    // to the one-argument form.
+    virtual std::uint64_t pushMark() const { return 0; }
+
     // [control] The node is leaving the plan while the cart holds `notes` (it pushed their note-ons and no note-offs):
     // the device sends each a note-off from its own thread, after every byte pushed before this call, so no console is
     // left holding a tone no node will ever release. The node's destroy calls it, on the control thread after the plan
     // swap, where it may not push itself: the audio thread (and the node taking over) may still be pushing. A link with
     // no device, or one not streaming, drops them; nothing a node does depends on whether they went.
     virtual void releaseNotes(const CartNotes& notes) { (void)notes; }
+    // [control] As releaseNotes, but waiting behind `mark` (pushMark() after the caller's own last push) rather than
+    // behind every push so far. A cart node's destroy runs after the plan swap, so the node taking over has already
+    // pushed, and a release that waited for THOSE would cut a key it struck. A link that cannot tell the pushes apart
+    // takes the one-argument form.
+    virtual void releaseNotes(const CartNotes& notes, std::uint64_t mark) {
+        (void)mark;
+        releaseNotes(notes);
+    }
 
     // There is deliberately no error string here: why a cart would not open is the host UI's (it reads N8Host's
     // lastError through Settings > N8), not something a document's node can act on. Nor an acquire or a release: a

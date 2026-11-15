@@ -68,6 +68,10 @@ struct N8Nes {
     // note-off lost there would leave the console holding the note for good. What is still sounding when the node
     // leaves the plan is handed to the link (the destructor).
     CartNotes sounding, owed;
+    // The link's push count after this node's last push (CartLink::pushMark). Its destroy hands it over with the notes
+    // it still holds: a node taking over has pushed since the plan swap, and a release waiting behind everything pushed
+    // would cut a key it struck.
+    std::uint64_t mark = 0;
 
     void bind_host(const rp_host* h) noexcept {
         devices = static_cast<const rp_host_devices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
@@ -91,7 +95,7 @@ struct N8Nes {
         // turned off, the NES removed, the drive moving, a project closed while the DAW plays) would sound until a
         // power-cycle. Not pushed here: this runs on the control thread after the swap, and the audio thread, or the
         // node taking over (whose books start empty), may be pushing at the ring now.
-        if (sounding.any()) cart->releaseNotes(sounding);
+        if (sounding.any()) cart->releaseNotes(sounding, mark);
         // A job this node submitted that is still running fails now, and the link reports into its record no more, so
         // the engine may free the record; the device stops at its next safe point.
         cart->abandonJobs(this);
@@ -146,7 +150,9 @@ struct N8Nes {
         }
         for (const rp_message& m : inputs.bytes.messages()) {
             const auto data = inputs.bytes.data(m);
-            if (!data.empty()) cart->push(m.frame, data.data(), data.size(), (m.flags & RP_MESSAGE_FLUSH) != 0, rate);
+            if (data.empty()) continue;
+            cart->push(m.frame, data.data(), data.size(), (m.flags & RP_MESSAGE_FLUSH) != 0, rate);
+            mark = cart->pushMark();
         }
     }
 
@@ -166,6 +172,7 @@ struct N8Nes {
     // books never read a count that another thread moves.
     void pushMidi(std::uint32_t frame, const std::uint8_t* data, std::size_t size, double rate) noexcept {
         const bool      sent = cart->push(frame, data, size, false, rate);
+        mark                 = cart->pushMark();
         const NoteEvent note = noteEvent(data, size);
         if (note.on && sent) {
             sounding.set(note.index);
@@ -188,6 +195,7 @@ struct N8Nes {
             const std::uint8_t off[3] = {static_cast<std::uint8_t>(0x80 | (note / 128)),
                                          static_cast<std::uint8_t>(note % 128), 0};
             if (!cart->push(0, off, sizeof off, false, rate)) return;
+            mark = cart->pushMark();
             owed.reset(note);
             sounding.reset(note);
         }
