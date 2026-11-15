@@ -123,6 +123,28 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   `rom.upload` leaves streaming stopped until the host reconnects. The CLI's n8 tools keep their own raw serial path
   (the battery dump among them, the one cart-memory read left); the capabilities deliberately offer no peek, poke,
   sniffer or FIFO reads.
+- **A cart at its menu is not streamed to.** The menu takes commands over the same FIFO a game reads MIDI from, so a
+  data pair inside a message (`0x2A 0x73` is `*s`: start an app) can reach it. `N8Link` keeps the cart's at-menu state,
+  read from the FPGA config block's map_idx (255 at the menu; a system-region read that touches neither the cart's bus
+  nor a game's FIFO) - seeded at connect, and re-read about every 250 ms on a turn quiet for a read, with a 100 ms
+  timeout, and at once when the framed window has STOPPED MOVING (the oldest frame unacknowledged past the link's own
+  100 ms timeout, which is the console reset), whose new frames and re-sends wait for that read and at most a second.
+  Every guard read flushes the input first, so a chattering cart's bytes cannot garble the block; a job's menu probe
+  reads unflushed, so it may trip the guard but never clear it. While it says menu, `push` answers false and counts, the
+  ring, the reliable window and any pending note release are discarded, and nothing is written; leaving the menu re-runs
+  the link probe. Jobs still run there (the SD card is reachable only at the menu), and a cart node's `connected` reads
+  0, so its owed note-offs follow the existing disconnected rule. Settings > N8's status row says "At the N8 menu (not
+  streaming)".
+  - **The residual window, in its two bounds.** The guard knows the cart's state only when a read lands, so bytes that
+    go out before it are not held back. Raw, that is up to one read cadence, 250 ms of streamed MIDI. Framed, the read
+    follows the quiet rule or the hold's bound once the window has stood still for the link's timeout, so what reaches
+    the menu is every frame written in that wait, re-sends included. The framed reset case therefore cannot be made
+    airtight from this side - the first frames after a reset are written before anything can know a menu came back -
+    and a read per chunk, which would put a 100 ms round trip between every message, is the only full fix
+    ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). A second's worth of that window is trusted: a read
+    that answers "a game" while the window is stopped suppresses the next look for a second, so a reset inside that
+    second streams until it expires. The hardware check the quiet rule rests on is
+    [spec/07](07-remaining-work.md#the-n8-menus-back-channel).
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session` and `pnpm test:native n8-sdk` (`connectN8`
   over the fake N8); for the box, `pnpm device:box`, then the rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each
@@ -184,9 +206,15 @@ The apps themselves are contributions (`controllerApps`, in two halves joined by
 control plane's half is `definePackage({ controllerApps })` (`id`, `label`, the app's config schema), which the
 kind's `accept` files in the pack's own `ts/registry.ts` table, the one `parseAppConfig` reads.
 
+- **MI.MAP's quantise, in two clocks.** The app's `quantise` knob has four timed values beside `immediate` and
+  `rowEnd`: `beat` and `bar` count the CART's clock, and `hostBeat` and `hostBar` the DAW's. The cart is clocked at
+  24 / tickDivisor ticks a quarter, so its beat is 24 x divisor DAW ticks and its bar 96 x divisor (one LSDj phrase),
+  phased from ppq 0; the host values keep 24 and 96 whatever the cart does. The divisor reaches the app on its
+  controller context (`ControllerCtx.tickDivisor`, read every block from the session's settings, so a change needs no
+  rebuild). A project at the default divisor 1 behaves exactly as it always has.
 - **Prove a change:** `pnpm test controller`, `pnpm test script/nodes/controller-session`,
-  `pnpm test graph/build-graph`, and `pnpm test:plugin` (`retroplug-launchpad-test` for the transport the
-  session's surface reads).
+  `pnpm test graph/build-graph`, `pnpm test lsdj-launchpad`, and `pnpm test:plugin` (`retroplug-launchpad-test` for
+  the transport the session's surface reads).
 
 ### Pico firmware (`pico/`)
 

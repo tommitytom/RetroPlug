@@ -496,11 +496,14 @@ volume reaches it, and only on a turn quiet for the read: nothing outstanding on
 for 250 ms since its oldest outstanding frame first went out, as one at its menu is), so a transfer a running game
 will refuse is refused without pausing the stream and dropping the block's notes; the submitting thread waits for that
 read, up to its 1 s bound. The cart node keeps books on the notes the cart holds: it re-sends at frame 0 the note-offs
-a pause dropped, and its destroy hands what is still sounding to the link (`CartLink::releaseNotes`), whose serial
-thread writes their note-offs behind every byte pushed before the call (a disconnect writes them before the port
-closes; a link that is down drops them), so a node leaving the plan mid-note leaves no tone on the console once its
-plan is reclaimed: within a frame of the swap where the host has an idle tick (the plugin with its editor open, the
-SDL standalone), and at the next publish or deactivate in a plugin whose editor is closed. The engine keeps at most
+a pause dropped, and its destroy hands what is still sounding to the link (`CartLink::releaseNotes`), with the push
+count it recorded after its own last push (`pushMark`): the serial thread writes the note-offs behind THAT mark, and
+skips a key whose last note-on went out at or past it, so the node taking over keeps a key it struck while the old one
+leaving is released (a disconnect writes them before the port closes; a link that is down drops them, and a cart at its
+menu holds no notes of ours, so they are dropped there too). A node leaving the plan mid-note therefore leaves no tone
+on the console once its plan is reclaimed: within a frame of the swap where the host has an idle tick (the plugin with
+its editor open, the SDL standalone), and at the next publish or deactivate in a plugin whose editor is closed. The
+engine keeps at most
 `kMaxJobs` (64) outstanding, engine-wide back-pressure that leaves room for every completion, and a request names a
 capability from the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`, in
 `rp_jobs.h`), so the engine asks a node only by an id it knows and never casts an answer.
@@ -788,9 +791,36 @@ commands' payloads unapplied.
 The block drivers are the same shape: the plugin's
 [`run()`](../packages/native/plugin/PluginDSP.cpp) (stage the DAW's MIDI → `drainInto` → set
 bpm/transport direct → `processBlock`), `audioLoop` for the test host, and `renderBlocks` for the
-harness. The plugin's [`activate` / `deactivate`](../packages/native/plugin/PluginDSP.cpp) flip the
-ownership bit around DPF's lifecycle (`activate` first sets the block size),
-draining and reclaiming on the way out.
+harness.
+
+**The plugin's lifecycle thread rule.** `activate`, `deactivate`, `bufferSizeChanged` and `sampleRateChanged` are the
+FORMAT's callbacks, and only some formats call them on the control thread: CLAP, VST3 and AU do, while DPF's JACK host
+runs them from JACK's notification callback and VST2 from whichever thread its host dispatches the block-size and
+sample-rate opcodes on. Doing the engine work there would race the editor's per-frame reclaim and edits, and the
+latency/parameter-map calls would reach the shared QuickJS context the control thread pumps. So the plugin's overrides
+only record what the format asked for, and
+[`LifecycleHandoff`](../packages/native/plugin/LifecycleHandoff.hpp) decides, in two tiers. A buffer size the plan
+already holds - `Engine::kDefaultMaxBlockFrames` (8192) and up, and the plan never shrinks - is a no-op on any thread:
+the engine never leaves the audio thread, so there is nothing to drain or reclaim. A rate change, or a size above the
+plan, parks `run()`: it writes silence and holds its block's MIDI in a fixed buffer, touching nothing. The control
+thread's idle tick (the editor's per-frame `reclaimReleased`) then does the whole quiescent handoff there - take the
+engine, drain, reclaim, apply the rate and the size, hand it back, report latency and re-label the CC map - and the
+first resumed block replays the held MIDI at frame 0. `run()` reads the state with acquire and stores Parked only on
+entry to a later block, so the tick never overlaps a block that touched the engine, and the foreign callbacks are
+serialised against it by one mutex `run()` never takes. `getState` and `setState` also apply a pending park, for a
+host with no idle tick, and a park longer than a second is logged once. `retroplug-plugin-test`'s `LifecycleHandoff`
+cases drive the policy from a `std::thread`, as JACK's callback does.
+
+Who owns the engine is tracked separately from whether a block may drive it, because a format can move it between the
+two on a thread of its own. A foreign `activate` when the engine is the control thread's - after a control-thread
+`deactivate`, or the plugin's very first, which DPF's `run()` reaches by activating when `fIsActive` is false - only
+requests the give: the next block parks and the tick gives the engine from the control thread, because handing it to a
+thread that is already running would put two threads in the command and release rings. A foreign `deactivate` that no
+`activate` follows (a VST2 `SUSPEND(0)` off the host's main thread) is taken back once it has stood for 250 ms and
+KEPT - the state goes suspended, no give and no resume, so an edit applies inline while the plugin is suspended - and
+the activate that comes later asks for the give. The grace period is what lets a paired JACK or VST2 sequence cost
+nothing, since its two calls are not one. A control-thread `deactivate` takes and keeps the engine too, as every
+format's did before the policy.
 
 ## `SnapshotRegistry`: the read door
 

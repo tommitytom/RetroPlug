@@ -9,6 +9,8 @@ than work.
 ## Checklist
 
 **Before merge**
+- [ ] [The N8 menu's back-channel](#the-n8-menus-back-channel)
+- [ ] [The N8 menu's residual window](#the-n8-menus-residual-window)
 - [ ] [The Launchpad real-device checklist](#the-launchpad-real-device-checklist)
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
@@ -26,13 +28,6 @@ than work.
 - [ ] [One owner for the `rp.midi` family](#one-owner-for-the-rpmidi-family)
 - [ ] [A config section paired with its UI service](#a-config-section-paired-with-its-ui-service)
 - [ ] [F5a's other leftovers](#f5as-other-leftovers)
-
-**Known bugs**
-- [ ] [A tracker marker with no protocol node](#a-tracker-marker-with-no-protocol-node)
-- [ ] [The JACK standalone's control handoff](#the-jack-standalones-control-handoff)
-- [ ] [A cart-node handover can cut a key](#a-cart-node-handover-can-cut-a-key)
-- [ ] [The N8 menu, unverified on a cart](#the-n8-menu-unverified-on-a-cart)
-- [ ] [A bar or beat quantise counts host bars](#a-bar-or-beat-quantise-counts-host-bars)
 
 **Engine**
 - [ ] [DAW automation of node params](#daw-automation-of-node-params)
@@ -97,6 +92,29 @@ than work.
 ## Before merge
 
 What `feature/modularize` owes before it merges to main.
+
+### The N8 menu's back-channel
+
+The menu guard reads the cart's FPGA config block to tell a menu (map_idx 255) from a game, and drops the stream there
+([spec/13](13-subsystems.md#the-everdrive-n8-bridge)). The quiet rule that decides when that read may be made assumes
+the menu writes nothing unprompted on the back-channel: unsolicited bytes keep the quiet rule's `lastHeardNs` fresh, so
+a menu with stale frames reads as one that never goes quiet, and the guard only looks when the hold's one-second bound
+trips it. That bound now always ends the wait, so the cost is a second's delay and a read the chatter may garble, not a
+probe that is refused. Confirm on a cart at its menu, with nothing streamed to it, that the back-channel stays silent,
+and that a job submitted right after a power-cycle to the menu is accepted, and promptly.
+
+### The N8 menu's residual window
+
+A cart at its menu is dropped rather than streamed to, but the guard knows where the cart runs only when a read lands,
+so a little streamed traffic can reach the menu before that: raw, up to one read cadence - 250 ms of MIDI - and framed,
+every frame written before the hold, which is the whole window the link waits before it reads (its own 100 ms timeout,
+re-sent on each turn of it). Two smaller ones go with them: a read that answers "a game" while the window is stopped is
+trusted for a second, so a reset inside that second streams to the menu until it expires, and the same second is what a
+read that does not answer waits behind. The framed case cannot be made airtight from this side: the first frames after a
+reset go out before anything can know a menu came back, which is why the batch's framed reset case asserts what the
+guard does promise - nothing after the trip - rather than that nothing arrived. A config read before every chunk would
+close both windows, at a 100 ms USB round trip between messages.
+([spec/13](13-subsystems.md#the-everdrive-n8-bridge).)
 
 ### The Launchpad real-device checklist
 
@@ -213,61 +231,6 @@ bundle bytes; `Placement.wires` reads `PlaceSpec.launches` only; `retroplug-laun
 load-sensitive; contribution checks run at load (a malformed pack takes the control plane down, and the controller
 registry has no unregister); and a project service is tied to `@retroplug/tracker` and the editor's song watch. ([F5a
 design](../docs/modular-graph-phase-f5a-design.md) sections 12 and 14.)
-
-## Known bugs
-
-### A tracker marker with no protocol node
-
-The `risa` and `bliptoaster` marker roles have no protocol node, so they count as placed whenever stored: a NES project
-storing both (a risa project whose ROM is now BlipToaster) carries both markers, and `resolveTracker`
-([trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts)) takes the first in product order. ([Known bugs
-batch 2 design](../docs/known-bugs-batch-2-design.md) section 5.)
-
-### The JACK standalone's control handoff
-
-The DPF JACK standalone's control handoff can run on JACK's thread. A JACK buffer-size or sample-rate change runs
-`PluginDSP::deactivate`, the change and then `activate` from DPF's notification callback (`DistrhoPluginJACK.cpp`'s
-`jackBufferSizeCallback` / `jackSampleRateCallback` -> `setBufferSize(n, true)`), not on the main thread every other
-control path of the plugin runs on, while the editor's `uiIdle` reclaims on that main thread every frame. So
-`deactivate` hands the engine back on JACK's thread: `setAudioThreadOwns(false)` clears the ownership bit (every push
-then flushes inline on whichever thread makes it), `drainInto` drains the command ring there, `reclaimReleased` takes
-the release ring there, and the script host's reclaim runs a pack's GC and free there - a second consumer of the ring,
-and two threads in `JS_RunGC` / `freePack` is undefined behaviour. `activate` can likewise grow the plan on that thread
-when the new buffer exceeds the plan's maximum (`setMaxBlockFrames` -> `GraphHost::reactivate`, which replans and
-publishes) and re-declare the DAW parameters there. The fix: marshal that whole handoff (the flush, the ownership flip,
-the drain, the release-ring reclaim, the script GC and free, and activate's replan and parameter re-declaration) to the
-control thread, or make a buffer-size or rate change a message that thread applies, so the quiescent engine has one
-owner. Rare and manual: a JACK buffer-size change in the standalone; CLAP, VST3 and AU call deactivate and activate on
-the host's main thread, and VST2 runs `setBufferSize(n, true)` from its block-size opcode on whichever thread its host
-calls that from ([PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp), above `activate`). Only `activate`'s
-`setMaxBlockFrames` is a no-op for a block within the plan's maximum, which is why the path went unnoticed; C5's
-per-frame reclaim widened its window from an edit to any frame. (Found after C5; no design records it. [C5
-design](../docs/modular-graph-phase-c5-design.md) section 10 records the per-frame reclaim that widened its window.)
-
-### A cart-node handover can cut a key
-
-A handover can cut a key the new cart node strikes before the old one is reclaimed: the old node's held notes are
-released behind every byte pushed when its destroy runs, the new node's first blocks among them, so a note the new node
-starts on a key the old one still held, between the swap and the reclaim, is released with them. Where an idle tick
-reclaims that is a frame or so; in a plugin whose editor is closed it runs to the next publish, the editor opening or a
-deactivate. ([C5 design](../docs/modular-graph-phase-c5-design.md) section 11.)
-
-### The N8 menu, unverified on a cart
-
-Three behaviours of a cart at its menu are reasoned, not seen. MIDI streamed to a cart at its menu reaches the menu's
-own command parser, which takes commands over the same FIFO, so a data pair such as `0x2A 0x73` (`*s`) can ask it to
-start an app; it holds for raw MIDI after a connect at the menu and for framed MIDI after a console reset, where the
-stale window is re-sent every 100 ms until it re-syncs. The quiet rule assumes the menu writes nothing unprompted on the
-back-channel: unsolicited bytes would keep `lastHeardNs` fresh and a menu with stale frames would read as never quiet.
-And a heavy stream into a menu can starve the probe: the window's 48-frame re-sync re-stamps the oldest frame's first
-send, so past about 190 messages a second (48 per 250 ms) no turn is quiet and a submission is refused. ([C5
-design](../docs/modular-graph-phase-c5-design.md) section 11.)
-
-### A bar or beat quantise counts host bars
-
-A quantise of `bar` or `beat` still counts the host's bars: at a tempo divisor of 2 a cart's phrase lasts two of them.
-It may be the behaviour wanted; decide, then fix it or state it in [spec/13](13-subsystems.md#the-controller-role).
-([Known bugs batch 2 design](../docs/known-bugs-batch-2-design.md) section 5.)
 
 ## Engine
 

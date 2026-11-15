@@ -156,10 +156,13 @@ the lists: its 21 packages hold the plugin's 15. The desktop's run also writes t
 extends) and `tsconfig.paths.json` (the same entries plus the shell's own aliases, from `tsconfig.aliases.json`: a
 child's `paths` REPLACE its parent's, so the shell's program needs one file carrying both). The product list is the
 **dependency order and the registration order both** (a package before the ones that use it, the shell last), and only a
-ROM provider's place in it is behaviour, and a tracker integration's for a system storing two node-less markers ([a
-known bug](07-remaining-work.md#a-tracker-marker-with-no-protocol-node)): the providers run in that order, and the first
-to match a ROM fixes a system's role-list order. A role's kind, a kit format's id and a tracker integration's marker
-role are otherwise looked up rather than sequenced (one package's roles interleave another's without consequence), so
+ROM provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
+role-list order. A tracker integration's marker role is looked up, not sequenced: a load moves the marker today's ROM
+earns ahead of a stale one, and `resolveTracker` takes the first placed marker in the SYSTEM's own role order, so the
+product order decides only when the ROM earns neither (`SystemsStore.suggestedFirst`,
+[trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts)). A role's kind, a kit format's id and a tracker
+integration's marker role are otherwise looked up rather than sequenced (one package's roles interleave another's
+without consequence), so
 for those a duplicate is the hazard: the generated module refuses a role kind, a kit format id or a marker role declared
 twice, each with its own message. The generator itself refuses a list that puts a package before a dependency, a
 dependency the product does not carry whose contribution would be lost, a dependency on the shell, a duplicate product
