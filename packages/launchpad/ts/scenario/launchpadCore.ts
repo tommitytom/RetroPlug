@@ -134,14 +134,14 @@ interface Block {
   /** The ticks the host clocked in the previous block, as walkTicks counted them. */
   ticks: number;
   /** The cart's clock division this block (ControllerCtx.tickDivisor): no cart here, so 1. */
-  tickDivisor?: number;
+  tickDivisor: number;
   /** The link reports a NEW device before this block, as a pair swapped inside one UI frame does: the host takes it
    *  again, which invalidates the surface so the block repaints everything. */
   reconnect?: boolean;
 }
 const blocks: Block[] = [
-  { input: [], tick: 0, transport: false, ticks: 0 },
-  { input: [pad(0, 2, 127), pad(0, 2, 0)], tick: 0, transport: false, ticks: 0 },
+  { input: [], tick: 0, transport: false, ticks: 0, tickDivisor: 1 },
+  { input: [pad(0, 2, 127), pad(0, 2, 0)], tick: 0, transport: false, ticks: 0, tickDivisor: 1 },
 ];
 for (let tick = 0; tick <= 480; tick += 12) {
   const input: number[][] = [];
@@ -149,20 +149,20 @@ for (let tick = 0; tick <= 480; tick += 12) {
   if (tick === 300) input.push(cc(PRO_MK3.buttons.up, 127), cc(PRO_MK3.buttons.up, 0));
   if (tick === 312) input.push(cc(PRO_MK3.buttons.down, 127));
   if (tick === 396) input.push(pad(6, 1, 90));
-  blocks.push({ input, tick, transport: true, ticks: 12 });
+  blocks.push({ input, tick, transport: true, ticks: 12, tickDivisor: 1 });
 }
 // A generation change mid-run: the link reports a NEW device, so the host takes it again - Programmer mode and a full
 // repaint. The block the swap lands in still clocked the cart, so its count reaches the predictor (a reconnect is not a
 // reason to lose a block's ticks).
-blocks.push({ input: [pad(2, 1, 100)], tick: 492, transport: true, ticks: 12, reconnect: true });
+blocks.push({ input: [pad(2, 1, 100)], tick: 492, transport: true, ticks: 12, tickDivisor: 1, reconnect: true });
 // A seek: the tick jumps far ahead, and the host's walk sent the cart nothing across it, so `ticks` is 0.
-blocks.push({ input: [], tick: 4000, transport: true, ticks: 0 });
-blocks.push({ input: [], tick: 480, transport: false, ticks: 0 });
+blocks.push({ input: [], tick: 4000, transport: true, ticks: 0, tickDivisor: 1 });
+blocks.push({ input: [], tick: 480, transport: false, ticks: 0, tickDivisor: 1 });
 
 for (let i = 0; i < blocks.length; i++) {
   launches.length = 0;
   if (blocks[i].reconnect) emit("reconnect " + i, session.connect());
-  const leds = session.update({ ...blocks[i], tickDivisor: blocks[i].tickDivisor ?? 1 });
+  const leds = session.update(blocks[i]);
   if (leds.length > 0 || launches.length > 0) emit("block " + i, { leds, launches: launches.slice() });
 }
 emit("ticks", model.advancedTicks());

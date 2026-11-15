@@ -59,6 +59,8 @@ interface MapState {
   pending?: number | null;
   /** The tick that pending fires at (beat/bar), or null for the rowEnd rule. */
   pendingTick?: number | null;
+  /** The tick the press landed on (beat/bar), so a divisor changed during the wait re-derives pendingTick. */
+  pendingFromTick?: number | null;
   /** The row the followed channel was on when a rowEnd launch was cued. */
   pendingFromRow?: number | null;
   /** What the grid was last painted from - see needsPaint. */
@@ -90,14 +92,14 @@ export function followRow(position: PlaybackPosition): number | null {
 const clampPage = (p: number): number => Math.max(0, Math.min(MAX_PAGE, Math.trunc(p) || 0));
 
 /** The tick a launch pressed at `tick` should fire on. Snaps UP to the next boundary, so a press landing
- *  exactly on one fires immediately rather than waiting a whole extra unit. `beat` and `bar` count the CART's
- *  clock, whose phase is its own, walked from ppq 0 (so a host seek does not move it): one cart beat is
- *  `TICKS_PER_BEAT` host ticks times the divisor it divides its clock by. `hostBeat` and `hostBar` count the host's,
- *  whatever the cart does. */
+ *  exactly on one fires immediately rather than waiting a whole extra unit. `beat` and `bar` count the CART's clock at
+ *  the grid the host clocks it on: one cart beat is `TICKS_PER_BEAT` host ticks times the divisor, from ppq 0, which is
+ *  where the host's walk puts the cart's own ticks (a seek resyncs that walk, so the two can part company until the
+ *  cart is restarted). `hostBeat` and `hostBar` count the host's, whatever the cart does. */
 function boundaryTick(tick: number, quantise: Quantise, tickDivisor: number): number {
   const bar = quantise === "bar" || quantise === "hostBar";
   const cart = quantise === "beat" || quantise === "bar";
-  const divisor = cart && tickDivisor > 0 ? tickDivisor : 1;
+  const divisor = cart ? tickDivisor : 1; // the ctx promises an integer >= 1 (launchpad/ts/session.ts)
   const unit = (bar ? TICKS_PER_BAR : TICKS_PER_BEAT) * divisor;
   return Math.ceil(tick / unit) * unit;
 }
@@ -109,6 +111,7 @@ export const lsdjMidiMap: ControllerApp = (c: ControllerCtx) => {
     st.follow = c.config.follow !== false;
     st.pending = null;
     st.pendingTick = null;
+    st.pendingFromTick = null;
     st.pendingFromRow = null;
   }
 
@@ -183,18 +186,26 @@ function handleInput(
       c.target.launch(row);
       st.pending = null;
       st.pendingTick = null;
+      st.pendingFromTick = null;
       st.pendingFromRow = null;
       continue;
     }
 
     st.pending = row;
     st.pendingTick = quantise === "rowEnd" ? null : boundaryTick(c.tick, quantise, c.tickDivisor);
+    st.pendingFromTick = quantise === "rowEnd" ? null : c.tick;
     st.pendingFromRow = quantise === "rowEnd" ? current : null;
   }
 }
 
 function resolvePending(c: ControllerCtx, st: MapState, quantise: Quantise, current: number | null): void {
   if (st.pending === null || st.pending === undefined) return;
+
+  // The divisor is per block (ControllerCtx.tickDivisor), and a cart bar is 96 times it: one changed while this launch
+  // waits moves the boundary with it, so the tick is re-derived from the press rather than kept from it.
+  if (quantise !== "rowEnd" && st.pendingFromTick !== null && st.pendingFromTick !== undefined) {
+    st.pendingTick = boundaryTick(st.pendingFromTick, quantise, c.tickDivisor);
+  }
 
   // rowEnd fires on the model's next row change, which works identically on the observed and predicted
   // paths and needs no "ticks remaining" accessor that only one of them could answer.
@@ -206,6 +217,7 @@ function resolvePending(c: ControllerCtx, st: MapState, quantise: Quantise, curr
   c.target.launch(st.pending);
   st.pending = null;
   st.pendingTick = null;
+  st.pendingFromTick = null;
   st.pendingFromRow = null;
 }
 

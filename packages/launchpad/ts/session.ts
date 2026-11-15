@@ -183,7 +183,10 @@ export class ControllerSession {
     const ctx = this.ctx;
     ctx.tick = input.tick;
     ctx.ticks = ticks;
-    ctx.tickDivisor = input.tickDivisor;
+    // The contract the ctx's doc promises: an integer of at least 1, 1 when the caller's value is not one. The node
+    // clamps its setting too (controllerSession.ts); this is the guard every app would otherwise repeat. The global
+    // isFinite, not Number.isFinite, which the device's runtime does not have (build-device-pack.mjs).
+    ctx.tickDivisor = input.tickDivisor >= 1 && isFinite(input.tickDivisor) ? Math.floor(input.tickDivisor) : 1;
     ctx.transport = input.transport;
     this.app(ctx);
 

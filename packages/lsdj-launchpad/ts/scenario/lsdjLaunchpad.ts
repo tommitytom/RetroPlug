@@ -69,7 +69,8 @@ for (let tick = 0; tick <= 480; tick += 12) {
   if (tick === 396) input.push(pad(6, 1, 90)); // row 9, on the right-hand pane
   blocks.push({ input, tick, transport: true, ticks: 12, tickDivisor: 1 });
 }
-blocks.push({ input: [], tick: 4000, transport: true, ticks: 0, tickDivisor: 1 }); // a seek: the cart was sent no clocks
+// A seek: the host's walk sent the cart nothing across it, so `ticks` is 0.
+blocks.push({ input: [], tick: 4000, transport: true, ticks: 0, tickDivisor: 1 });
 blocks.push({ input: [], tick: 480, transport: false, ticks: 0, tickDivisor: 1 });
 
 for (let i = 0; i < blocks.length; i++) {

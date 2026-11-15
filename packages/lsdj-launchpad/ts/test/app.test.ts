@@ -39,8 +39,8 @@ test("every quantise mode the menu offers is one the schema accepts", () => {
 });
 
 test("the quantise row offers both clocks, in the order the setting cycles them", () => {
-  // A bar counts the CART's clock, whose bar at a tempo divisor above 1 is that many DAW bars, so the DAW's own beat and
-  // bar are offered too rather than folded into one meaning.
+  // A bar counts the CART's clock, whose bar at a tempo divisor above 1 is that many DAW bars, so the DAW's own
+  // beat and bar are offered too rather than folded into one meaning.
   const row = miMap.menu!.find((m) => m.key === "quantise")!;
   expect(row.choices!.map((c) => c.value)).toEqual(["immediate", "beat", "bar", "hostBeat", "hostBar", "rowEnd"]);
   expect(row.choices!.map((c) => c.label)).toEqual([

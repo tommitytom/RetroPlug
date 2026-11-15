@@ -13,7 +13,7 @@ import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
 import { MIDIMAP_CLOCK, MIDIMAP_NOTEOFF } from "@retroplug/lsdj/lsdjSyncBytes";
 import { songRowTicks } from "@retroplug/lsdj/playback";
 import runtime from "../appRuntime";
-import { lsdjMidiMap, rowAt, channelAt, followRow, WINDOW_ROWS, MAX_PAGE } from "../lsdjMidiMap";
+import { lsdjMidiMap, rowAt, channelAt, followRow, WINDOW_ROWS, MAX_PAGE, type Quantise } from "../lsdjMidiMap";
 import { lsdjMidiMapTarget } from "../launchTarget";
 import { Palette, padIndex, palette, type Led } from "@retroplug/launchpad";
 import { SongSchema, type Song } from "@retroplug/lsdj/model";
@@ -223,7 +223,7 @@ test("at a tempo divisor of d, a bar launch waits out the CART's bar and a hostB
   // 24 x d: counting the DAW's 96 at divisor 2 makes a `bar` launch land mid-phrase. The cart's phase is its own
   // clock, walked from ppq 0. `hostBar` and `hostBeat` keep counting the DAW's, which is all a project at the
   // default divisor 1 has ever had.
-  const firesAt = (quantise: string, tickDivisor: number): number => {
+  const firesAt = (quantise: Quantise, tickDivisor: number): number => {
     const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
     const h = harness(model, { quantise, follow: false }, tickDivisor);
     model.setRows([0, 0, 0, 0]); // something IS playing, so the cue has a boundary to wait for
@@ -241,7 +241,9 @@ test("at a tempo divisor of d, a bar launch waits out the CART's bar and a hostB
   expect(firesAt("hostBar", 2), "hostBar at 2").toBe(96);
   expect(firesAt("hostBar", 3), "hostBar at 3").toBe(96);
   expect(firesAt("beat", 2), "beat at 2").toBe(96);
+  expect(firesAt("beat", 3), "beat at 3").toBe(72);
   expect(firesAt("hostBeat", 2), "hostBeat at 2").toBe(72);
+  expect(firesAt("hostBeat", 3), "hostBeat at 3").toBe(72);
 });
 
 test("quantise rowEnd waits for the song to change row, not for a clock boundary", () => {
