@@ -210,3 +210,65 @@ Work files are in `.superpowers/kb4`, `kb4plan` and `kb4exec`.
 - **The by-hand JACK leg** of section 3.
 - **Devices:** no run opens an audio, MIDI or serial device outside the guard and the fakes.
 - **Hardware:** no run touches the N8 or the NES.
+
+## 7. As built
+
+The six tasks landed as planned, each tree identical to the one the plan's author validated; follow-up passes then took
+the reviews' findings. What differs from sections 1 to 6:
+
+- **Section 1: tracker markers collide on one shared key** (`occupied()`, "tracker-marker"), and `resolveTracker` reads
+  the first placed marker in role order. Found on the way and filed in spec/07 rather than fixed: a stale marker WITH a
+  node (`risa-sync`) is still placed on a cart whose ROM is now BlipToaster, and the reload path keeps a system's stale
+  roles.
+- **Section 2: the divisor rides each block's session input**, not the app's construction, since the session does not
+  rebuild on a divisor change; the node floors it as the session does. A cued launch keeps its press tick and re-derives
+  its boundary each block, so a divisor or rule changed under a cue is honoured; a boundary that moved behind the
+  playhead re-snaps onto the grid it now waits for, and one a large block merely stepped past still fires.
+- **Section 3: the policy is `LifecycleHandoff`, a unit `PluginDSP` delegates to**, with four states and the engine's
+  owner tracked beside them. DPF's `run()` activates a host's first block itself on the audio thread, so a foreign
+  activate on an engine the control thread owns parks until the tick hands it over; a lone foreign deactivate is
+  suspended after a 250 ms grace, the engine kept on the control thread; a call that misses the lock (so the audio
+  thread never blocks) leaves a deferred word every later lock owner applies first; `getState` / `setState` never
+  suspend; closing the editor runs one tick. The design's engine-level TSan case was dropped: it could only pin the
+  sequence the fix deletes, and the unit cases assert no engine call on a foreign thread instead. One silent case is
+  left, filed in spec/07 (a foreign activate after the editor closed on a suspended engine waits for a state call). The
+  by-hand JACK leg reaches tier 1 only: jack2 caps a buffer at 8192 frames, the plan's own floor, so a JACK size change
+  is always the no-op, and tier 2 is held by the unit cases.
+- **Section 4: the design's engine-level red needed the audio thread to own the engine**: a quiescent swap destroys the
+  replaced node inside `setGraph`, before the new one pushes. A framed release is framed whole (`sendMessage`), so it
+  cannot land inside a split SysEx; the raw path gates a release to a message boundary (a SysEx ends at any status,
+  running status is followed and re-sent after a raw release), bounded at 250 ms.
+- **Section 5: the hold starts when the framed window stops moving** (`progressOverdue`), not on silence, since any
+  back-channel byte refreshes "last heard"; every guard read flushes first, and the 1 s forced read is real. A job
+  probe's unflushed read may trip the guard but never clear it. A "game" answer is trusted for a second, a failed read
+  backs the next off, a stream that stops itself clears the state, the link probe flushes first, and every chunk the
+  guard discards counts toward the release mark (task 4's arithmetic). The framed red case is not a `*s` boot (the
+  fake's menu skips frames): it pins that nothing is written or re-sent once the guard has tripped. The detection
+  windows (up to 250 ms raw, up to 100 ms of frames, the trusted second) are stated in spec/13; spec/07 keeps the
+  hardware checks (the menu's back-channel, and what the periodic config reads cost a running game).
+- **Section 6: the lifecycle thread rule went to spec/02**, which owns the plugin's lifecycle, not spec/13. `pnpm
+  check:portable` no longer exists; the lsdj-launchpad scenario test is the portable proof. A job test that failed under
+  load before this batch (a guard read took its one-shot flush failure) was re-armed to fail every flush.
+
+## 8. Execution
+
+- Design ccc01889e; plan a9fd51961, written and validated on the tree by DeepSeek Flash and replayed from its text to
+  the identical tree. Opus found it not ready (the handoff's ownership, the forced read, a dropped chunk); a DeepSeek
+  revision was ready with fixes (the discarded chunks' count against the release mark, among four); a second revision's
+  re-check left two, which the controller applied (the job probe made trip-only after a flushed form made a job test
+  flaky).
+- Tasks, each by a Qwen3.8 Flash-Next implementer at xhigh, each tree checked byte-identical to the validated diff by a
+  script: afcaf84e2, 0ae77254f, 0cb7252f0, e8609d642, af20f6baf, 6ea2e2422. Code reviews by DeepSeek (tasks 1, 2, 6)
+  and Opus (3, 4, 5); all but task 5 asked for changes.
+- Follow-ups, all DeepSeek: A 44c9fc2e3; A2 d5cfa77ca, b95454ed3 (A's Opus re-review found a deferred deactivate
+  applied after the activate that followed it, which would have silenced the JACK standalone); B f6fd12de0..fd8da3993;
+  B2 fb7a4d0f4, bd6b56baa; C 63dcc359b..7a347804b; the kit's TSan leg caught a test data race, fixed by the controller
+  in 76df2b2d4; the Opus final review was ready with fixes: D 88af75f2a..44f1b4928, D2 2242c7cf4, 873960b35 (D's
+  monotone re-derive fired off the grid). Nothing is pushed.
+- Acceptance: the serial kit at 44f1b4928, 45 of 45 legs (strict parity with fixtures and `RP_FAIL_ON_SKIP=1`, 30 files,
+  no skips; TSan and ASan, the n8 binary whole under TSan; BlipToaster 57/57 and NESVJ 22/22 against the rebuilt CLI;
+  `sdl:smoke`, `sdl:controller` and SDL PipeWire 27/0/0 under the device guard, no card PCM opened). The parallel kit at
+  the tip, 873960b35: 47 legs exit 0 (BlipToaster 57/57, NESVJ 22/22, SDL PipeWire 27/0/0), and `sdl:controller` run on
+  its own. The JACK leg (`.superpowers/kb4exec/jack-leg.sh`, under the guard): the standalone alive through six
+  buffer-size changes (two refused by jack2), the editor's idle reclaiming; the guard refused only jackd's own ALSA
+  probes.
