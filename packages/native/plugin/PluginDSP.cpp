@@ -299,7 +299,9 @@ protected:
     // pumps every frame (spec/02-native-host.md's plugin lifecycle thread rule; PipeWire changes its quantum whenever
     // any client asks for a different latency, so it is routine). So all four only RECORD what the format asked for and
     // hand it to the policy: a size the plan already holds costs nothing, and a rate change or an over-plan size parks
-    // run() until this thread's idle tick (the editor's per-frame reclaimReleased) applies it quiescently.
+    // run() until this thread's idle tick (the editor's per-frame reclaimReleased) applies it quiescently - unless this
+    // thread makes it with no engine given (a control-thread deactivate before it), when there is nothing to wait for
+    // and it applies here.
     // LifecycleHandoff.hpp is the whole argument, including what a format's activate and deactivate mean for who owns
     // the engine.
     void activate() override { handoff_.activate(getBufferSize()); }

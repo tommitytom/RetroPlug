@@ -157,14 +157,13 @@ extends) and `tsconfig.paths.json` (the same entries plus the shell's own aliase
 child's `paths` REPLACE its parent's, so the shell's program needs one file carrying both). The product list is the
 **dependency order and the registration order both** (a package before the ones that use it, the shell last), and only a
 ROM provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
-role-list order. A tracker integration's marker role is looked up, not sequenced: a load moves the marker today's ROM
-earns ahead of a stale one, and `resolveTracker` takes the first placed marker in the SYSTEM's own role order, so the
+role-list order. A tracker integration's marker role is in that list too: a load moves the marker today's ROM earns
+ahead of a stale one, so `resolveTracker` takes the first placed marker in the SYSTEM's own role order, and the
 product order decides only when the ROM earns neither (`SystemsStore.suggestedFirst`,
-[trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts)). A role's kind, a kit format's id and a tracker
-integration's marker role are otherwise looked up rather than sequenced (one package's roles interleave another's
-without consequence), so
-for those a duplicate is the hazard: the generated module refuses a role kind, a kit format id or a marker role declared
-twice, each with its own message. The generator itself refuses a list that puts a package before a dependency, a
+[trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts)). A role's kind and a kit format's id are otherwise
+looked up rather than sequenced (one package's roles interleave another's without consequence), so for those a
+duplicate is the hazard: the generated module refuses a role kind, a kit format id or a marker role declared twice,
+each with its own message. The generator itself refuses a list that puts a package before a dependency, a
 dependency the product does not carry whose contribution would be lost, a dependency on the shell, a duplicate product
 entry, a node type or span label declared twice, a label that is below 16 or leaves a gap, a role naming a node no
 package wires, a manifest that names a missing module or one its `exports` do not publish, and a contributing package

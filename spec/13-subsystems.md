@@ -127,25 +127,31 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   data pair inside a message (`0x2A 0x73` is `*s`: start an app) can reach it. `N8Link` keeps the cart's at-menu state,
   read from the FPGA config block's map_idx (255 at the menu; a system-region read that touches neither the cart's bus
   nor a game's FIFO) - seeded at connect, and re-read about every 250 ms on a turn quiet for a read, with a 100 ms
-  timeout, and at once when the framed window has STOPPED MOVING (the oldest frame unacknowledged past the link's own
-  100 ms timeout, which is the console reset), whose new frames and re-sends wait for that read and at most a second.
+  timeout, and, on the first quiet turn after it stops moving (or when the hold's second trips), at once (the oldest
+  frame unacknowledged past the link's own 100 ms timeout, which is the console reset), whose new frames and re-sends
+  wait for that read and at most a second.
   Every guard read flushes the input first, so a chattering cart's bytes cannot garble the block; a job's menu probe
   reads unflushed, so it may trip the guard but never clear it. While it says menu, `push` answers false and counts, the
   ring, the reliable window and any pending note release are discarded, and nothing is written; leaving the menu re-runs
   the link probe (which flushes the input before its sync, as does the connect-time one: a menu read that timed out
   leaves the tail of its reply in the input, and a config block's bytes could otherwise be read as the link's ack, which
   would frame the stream for a ROM that reads no frames). Jobs still run there (the SD card is reachable only at the
-  menu), and a cart node's `connected` reads 0, so its owed note-offs follow the existing disconnected rule. Settings >
+  menu), and a cart node's `connected` reads 0: what it pushes there is refused, and a note-off it loses stays owed
+  until a game reads connected again (a note-off to a game that never sounded that note is harmless). Settings >
   N8's status row says "At the N8 menu (not streaming)".
-  - **The residual window, in its two bounds.** The guard knows the cart's state only when a read lands, so bytes that
-    go out before it are not held back. Raw, that is up to one read cadence, 250 ms of streamed MIDI. Framed, the read
-    follows the quiet rule or the hold's bound once the window has stood still for the link's timeout, so what reaches
-    the menu is every frame written in that wait, re-sends included. The framed reset case therefore cannot be made
-    airtight from this side - the first frames after a reset are written before anything can know a menu came back -
-    and a read per chunk, which would put a 100 ms round trip between every message, is the only full fix
-    ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). A second's worth of that window is trusted: a read
-    that answers "a game" while the window is stopped suppresses the next look for a second, so a reset inside that
-    second streams until it expires. The hardware check the quiet rule rests on is
+  - **The residual window, in its bounds.** The guard knows the cart's state only when a read lands, so bytes that go
+    out before it are not held back. The bounds in full: raw, up to 250 ms of streamed MIDI, one read cadence; framed,
+    up to 100 ms of frames and re-sends, the link's own timeout, which is when the guard's read becomes due; and up to a
+    second more while a read has just answered "a game" (the trusted-game window), a reset inside which streams until it
+    expires. A message inside any of the three reaches the menu as its own bytes, so a GM hi-hat (`9n 2A 73`) is `*s`
+    there, raw or framed, and starts the app. The framed reset case therefore cannot be made airtight from this side -
+    the first frames after a reset are written before anything can know a menu came back - and a config read per chunk,
+    at a config read's 100 ms bound between messages, is the only full fix
+    ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). The overdue hold holds the ack-driven re-sends too:
+    a frame lost twice in a row (more than the link's 100 ms timeout after its first send) waits for a quiet turn
+    (250 ms of silence) or the hold's one-second bound before its recovery goes out, where it used to go out at once.
+    That is deliberate, since a re-send decided while the window has stopped moving is what a menu would read, so a slow
+    recovery on a lossy NTSC link is that trade and not a new fault. The hardware check the quiet rule rests on is
     [spec/07](07-remaining-work.md#the-n8-menus-back-channel).
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session` and `pnpm test:native n8-sdk` (`connectN8`

@@ -163,7 +163,7 @@ this is specified in [01-architecture.md](01-architecture.md).
 | [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md) | The role model: system-role vs feature-role, the role registry, and the protocol nodes: a script node per role, the MIDI routing and the controller session, their settings and ports, and how `buildGraph` places them. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model + `.rplg`, DPF get/setState + autoload, config models, forward-tolerant reads + version stamps, the LSDj sav codec, SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How the project builds, the pnpm scripts, the dpf.js seam, and the headless verification loop. |
-| [07-remaining-work.md](07-remaining-work.md) | Open work only: a checklist (before merge, the package split, known bugs, the engine, renders and kits, the Pico, feature gaps and the SDL standalone) whose lines link each item's detail, then what is deliberately deferred. |
+| [07-remaining-work.md](07-remaining-work.md) | Open work only: a checklist (before merge, the package split, the engine, renders and kits, the Pico, feature gaps and the SDL standalone) whose lines link each item's detail, then what is deliberately deferred. |
 
 ## Key files
 

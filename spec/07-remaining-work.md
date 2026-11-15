@@ -48,6 +48,7 @@ than work.
 - [ ] [Serial capacities past large blocks](#serial-capacities-past-large-blocks)
 - [ ] [A feedback source's capacity change](#a-feedback-sources-capacity-change)
 - [ ] [A custom reflector in the device decode](#a-custom-reflector-in-the-device-decode)
+- [ ] [A stale tracker sync role stays placed](#a-stale-tracker-sync-role-stays-placed)
 
 **Renders and kits**
 - [ ] [A plugin kit row](#a-plugin-kit-row)
@@ -99,21 +100,23 @@ The menu guard reads the cart's FPGA config block to tell a menu (map_idx 255) f
 ([spec/13](13-subsystems.md#the-everdrive-n8-bridge)). The quiet rule that decides when that read may be made assumes
 the menu writes nothing unprompted on the back-channel: unsolicited bytes keep the quiet rule's `lastHeardNs` fresh, so
 a menu with stale frames reads as one that never goes quiet, and the guard only looks when the hold's one-second bound
-trips it. That bound now always ends the wait, so the cost is a second's delay and a read the chatter may garble, not a
-probe that is refused. Confirm on a cart at its menu, with nothing streamed to it, that the back-channel stays silent,
-and that a job submitted right after a power-cycle to the menu is accepted, and promptly.
+trips it. That bound now always ends the guard's own wait, so its read costs a second's delay and may be garbled by the
+chatter. A submission's probe is a different read: unflushed, and gated on a quiet turn of its own, so a chattering
+cart can still refuse it as busy, or garble the block into a game - which is what the check below is for. Confirm on a
+cart at its menu, with nothing streamed to it, that the back-channel stays silent, and that a job submitted right after
+a power-cycle to the menu is accepted, and promptly.
 
 ### The N8 menu's residual window
 
 A cart at its menu is dropped rather than streamed to, but the guard knows where the cart runs only when a read lands,
 so a little streamed traffic can reach the menu before that: raw, up to one read cadence - 250 ms of MIDI - and framed,
 every frame written before the hold, which is the whole window the link waits before it reads (its own 100 ms timeout,
-re-sent on each turn of it). Two smaller ones go with them: a read that answers "a game" while the window is stopped is
-trusted for a second, so a reset inside that second streams to the menu until it expires, and the same second is what a
-read that does not answer waits behind. The framed case cannot be made airtight from this side: the first frames after a
-reset go out before anything can know a menu came back, which is why the batch's framed reset case asserts what the
-guard does promise - nothing after the trip - rather than that nothing arrived. A config read before every chunk would
-close both windows, at a 100 ms USB round trip between messages.
+re-sent on each turn of it). Two windows go with them, the first larger than the one above: a read that answers "a game"
+while the window is stopped is trusted for a second, so a reset inside that second streams to the menu for up to a
+second's worth of frames, and the same second is what a read that does not answer waits behind. Confirm on a cart, with
+a console reset mid-stream, that nothing arrives after the trip - the batch's framed reset case asserts what the guard
+does promise - and that a reset inside the trusted second sends no more than that second's worth. The outer windows
+close only with a design change: a config read before every chunk, at a config read's 100 ms bound between messages.
 ([spec/13](13-subsystems.md#the-everdrive-n8-bridge).)
 
 ### The Launchpad real-device checklist
@@ -407,6 +410,19 @@ design](../docs/modular-graph-phase-b3a-design.md) section 2.6.)
 
 A custom `rfl::Reflector<E>` is not seen by the device decode; `rfl::internal::has_read_reflector<E>` would refuse it in
 one line. No node has one. ([E1 design](../docs/modular-graph-phase-e1-design.md) section 12.3.)
+
+### A stale tracker sync role stays placed
+
+A ROM swapped in place keeps the roles it no longer earns, by design: nothing is deleted, so a ROM swapped back gets its
+settings back. A marker role is harmless then, because `resolveTracker` reads the system's own order, but a role WITH a
+node is placed whenever nothing else writes its input. A NES system that once held risa keeps `risa-sync` after its path
+holds BlipToaster: `rp.risa.sync` writes `bytes`, a BlipToaster system has no sync role, so the pipeline places it and
+fans risa's host-sync stream (the `F9 52` arm, `FA`/`FC` and `F8` clocks) into the cart's FIFO, where a synth reads it
+as MIDI transport traffic and as whatever its parser makes of the arm's data bytes. Nothing patches the ROM and
+nothing crashes, but a cart is sent a protocol it never asked for. A fix would let a role's placement read the cart the
+ROM earns, not only its kind and order ([`protocolPipeline`](../packages/retroplug/src/graph/protocolNodes.ts),
+[04-roles-protocol-nodes.md](04-roles-protocol-nodes.md#the-protocol-nodes)). ([Known bugs batch 4
+design](../docs/known-bugs-batch-4-design.md) section 1.)
 
 ## Renders and kits
 

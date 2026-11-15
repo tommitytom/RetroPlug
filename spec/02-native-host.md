@@ -798,18 +798,29 @@ FORMAT's callbacks, and only some formats call them on the control thread: CLAP,
 runs them from JACK's notification callback and VST2 from whichever thread its host dispatches the block-size and
 sample-rate opcodes on. Doing the engine work there would race the editor's per-frame reclaim and edits, and the
 latency/parameter-map calls would reach the shared QuickJS context the control thread pumps. So the plugin's overrides
-only record what the format asked for, and
-[`LifecycleHandoff`](../packages/native/plugin/LifecycleHandoff.hpp) decides, in two tiers. A buffer size the plan
-already holds - `Engine::kDefaultMaxBlockFrames` (8192) and up, and the plan never shrinks - is a no-op on any thread:
-the engine never leaves the audio thread, so there is nothing to drain or reclaim. A rate change, or a size above the
-plan, parks `run()`: it writes silence and holds its block's MIDI in a fixed buffer, touching nothing. The control
-thread's idle tick (the editor's per-frame `reclaimReleased`) then does the whole quiescent handoff there - take the
-engine, drain, reclaim, apply the rate and the size, hand it back, report latency and re-label the CC map - and the
-first resumed block replays the held MIDI at frame 0. `run()` reads the state with acquire and stores Parked only on
-entry to a later block, so the tick never overlaps a block that touched the engine, and the foreign callbacks are
-serialised against it by one mutex `run()` never takes. `getState` and `setState` also apply a pending park, for a
-host with no idle tick, and a park longer than a second is logged once. `retroplug-plugin-test`'s `LifecycleHandoff`
-cases drive the policy from a `std::thread`, as JACK's callback does.
+only record what the format asked for, and [`LifecycleHandoff`](../packages/native/plugin/LifecycleHandoff.hpp)
+decides, in two tiers. A buffer size the plan already holds - `Engine::kDefaultMaxBlockFrames` (8192) and up, and the
+plan never shrinks - is a no-op on any thread: the engine never leaves the audio thread, so there is nothing to drain
+or reclaim. A rate change, or a size above the plan, parks `run()`: it writes silence and holds its block's MIDI in a
+fixed buffer, touching nothing. A control-thread call that finds no engine given applies the change where it stands
+instead, since there is nothing to wait for. The control thread's idle tick (the editor's per-frame `reclaimReleased`)
+then does the whole quiescent handoff there - take the engine, drain, reclaim, apply the rate and the size, hand it
+back, report latency and re-label the CC map - and the first resumed block replays the held MIDI at frame 0. `run()`
+reads the state with acquire and stores Parked only on entry to a later block, so the tick never overlaps a block that
+touched the engine, and the foreign callbacks are serialised against it by one mutex that the audio thread reaches only
+through DPF's own activates (`run()`'s auto-activate, VST3's `setProcessing` from the processing thread, an AU reset on
+the render thread) and never waits for, because an `activate` or `deactivate` that cannot have it records itself in an
+atomic word that the next tick applies, and the mutex is let go before the latency report and the CC map, so a block
+waits for engine work and never for JS. `getState` and `setState` also apply a pending park, for a host with no idle
+tick, through the tick that never runs the grace-suspend (a suspend made from a state call would be undone by nothing,
+and DPF reports a rate or a size only while the plugin is inactive). The editor's close runs one idle tick, which
+applies a park a block has already seen and nothing else: a park whose first block has not come stays pending, and a
+grace-suspend stays suspended. A plugin whose host closes the editor while the engine is suspended, and then sends a
+foreign `activate` (DPF's `run()` auto-activate on a host that processes without activating, or `setProcessing(true)` on
+the processing thread), therefore parks, silent, with no editor open after it and no state call either: nothing else on
+the control thread can give the engine back, so it waits for the next `getState` or `setState`. A park longer than a
+second is logged once. `retroplug-plugin-test`'s `LifecycleHandoff` cases drive the policy from a `std::thread`, as
+JACK's callback does.
 
 Who owns the engine is tracked separately from whether a block may drive it, because a format can move it between the
 two on a thread of its own. A foreign `activate` when the engine is the control thread's - after a control-thread
