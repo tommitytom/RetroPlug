@@ -538,8 +538,9 @@ TEST_CASE("a deactivate the audio thread could not apply is applied by the tick,
     LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
     handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
     host.reset();
-    // An AU reset on the render thread deactivates and activates again; the pair arrives while the control thread's
-    // tick is inside the take, so neither half may wait for it.
+    // An AU reset on the render thread deactivates and activates again. This case drives the DEPLOYED half of the
+    // pair: the deactivate arrives while the control thread's tick is inside the take, so it may not wait for it (the
+    // activate that follows, and the ORDER the two keep, is the next case).
     host.shutGate();
     std::thread releaser([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
@@ -566,4 +567,82 @@ TEST_CASE("a deactivate the audio thread could not apply is applied by the tick,
     REQUIRE(host.names().back() == "reclaim");
     REQUIRE(handoff.parked());
     REQUIRE_FALSE(handoff.beginBlock());
+}
+
+TEST_CASE("a deferred deactivate is applied before the call that got the lock, not after it", "[lifecycle]") {
+    SECTION("the pair's activate a moment later gets the lock the deactivate missed") {
+        FakeHost host;
+        LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+        handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+        // A park the tick may take the engine for, so the policy's mutex is held across engine work: the two halves of
+        // a format's pair arrive around it, and the deactivate is the half that finds it held.
+        onForeignThread([&] { handoff.sampleRateChanged(96000.0); });
+        REQUIRE_FALSE(handoff.beginBlock());
+        host.shutGate();
+        std::thread releaser([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+            host.openGate();
+        });
+        AudioCall audio(host, [](LifecycleHandoff& policy) { policy.deactivate(); }, handoff);
+        REQUIRE(handoff.idleTick() == 0);  // blocks inside the take until the releaser opens the gate
+        audio.join();
+        releaser.join();
+        REQUIRE(audio.inTake());
+        REQUIRE(audio.returned());
+        REQUIRE(audio.waitedUs() < 150000);
+        REQUIRE_FALSE(host.ranOn(audio.id()));
+        host.reset();
+
+        // The activate half gets the lock. The deferred deactivate is applied FIRST, so the pair nets out to nothing:
+        // without that order the next tick replays the stale deactivate, the engine is suspended once the grace is
+        // past, and no activate is coming to hand it back.
+        const std::thread::id foreign = onForeignThread([&] { handoff.activate(1024); });
+        REQUIRE(host.calls().empty());
+        REQUIRE_FALSE(host.ranOn(foreign));
+        REQUIRE(handoff.idleTick() == 0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));  // past the grace a deactivate would get
+        REQUIRE(handoff.idleTick() == 0);
+        REQUIRE(host.names() == std::vector<std::string>{"reclaim", "reclaim"});  // a Running tick's own reclaim
+        REQUIRE(handoff.state() == LifecycleHandoff::State::Running);
+        REQUIRE(handoff.beginBlock());
+    }
+    SECTION("a control-thread rate change, then the activate, with the deferred deactivate in between") {
+        FakeHost host;
+        LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+        handoff.activate(1024);
+        // The same contended deactivate, held up by a size the tick must grow the plan for.
+        onForeignThread([&] { handoff.bufferSizeChanged(16384); });
+        REQUIRE_FALSE(handoff.beginBlock());
+        host.shutGate();
+        std::thread releaser([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+            host.openGate();
+        });
+        AudioCall audio(host, [](LifecycleHandoff& policy) { policy.deactivate(); }, handoff);
+        REQUIRE(handoff.idleTick() == 0);
+        audio.join();
+        releaser.join();
+        REQUIRE(audio.inTake());
+        REQUIRE(audio.returned());
+        REQUIRE(audio.waitedUs() < 150000);
+        REQUIRE_FALSE(host.ranOn(audio.id()));
+        host.reset();
+
+        // VST3's setupProcessing on the main thread reports the rate while the plugin is inactive, and the activate
+        // that follows applies it. The deferred deactivate still comes first, so the rate is applied by an activate
+        // the plugin then stays Running after.
+        handoff.sampleRateChanged(96000.0);
+        REQUIRE(host.calls().empty());
+        handoff.activate(1024);
+        REQUIRE(host.names() == std::vector<std::string>{"take", "reclaim", "maxFrames", "rate", "give", "control"});
+        REQUIRE(host.calls()[3].value == 96000.0);
+        REQUIRE(handoff.idleTick() == 0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        REQUIRE(handoff.idleTick() == 0);
+        REQUIRE(host.names() ==
+                std::vector<std::string>{"take", "reclaim", "maxFrames", "rate", "give", "control", "reclaim",
+                                        "reclaim"});  // the activate's handoff, then two Running ticks
+        REQUIRE(handoff.state() == LifecycleHandoff::State::Running);
+        REQUIRE(handoff.beginBlock());
+    }
 }

@@ -56,10 +56,12 @@
 // One mutex serialises the foreign lifecycle calls against the tick. The audio thread reaches it too, through the
 // activates DPF makes on it (run()'s auto-activate, VST3's setProcessing from the processing thread, an AU reset on the
 // render thread), and it never WAITS for it: an activate or a deactivate from a thread that is not the policy's control
-// thread tries the lock, and one that cannot have it records itself in an atomic word that the next tick applies, so a
-// block is never held up by the engine work - or the JS of updateControlPlane - that the control thread is doing. The
-// tick itself is the control thread's alone: a host that calls getState from another thread (VST2's effGetChunk can)
-// applies nothing there, and the park waits for a call that belongs to the thread that owns the engine. The thread that
+// thread tries the lock, and one that cannot have it records itself in an atomic word that the next entry owning the
+// lock applies - the tick, or the call that got the lock next, which applies it before its own, so a deferred call is
+// always ordered before the direct one that follows it. A block is therefore never held up by the engine work - or the
+// JS of updateControlPlane - that the control thread is doing. The tick itself is the control thread's alone: a host
+// that calls getState from another thread (VST2's effGetChunk can) applies nothing there, and the park waits for a call
+// that belongs to the thread that owns the engine. The thread that
 // owns the engine is the one that constructed the policy, so a host that MOVES its main thread would read as foreign
 // everywhere and never apply a park: DPF's formats all construct and idle on the main thread, which is the premise this
 // rests on, and the one thing the policy can do for a host that does not is say the park is overdue.
@@ -175,7 +177,9 @@ public:
     //
     // activate and deactivate, the two DPF can call ON the audio thread, never wait for the mutex: a call that cannot
     // have it records itself for the tick (recordDeferred) and returns. A block's deadline is not a place to wait for
-    // the control thread to finish a take, a reclaim or the JS under it.
+    // the control thread to finish a take, a reclaim or the JS under it. Every entry that owns the lock applies a
+    // recorded call BEFORE its own (applyDeferredLocked), so a deferred call keeps its place in front of the call that
+    // got the lock a moment after it.
 
     // DPF calls this on the control thread before an activate (and a VST2 host may not, when it suspends).
     void deactivate() {
@@ -184,7 +188,8 @@ public:
             recordDeferred(kDeferDeactivate, 0);
             return;
         }
-        deactivated_ = true;  // either thread: until an activate, nothing may give the engine back
+        applyDeferredLocked();  // a call recorded before this one is ordered before it
+        deactivated_ = true;    // either thread: until an activate, nothing may give the engine back
         if (onControlThread()) {
             // Quiescent by the format's contract, and the engine stays this thread's until the activate that follows:
             // today's behaviour, and what makes an edit apply inline while the plugin is suspended.
@@ -209,7 +214,8 @@ public:
             recordDeferred(kDeferActivate, frames);
             return;
         }
-        deactivated_ = false;  // an activate pairs a foreign deactivate, if there was one: nothing to take back
+        applyDeferredLocked();  // as in deactivate: a pair keeps the order its format sent it in
+        deactivated_ = false;   // an activate pairs a foreign deactivate, if there was one: nothing to take back
         if (!onControlThread()) {
             activateForeignLocked(frames);
             return;
@@ -237,14 +243,19 @@ public:
 
     void bufferSizeChanged(std::uint32_t frames) {
         std::lock_guard<std::mutex> lock(lifecycle_);
+        applyDeferredLocked();  // a call recorded before this one is ordered before it
         // DPF reaches this only while the plugin is inactive, so a control-thread call that finds the engine GIVEN is a
         // call during a FOREIGN deactivate nothing has followed yet: growing the plan there would be a change to an
         // engine a block may be in the middle of, and the graph refuses one while the audio thread owns it
         // (GraphHost::reactivate). Recorded instead, and the park this requests hands it to the take that applies it.
         if (onControlThread() && !engineGiven_) {
-            planFrames_ = std::max(planFrames_, frames);
+            // Quiescent, so the plan can grow here; a size a deferred activate recorded before this call is the same
+            // grow and is taken with it, rather than left for a take that need not come.
+            const std::uint32_t wanted = hasPendingSize_ ? std::max(frames, pendingFrames_) : frames;
             hasPendingSize_ = false;
-            host_.setMaxBlockFrames(frames);
+            pendingFrames_  = 0;
+            planFrames_     = std::max(planFrames_, wanted);
+            host_.setMaxBlockFrames(wanted);
             return;
         }
         // Tier 1: the plan already holds a block this long, so nothing has to move. The next run() gets the block and
@@ -257,6 +268,7 @@ public:
 
     void sampleRateChanged(double rate) {
         std::lock_guard<std::mutex> lock(lifecycle_);
+        applyDeferredLocked();  // a call recorded before this one is ordered before it
         // As in bufferSizeChanged: a control-thread change with the engine given is a change during a foreign
         // deactivate's grace. Engine::setSampleRate re-rates the live cores, which needs the quiescent take, so the
         // rate waits for it - the activate that follows applies it, or a tick does.
@@ -378,10 +390,11 @@ private:
         return freed;
     }
 
-    // An activate or deactivate the audio thread could not apply: it never waits for the mutex (the control thread's
-    // take, its reclaim or its JS may hold it), so it records the call in one atomic word instead, and the next tick
-    // applies it. One word, so recording is a single store and the LATEST request wins, which is what a format's pair
-    // means: a deactivate then an activate collapses to the activate, exactly as the pair nets out.
+    // An activate or deactivate a thread could not apply: it never waits for the mutex (the control thread's take, its
+    // reclaim or its JS may hold it), so it records the call in one atomic word instead, and the next entry that owns
+    // the lock applies it - a tick, or the call that got the lock a moment later, which applies it BEFORE its own work
+    // so a format's pair keeps its order. One word, so recording is a single store and the LATEST request wins, which
+    // is what a pair means: a deactivate then an activate collapses to the activate, exactly as the pair nets out.
     enum : std::uint64_t { kDeferDeactivate = 1, kDeferActivate = 2 };
 
     void recordDeferred(std::uint64_t kind, std::uint32_t frames) {
