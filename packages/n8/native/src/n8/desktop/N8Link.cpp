@@ -254,6 +254,11 @@ bool N8Link::runPaused(PausedJob job) {
 }
 
 void N8Link::probeLink() {
+    // Whatever the port already holds goes before the sync: a menu read that timed out at connect leaves the tail of
+    // its reply in the input, and a config block's bytes can spell the ack's own F5 <next>, which would turn the
+    // framed link on for a ROM that reads no frames. Nothing is owed at either probe site (connect, before any frame;
+    // leaveMenu, after a read that consumed its own reply), so no real ack is dropped.
+    flushPort();
     // F4 00 is the link's sync: a BlipToaster with the link answers it with an ack (F5 00) on the back-channel the
     // moment its FIFO runs empty; any other ROM ignores an undefined System Common status. ~100 ms covers a busy
     // ROM and the USB round trip with room to spare - and costs nothing after connect.

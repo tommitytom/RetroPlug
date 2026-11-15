@@ -45,6 +45,39 @@ using retroplug::test::factoryFor;
 
 namespace {
 
+// A port whose cart answers a memory read late: the read that follows the config block's command times out with the
+// reply already in the input, as a seed menu read that ran out its short timeout does - the block is then still there
+// for whatever reads the port next, which at connect is the link's own probe. One shot: the guard's later reads, which
+// flush first, answer normally.
+class LateCfgPort : public retroplug::test::FakeN8Port {
+public:
+    LateCfgPort(FakeN8& dev, std::atomic<int>& stalled) : FakeN8Port(dev), stalled_(stalled) {}
+    std::size_t write(const std::uint8_t* data, std::size_t n) override {
+        const std::size_t took = FakeN8Port::write(data, n);
+        // A 13-byte CMD_MEM_RD of the FPGA config block: the menu check's own read.
+        if (!armed_ && n == 13 && data[2] == Edio::CMD_MEM_RD) {
+            const std::uint32_t addr = static_cast<std::uint32_t>(data[4]) |
+                                       (static_cast<std::uint32_t>(data[5]) << 8) |
+                                       (static_cast<std::uint32_t>(data[6]) << 16) |
+                                       (static_cast<std::uint32_t>(data[7]) << 24);
+            armed_ = addr == static_cast<std::uint32_t>(Edio::ADDR_CFG);
+        }
+        return took;
+    }
+    std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t timeoutMs) override {
+        if (armed_) {
+            armed_ = false;
+            ++stalled_;
+            return 0;  // the reply has not arrived yet: the read gives up on it
+        }
+        return FakeN8Port::read(b, n, timeoutMs);
+    }
+
+private:
+    std::atomic<int>& stalled_;
+    bool              armed_ = false;
+};
+
 std::string tempDir() {
     const auto dir = std::filesystem::temp_directory_path() / "rp-n8-cartjobs-test";
     std::filesystem::create_directories(dir);
@@ -540,8 +573,11 @@ TEST_CASE("a port that throws as a job starts stops the link with the reason, an
     rig.dev.files[kGameBattery] = saveOf(1024, 3);
     rig.connect();
     // The run's own pre-flush throws, as a USB unplug during a job does: the job never runs, so nothing addresses the
-    // card, and its record must still carry a reason rather than the generic failure a job with no outcome gets.
-    rig.dev.failOnFlushInput = 1;  // connect() flushed once already; the job's own flush is the next
+    // card, and its record must still carry a reason rather than the generic failure a job with no outcome gets. Every
+    // flush fails from here, not the next one only: the guard's cadence reads flush the input too, and on a loaded runner
+    // one of them lands between this and the job's own pre-flush and takes a one-shot failure with it (the job then runs
+    // and this case's whole tail reads a link that worked).
+    rig.dev.failEveryFlush = true;
     Job job;
     REQUIRE(rig.submit(battery("dump"), job));
     REQUIRE(waitUntil([&] { return job.finished(); }));
@@ -1501,6 +1537,37 @@ TEST_CASE("a clock between a message's halves is not a message boundary", "[n8][
     rig.push({0x7F});                             // its tail, which completes it
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
     CHECK(rig.dev.count("fifo:81 43 00") == 1);
+}
+
+TEST_CASE("a seed menu read that timed out leaves nothing for the connect-time probe to read as the link's ack",
+          "[n8][link]") {
+    // Connect reads where the cart runs before the serial thread starts, with a short timeout: a read that times out
+    // leaves the rest of its reply - here the whole block - in the input, and the probe would take a config block's
+    // F5 <next> for the ack that says the ROM speaks the framed link. The stream would then be framed for a game that
+    // reads no frames, and nothing sent to it would be played. The probe flushes what the port already holds first.
+    FakeN8 dev;
+    dev.menu    = false;  // a game, whose block a menu read reads
+    dev.cfg[13] = 0xF5;   // and a block a probe can misread: F5 and a 7-bit byte, as an ack is
+    dev.cfg[14] = 0x7F;
+    std::atomic<int> stalled{0};
+    N8Link           link([&dev, &stalled](const std::string&) -> std::unique_ptr<PortTransport> {
+        return std::make_unique<LateCfgPort>(dev, stalled);
+    });
+    link.setMenuCheck([](Edio& edio) {
+        std::uint8_t cfg[Edio::SIZE_CFG] = {0};
+        if (!edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok()) return -1;
+        const int mapper = ((cfg[2] >> 4) << 8) | cfg[0];
+        return mapper == 255 ? 1 : 0;  // the N8 OS's own mapper while its menu shows
+    });
+    REQUIRE(link.connect("/dev/fake"));
+    CHECK(stalled.load() == 1);  // the seed read ran out its timeout with the block still unread
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));  // past the probe's own listen
+    CHECK_FALSE(link.reliable());
+    // And the stream is raw, which is what a game without the link reads: its note goes to the FIFO as it was pushed.
+    const Bytes on{0x90, 0x3C, 0x7F};
+    CHECK(link.push(0, on.data(), on.size(), 48000.0));
+    REQUIRE(waitUntil([&] { return dev.count("fifo:90 3C 7F") == 1; }));
+    CHECK(dev.frameSeqs.empty());  // no frame was ever delivered, which is what being framed would have made of it
 }
 
 TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser there", "[n8][menu-guard]") {

@@ -60,6 +60,8 @@ struct FakeN8 {
     int                      fileReadDelayMs = 0;   // likewise each SD file read block
     bool                     failNextWrite = false; // the next SD file write answers its first block with an error
     int                      failOnFlushInput = 0;  // the Nth flushInput from now fails, as a port that just died does
+    bool                     failEveryFlush = false; // every flushInput fails from here on (the guard's reads flush too,
+                                                     // so "the next one" can be a read's rather than the caller's)
     bool                     failFlushAtGame = false; // every flush after the cart booted fails (an upload's last)
     bool                     failNextRead = false;  // the next SD file read block answers an error
     bool                     failNextList = false;  // the next directory load answers a disk error
@@ -161,6 +163,8 @@ struct FakeN8Port : PortTransport {
         failure_.clear();
         out_.clear();
         if (dev_.failFlushAtGame && !dev_.booted.empty())
+            failure_ = "fake port: flushInput failed";
+        else if (dev_.failEveryFlush)
             failure_ = "fake port: flushInput failed";
         else if (dev_.failOnFlushInput > 0 && --dev_.failOnFlushInput == 0)
             failure_ = "fake port: flushInput failed";

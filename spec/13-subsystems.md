@@ -132,9 +132,11 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   Every guard read flushes the input first, so a chattering cart's bytes cannot garble the block; a job's menu probe
   reads unflushed, so it may trip the guard but never clear it. While it says menu, `push` answers false and counts, the
   ring, the reliable window and any pending note release are discarded, and nothing is written; leaving the menu re-runs
-  the link probe. Jobs still run there (the SD card is reachable only at the menu), and a cart node's `connected` reads
-  0, so its owed note-offs follow the existing disconnected rule. Settings > N8's status row says "At the N8 menu (not
-  streaming)".
+  the link probe (which flushes the input before its sync, as does the connect-time one: a menu read that timed out
+  leaves the tail of its reply in the input, and a config block's bytes could otherwise be read as the link's ack, which
+  would frame the stream for a ROM that reads no frames). Jobs still run there (the SD card is reachable only at the
+  menu), and a cart node's `connected` reads 0, so its owed note-offs follow the existing disconnected rule. Settings >
+  N8's status row says "At the N8 menu (not streaming)".
   - **The residual window, in its two bounds.** The guard knows the cart's state only when a read lands, so bytes that
     go out before it are not held back. Raw, that is up to one read cadence, 250 ms of streamed MIDI. Framed, the read
     follows the quiet rule or the hold's bound once the window has stood still for the link's timeout, so what reaches
