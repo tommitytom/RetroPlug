@@ -436,8 +436,10 @@ private:
                 return;
             case InMsg: {
                 msg_.push_back(b);
+                // A frame carries one whole message: a SysEx runs to its F7, and a channel message is 3 bytes (2 for
+                // programme and channel pressure, as the ROM reads it).
                 const std::size_t len = (msg_[0] & 0xE0) == 0xC0 ? 2 : 3;
-                if (msg_.size() == len) link_ = WantSum;
+                if ((msg_[0] == 0xF0 && b == 0xF7) || (msg_[0] != 0xF0 && msg_.size() == len)) link_ = WantSum;
                 return;
             }
             case WantSum: {

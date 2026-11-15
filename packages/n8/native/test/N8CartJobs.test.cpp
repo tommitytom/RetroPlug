@@ -1259,6 +1259,36 @@ TEST_CASE("a handover releases only the notes the leaving node left, not a key t
         CHECK(lastLogIndex(rig.dev, "fifo:09 01 F7") < lastLogIndex(rig.dev, "fifo:80 3C 00"));
         CHECK(rig.dev.count("fifo:81 43 00") == 1);
     }
+    SECTION("framed: a release between a split SysEx's halves still delivers the whole SysEx") {
+        Rig rig;
+        rig.dev.menu    = false;
+        rig.dev.linkRom = true;  // BlipToaster, which answers the probe
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+        // The sender holds the first half until its F7 and has written nothing yet, which is exactly the window in
+        // which the raw path's gate reads a boundary and a framed release used to be read INTO the held message: its
+        // status cut the SysEx short, its bytes came out as spurious note-offs, and the tail was parsed as running
+        // status. The release is framed whole instead, and the sender's own parser is left as it was.
+        rig.push({0xF0, 0x7E, 0x7F});
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));  // the serial thread has fed the half to the sender
+        rig.cart.releaseNotes(heldNotes());
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 2;  // the keys' note-offs, ahead of the SysEx they may not join
+        }));
+        rig.push({0x09, 0x01, 0xF7});  // its tail, which completes it
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 3;
+        }));
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        REQUIRE(rig.dev.applied.size() == 3);  // and nothing else was framed out of it
+        CHECK(rig.dev.applied[0] == Bytes{0x80, 0x3C, 0x00});
+        CHECK(rig.dev.applied[1] == Bytes{0x81, 0x43, 0x00});
+        CHECK(rig.dev.applied[2] == Bytes{0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7});
+        CHECK_FALSE(rig.dev.applied[2] == Bytes{0x80, 0x09, 0x01});  // no note-off read out of the tail
+    }
     SECTION("framed: the reliable link delivers the same order") {
         Rig rig;
         rig.dev.menu    = false;

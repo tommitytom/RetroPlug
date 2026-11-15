@@ -91,6 +91,23 @@ TEST_CASE("reliable link: a message split across sends is still one frame", "[n8
     CHECK(wire == cat({ { 0xF4, 0 }, frame(0, { 0xF0, 0x7D, 0x42, 0x02, 0xF7 }) }));
 }
 
+TEST_CASE("reliable link: a message written between a split SysEx's halves is its own frame", "[n8][link]") {
+    // What a transport writes while it is inside a stream of chunks: a leaving cart node's note-offs go out with the
+    // bytes port halfway through a SysEx, and send() would take their status for a message that cuts the SysEx short
+    // (its bytes framed as note-offs, the SysEx's tail read as running status). sendMessage frames one whole message
+    // and leaves the bytes being collected as they were, so the SysEx's own tail still completes it.
+    N8ReliableSender s;
+    Bytes wire;
+    auto emit = [&](const std::uint8_t* d, std::size_t n, int) { wire.insert(wire.end(), d, d + n); };
+    const Bytes head = { 0xF0, 0x7D, 0x42 }, off = { 0x80, 60, 0 }, tail = { 0x02, 0xF7 };
+    s.send(head.data(), head.size(), emit);
+    CHECK(wire.empty());
+    s.sendMessage(off.data(), off.size(), emit);
+    CHECK(wire == cat({ { 0xF4, 0 }, frame(0, off) }));
+    s.send(tail.data(), tail.size(), emit);
+    CHECK(wire == cat({ { 0xF4, 0 }, frame(0, off), frame(1, { 0xF0, 0x7D, 0x42, 0x02, 0xF7 }) }));
+}
+
 TEST_CASE("reliable link: an ack frees the window; an ack naming a sent frame re-sends from it", "[n8][link]") {
     N8ReliableSender::Timing t;
     t.resendDelayNs = 1000;

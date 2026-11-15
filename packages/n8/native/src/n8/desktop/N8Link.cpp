@@ -205,10 +205,12 @@ void N8Link::writeReleases(bool stopping) {
     // At the menu nothing goes, stopping or not: a menu holds no notes of ours, and its FIFO reads a note-off as its
     // own commands.
     if (atMenu_.load(std::memory_order_relaxed)) return;
-    // And between two messages only: a note-off written inside one the bytes port split across chunks is not a message
-    // the cart's parser sees (a SysEx above all - a note-off inside an F0..F7 run is payload). A stream left
-    // mid-message holds it only until kMidMessageNs, so a node that dies mid-SysEx still gets its notes released.
-    if (!stopping && !atMessageBoundary(nowNs())) return;
+    // And, on a raw link, between two messages only: a note-off written inside one the bytes port split across chunks
+    // is not a message the cart's parser sees (a SysEx above all - a note-off inside an F0..F7 run is payload). A
+    // stream left mid-message holds it only until kMidMessageNs, so a node that dies mid-SysEx still gets its notes
+    // released. A framed link needs no gate: the release is framed whole (sendMessage), so it cannot join a message the
+    // sender is still collecting.
+    if (!stopping && !rel_ && !atMessageBoundary(nowNs())) return;
     NoteSet      notes;
     std::uint64_t after = 0;
     {
@@ -233,7 +235,7 @@ void N8Link::writeReleases(bool stopping) {
         off.data[0] = static_cast<std::uint8_t>(0x80 | (i / 128));
         off.data[1] = static_cast<std::uint8_t>(i % 128);
         off.data[2] = 0;
-        writeChunk(off);
+        writeChunk(off, true);
     }
 }
 
@@ -596,7 +598,7 @@ void N8Link::streamLoop() {
     }
 }
 
-void N8Link::writeChunk(const TimedChunk& chunk) {
+void N8Link::writeChunk(const TimedChunk& chunk, bool wholeMessage) {
     // The tracker's books, before the bytes go: this chunk's index is chunksWritten_, which the caller bumps after this
     // returns. A note-on is what a handover's release must not cut; a note-off leaves the key unheld. Only the first
     // message of a chunk is read (noteEvent), which is every message a node pushes: pushMidi sends one at a time. A
@@ -609,13 +611,17 @@ void N8Link::writeChunk(const TimedChunk& chunk) {
     if (rel_) {
         std::vector<std::uint8_t> out;
         std::vector<int> seqs;
-        rel_->send(chunk.data, chunk.len, [&](const std::uint8_t* d, std::size_t k, int seq) {
+        const auto emit = [&](const std::uint8_t* d, std::size_t k, int seq) {
             if (seq >= 0) seqs.push_back(seq);
             out.insert(out.end(), d, d + k);
-        });
-        // What the cart's parser sees on this path is frames, which never leave a message open: the sender holds a
-        // split SysEx until its F7 and frames whole messages (transport/N8ReliableLink.hpp).
-        noteWireBytes(out.data(), out.size(), now);
+        };
+        // A release (`wholeMessage`) is framed as a message of its own, whatever the sender is still collecting: it
+        // may be halfway through a SysEx the bytes port split, and a note-off read into it would cut it short and frame
+        // its tail as note-offs of its own (N8ReliableSender::sendMessage). A streamed chunk is fed as it comes.
+        if (wholeMessage) rel_->sendMessage(chunk.data, chunk.len, emit);
+        else rel_->send(chunk.data, chunk.len, emit);
+        // The cart's parser sees frames, which never leave a message open, so the byte-stream tracker is the raw path's
+        // alone: what a frame's payload spells is no more a message to the cart than it is to the tracker.
         writeFramed(out, seqs, now, false);
     } else {
         noteWireBytes(chunk.data, chunk.len, now);

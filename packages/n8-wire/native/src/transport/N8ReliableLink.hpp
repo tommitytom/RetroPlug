@@ -83,6 +83,29 @@ public:
         for (std::size_t i = 0; i < n; ++i) feed(data[i], emit);
     }
 
+    // One complete message, framed as a send() call of its own. A transport writes these between the chunks it streams
+    // (a leaving cart node's note-offs), where send() would read them into the message still being collected: a
+    // status cuts a split SysEx short, its bytes framed as messages of their own, and the SysEx's tail then read as
+    // running-status data. The message being collected is left exactly as it was, bytes and all, so its own tail still
+    // completes it.
+    void sendMessage(const std::uint8_t* data, std::size_t n, const Emit& emit) {
+        const std::uint8_t                              status  = status_;
+        const std::array<std::uint8_t, kMaxMessage + 2> msg     = msg_;
+        const std::size_t                               msgLen  = msgLen_;
+        const bool                                      tooLong = msgTooLong_;
+        const bool                                      inSysex = inSysex_;
+        status_     = 0;
+        msgLen_     = 0;
+        msgTooLong_ = false;
+        inSysex_    = false;
+        send(data, n, emit);
+        status_     = status;
+        msg_        = msg;
+        msgLen_     = msgLen;
+        msgTooLong_ = tooLong;
+        inSysex_    = inSysex;
+    }
+
     // The frame `seq` has gone out at nowNs.
     void onSent(int seq, std::int64_t nowNs) {
         for (auto& f : window_)

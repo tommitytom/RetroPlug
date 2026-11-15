@@ -212,7 +212,9 @@ private:
     void        enterMenu();                                    // serial thread: discard what is held, reset the link
     void        leaveMenu();                                    // serial thread: probe the link again
     void        discardRing();                                   // serial thread: drop what the ring holds, counted
-    void writeChunk(const TimedChunk& chunk);            // serial thread: one chunk out, framed when reliable
+    // serial thread: one chunk out, framed when reliable. `wholeMessage`: framed as a message of its own, whatever the
+    // sender is still collecting (see writeReleases).
+    void writeChunk(const TimedChunk& chunk, bool wholeMessage = false);
     void writeReleases(bool stopping);                   // serial thread: releaseNotes' note-offs, once they may go
     // serial thread: where the BYTE stream the cart is reading stands, so a release never goes between a status and its
     // data (see atMessageBoundary). wireDataBytes is one message's data bytes from its status.
