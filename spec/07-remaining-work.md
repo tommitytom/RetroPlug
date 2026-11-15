@@ -382,8 +382,8 @@ the next publish, the editor opening or a deactivate. ([C5 design](../docs/modul
 
 A foreign deactivate (VST3's `setProcessing(false)` on the processing thread, which DPF turns into `deactivate()`) only
 requests the park; a control-thread tick that comes more than the 250 ms grace later settles it, taking the engine and
-keeping it suspended (the lifecycle thread rule in [spec/02](02-native-host.md#engine)). If the editor closes before a
-foreign `activate` follows (DPF's `run()` auto-activate on a host that processes without activating, or
+keeping it suspended (the lifecycle thread rule in [spec/02](02-native-host.md#queuedinvoker)). If the editor closes
+before a foreign `activate` follows (DPF's `run()` auto-activate on a host that processes without activating, or
 `setProcessing(true)`), that activate only requests the give and there is no control-thread entry left to make it: the
 plugin parks, silent, until the next `getState`/`setState` or the editor reopens, and a host that does neither again
 leaves it mute. The give cannot be made on the foreign thread: handing the engine to a thread that is already running
