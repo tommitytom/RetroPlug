@@ -489,6 +489,25 @@ test("an app knob changes behaviour on the next block", () => {
   expect(secondLaunchFires({ quantise: "immediate" })).toBe(true);
 });
 
+test("a bar launch counts the CART's bar: the divisor reaches the app on its context", () => {
+  // The cart clocks at 24 / tickDivisor ticks a quarter, so at divisor 2 its bar is 192 host ticks while the host's
+  // stays 96: a `bar` launch cued at host tick 48 must wait for the cart's, and `hostBar` for the host's. The divisor
+  // rides the controller context (ControllerCtx.tickDivisor), read every block, so no rebuild is involved.
+  const firesAt = (quantise: string, tickDivisor: number): number => {
+    const w = new Wired({ appConfig: parsed({ quantise }), tickDivisor });
+    w.run({ ppq: 0, surface: [PRESS_ROW_0] }); // nothing was playing: launched at once, and now it is
+    w.run({ ppq: 2, surface: [press(9)] }); // host tick 48, not on either bar line
+    for (const tick of [96, 192]) {
+      if (at(w.run({ ppq: tick / 24 }).controller, "launches").length) return tick;
+    }
+    return -1;
+  };
+  expect(firesAt("bar", 1)).toBe(96);
+  expect(firesAt("bar", 2)).toBe(192);
+  expect(firesAt("hostBar", 2)).toBe(96);
+  expect(firesAt("hostBar", 3)).toBe(96);
+});
+
 test("a rebuilt session re-takes the device rather than diffing against a surface it never painted", () => {
   const rig = quiet();
   const first = surface(rig.run(still({ connected: true })));

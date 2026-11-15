@@ -57,10 +57,10 @@ class ScriptedModel implements PlaybackModel {
 interface Harness {
   device: FakeLaunchpad;
   sent: number[][];
-  run(opts?: { tick?: number; transport?: boolean; ticks?: number; input?: number[][] }): void;
+  run(opts?: { tick?: number; transport?: boolean; ticks?: number; tickDivisor?: number; input?: number[][] }): void;
 }
 
-function harness(playback: PlaybackModel, config: Record<string, unknown> = {}): Harness {
+function harness(playback: PlaybackModel, config: Record<string, unknown> = {}, tickDivisor = 1): Harness {
   const device = new FakeLaunchpad();
   const sent: number[][] = [];
   const session = new ControllerSession(lsdjMidiMap, {
@@ -76,6 +76,7 @@ function harness(playback: PlaybackModel, config: Record<string, unknown> = {}):
       tick: opts.tick ?? 0,
       transport: opts.transport ?? true,
       ticks: opts.ticks ?? 0,
+      tickDivisor: opts.tickDivisor ?? tickDivisor,
     })),
   };
 }
@@ -215,6 +216,32 @@ test("quantise immediate fires in the same update as the press", () => {
   h.run({ tick: 100 });
   h.run({ tick: 101, input: [h.device.press(0, 5)] });
   expect(h.sent).toEqual([[0x90, 5, 100]]);
+});
+
+test("at a tempo divisor of d, a bar launch waits out the CART's bar and a hostBar the DAW's", () => {
+  // MI.MAP clocks the cart at 24 / tickDivisor ticks a quarter, so a cart bar is 96 x d DAW ticks and a cart beat
+  // 24 x d: counting the DAW's 96 at divisor 2 makes a `bar` launch land mid-phrase. The cart's phase is its own
+  // clock, walked from ppq 0. `hostBar` and `hostBeat` keep counting the DAW's, which is all a project at the
+  // default divisor 1 has ever had.
+  const firesAt = (quantise: string, tickDivisor: number): number => {
+    const model = new ScriptedModel(new PredictedLsdjModel(fullSong(16)));
+    const h = harness(model, { quantise, follow: false }, tickDivisor);
+    model.setRows([0, 0, 0, 0]); // something IS playing, so the cue has a boundary to wait for
+    h.run({ tick: 50 });
+    h.run({ tick: 51, input: [h.device.press(0, 5)] });
+    for (let tick = 52; tick <= 51 + 96 * 4; tick++) {
+      h.run({ tick });
+      if (h.sent.length) return tick;
+    }
+    return -1;
+  };
+  expect(firesAt("bar", 1), "bar at 1").toBe(96);
+  expect(firesAt("bar", 2), "bar at 2").toBe(192);
+  expect(firesAt("bar", 3), "bar at 3").toBe(288);
+  expect(firesAt("hostBar", 2), "hostBar at 2").toBe(96);
+  expect(firesAt("hostBar", 3), "hostBar at 3").toBe(96);
+  expect(firesAt("beat", 2), "beat at 2").toBe(96);
+  expect(firesAt("hostBeat", 2), "hostBeat at 2").toBe(72);
 });
 
 test("quantise rowEnd waits for the song to change row, not for a clock boundary", () => {

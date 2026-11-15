@@ -49,8 +49,9 @@ const SCENARIO = "../../packages/lsdj-launchpad/ts/scenario/lsdjLaunchpad.ts";
 const PACK_DIR = "../../packages/lsdj-launchpad";
 const OUT = ".test-build/lsdj-launchpad-scenario";
 // The bridge's own heap, measured the way the launchpad core's is, by bisecting --heap-bytes on this tree: the run
-// passes at 144960 bytes and fails at 144896 (the four quantise sessions' tables are live at once), and the budget is
-// 1.25x that. The scenario's figure, NOT the box's 64 KiB arena, which no controller pack claims.
+// passed at 144960 bytes and failed at 144896 with the quantise row's then four modes (four sessions' tables live at
+// once), and the budget is 1.25x that. Six modes fit inside it, which the run below proves. The scenario's figure, NOT
+// the box's 64 KiB arena, which no controller pack claims.
 const LEAST_HEAP = 144960;
 const HEAP = Math.ceil((LEAST_HEAP * 1.25) / 1024) * 1024; // 184320
 
@@ -84,7 +85,7 @@ test("the LSDj bridge runs on MicroQuickJS as on Node, byte for byte", async () 
     "position {", // where the predictor ended, after the bars, the seek and the stop
     "grid [256,4,true,false,false]",
     "layout [0,8,7,31,0,3,0]",
-    "follow [3,null,15,4]",
+    "follow [3,null,15,6]",
     'model playing {"playing":true,"channels":[{"playing":true,"songRow":2}', // a launch, then 150 ticks
     "model edited {", // a row losing its chain, a chain shortened under the ticks already played
     'model anchored {"playing":true,"channels":[{"playing":true,"songRow":3}',
@@ -96,7 +97,9 @@ test("the LSDj bridge runs on MicroQuickJS as on Node, byte for byte", async () 
     "quantise immediate {",
     "quantise beat {",
     "quantise bar {",
-    "quantise rowEnd {", // the four modes: the launches land the same rows, the LED traffic counts differ
+    "quantise hostBeat {",
+    "quantise hostBar {",
+    "quantise rowEnd {", // the six modes: the launches land the same rows, the LED traffic counts differ
     "null target session 1",
   ])
     expect(transcript.includes(part), part).toBe(true);

@@ -31,14 +31,16 @@ export const WINDOW_ROWS = PANE_ROWS * 2;
 /** Song rows addressable by the page control. 256 rows / 16 per page. */
 export const MAX_PAGE = 15;
 
-/** Ticks per quantise unit at 24 PPQN. `bar` assumes 4/4 - the block info carries no time signature, and
- *  96 ticks is also exactly one 16-step LSDj phrase at the factory groove (B2), so it is the right unit
- *  for this tracker whatever the host's meter says. */
+/** Ticks per quantise unit at 24 PPQN, in the HOST's clock. A `bar` assumes 4/4 - the block info carries no time
+ *  signature, and 96 ticks is also exactly one 16-step LSDj phrase at the factory groove (B2), so it is the right unit
+ *  for this tracker whatever the host's meter says. The cart's own beat and bar are these multiplied by its clock
+ *  divisor (ControllerCtx.tickDivisor): it is clocked at 24 / divisor ticks a quarter, so at divisor 2 an LSDj phrase
+ *  lasts two host bars and a `bar` launch that counted the host's would land mid-phrase. */
 const TICKS_PER_BEAT = 24;
 const TICKS_PER_BAR = 96;
 
-export type Quantise = "immediate" | "beat" | "bar" | "rowEnd";
-export const QUANTISE_VALUES = ["immediate", "beat", "bar", "rowEnd"] as const;
+export type Quantise = "immediate" | "beat" | "bar" | "hostBeat" | "hostBar" | "rowEnd";
+export const QUANTISE_VALUES = ["immediate", "beat", "bar", "hostBeat", "hostBar", "rowEnd"] as const;
 
 // Colours. Only the seven palette entries the manual names in prose have known meanings (the full
 // 128-entry table is an image in the PDF), so the app is built from those rather than from invented
@@ -88,9 +90,15 @@ export function followRow(position: PlaybackPosition): number | null {
 const clampPage = (p: number): number => Math.max(0, Math.min(MAX_PAGE, Math.trunc(p) || 0));
 
 /** The tick a launch pressed at `tick` should fire on. Snaps UP to the next boundary, so a press landing
- *  exactly on one fires immediately rather than waiting a whole extra unit. */
-function boundaryTick(tick: number, quantise: Quantise): number {
-  const unit = quantise === "bar" ? TICKS_PER_BAR : TICKS_PER_BEAT;
+ *  exactly on one fires immediately rather than waiting a whole extra unit. `beat` and `bar` count the CART's
+ *  clock, whose phase is its own, walked from ppq 0 (so a host seek does not move it): one cart beat is
+ *  `TICKS_PER_BEAT` host ticks times the divisor it divides its clock by. `hostBeat` and `hostBar` count the host's,
+ *  whatever the cart does. */
+function boundaryTick(tick: number, quantise: Quantise, tickDivisor: number): number {
+  const bar = quantise === "bar" || quantise === "hostBar";
+  const cart = quantise === "beat" || quantise === "bar";
+  const divisor = cart && tickDivisor > 0 ? tickDivisor : 1;
+  const unit = (bar ? TICKS_PER_BAR : TICKS_PER_BEAT) * divisor;
   return Math.ceil(tick / unit) * unit;
 }
 
@@ -180,7 +188,7 @@ function handleInput(
     }
 
     st.pending = row;
-    st.pendingTick = quantise === "rowEnd" ? null : boundaryTick(c.tick, quantise);
+    st.pendingTick = quantise === "rowEnd" ? null : boundaryTick(c.tick, quantise, c.tickDivisor);
     st.pendingFromRow = quantise === "rowEnd" ? current : null;
   }
 }

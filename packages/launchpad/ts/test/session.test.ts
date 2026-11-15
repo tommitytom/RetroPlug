@@ -83,7 +83,7 @@ interface Harness {
   seen: ControllerCtx[];
   sent: number[][];
   connect(): void;
-  run(opts?: { tick?: number; transport?: boolean; ticks?: number; input?: number[][] }): void;
+  run(opts?: { tick?: number; transport?: boolean; ticks?: number; tickDivisor?: number; input?: number[][] }): void;
 }
 
 function harness(app: ControllerApp, playback: PlaybackModel = staticModel): Harness {
@@ -102,6 +102,7 @@ function harness(app: ControllerApp, playback: PlaybackModel = staticModel): Har
       tick: opts.tick ?? 0,
       transport: opts.transport ?? false,
       ticks: opts.ticks ?? 0,
+      tickDivisor: opts.tickDivisor ?? 1,
     })),
   };
 }
@@ -277,6 +278,17 @@ test("config reaches the app unchanged", () => {
     config: { quantise: "beat", follow: false },
   });
   device.write(session.connect());
-  device.write(session.update({ input: [], tick: 0, transport: false, ticks: 0 }));
+  device.write(session.update({ input: [], tick: 0, transport: false, ticks: 0, tickDivisor: 1 }));
   expect(seen).toEqual({ quantise: "beat", follow: false });
+});
+
+test("an app reads the cart's tick divisor off its context, and a change reaches a running session", () => {
+  // The divisor is the cart's own clock division (ControllerSessionSettings.tickDivisor): the node reads it every block
+  // and it is deliberately not part of a session's shape, so an app that quantises a launch to the CART's bar needs it
+  // on each update rather than once at construction.
+  const h = harness(noop);
+  h.connect();
+  h.run({ tickDivisor: 2 });
+  h.run({ tickDivisor: 3 });
+  expect(h.seen.map((c) => c.tickDivisor)).toEqual([2, 3]);
 });

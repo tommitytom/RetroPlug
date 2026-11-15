@@ -133,6 +133,8 @@ interface Block {
   transport: boolean;
   /** The ticks the host clocked in the previous block, as walkTicks counted them. */
   ticks: number;
+  /** The cart's clock division this block (ControllerCtx.tickDivisor): no cart here, so 1. */
+  tickDivisor?: number;
   /** The link reports a NEW device before this block, as a pair swapped inside one UI frame does: the host takes it
    *  again, which invalidates the surface so the block repaints everything. */
   reconnect?: boolean;
@@ -160,7 +162,7 @@ blocks.push({ input: [], tick: 480, transport: false, ticks: 0 });
 for (let i = 0; i < blocks.length; i++) {
   launches.length = 0;
   if (blocks[i].reconnect) emit("reconnect " + i, session.connect());
-  const leds = session.update(blocks[i]);
+  const leds = session.update({ ...blocks[i], tickDivisor: blocks[i].tickDivisor ?? 1 });
   if (leds.length > 0 || launches.length > 0) emit("block " + i, { leds, launches: launches.slice() });
 }
 emit("ticks", model.advancedTicks());

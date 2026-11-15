@@ -17,11 +17,15 @@ import { MAX_PAGE, QUANTISE_VALUES, type Quantise } from "./lsdjMidiMap";
 // nothing of it loads at run time.
 import type {} from "@retroplug/launchpad/packageContributions";
 
-/** The row's text per quantise value: the words a player reads, which only this app has. */
+/** The row's text per quantise value: the words a player reads, which only this app has. `beat` and `bar` are the
+ *  CART's clock (one bar is one LSDj phrase, however many host bars the cart's divisor makes it), and the `host` pair
+ *  the DAW's, which a cart at the default divisor 1 hears as the same thing. */
 const QUANTISE_LABELS: Record<Quantise, string> = {
   immediate: "Immediately",
   beat: "Next beat",
   bar: "Next bar",
+  hostBeat: "Next host beat",
+  hostBar: "Next host bar",
   rowEnd: "End of row",
 };
 
@@ -29,9 +33,9 @@ const QUANTISE_LABELS: Record<Quantise, string> = {
 const MI_MAP: ControllerAppContribution = {
   id: "lsdj-midimap",
   label: "LSDj MI.MAP",
-  // quantise: when a pressed pad's launch actually fires. Default `bar` - one bar is also exactly one LSDj phrase
-  // at the factory groove, so launches land where the music does. follow: scroll the 16-row window to keep the
-  // playhead visible. page: which window to start on.
+  // quantise: when a pressed pad's launch actually fires. Default `bar` - one cart bar is also exactly one LSDj phrase
+  // at the factory groove, so launches land where the music does, at whatever clock divisor the cart runs. follow:
+  // scroll the 16-row window to keep the playhead visible. page: which window to start on.
   config: z.object({
     quantise: enumField(QUANTISE_VALUES, "bar"),
     follow: boolField(true),

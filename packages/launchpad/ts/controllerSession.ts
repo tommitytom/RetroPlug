@@ -109,7 +109,7 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
     // retained, not dangling; it is read only inside update, and emptied before the next update reads it.
     const input: ArrayLike<number>[] = [];
     // The session's whole input for a block, one object refilled each block so none is built per block.
-    const frame = { input, tick: 0, transport: false, ticks: 0 };
+    const frame = { input, tick: 0, transport: false, ticks: 0, tickDivisor: 1 };
     // The clock the cart is sent, walked here so the predictor can be given the COUNT of ticks a block fired. It is the
     // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), at its resolution: an app's override sets the
     // cart's sync MODE and never its divisor, and MI.MAP clocks the cart at 24 / tempoDivisor ticks a quarter, so the
@@ -213,7 +213,8 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         // playhead behind the cart for good. Counting the walk gives the predictor exactly the ticks the cart heard.
         clock.begin(b);
         counted = 0;
-        clock.walk(TICKS_PER_QUARTER / (config.tickDivisor >= 1 ? config.tickDivisor : 1), countTick);
+        const divisor = config.tickDivisor >= 1 ? config.tickDivisor : 1;
+        clock.walk(TICKS_PER_QUARTER / divisor, countTick);
         const elapsed = walked;
         walked = counted;
 
@@ -223,6 +224,9 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         frame.tick = Math.floor(b.transport.ppq * TICKS_PER_QUARTER);
         frame.transport = b.transport.playing;
         frame.ticks = elapsed;
+        // What the cart divides its clock by, on the app's context: a launch quantised to the cart's bar counts in
+        // cart bars, which at a divisor above 1 are several of the host's.
+        frame.tickDivisor = divisor;
         const out = session.update(frame);
         for (let i = 0; i < out.length; i++) b.send("controllerOut", 0, out[i]);
       },

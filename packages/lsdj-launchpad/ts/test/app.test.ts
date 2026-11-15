@@ -38,6 +38,16 @@ test("every quantise mode the menu offers is one the schema accepts", () => {
   for (const quantise of QUANTISE_VALUES) expect(miMap.config.parse({ quantise }).quantise).toBe(quantise);
 });
 
+test("the quantise row offers both clocks, in the order the setting cycles them", () => {
+  // A bar counts the CART's clock, whose bar at a tempo divisor above 1 is that many DAW bars, so the DAW's own beat and
+  // bar are offered too rather than folded into one meaning.
+  const row = miMap.menu!.find((m) => m.key === "quantise")!;
+  expect(row.choices!.map((c) => c.value)).toEqual(["immediate", "beat", "bar", "hostBeat", "hostBar", "rowEnd"]);
+  expect(row.choices!.map((c) => c.label)).toEqual([
+    "Immediately", "Next beat", "Next bar", "Next host beat", "Next host bar", "End of row",
+  ]);
+});
+
 test("the two halves are joined by id", () => {
   // The generated script bundle registers the runtime and the app's registry holds this half: a document names one id,
   // so the two must name the same app.

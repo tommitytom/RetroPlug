@@ -40,6 +40,9 @@ export interface ControllerCtx {
   readonly tick: number;
   /** Ticks elapsed since the previous update; 0 while stopped. */
   readonly ticks: number;
+  /** What the cart the launches drive divides its 24-tick clock by (1 when unknown): a cart bar is 96 times this in the
+   *  host's ticks, which is the unit an app that quantises to the CART's clock counts in. */
+  readonly tickDivisor: number;
   readonly transport: boolean;
   readonly config: Record<string, unknown>;
   /** Persistent scratch, scoped to this session: the contract a DSP role's `ctx.state` had under the kernel. */
@@ -70,6 +73,9 @@ export interface SessionInput {
   transport: boolean;
   /** Ticks the host clocked in the previous block; 0 while it was stopped, and 0 on the first update. */
   ticks: number;
+  /** The cart's clock division this block (ControllerCtx.tickDivisor). It is per block rather than per session: a
+   *  divisor changed while a song plays must reach the running session at its next block, and must not rebuild it. */
+  tickDivisor: number;
 }
 
 export interface SessionOptions {
@@ -135,6 +141,7 @@ export class ControllerSession {
       target: this.target,
       tick: 0,
       ticks: 0,
+      tickDivisor: 1,
       transport: false,
       config: this.config,
       state: this.state,
@@ -176,6 +183,7 @@ export class ControllerSession {
     const ctx = this.ctx;
     ctx.tick = input.tick;
     ctx.ticks = ticks;
+    ctx.tickDivisor = input.tickDivisor;
     ctx.transport = input.transport;
     this.app(ctx);
 

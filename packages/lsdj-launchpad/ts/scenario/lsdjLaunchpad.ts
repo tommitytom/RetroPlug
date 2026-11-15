@@ -54,10 +54,12 @@ interface Block {
   transport: boolean;
   /** The ticks the host clocked in the previous block, as walkTicks counted them. */
   ticks: number;
+  /** The cart's clock division this block (ControllerCtx.tickDivisor): one cart, at the default divisor. */
+  tickDivisor: number;
 }
 const blocks: Block[] = [
-  { input: [], tick: 0, transport: false, ticks: 0 },
-  { input: [pad(0, 2, 127), pad(0, 2, 0)], tick: 0, transport: false, ticks: 0 }, // stopped: launches at once
+  { input: [], tick: 0, transport: false, ticks: 0, tickDivisor: 1 },
+  { input: [pad(0, 2, 127), pad(0, 2, 0)], tick: 0, transport: false, ticks: 0, tickDivisor: 1 }, // launches at once
 ];
 for (let tick = 0; tick <= 480; tick += 12) {
   const input: number[][] = [];
@@ -65,10 +67,10 @@ for (let tick = 0; tick <= 480; tick += 12) {
   if (tick === 300) input.push(cc(PRO_MK3.buttons.up, 127), cc(PRO_MK3.buttons.up, 0));
   if (tick === 312) input.push(cc(PRO_MK3.buttons.down, 127));
   if (tick === 396) input.push(pad(6, 1, 90)); // row 9, on the right-hand pane
-  blocks.push({ input, tick, transport: true, ticks: 12 });
+  blocks.push({ input, tick, transport: true, ticks: 12, tickDivisor: 1 });
 }
-blocks.push({ input: [], tick: 4000, transport: true, ticks: 0 }); // a seek: the cart was sent no clocks
-blocks.push({ input: [], tick: 480, transport: false, ticks: 0 });
+blocks.push({ input: [], tick: 4000, transport: true, ticks: 0, tickDivisor: 1 }); // a seek: the cart was sent no clocks
+blocks.push({ input: [], tick: 480, transport: false, ticks: 0, tickDivisor: 1 });
 
 for (let i = 0; i < blocks.length; i++) {
   launches.length = 0;
@@ -162,11 +164,11 @@ for (const quantise of QUANTISE_VALUES) {
     if (tick === 60) input.push(cc(PRO_MK3.buttons.session, 127)); // session button: follow on
     if (tick === 90) input.push(cc(PRO_MK3.buttons.down, 127), cc(PRO_MK3.buttons.down, 127));
     if (tick === 120) input.push(pad(7, 7, 127)); // the window's last row
-    leds += s.update({ input, tick, transport: tick > 0, ticks: tick > 0 ? 6 : 0 }).length;
+    leds += s.update({ input, tick, transport: tick > 0, ticks: tick > 0 ? 6 : 0, tickDivisor: 1 }).length;
   }
   emit("quantise " + quantise, { launches: sent, ledMessages: leds });
 }
 const detached = new ControllerSession(lsdjMidiMap, {
   playback: runtime.playbackModel(table), target: nullTarget(LSDJ_MAX_ROW),
 });
-emit("null target session", detached.update({ input: [pad(0, 0, 127)], tick: 0, transport: false, ticks: 0 }).length);
+emit("null target session", detached.update({ input: [pad(0, 0, 127)], tick: 0, transport: false, ticks: 0, tickDivisor: 1 }).length);

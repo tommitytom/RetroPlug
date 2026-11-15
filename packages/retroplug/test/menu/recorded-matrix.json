@@ -12522,6 +12522,20 @@
     "default": "Launches: Next bar",
     "steps": [
      {
+      "label": "Launches: Next host beat",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBeat"
+      },
+      "staged": []
+     },
+     {
+      "label": "Launches: Next host bar",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBar"
+      },
+      "staged": []
+     },
+     {
       "label": "Launches: End of row",
       "stored": {
        "project.controller.appConfig.quantise": "rowEnd"
@@ -14582,6 +14596,20 @@
    "lp-app-quantise": {
     "default": "Launches: Next bar",
     "steps": [
+     {
+      "label": "Launches: Next host beat",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBeat"
+      },
+      "staged": []
+     },
+     {
+      "label": "Launches: Next host bar",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBar"
+      },
+      "staged": []
+     },
      {
       "label": "Launches: End of row",
       "stored": {
@@ -49601,6 +49629,20 @@
     "default": "Launches: Next bar",
     "steps": [
      {
+      "label": "Launches: Next host beat",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBeat"
+      },
+      "staged": []
+     },
+     {
+      "label": "Launches: Next host bar",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBar"
+      },
+      "staged": []
+     },
+     {
       "label": "Launches: End of row",
       "stored": {
        "project.controller.appConfig.quantise": "rowEnd"
@@ -52497,6 +52539,20 @@
     "default": "Launches: Next bar",
     "steps": [
      {
+      "label": "Launches: Next host beat",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBeat"
+      },
+      "staged": []
+     },
+     {
+      "label": "Launches: Next host bar",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBar"
+      },
+      "staged": []
+     },
+     {
       "label": "Launches: End of row",
       "stored": {
        "project.controller.appConfig.quantise": "rowEnd"
@@ -54360,6 +54416,20 @@
    "lp-app-quantise": {
     "default": "Launches: Next bar",
     "steps": [
+     {
+      "label": "Launches: Next host beat",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBeat"
+      },
+      "staged": []
+     },
+     {
+      "label": "Launches: Next host bar",
+      "stored": {
+       "project.controller.appConfig.quantise": "hostBar"
+      },
+      "staged": []
+     },
      {
       "label": "Launches: End of row",
       "stored": {
