@@ -55,7 +55,7 @@ import {
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
 import type { Host } from "@retroplug/core/host";
-import { placedKinds, protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
+import { placedKinds, protocolNodeOf, protocolPipeline, protocolWrites, type SystemInput } from "./graph/protocolNodes";
 import { resolveSongCatalog, resolveTracker, TRACKER_MARKERS } from "./trackerRegistry";
 import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
@@ -75,13 +75,18 @@ function parsedRoleConfig(registry: RoleRegistry | undefined, role: RoleInstance
   return rt ? (rt.schema.parse(role.config) as Record<string, unknown>) : role.config;
 }
 
+/** The collision key every tracker marker shares: a marker kind has no node and no system input of its own, so the one
+ *  place two of them meet is this. Beside `occupied`, which appends it, so the union that array has and the value
+ *  cannot drift. */
+const TRACKER_MARKER = "tracker-marker";
+
 /** What a role kind competes for in SystemsStore.suggestedFirst: the system inputs its node writes, and - for a cart's
- *  tracker marker - one place every marker kind shared. Two markers on one system are one ROM swapped for another's, and
- *  resolveTracker reads the first of them in role order, so they collide the way two nodes writing one input do: the
- *  marker today's ROM earns is moved ahead of the stale one, never deleted. */
-function occupied(kind: string): readonly string[] {
-  const writes: readonly string[] = protocolWrites(kind);
-  return TRACKER_MARKERS.has(kind) ? [...writes, "tracker-marker"] : writes;
+ *  tracker marker - one place every marker kind shares. Two markers on one system are one ROM swapped for another's,
+ *  and resolveTracker reads the first of them in role order, so they collide the way two nodes writing one input do:
+ *  the marker today's ROM earns is moved ahead of the stale one, never deleted. */
+function occupied(kind: string): readonly (SystemInput | typeof TRACKER_MARKER)[] {
+  const writes: readonly (SystemInput | typeof TRACKER_MARKER)[] = protocolWrites(kind);
+  return TRACKER_MARKERS.has(kind) ? [...writes, TRACKER_MARKER] : writes;
 }
 
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
@@ -1424,8 +1429,10 @@ export class SystemsStore {
   }
 
   /** `roles` with each role this ROM's providers suggest (`suggested`, defaultRoles) moved ahead of the earliest role
-   *  they do not suggest whose node writes an input its own node writes, so of two that collide the pipeline places
-   *  the protocol today's ROM calls for (graph/protocolNodes.ts: of two writers of one input, the first is placed).
+   *  they do not suggest that competes for the same place (occupied: a system input its node writes, or the one place
+   *  every tracker marker shares), so of two that collide the one today's ROM calls for comes first: the pipeline
+   *  places the protocol (graph/protocolNodes.ts: of two writers of one input, the first is placed) and resolveTracker
+   *  reads the first placed marker.
    *  Met when the file at a ROM path changes builds: a project stored with mgb whose path now holds LSDj gains
    *  lsdj-sync as a missing feature role, and first-wins would keep running mGB's protocol on an LSDj cart, whose menu
    *  then shows sync controls that do nothing (and the reverse on an mGB cart). Every other role keeps its place, so

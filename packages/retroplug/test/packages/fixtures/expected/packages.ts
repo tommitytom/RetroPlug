@@ -62,8 +62,8 @@ export const ROM_PROVIDERS: readonly RomProvider[] = [
   ...(app_retroplug.romProviders ?? []),
 ];
 
-/** The tracker integrations, in product order. A system's tracker is the first of its marker roles that the system's
- *  own role order places (resolveTracker), which a load orders by the ROM's own marker; a duplicate is refused below. */
+/** The tracker integrations, in product order. A system's tracker is the first of its marker roles the system's
+ *  own order places (resolveTracker), which a load orders by the ROM's marker; a duplicate is refused below. */
 export const TRACKER_INTEGRATIONS: readonly TrackerIntegration[] = [
   ...(app_alpha.trackerIntegrations ?? []),
   ...(app_beta.trackerIntegrations ?? []),

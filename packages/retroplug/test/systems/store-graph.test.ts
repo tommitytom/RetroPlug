@@ -967,10 +967,15 @@ test("of two tracker markers, a loaded system resolves the one its ROM earns, an
   be.seed("/roms/bliptoaster.nes", blipToasterRom());
   be.seed("/roms/risa.nes", risaRom());
   const mesen: RoleInstance = { kind: "mesen", config: {} };
-  const risa: RoleInstance[] = [{ kind: "risa", config: {} }, { kind: "risa-assets", config: { overrides: [] } }];
+  const risaOverride = { type: "theme", slot: 3, name: "OLD" };
+  const risa: RoleInstance[] = [
+    { kind: "risa", config: {} },
+    { kind: "risa-assets", config: { overrides: [risaOverride] } },
+  ];
+  const blipOverride = { type: "theme", slot: 5, name: "OLD" };
   const blip: RoleInstance[] = [
     { kind: "bliptoaster", config: {} },
-    { kind: "bliptoaster-assets", config: { overrides: [] } },
+    { kind: "bliptoaster-assets", config: { overrides: [blipOverride] } },
   ];
   const cases: [string, RoleInstance[], string][] = [
     ["/roms/bliptoaster.nes", [mesen, ...risa], "bliptoaster"],
@@ -980,11 +985,53 @@ test("of two tracker markers, a loaded system resolves the one its ROM earns, an
     const { result: id } = warned(() => sys.adopt({ romPath, core: "mesen", roles })!);
     const stored = sys.view().find((v) => v.id === id)!.roles;
     expect(resolveTracker(stored)?.id).toBe(earned);
-    // The stale marker and its asset overrides stay on the system, which is what a save then writes.
+    // The stale marker and the asset overrides it holds stay on the system, in the stored order, after the earned
+    // marker (which the load moved ahead of them) and before the roles the load appended; a save writes that order.
     const stale = earned === "bliptoaster" ? "risa" : "bliptoaster";
-    expect(stored.map((r) => r.kind).includes(stale)).toBe(true);
+    const kinds = stored.map((r) => r.kind);
+    expect(kinds.indexOf(earned) < kinds.indexOf(stale)).toBe(true);
+    expect(kinds.filter((k) => k === stale || k === `${stale}-assets`)).toEqual([stale, `${stale}-assets`]);
+    expect(stored.find((r) => r.kind === `${stale}-assets`)?.config.overrides).toEqual([
+      earned === "bliptoaster" ? risaOverride : blipOverride,
+    ]);
     sys.removeSystem(id!);
   }
+});
+
+test("a project storing both tracker markers resolves the one its ROM earns, and a save writes the moved order", () => {
+  // The design's own scenario: an existing project can hold the stale marker FIRST, so the move has to pass a STORED
+  // marker rather than one the load appended. resolveTracker reads the system's own order either way, and the order a
+  // load moves it to is what the save writes, so loading that save again resolves the same cart.
+  const { be, p, sys } = project();
+  be.seed("/roms/bliptoaster.nes", blipToasterRom());
+  const systems = [
+    {
+      platform: "nes",
+      core: "mesen",
+      romPath: "/roms/bliptoaster.nes",
+      roles: [
+        { kind: "mesen", config: {} },
+        { kind: "risa", config: {} },
+        { kind: "risa-assets", config: { overrides: [] } },
+        { kind: "bliptoaster", config: {} },
+      ],
+    },
+  ];
+  be.seed("/proj/stale.rplg", new TextEncoder().encode(JSON.stringify({ schemaVersion: "4", settings: {}, systems })));
+  const settle = (path: string): RoleInstance[] => {
+    const { result } = warned(() => p.load(path));
+    expect(result.kind).toBe("loaded");
+    const [entry] = sys.systems();
+    return sys.view().find((v) => v.id === entry.id)!.roles;
+  };
+  const moved = ["mesen", "bliptoaster", "risa", "risa-assets"];
+  const first = settle("/proj/stale.rplg");
+  expect(first.map((r) => r.kind).slice(0, 4)).toEqual(moved);
+  expect(resolveTracker(first)?.id).toBe("bliptoaster");
+  expect(p.save("/proj/stale-saved.rplg")).toBe(true);
+  const again = settle("/proj/stale-saved.rplg");
+  expect(again.map((r) => r.kind)).toEqual(first.map((r) => r.kind)); // the save wrote the order the load moved it to
+  expect(resolveTracker(again)?.id).toBe("bliptoaster");
 });
 
 test("a ROM that earns no tracker marker leaves the stored marker order standing, either way round", () => {
@@ -1020,6 +1067,7 @@ test("a ROM that earns no tracker marker leaves the stored marker order standing
     sys.adopt({ romPath: "/roms/gone.sms", core: "mesen", roles: [mesen, ...orders[0]] }),
   );
   expect(absent).toBe(null);
+  expect(sys.systems()).toEqual([]); // the refusal places nothing, which is what the null means
 });
 
 test("a collision's outcome survives a save and a load: the ROM's role first and placed, the stale one kept after it", () => {
