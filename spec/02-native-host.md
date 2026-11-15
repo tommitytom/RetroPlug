@@ -810,17 +810,19 @@ reads the state with acquire and stores Parked only on entry to a later block, s
 touched the engine, and the foreign callbacks are serialised against it by one mutex that the audio thread reaches only
 through DPF's own activates (`run()`'s auto-activate, VST3's `setProcessing` from the processing thread, an AU reset on
 the render thread) and never waits for, because an `activate` or `deactivate` that cannot have it records itself in an
-atomic word that the next tick applies, and the mutex is let go before the latency report and the CC map, so a block
-waits for engine work and never for JS. `getState` and `setState` also apply a pending park, for a host with no idle
-tick, through the tick that never runs the grace-suspend (a suspend made from a state call would be undone by nothing,
-and DPF reports a rate or a size only while the plugin is inactive). The editor's close runs one idle tick, which
-applies a park a block has already seen and nothing else: a park whose first block has not come stays pending, and a
-grace-suspend stays suspended. A plugin whose host closes the editor while the engine is suspended, and then sends a
-foreign `activate` (DPF's `run()` auto-activate on a host that processes without activating, or `setProcessing(true)` on
-the processing thread), therefore parks, silent, with no editor open after it and no state call either: nothing else on
-the control thread can give the engine back, so it waits for the next `getState` or `setState`. A park longer than a
-second is logged once. `retroplug-plugin-test`'s `LifecycleHandoff` cases drive the policy from a `std::thread`, as
-JACK's callback does.
+atomic word that the next entry to take the mutex applies first, the tick's or a later lifecycle call's, so a deferred
+call keeps its place in front of the call that follows it, and the mutex is let go before the latency report and the CC
+map, so a block waits for engine work and never for JS. `getState` and `setState` also apply a pending park, for a host
+with no idle tick, through the tick that never runs the grace-suspend (a suspend made from a state call would be undone
+by nothing, and DPF reports a rate or a size only while the plugin is inactive). The editor's close runs one idle tick,
+which applies a park a block has already seen, or settles a foreign deactivate whose grace has run out on it, and
+nothing else besides the overdue report: a park whose first block has not come (and is not a foreign deactivate's)
+stays pending, and an engine already suspended stays suspended. A plugin whose host closes the editor while the engine
+is suspended, and then sends a foreign `activate` (DPF's `run()` auto-activate on a host that processes without
+activating, or `setProcessing(true)` on the processing thread), therefore parks, silent, with no editor open after it
+and no state call either: nothing else on the control thread can give the engine back, so it waits for the next
+`getState` or `setState`, or the editor reopening. A park longer than a second is logged once.
+`retroplug-plugin-test`'s `LifecycleHandoff` cases drive the policy from a `std::thread`, as JACK's callback does.
 
 Who owns the engine is tracked separately from whether a block may drive it, because a format can move it between the
 two on a thread of its own. A foreign `activate` when the engine is the control thread's - after a control-thread
