@@ -43,6 +43,7 @@ than work.
 - [ ] [A narrow host still arms the tap](#a-narrow-host-still-arms-the-tap)
 - [ ] [Threaded engine cases are smoke runs](#threaded-engine-cases-are-smoke-runs)
 - [ ] [A plugin with its editor closed has no idle reclaim](#a-plugin-with-its-editor-closed-has-no-idle-reclaim)
+- [ ] [A silent plugin after an editor-close suspend](#a-silent-plugin-after-an-editor-close-suspend)
 - [ ] [The script node Block has no resource accessor](#the-script-node-block-has-no-resource-accessor)
 - [ ] [The command ring and the adoption wait](#the-command-ring-and-the-adoption-wait)
 - [ ] [Serial capacities past large blocks](#serial-capacities-past-large-blocks)
@@ -102,9 +103,13 @@ the menu writes nothing unprompted on the back-channel: unsolicited bytes keep t
 a menu with stale frames reads as one that never goes quiet, and the guard only looks when the hold's one-second bound
 trips it. That bound now always ends the guard's own wait, so its read costs a second's delay and may be garbled by the
 chatter. A submission's probe is a different read: unflushed, and gated on a quiet turn of its own, so a chattering
-cart can still refuse it as busy, or garble the block into a game - which is what the check below is for. Confirm on a
-cart at its menu, with nothing streamed to it, that the back-channel stays silent, and that a job submitted right after
-a power-cycle to the menu is accepted, and promptly.
+cart can still refuse it as busy, or garble the block into a game - which is what the check below is for. A cadence read
+is a third: the guard reads the config block about every 250 ms between chunks on every raw or idle-framed stream to a
+running game ([`N8Link.cpp`](../packages/n8/native/src/n8/desktop/N8Link.cpp)), a read no performance ran before this
+batch and one whose cost to a busy cart is unmeasured. Confirm on a cart at its menu, with nothing streamed to it, that
+the back-channel stays silent, and that a job submitted right after a power-cycle to the menu is accepted, and promptly;
+and that the guard's periodic config reads cost a running BlipToaster nothing (`retroplug-n8-hwtest timing`, the
+heavy-chord stress) with no stall.
 
 ### The N8 menu's residual window
 
@@ -373,6 +378,19 @@ replaced while the transport plays keeps its nodes, a cart node's held notes, a 
 the next publish, the editor opening or a deactivate. ([C5 design](../docs/modular-graph-phase-c5-design.md) section
 11.)
 
+### A silent plugin after an editor-close suspend
+
+A foreign deactivate (VST3's `setProcessing(false)` on the processing thread, which DPF turns into `deactivate()`) only
+requests the park; a control-thread tick that comes more than the 250 ms grace later settles it, taking the engine and
+keeping it suspended (the lifecycle thread rule in [spec/02](02-native-host.md#engine)). If the editor closes before a
+foreign `activate` follows (DPF's `run()` auto-activate on a host that processes without activating, or
+`setProcessing(true)`), that activate only requests the give and there is no control-thread entry left to make it: the
+plugin parks, silent, until the next `getState`/`setState` or the editor reopens, and a host that does neither again
+leaves it mute. The give cannot be made on the foreign thread: handing the engine to a thread that is already running
+would put two threads in the command and release rings, and the policy cannot tell a host with no tick from one between
+blocks. A fix would need a way to take the engine there that is safe for both rings, or a tick the format promises.
+([Known bugs batch 4 design](../docs/known-bugs-batch-4-design.md) section 3.)
+
 ### The script node Block has no resource accessor
 
 The script node `Block` ([defineNode.ts](../packages/core/ts/defineNode.ts)) has no resource accessor and no link peers,
@@ -414,13 +432,18 @@ one line. No node has one. ([E1 design](../docs/modular-graph-phase-e1-design.md
 ### A stale tracker sync role stays placed
 
 A ROM swapped in place keeps the roles it no longer earns, by design: nothing is deleted, so a ROM swapped back gets its
-settings back. A marker role is harmless then, because `resolveTracker` reads the system's own order, but a role WITH a
-node is placed whenever nothing else writes its input. A NES system that once held risa keeps `risa-sync` after its path
-holds BlipToaster: `rp.risa.sync` writes `bytes`, a BlipToaster system has no sync role, so the pipeline places it and
-fans risa's host-sync stream (the `F9 52` arm, `FA`/`FC` and `F8` clocks) into the cart's FIFO, where a synth reads it
-as MIDI transport traffic and as whatever its parser makes of the arm's data bytes. Nothing patches the ROM and
-nothing crashes, but a cart is sent a protocol it never asked for. A fix would let a role's placement read the cart the
-ROM earns, not only its kind and order ([`protocolPipeline`](../packages/retroplug/src/graph/protocolNodes.ts),
+settings back. A marker role is harmless to a NODE, because `resolveTracker` reads the system's own order, but a role
+WITH a node is placed whenever nothing else writes its input. A NES system that once held risa keeps `risa-sync` after
+its path holds BlipToaster: `rp.risa.sync` writes `bytes`, a BlipToaster system has no sync role, so the pipeline places
+it and fans risa's host-sync stream (the `F9 52` arm, `FA`/`FC` and `F8` clocks) into the cart's FIFO, where a synth
+reads it as MIDI transport traffic and as whatever its parser makes of the arm's data bytes. Nothing patches the ROM and
+nothing crashes, but a cart is sent a protocol it never asked for. A reload keeps the marker half of that stale order:
+when a ROM file changes, `fileWatcher` calls `reloadSystem` and `rebuildInPlace` keeps `src.roles`
+([`systemsStore.ts`](../packages/retroplug/src/systemsStore.ts),
+[`fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts)), so a risa ROM replaced by a BlipToaster ROM at the same
+path still resolves risa, with none of the roles the new ROM earns added, until a save and a load re-runs the
+suggestion. A fix would let a role's placement, and a reload's, read the cart the ROM earns, not only its kind and
+order ([`protocolPipeline`](../packages/retroplug/src/graph/protocolNodes.ts),
 [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md#the-protocol-nodes)). ([Known bugs batch 4
 design](../docs/known-bugs-batch-4-design.md) section 1.)
 
