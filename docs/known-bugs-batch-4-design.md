@@ -252,23 +252,23 @@ the reviews' findings. What differs from sections 1 to 6:
 
 ## 8. Execution
 
-- Design ccc01889e; plan a9fd51961, written and validated on the tree by DeepSeek Flash and replayed from its text to
+- Design ccc01889e; plan 0066943ab, written and validated on the tree by DeepSeek Flash and replayed from its text to
   the identical tree. Opus found it not ready (the handoff's ownership, the forced read, a dropped chunk); a DeepSeek
   revision was ready with fixes (the discarded chunks' count against the release mark, among four); a second revision's
   re-check left two, which the controller applied (the job probe made trip-only after a flushed form made a job test
   flaky).
 - Tasks, each by a Qwen3.8 Flash-Next implementer at xhigh, each tree checked byte-identical to the validated diff by a
-  script: afcaf84e2, 0ae77254f, 0cb7252f0, e8609d642, af20f6baf, 6ea2e2422. Code reviews by DeepSeek (tasks 1, 2, 6)
+  script: c86741820, 7dcd9649e, ae7c45717, a80f87eca, 6f5375de5, 3866f0265. Code reviews by DeepSeek (tasks 1, 2, 6)
   and Opus (3, 4, 5); all but task 5 asked for changes.
-- Follow-ups, all DeepSeek: A 44c9fc2e3; A2 d5cfa77ca, b95454ed3 (A's Opus re-review found a deferred deactivate
-  applied after the activate that followed it, which would have silenced the JACK standalone); B f6fd12de0..fd8da3993;
-  B2 fb7a4d0f4, bd6b56baa; C 63dcc359b..7a347804b; the kit's TSan leg caught a test data race, fixed by the controller
-  in 76df2b2d4; the Opus final review was ready with fixes: D 88af75f2a..44f1b4928, D2 2242c7cf4, 873960b35 (D's
+- Follow-ups, all DeepSeek: A 165256831; A2 18a542171, 6aca159d3 (A's Opus re-review found a deferred deactivate
+  applied after the activate that followed it, which would have silenced the JACK standalone); B 52d296282..0032a6b68;
+  B2 3d000e892, a8665ae52; C 5782ae76c..626fe687b; the kit's TSan leg caught a test data race, fixed by the controller
+  in 3d47d66a7; the Opus final review was ready with fixes: D 247523586..90937855b, D2 bc74939ad, b89c05444 (D's
   monotone re-derive fired off the grid). Nothing is pushed.
-- Acceptance: the serial kit at 44f1b4928, 45 of 45 legs (strict parity with fixtures and `RP_FAIL_ON_SKIP=1`, 30 files,
+- Acceptance: the serial kit at 90937855b, 45 of 45 legs (strict parity with fixtures and `RP_FAIL_ON_SKIP=1`, 30 files,
   no skips; TSan and ASan, the n8 binary whole under TSan; BlipToaster 57/57 and NESVJ 22/22 against the rebuilt CLI;
   `sdl:smoke`, `sdl:controller` and SDL PipeWire 27/0/0 under the device guard, no card PCM opened). The parallel kit at
-  the tip, 873960b35: 47 legs exit 0 (BlipToaster 57/57, NESVJ 22/22, SDL PipeWire 27/0/0), and `sdl:controller` run on
+  the tip, b89c05444: 47 legs exit 0 (BlipToaster 57/57, NESVJ 22/22, SDL PipeWire 27/0/0), and `sdl:controller` run on
   its own. The JACK leg (`.superpowers/kb4exec/jack-leg.sh`, under the guard): the standalone alive through six
   buffer-size changes (two refused by jack2), the editor's idle reclaiming; the guard refused only jackd's own ALSA
   probes.
