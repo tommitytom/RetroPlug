@@ -1029,8 +1029,15 @@ test("a project storing both tracker markers resolves the one its ROM earns, and
   expect(first.map((r) => r.kind).slice(0, 4)).toEqual(moved);
   expect(resolveTracker(first)?.id).toBe("bliptoaster");
   expect(p.save("/proj/stale-saved.rplg")).toBe(true);
+  // The saved document ITSELF: a second load re-runs suggestedFirst, so it would move an un-moved save back and agree
+  // with the first load either way. The file is what a later build reads first, so its role order is the one pinned:
+  // the four stored roles come first, in the order the load moved them to, and the roles the ROM earns follow them.
+  const saved = JSON.parse(new TextDecoder().decode(be.readFile("/proj/stale-saved.rplg")!)) as {
+    systems: { roles: { kind: string }[] }[];
+  };
+  expect(saved.systems[0].roles.map((r) => r.kind).slice(0, 4)).toEqual(moved);
   const again = settle("/proj/stale-saved.rplg");
-  expect(again.map((r) => r.kind)).toEqual(first.map((r) => r.kind)); // the save wrote the order the load moved it to
+  expect(again.map((r) => r.kind)).toEqual(first.map((r) => r.kind));
   expect(resolveTracker(again)?.id).toBe("bliptoaster");
 });
 
