@@ -112,6 +112,7 @@ bool N8Link::connect(const std::string& port) {
     wireExpect_      = 0;
     wireSysex_       = false;
     wireOpenSinceNs_ = 0;
+    wireStatus_      = 0;
     // The cart's at-menu state, on the fresh port and before any producer may push: a menu reads the FIFO as commands,
     // so the state decides whether anything may be streamed at all. A check that fails to answer leaves the state as it
     // was (not the menu), which streams as the link always did.
@@ -223,6 +224,7 @@ void N8Link::writeReleases(bool stopping) {
         // can move the field while the loop below runs, and a newer mark must not decide about an older batch.
         after = releaseAfter_;
         releasePending_.reset();
+        releaseAfter_ = 0;  // this batch's mark is spent: a later one waits behind its own, or behind every push
         releaseWanted_.store(false, std::memory_order_relaxed);
     }
     for (std::size_t i = 0; i < notes.size(); ++i) {
@@ -424,6 +426,7 @@ void N8Link::enterMenu() {
     wireExpect_      = 0;
     wireSysex_       = false;
     wireOpenSinceNs_ = 0;
+    wireStatus_      = 0;
     if (rel_) {
         rel_->reset();
         reliable_.store(false, std::memory_order_release);
@@ -638,18 +641,36 @@ void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t
         // status it would look like the message ended, and a release written there would be its payload.
         if (b >= 0xF8) continue;
         if (wireSysex_) {
-            if (b == 0xF7) wireSysex_ = false;
-            continue;
+            if (b == 0xF7) {
+                wireSysex_ = false;
+                continue;
+            }
+            if (b < 0x80) continue;  // its payload, which is any byte below 0x80
+            // A non-real-time status cuts the SysEx short, as it does on the wire and in the framed sender's own feed
+            // (a tail that is never coming, a bytes port that handed over only a head): the tracker is at a boundary
+            // again, and the message this status begins is read from here rather than swallowed for the rest of the
+            // connection. The open's stamp goes with it, so the new message's bound measures from now.
+            wireSysex_       = false;
+            wireOpenSinceNs_ = 0;
         }
         if (wireExpect_ > 0 && b < 0x80) {
             --wireExpect_;
             continue;
         }
-        if (b < 0x80) continue;  // data with no status behind it: nothing of ours is open
-        if (b == 0xF0) {
-            wireSysex_ = true;
+        if (b < 0x80) {
+            // Running status: a data byte where a message's status would stand continues the last channel message (a
+            // bytes port may hand over part of one, and need not repeat the status). Only a channel status runs on, so
+            // a data byte behind a System Common or SysEx status opens nothing.
+            if (wireStatus_ == 0) continue;
+            wireExpect_ = wireDataBytes(wireStatus_) - 1;  // this byte is the first of its data
             continue;
         }
+        if (b == 0xF0) {
+            wireSysex_  = true;
+            wireStatus_ = 0;  // a SysEx cancels running status, as it does on the wire
+            continue;
+        }
+        wireStatus_ = (b & 0xF0) < 0xF0 ? b : 0;
         wireExpect_ = wireDataBytes(b);
     }
     const bool open = wireSysex_ || wireExpect_ > 0;

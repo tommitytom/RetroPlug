@@ -280,14 +280,22 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
                 Owned(const Owned&)            = delete;
                 Owned& operator=(const Owned&) = delete;
             } owned(e);
+            // The node that is about to leave holds a second key, channel 1's 67, which nothing strikes again: its
+            // note-off is what shows the destroy's release ran at all (a case that only ordered key 60's note-off
+            // against its note-on passes with no release written), and key 60's is what shows the release spared the
+            // new node's.
+            e.stageMidi(0, Bytes{0x91, 67, 100});
+            block(e);
+            REQUIRE(waitUntil([&] { return dev.count("fifo:91 43 64") == 1; }));
             REQUIRE(e.setGraph(withCartNode(systems, "cart-2")).ok);
             e.stageMidi(0, Bytes{0x90, 60, 100});
             e.drainCommands();  // the audio thread's drain: the swap is adopted and the staged note pushed
             block(e);
             REQUIRE(waitUntil([&] { return dev.count("fifo:90 3C 64") == 2; }));
-            // The replaced plan, and the node still holding key 60, are freed here, with the new node's push already
-            // among what the link has taken.
+            // The replaced plan, and the node still holding keys 60 and 67, are freed here, with the new node's push
+            // already among what the link has taken.
             e.reclaim();
+            REQUIRE(waitUntil([&] { return dev.count("fifo:81 43 00") == 1; }));  // the release ran: key 67 went
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             const std::ptrdiff_t off = lastLogIndex(dev, "fifo:80 3C 00");
             const std::ptrdiff_t on  = lastLogIndex(dev, "fifo:90 3C 64");

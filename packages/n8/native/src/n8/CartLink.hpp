@@ -123,11 +123,11 @@ public:
     // removal) and the device reports into its record no more, stopping at the next point that leaves the device
     // coherent. Nothing when it holds no job.
     virtual void abandonJobs(const void* owner) { (void)owner; }
-    // [audio] How many chunks this link has taken from its producer since the connect. Only the audio thread pushes, so a
-    // node reads it exactly after its own push, and that reading is the mark a handover's release waits behind
-    // (releaseNotes(notes, mark)): the pushes a node taking over made between the swap and the leaving node's destroy are
-    // NOT among them. A link that cannot tell the pushes apart answers 0, and its releaseNotes(notes, mark) falls back
-    // to the one-argument form.
+    // [audio] How many chunks this link has taken from its producer since the link was made (never reset, so a mark
+    // taken before a reconnect still orders). Only the audio thread pushes, so a node reads it exactly after its own
+    // push, and that reading is the mark a handover's release waits behind (releaseNotes(notes, mark)): the pushes a
+    // node taking over made between the swap and the leaving node's destroy are NOT among them. A link that cannot tell
+    // the pushes apart answers 0, and its releaseNotes(notes, mark) falls back to the one-argument form.
     virtual std::uint64_t pushMark() const { return 0; }
 
     // [control] The node is leaving the plan while the cart holds `notes` (it pushed their note-ons and no note-offs):

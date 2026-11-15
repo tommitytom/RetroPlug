@@ -1252,11 +1252,45 @@ TEST_CASE("a handover releases only the notes the leaving node left, not a key t
         rig.push({0xF0, 0x7E, 0x7F});  // the first half: F0 and two of its data bytes
         REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
         rig.cart.releaseNotes(heldNotes());
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
-        CHECK(rig.dev.count("fifo:80 3C 00") == 0);  // held: the message is not finished
-        rig.push({0x09, 0x01, 0xF7});                // and its tail, which completes it
+        // The tail at once, so the two halves are well inside the link's mid-message bound whatever the runner: a sleep
+        // here could outlast it on a stalled one, and the gate would let the release out first (that is what the bound
+        // is for, so it is the case's own timing, not the link's, that this keeps out of the way).
+        rig.push({0x09, 0x01, 0xF7});  // and its tail, which completes it
         REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
         CHECK(lastLogIndex(rig.dev, "fifo:09 01 F7") < lastLogIndex(rig.dev, "fifo:80 3C 00"));
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+    }
+    SECTION("raw: a status byte ends a SysEx that never got its F7") {
+        // A SysEx ends at any non-real-time status byte, as it does on the wire and in the framed sender's own feed.
+        // Treated as still open, the tracker swallows every later byte for the rest of the connection, so every later
+        // release waits out the mid-message bound instead of going at a boundary the cart is really at.
+        Rig rig;
+        rig.connectGame();
+        rig.push({0xF0, 0x7E, 0x7F});  // a head whose tail is never coming
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
+        rig.push({0x90, 0x3C, 0x7F});  // a new status: it cuts the SysEx short and is a message of its own
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
+        // A release now has nothing open to wait for, and goes at the next turn. Read as still inside a SysEx it goes
+        // only when the bound runs out (a quarter of a second), which is what the short wait below tells apart.
+        rig.cart.releaseNotes(heldNotes());
+        CHECK(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }, 150));
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+    }
+    SECTION("raw: running status: a data byte continues the last channel message") {
+        // A message's status need not be repeated when the one before it is a channel message, and a bytes port may
+        // hand over part of one: a data byte where a status would stand continues the last channel status. Read as
+        // "no status", the tracker reports a boundary in the middle of that message, and a release written there is
+        // its data.
+        Rig rig;
+        rig.connectGame();
+        rig.push({0x90, 0x3C, 0x7F, 0x3E});  // a note-on, then the note and velocity of a running-status one
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F 3E") == 1; }));
+        rig.cart.releaseNotes(heldNotes());
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 0);  // held: the second message is not finished
+        rig.push({0x7F});                             // the velocity that completes it
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
+        CHECK(lastLogIndex(rig.dev, "fifo:7F") < lastLogIndex(rig.dev, "fifo:80 3C 00"));
         CHECK(rig.dev.count("fifo:81 43 00") == 1);
     }
     SECTION("framed: a release between a split SysEx's halves still delivers the whole SysEx") {

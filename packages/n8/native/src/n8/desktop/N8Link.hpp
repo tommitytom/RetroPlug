@@ -141,7 +141,8 @@ public:
     // from its destroy, which runs after the plan swap and so after the node taking over has pushed. A key whose last
     // note-on was written at or past the mark is the new node's, and is skipped rather than cut.
     void          releaseNotes(const NoteSet& notes, std::uint64_t mark);
-    // [audio] Every chunk push() has put in the ring since the connect: the mark a node records after its own push.
+    // [audio] Every chunk push() has put in the ring since the link was made (never reset, so a mark taken before a
+    // reconnect still orders): the mark a node records after its own push.
     std::uint64_t chunksPushed() const { return chunksPushed_.load(std::memory_order_acquire); }
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
     // Stop + join the serial thread, close the port. With a paused job running the join waits for the job's current
@@ -271,11 +272,13 @@ private:
     static constexpr std::size_t   kNoteKeys = 16 * 128;
     std::uint64_t              lastOn_[kNoteKeys] = {};
     // The shape of the byte stream the cart has been sent (noteWireBytes): the data bytes still owed by the message
-    // open, whether a SysEx is one of them, and when that began (0: at a message boundary). Serial thread only, reset
-    // at each connect and at the menu, whose stream is a command parser's, not ours.
+    // open, whether a SysEx is one of them, when that began (0: at a message boundary), and the last channel status,
+    // which running status repeats. Serial thread only, reset at each connect and at the menu, whose stream is a
+    // command parser's, not ours.
     int                        wireExpect_    = 0;
     bool                       wireSysex_     = false;
     std::int64_t               wireOpenSinceNs_ = 0;
+    std::uint8_t               wireStatus_    = 0;
     // The earliest moment OnControl runs again after a throw (see the loop in streamLoop), and a wake a caller asked
     // for since the last quiet turn: the first is serial-thread state, the second is stored from any thread.
     std::int64_t               controlRetryAtNs_ = 0;
