@@ -265,8 +265,12 @@ protected:
     String getState(const char* key) const override {
         if (std::strcmp(key, "project") != 0) return String();
         // A host that changed the rate off its main thread and never called the editor's idle left a park pending, and
-        // everything below reads the script context: apply it here, on this (the control) thread.
-        handoff_.idleTick();
+        // everything below reads the script context: apply it here, on this (the control) thread. This is the tick that
+        // never SUSPENDS (LifecycleHandoff::stateTick): a save must not leave the plugin parked, because the only thing
+        // that could hand the engine back afterwards is the next save. What it does apply calls updateControlPlane - a
+        // latency report, which DPF forwards to the host - from inside the host's own getState. A rate change moves
+        // the latency, so this is where it is reported; the map rarely moves with it and a no-op costs one compare.
+        handoff_.stateTick();
         const std::string& out =
             lastGoodProject_.offer(const_cast<PluginDSP*>(this)->callGlobal("__rp_saveProjectB64", nullptr));
         // Log the first substitution only: the host calls this on every save AND on editor connect, so
@@ -277,7 +281,7 @@ protected:
     }
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "project") != 0) return;
-        handoff_.idleTick();    // the same seam getState is, before a load reaches the script context
+        handoff_.stateTick();    // the same seam getState is, before a load reaches the script context
         callGlobal("__rp_loadProjectB64", value ? value : "");
         updateLatency();        // the loaded project's sync mode determines the compensable latency
         updateParameterMap();   // ...and its ROMs determine what the DAW's CC slots are called
@@ -420,6 +424,12 @@ private:
         d_stderr("[retroplug] a parked block dropped %llu MIDI message(s): they did not fit the hold",
                  static_cast<unsigned long long>(count));
     }
+
+    // A message longer than DPF's inline data is not held: DPF keeps it in dataExt, and a SysEx has no place in the
+    // policy's fixed buffer. The two sizes must agree, or a message that fits the engine's arena would be dropped by a
+    // parked block for no reason (HeldMidi is DPF-free, so nothing there can include MidiEvent).
+    static_assert(rp::plugin::HeldMidi::kMaxBytes >= MidiEvent::kDataSize,
+                  "a parked block holds what DPF puts inline, or it drops a message it could have kept");
 
     // Copy a parked block's MIDI into the policy's fixed buffer (LifecycleHandoff.hpp): a message longer than DPF's
     // inline data is not held, and past the buffer a message is dropped and counted rather than allocated for.

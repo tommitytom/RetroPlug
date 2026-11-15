@@ -53,16 +53,24 @@
 // waits for Parked, cannot overlap one that did. It therefore does not rely on JACK's promise that process does not run
 // during the callback.
 //
-// One mutex serialises the foreign lifecycle calls against the tick; run() never takes it. The tick itself is the
-// control thread's alone: a host that calls getState from another thread (VST2's effGetChunk can) applies nothing
-// there, and the park waits for a call that belongs to the thread that owns the engine. The thread that owns the engine
-// is the one that constructed the policy, so a host that MOVES its main thread would read as foreign everywhere and
-// never apply a park: DPF's formats all construct and idle on the main thread, which is the premise this rests on,
-// and the one thing the policy can do for a host that does not is say the park is overdue.
+// One mutex serialises the foreign lifecycle calls against the tick. The audio thread reaches it too, through the
+// activates DPF makes on it (run()'s auto-activate, VST3's setProcessing from the processing thread, an AU reset on the
+// render thread), and it never WAITS for it: an activate or a deactivate from a thread that is not the policy's control
+// thread tries the lock, and one that cannot have it records itself in an atomic word that the next tick applies, so a
+// block is never held up by the engine work - or the JS of updateControlPlane - that the control thread is doing. The
+// tick itself is the control thread's alone: a host that calls getState from another thread (VST2's effGetChunk can)
+// applies nothing there, and the park waits for a call that belongs to the thread that owns the engine. The thread that
+// owns the engine is the one that constructed the policy, so a host that MOVES its main thread would read as foreign
+// everywhere and never apply a park: DPF's formats all construct and idle on the main thread, which is the premise this
+// rests on, and the one thing the policy can do for a host that does not is say the park is overdue.
 //
 // A host with no idle tick at all (a VST2 host that changes the rate off its main thread with the editor closed) is
-// covered by getState and setState, which ask the policy to apply a pending park; a park nobody applies is reported
-// once after a second, from whichever control-thread entry comes next (there is nothing else that could say it).
+// covered by getState and setState, which ask the policy to apply a pending park; their tick is the one that never runs
+// the grace-suspend, because a suspend made from a state call is undone by nothing (see stateTick). The editor's close
+// runs one idle tick, so closing the editor cannot strand a park that tick was there to apply. What remains uncovered
+// is a foreign activate with no editor ever opened and no state call after it: that plugin parks, silent, until one
+// comes. A park nobody applies is reported once after a second, from whichever control-thread entry comes next (there
+// is nothing else that could say it).
 //
 // Nothing here touches DPF, so the policy is unit-tested without it (test/plugin/LifecycleHandoff.test.cpp) and
 // PluginDSP only implements HandoffHost over its engine and forwards its four lifecycle overrides.
@@ -164,10 +172,18 @@ public:
         : host_(host), controlThread_(controlThread), planFrames_(planMaxBlockFrames) {}
 
     // --- the DPF overrides, on whichever thread the format calls them ----------------------------------------------
+    //
+    // activate and deactivate, the two DPF can call ON the audio thread, never wait for the mutex: a call that cannot
+    // have it records itself for the tick (recordDeferred) and returns. A block's deadline is not a place to wait for
+    // the control thread to finish a take, a reclaim or the JS under it.
 
     // DPF calls this on the control thread before an activate (and a VST2 host may not, when it suspends).
     void deactivate() {
-        std::lock_guard<std::mutex> lock(lifecycle_);
+        std::unique_lock<std::mutex> lock = lockForCall();
+        if (!lock.owns_lock()) {
+            recordDeferred(kDeferDeactivate, 0);
+            return;
+        }
         deactivated_ = true;  // either thread: until an activate, nothing may give the engine back
         if (onControlThread()) {
             // Quiescent by the format's contract, and the engine stays this thread's until the activate that follows:
@@ -188,28 +204,14 @@ public:
 
     // `frames` is the host's buffer size at this activation (DPF's getBufferSize), the plan's first input.
     void activate(std::uint32_t frames) {
-        std::lock_guard<std::mutex> lock(lifecycle_);
+        std::unique_lock<std::mutex> lock = lockForCall();
+        if (!lock.owns_lock()) {
+            recordDeferred(kDeferActivate, frames);
+            return;
+        }
         deactivated_ = false;  // an activate pairs a foreign deactivate, if there was one: nothing to take back
         if (!onControlThread()) {
-            // A block longer than the plan has to grow it, and nothing may do that while the audio thread runs the
-            // engine. DPF usually announces it through bufferSizeChanged first, but not always: setBufferSize returns
-            // early on an unchanged size, so a host above the plan can reach only this call. Recorded before the
-            // engine check: DPF's run() auto-activates a host's first block on the audio thread, engine not yet given.
-            const bool overPlan = frames > planFrames_;
-            if (overPlan) {
-                hasPendingSize_ = true;
-                pendingFrames_  = std::max(pendingFrames_, frames);
-            }
-            if (!engineGiven_ || overPlan) {
-                // The engine is the control thread's (a deactivate before this, or this host's first activate): giving
-                // it to a thread that is already running without the quiescent handoff would put two threads in the
-                // rings. Ask for the give; the next block parks and the tick makes it (and grows the plan first).
-                requestParkLocked();
-                return;
-            }
-            // Audio-owned, so the engine never moved: the format's pair needs nothing, unless a size or a rate really
-            // is pending, and then the park is already requested.
-            if (!hasPendingSize_ && !hasPendingRate_) resumeLocked();
+            activateForeignLocked(frames);
             return;
         }
         // On the control thread this is quiescent whatever happened before it: DPF runs deactivate first, and a
@@ -223,16 +225,23 @@ public:
         applyPendingLocked();
         host_.giveEngine();
         engineGiven_ = true;
-        // Running before the two JS calls below, so a block that starts while they run drives an engine that is
-        // already handed over and applied (run() never takes the mutex, so nothing but the state gates it).
+        // Running before the two calls below, so a block that starts while they run drives an engine that is already
+        // handed over and applied (nothing but the state gates a block). Both are the control plane's - a latency
+        // report that may call back into the host, a CC map that re-labels parameters - so the policy's mutex is let
+        // go first: the engine work above is what a foreign lifecycle call has to wait for, and this is not it.
         resumeLocked();
+        lock.unlock();
         reportDroppedLocked();
         host_.updateControlPlane();
     }
 
     void bufferSizeChanged(std::uint32_t frames) {
         std::lock_guard<std::mutex> lock(lifecycle_);
-        if (onControlThread()) {
+        // DPF reaches this only while the plugin is inactive, so a control-thread call that finds the engine GIVEN is a
+        // call during a FOREIGN deactivate nothing has followed yet: growing the plan there would be a change to an
+        // engine a block may be in the middle of, and the graph refuses one while the audio thread owns it
+        // (GraphHost::reactivate). Recorded instead, and the park this requests hands it to the take that applies it.
+        if (onControlThread() && !engineGiven_) {
             planFrames_ = std::max(planFrames_, frames);
             hasPendingSize_ = false;
             host_.setMaxBlockFrames(frames);
@@ -248,7 +257,10 @@ public:
 
     void sampleRateChanged(double rate) {
         std::lock_guard<std::mutex> lock(lifecycle_);
-        if (onControlThread()) {
+        // As in bufferSizeChanged: a control-thread change with the engine given is a change during a foreign
+        // deactivate's grace. Engine::setSampleRate re-rates the live cores, which needs the quiescent take, so the
+        // rate waits for it - the activate that follows applies it, or a tick does.
+        if (onControlThread() && !engineGiven_) {
             hasPendingRate_ = false;
             host_.setSampleRate(rate);
             return;
@@ -300,28 +312,13 @@ public:
     // thread applies nothing and leaves the park pending for this one. It does say an overdue park, from any thread: a
     // host that moved its main thread has no other tick, and a park nobody applies is worth a log line wherever it is
     // noticed.
-    std::size_t idleTick() {
-        if (!onControlThread()) {
-            std::lock_guard<std::mutex> lock(lifecycle_);
-            noteOverdueLocked();
-            return 0;
-        }
-        std::lock_guard<std::mutex> lock(lifecycle_);
-        noteOverdueLocked();
-        const State state = state_.load(std::memory_order_acquire);
-        if (state == State::Running) return host_.reclaimReleases();
-        if (state == State::Suspended) return 0;  // the engine is this thread's already, and stays so until an activate
-        if (deactivated_) {
-            // The format says no run() is coming, but its activate may still: give it kDeactivateGrace to arrive,
-            // and then take the engine back and keep it (see the header).
-            if (state == State::Requested && Clock::now() - deactivatedAt_ < kDeactivateGrace) return 0;
-            return suspendLocked();
-        }
-        // A park for a rate or a size, with the engine still the audio thread's: a block must have seen the park
-        // before the tick touches the engine.
-        if (state != State::Parked) return 0;
-        return handoffLocked();
-    }
+    std::size_t idleTick() { return tick(true); }
+
+    // The state seams' tick (getState and setState), for a host with no idle tick at all. It applies a park that is
+    // WAITING - a rate, a size, the give - and never runs the grace-suspend: a host that saves while it is paused would
+    // otherwise come back to a plugin that parks every block until its NEXT save, since DPF reports a rate or a size
+    // only while the plugin is inactive. Only a tick that keeps coming may make a park that only another tick can undo.
+    std::size_t stateTick() { return tick(false); }
 
     bool parked() const { return state_.load(std::memory_order_acquire) != State::Running; }
 
@@ -336,6 +333,99 @@ private:
     static constexpr std::chrono::milliseconds kDeactivateGrace{250};
 
     bool onControlThread() const { return std::this_thread::get_id() == controlThread_; }
+
+    // The lock activate and deactivate take: this thread's own calls may WAIT for it (they own the engine, and DPF
+    // brackets them, so there is nothing foreign to wait for but another of the host's own callbacks), and a foreign
+    // one may not (it can be the audio thread itself), so it tries instead and defers.
+    std::unique_lock<std::mutex> lockForCall() {
+        if (onControlThread()) return std::unique_lock<std::mutex>(lifecycle_);
+        return std::unique_lock<std::mutex>(lifecycle_, std::try_to_lock);
+    }
+
+    // The two ticks, which differ only in whether they may suspend (see idleTick and stateTick).
+    std::size_t tick(bool allowSuspend) {
+        if (!onControlThread()) {
+            std::lock_guard<std::mutex> lock(lifecycle_);
+            noteOverdueLocked();
+            return 0;
+        }
+        std::unique_lock<std::mutex> lock(lifecycle_);
+        applyDeferredLocked();  // a lifecycle call the audio thread could not make, before this tick's own work
+        noteOverdueLocked();
+        const State state = state_.load(std::memory_order_acquire);
+        if (state == State::Running) {
+            // A drop a parked block counted is said by the first control-thread entry, not only by a handoff: a park a
+            // format's activate pairs again resumes with no handoff to report it.
+            const std::size_t freed = host_.reclaimReleases();
+            reportDroppedLocked();
+            return freed;
+        }
+        if (state == State::Suspended) return 0;  // the engine is this thread's already, and stays so until an activate
+        if (deactivated_) {
+            if (!allowSuspend) return 0;  // left as it is, for the activate that follows or a tick that keeps coming
+            // The format says no run() is coming, but its activate may still: give it kDeactivateGrace to arrive,
+            // and then take the engine back and keep it (see the header).
+            if (state == State::Requested && Clock::now() - deactivatedAt_ < kDeactivateGrace) return 0;
+            return suspendLocked();
+        }
+        // A park for a rate or a size, with the engine still the audio thread's: a block must have seen the park
+        // before the tick touches the engine.
+        if (state != State::Parked) return 0;
+        const std::size_t freed = handoffLocked();
+        lock.unlock();  // as in activate: the report and the JS are the control plane's, not the policy's
+        reportDroppedLocked();
+        host_.updateControlPlane();
+        return freed;
+    }
+
+    // An activate or deactivate the audio thread could not apply: it never waits for the mutex (the control thread's
+    // take, its reclaim or its JS may hold it), so it records the call in one atomic word instead, and the next tick
+    // applies it. One word, so recording is a single store and the LATEST request wins, which is what a format's pair
+    // means: a deactivate then an activate collapses to the activate, exactly as the pair nets out.
+    enum : std::uint64_t { kDeferDeactivate = 1, kDeferActivate = 2 };
+
+    void recordDeferred(std::uint64_t kind, std::uint32_t frames) {
+        deferred_.store((kind << 32) | frames, std::memory_order_release);
+    }
+
+    void applyDeferredLocked() {
+        const std::uint64_t request = deferred_.exchange(0, std::memory_order_acquire);
+        if (request == 0) return;
+        // Applied with a FOREIGN call's meaning, whichever thread recorded it: it could not see the engine, so it may
+        // not take it or treat it as quiescent. A deactivate starts its grace now, and an activate gives, grows the
+        // plan and resumes exactly as the foreign branch of activate does.
+        deactivated_ = (request >> 32) == kDeferDeactivate;
+        if (deactivated_) {
+            deactivatedAt_ = Clock::now();
+            requestParkLocked();
+            return;
+        }
+        activateForeignLocked(static_cast<std::uint32_t>(request & 0xFFFF'FFFFu));
+    }
+
+    // The activate of a thread that may not touch the engine: the control thread's take is what moves one, and this
+    // asks for it. The caller has cleared deactivated_ already.
+    void activateForeignLocked(std::uint32_t frames) {
+        // A block longer than the plan has to grow it, and nothing may do that while the audio thread runs the engine.
+        // DPF usually announces it through bufferSizeChanged first, but not always: setBufferSize returns early on an
+        // unchanged size, so a host above the plan can reach only this call. Recorded before the engine check: DPF's
+        // run() auto-activates a host's first block on the audio thread, engine not yet given.
+        const bool overPlan = frames > planFrames_;
+        if (overPlan) {
+            hasPendingSize_ = true;
+            pendingFrames_  = std::max(pendingFrames_, frames);
+        }
+        if (!engineGiven_ || overPlan) {
+            // The engine is the control thread's (a deactivate before this, or this host's first activate): giving it
+            // to a thread that is already running without the quiescent handoff would put two threads in the rings. Ask
+            // for the give; the next block parks and the tick makes it (and grows the plan first).
+            requestParkLocked();
+            return;
+        }
+        // Audio-owned, so the engine never moved: the format's pair needs nothing, unless a size or a rate really is
+        // pending, and then the park is already requested.
+        if (!hasPendingSize_ && !hasPendingRate_) resumeLocked();
+    }
 
     void requestParkLocked() {
         const State state = state_.load(std::memory_order_relaxed);
@@ -362,8 +452,6 @@ private:
         host_.giveEngine();
         engineGiven_ = true;
         resumeLocked();
-        reportDroppedLocked();
-        host_.updateControlPlane();
         return freed;
     }
 
@@ -440,9 +528,15 @@ private:
     // store is what the tick waits for), read and cleared by the control thread: a count is a count, so relaxed.
     std::atomic<std::uint64_t> heldDropped_{0};
 
-    // Audio thread throughout: the parked blocks write it, and the first resumed block reads and clears it. The
-    // state's release/acquire pair orders them.
+    // Audio thread throughout: the parked blocks write it, and the first resumed block reads and clears it. Only the
+    // FIRST parked block's write is ordered by an atomic: its CAS to Parked is the release the tick's acquire pairs
+    // with. The later ones ride the host's own serialisation of its process calls - a VST3 or CLAP host may move blocks
+    // between pool threads, but it never runs two at once, and the resumed block is after them in that order.
     HeldMidi       held_;
+
+    // Written by an audio-thread activate or deactivate that could not have the mutex, read and cleared by the tick: an
+    // atomic word (kind in the high half, the activate's frames in the low one), 0 for none.
+    std::atomic<std::uint64_t> deferred_{0};
 };
 
 } // namespace rp::plugin

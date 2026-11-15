@@ -316,6 +316,12 @@ public:
         // Our own members are destroyed before the LVGL widget base, so the teardown below still talks to
         // LVGL - and does it from a destructor, which is not one of the widget's callbacks either.
         lvglMakeCurrent();
+        // One last idle tick before any of that. The policy may be holding a park only this per-frame hook can apply -
+        // a foreign activate waiting for the give, a rate or a size a host changed while the plugin was suspended - and
+        // an editor that is closing never ticks again, so the park would stand until a state save
+        // (LifecycleHandoff.hpp). This is the plugin's own tick, not the JS frame loop: it is this thread's, the
+        // control thread's, and it runs before the hooks and the display are un-pointed.
+        if (sharedDsp_ != nullptr && sharedDsp_->reclaimReleased) sharedDsp_->reclaimReleased();
         // Unmount (→ __rp_unmountUI) + flush the async widget deletes while the context is still alive,
         // leaving the shared host clean for the next editor session.
         clearWindowSizeHooks(jsEngine.getContext(), this); // hooks outlive us on the shared context — un-point our target

@@ -8,12 +8,14 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "LifecycleHandoff.hpp"
@@ -32,7 +34,34 @@ public:
         double         value = 0.0;
     };
 
-    void takeEngine() override { record("take"); }
+    // takeEngine, behind a gate a case can shut: the quiescent handoff holds the policy's mutex across it, so a case
+    // that shuts the gate holds the control thread inside the engine work - which is what the audio thread must never
+    // wait for. Open unless a case shut it.
+    void takeEngine() override {
+        record("take");
+        std::unique_lock<std::mutex> lock(gateMutex_);
+        inTake_ = true;
+        gateCv_.notify_all();
+        gateCv_.wait(lock, [this] { return !gateShut_; });
+        inTake_ = false;
+    }
+
+    void shutGate() {
+        std::lock_guard<std::mutex> guard(gateMutex_);
+        gateShut_ = true;
+    }
+
+    void openGate() {
+        std::lock_guard<std::mutex> guard(gateMutex_);
+        gateShut_ = false;
+        gateCv_.notify_all();
+    }
+
+    // True once a takeEngine call is inside the gate (or once the timeout has passed without one).
+    bool waitInTake(std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(gateMutex_);
+        return gateCv_.wait_for(lock, timeout, [this] { return inTake_; });
+    }
     std::size_t reclaimReleases() override { record("reclaim"); return 0; }
     void giveEngine() override { record("give"); }
     void setMaxBlockFrames(std::uint32_t frames) override { record("maxFrames", static_cast<double>(frames)); }
@@ -71,6 +100,11 @@ private:
 
     std::vector<Call> calls_;
     std::mutex        mutex_;
+
+    std::mutex              gateMutex_;
+    std::condition_variable gateCv_;
+    bool                    gateShut_ = false;
+    bool                    inTake_   = false;
 };
 
 // Run `body` on a thread of its own, as JACK's notification thread is, and report the id it had.
@@ -83,6 +117,42 @@ std::thread::id onForeignThread(const std::function<void()>& body) {
     thread.join();
     return id;
 }
+
+// One lifecycle call made on the AUDIO thread while the control thread's tick holds the policy's mutex inside the take:
+// whether the call waited for that (it must not), and whether it ran engine work itself (it must not either). The
+// thread's own fields are read after join().
+class AudioCall {
+public:
+    AudioCall(FakeHost& host, std::function<void(LifecycleHandoff&)> call, LifecycleHandoff& handoff)
+        : host_(host), handoff_(handoff), call_(std::move(call)), thread_([this] {
+              id_     = std::this_thread::get_id();
+              inTake_ = host_.waitInTake(std::chrono::seconds(5));  // only once the stopwatch's subject is held
+              const auto start = std::chrono::steady_clock::now();
+              call_(handoff_);
+              waitedUs_ = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() -
+                                                                               start)
+                              .count();
+              returned_ = true;
+          }) {}
+
+    ~AudioCall() { if (thread_.joinable()) thread_.join(); }
+    void join() { if (thread_.joinable()) thread_.join(); }
+
+    std::thread::id id() const { return id_; }
+    bool            inTake() const { return inTake_; }
+    bool            returned() const { return returned_; }
+    long long       waitedUs() const { return waitedUs_; }
+
+private:
+    FakeHost&                              host_;
+    LifecycleHandoff&                      handoff_;
+    std::function<void(LifecycleHandoff&)> call_;
+    std::thread::id                        id_{};
+    bool                                   inTake_   = false;
+    bool                                   returned_ = false;
+    long long                              waitedUs_ = 0;
+    std::thread                            thread_;
+};
 
 } // namespace
 
@@ -308,4 +378,192 @@ TEST_CASE("held MIDI is a fixed buffer: an over-long or over-full message is dro
     REQUIRE(held.count() == HeldMidi::kCapacity);
     held.clear();
     REQUIRE(held.count() == 0);
+}
+
+TEST_CASE("a control-thread change while a foreign deactivate stands waits for the take that applies it",
+          "[lifecycle]") {
+    // DPF calls bufferSizeChanged and sampleRateChanged on the thread they came from, with NO deactivate/activate
+    // bracket, whenever the plugin is inactive (DistrhoPluginInternal.hpp's setBufferSize / setSampleRate). After a
+    // FOREIGN deactivate the engine is still the audio thread's until a tick has waited the grace out, so a change
+    // that arrives on the control thread in that window is a change to an engine it does not own: re-rating it there
+    // would race a block, and GraphHost::reactivate refuses.
+    SECTION("a rate change, as VST3's setupProcessing reaches it after setProcessing(false) on the processing thread") {
+        FakeHost host;
+        LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+        handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+        host.reset();
+        onForeignThread([&] { handoff.deactivate(); });
+        REQUIRE(host.calls().empty());
+
+        handoff.sampleRateChanged(96000.0);
+        // Recorded, not applied: the engine is still the audio thread's, and the park is what buys the quiescent take.
+        REQUIRE(host.calls().empty());
+        REQUIRE(handoff.parked());
+
+        // The activate that follows applies it under its own take, and the engine comes back at the new rate.
+        handoff.activate(1024);
+        REQUIRE(host.names() == std::vector<std::string>{"take", "reclaim", "maxFrames", "rate", "give", "control"});
+        REQUIRE(host.calls()[3].value == 96000.0);
+        REQUIRE(handoff.beginBlock());
+    }
+    SECTION("a size above the plan, which the activate's own frames do not repair") {
+        FakeHost host;
+        LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+        handoff.activate(1024);
+        host.reset();
+        onForeignThread([&] { handoff.deactivate(); });
+        handoff.bufferSizeChanged(16384);
+        REQUIRE(host.calls().empty());
+        REQUIRE(handoff.parked());
+        handoff.activate(1024);
+        REQUIRE(host.names() ==
+                std::vector<std::string>{"take", "reclaim", "maxFrames", "maxFrames", "give", "control"});
+        REQUIRE(host.calls()[3].value == 16384.0);
+        REQUIRE(handoff.beginBlock());
+    }
+}
+
+TEST_CASE("the state seams' tick applies a waiting park but never suspends the engine", "[lifecycle]") {
+    FakeHost host;
+    LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+    handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+    host.reset();
+    // A VST3 host stops processing on its processing thread (a FOREIGN deactivate) and then saves the project on its
+    // main thread, more than the grace later. The save is a control-thread entry, but not a tick that keeps coming: a
+    // suspend made here would be undone by nothing, because DPF reports a rate or a size only while inactive.
+    onForeignThread([&] { handoff.deactivate(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    REQUIRE(handoff.stateTick() == 0);  // getState's own tick, which may apply a park and may not make one
+    REQUIRE(host.calls().empty());
+
+    // So the engine never moved, and the host's setProcessing(true) - a foreign activate - costs nothing and resumes.
+    onForeignThread([&] { handoff.activate(1024); });
+    REQUIRE(host.calls().empty());
+    REQUIRE(handoff.beginBlock());
+}
+
+TEST_CASE("the state seams' tick applies a park a block has already seen", "[lifecycle]") {
+    FakeHost host;
+    LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+    handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+    host.reset();
+    onForeignThread([&] { handoff.sampleRateChanged(96000.0); });
+    REQUIRE_FALSE(handoff.beginBlock());
+    // A host with no idle tick at all: the save is the only control-thread entry there is, and it applies the park.
+    REQUIRE(handoff.stateTick() == 0);
+    REQUIRE(host.names() == std::vector<std::string>{"take", "reclaim", "rate", "give", "control"});
+    REQUIRE(handoff.beginBlock());
+}
+
+TEST_CASE("a park no tick applies is said once, a second later, from whatever control-thread entry comes next",
+          "[lifecycle]") {
+    FakeHost host;
+    LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+    handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+    host.reset();
+    onForeignThread([&] { handoff.sampleRateChanged(96000.0); });
+    REQUIRE_FALSE(handoff.beginBlock());
+    // A host that moved its main thread never ticks on the one that owns the engine, so the park is never applied: the
+    // tick it does call says so, once, and only from a later entry.
+    onForeignThread([&] { handoff.idleTick(); });
+    REQUIRE(host.calls().empty());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    onForeignThread([&] { handoff.idleTick(); });
+    REQUIRE(host.names() == std::vector<std::string>{"overdue"});
+    REQUIRE(host.calls().front().value >= 1.0);
+    onForeignThread([&] { handoff.idleTick(); });
+    REQUIRE(host.names().size() == 1);
+}
+
+TEST_CASE("a message a parked block dropped is said by the next tick, even one that only reclaims", "[lifecycle]") {
+    FakeHost host;
+    LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+    handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+    host.reset();
+    // A foreign deactivate's pair: a block parks inside the grace and drops a SysEx it cannot hold, and the pair's
+    // activate resumes the engine with no handoff in between, so no handoff would ever say the drop.
+    onForeignThread([&] { handoff.deactivate(); });
+    REQUIRE_FALSE(handoff.beginBlock());
+    const std::uint8_t sysex[6] = {0xF0, 0x7E, 0x00, 0x06, 0x01, 0xF7};
+    handoff.holdMidi(sysex, 6);
+    onForeignThread([&] { handoff.activate(1024); });
+    REQUIRE(handoff.idleTick() == 0);
+    REQUIRE(host.names() == std::vector<std::string>{"reclaim", "midiDropped"});
+    REQUIRE(host.calls().back().value == 1.0);
+}
+
+TEST_CASE("a lifecycle call on the audio thread does not wait for the engine work the tick holds the mutex across",
+          "[lifecycle]") {
+    FakeHost host;
+    LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+    handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+    host.reset();
+    onForeignThread([&] { handoff.sampleRateChanged(96000.0); });
+    REQUIRE_FALSE(handoff.beginBlock());  // the park the tick may then take the engine for
+
+    // The tick takes the engine with the gate shut, so the policy's mutex is held across the take until the releaser
+    // opens it. This thread is the control thread, so it is the one that must block here: the audio thread must not.
+    host.shutGate();
+    std::thread releaser([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        host.openGate();
+    });
+    // DPF's run() auto-activate, or VST3's setProcessing(true) from the processing thread: the activate reaches the
+    // policy on the AUDIO thread. Its frames are over the plan, so a request that is applied leaves a trace.
+    AudioCall audio(host, [](LifecycleHandoff& policy) { policy.activate(16384); }, handoff);
+    REQUIRE(handoff.idleTick() == 0);  // blocks in the take until the releaser opens the gate
+    audio.join();
+    releaser.join();
+    REQUIRE(audio.inTake());
+    REQUIRE(audio.returned());
+    REQUIRE(audio.waitedUs() < 150000);
+    REQUIRE_FALSE(host.ranOn(audio.id()));
+
+    // And the request was not lost: the next tick applies the activate, which finds a size over the plan and parks
+    // again, and the handoff after the block has seen that park grows the plan for it.
+    REQUIRE(handoff.idleTick() == 0);
+    REQUIRE(handoff.parked());
+    REQUIRE_FALSE(handoff.beginBlock());
+    REQUIRE(handoff.idleTick() == 0);
+    const std::vector<std::string> want = {"take", "reclaim", "rate", "give", "control",
+                                          "take", "reclaim", "maxFrames", "give", "control"};
+    REQUIRE(host.names() == want);
+    REQUIRE(host.calls()[7].value == 16384.0);  // the audio thread's own activate frames
+    REQUIRE(handoff.beginBlock());
+}
+
+TEST_CASE("a deactivate the audio thread could not apply is applied by the tick, and starts its grace there",
+          "[lifecycle]") {
+    FakeHost host;
+    LifecycleHandoff handoff(host, std::this_thread::get_id(), 8192);
+    handoff.activate(1024);  // as DPF's first activate, on the thread it built the plugin on: the engine is given
+    host.reset();
+    // An AU reset on the render thread deactivates and activates again; the pair arrives while the control thread's
+    // tick is inside the take, so neither half may wait for it.
+    host.shutGate();
+    std::thread releaser([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        host.openGate();
+    });
+    AudioCall audio(host, [](LifecycleHandoff& policy) { policy.deactivate(); }, handoff);
+    // The tick has to be a handoff for the gate to hold it: a rate change parks the engine first.
+    onForeignThread([&] { handoff.sampleRateChanged(96000.0); });
+    REQUIRE_FALSE(handoff.beginBlock());
+    REQUIRE(handoff.idleTick() == 0);
+    audio.join();
+    releaser.join();
+    REQUIRE(audio.inTake());
+    REQUIRE(audio.returned());
+    REQUIRE(audio.waitedUs() < 150000);
+    REQUIRE_FALSE(host.ranOn(audio.id()));
+    // The request was not lost, and it keeps its own meaning: the tick that applies it suspends nothing yet, because
+    // the grace a foreign deactivate gets starts when it is applied - the activate half of a pair may be on its way.
+    REQUIRE(handoff.idleTick() == 0);
+    REQUIRE(host.names() ==
+            std::vector<std::string>{"take", "reclaim", "rate", "give", "control"});
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    REQUIRE(handoff.idleTick() == 0);
+    REQUIRE(host.names().back() == "reclaim");
+    REQUIRE(handoff.parked());
+    REQUIRE_FALSE(handoff.beginBlock());
 }
