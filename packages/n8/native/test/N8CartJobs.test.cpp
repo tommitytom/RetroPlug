@@ -2259,14 +2259,15 @@ TEST_CASE("a probe that a later submission's probe answers is waited for too, an
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
     const auto t0 = Clock::now();
     std::thread tail([&] {
-        std::this_thread::sleep_for(std::chrono::milliseconds(900));
+        std::this_thread::sleep_for(std::chrono::milliseconds(860));
         rig.push({0x09, 0x01, 0xF7});
     });
     Job         older, newer;
     std::string whyOlder, whyNewer;
+    bool        newerAccepted = true;
     std::thread second([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
-        CHECK_FALSE(rig.submit(battery("dump"), newer, &whyNewer));
+        newerAccepted = rig.submit(battery("dump"), newer, &whyNewer);  // Catch asserts on the main thread only
     });
     CHECK_FALSE(rig.submit(battery("dump"), older, &whyOlder));
     second.join();
@@ -2275,6 +2276,7 @@ TEST_CASE("a probe that a later submission's probe answers is waited for too, an
     const std::string atGame =
         "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first";
     CHECK(whyOlder == atGame);
+    CHECK_FALSE(newerAccepted);
     CHECK(whyNewer == atGame);
 }
 
