@@ -493,21 +493,21 @@ strings (a device job whose strings hold a NUL byte is refused, as a C string wo
 progress, success, a bounded UTF-8 failure reason or an abandon through the engine's `rp.host.jobs/1` over an opaque
 `rp_job`. The cart is asked at submission whether its menu runs (the menu's probe, on that thread, between MIDI
 chunks, as the expansion volume reaches it, and only on a turn quiet for its read: nothing outstanding on the reliable
-link, or a cart silent for 250 ms since its oldest outstanding frame first went out, as one at its menu is), so a
-transfer a running game will refuse is refused without pausing the stream and dropping the block's notes; the
-submitting thread waits for that answer, up to its 1 s bound. The cart node keeps books on the notes the cart holds:
-it re-sends at frame 0 the note-offs
-a pause dropped, and its destroy hands what is still sounding to the link (`CartLink::releaseNotes`), with the push
-count it recorded after its own last push (`pushMark`): the serial thread writes the note-offs behind THAT mark, and
-skips a key whose last note-on went out at or past it, so the node taking over keeps a key it struck while the old one
-leaving is released (a disconnect writes them before the port closes; a link that is down drops them, and a cart at its
-menu holds no notes of ours, so they are dropped there too). A node leaving the plan mid-note therefore leaves no tone
-on the console once its plan is reclaimed: within a frame of the swap where the host has an idle tick (the plugin with
-its editor open, the SDL standalone), and at the next publish or deactivate in a plugin whose editor is closed. The
-engine keeps at most
-`kMaxJobs` (64) outstanding, engine-wide back-pressure that leaves room for every completion, and a request names a
-capability from the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`, in
-`rp_jobs.h`), so the engine asks a node only by an id it knows and never casts an answer.
+link, or a cart silent for 250 ms since its oldest outstanding frame first went out, as one at its menu is; no
+probe of the guard's still awaiting its answer; and on a raw link, between two messages), so a transfer a running
+game will refuse is refused without pausing the stream and dropping the block's notes; the submitting thread waits
+for that answer, up to its 1 s bound (a probe already begun at the bound is waited for). The cart node keeps books on
+the notes the cart holds: it re-sends at frame 0 the note-offs a pause dropped, and its destroy hands what is still
+sounding to the link (`CartLink::releaseNotes`), with the push count it recorded after its own last push (`pushMark`):
+the serial thread writes the note-offs behind THAT mark, and skips a key whose last note-on went out at or past it,
+so the node taking over keeps a key it struck while the old one leaving is released (a disconnect writes them before
+the port closes; a link that is down drops them, and a cart at its menu holds no notes of ours, so they are dropped
+there too). A node leaving the plan mid-note therefore leaves no tone on the console once its plan is reclaimed: within
+a frame of the swap where the host has an idle tick (the plugin with its editor open, the SDL standalone), and at the
+next publish or deactivate in a plugin whose editor is closed. The engine keeps at most `kMaxJobs` (64) outstanding,
+engine-wide back-pressure that leaves room for every completion, and a request names a capability from the one reserved
+id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`, in `rp_jobs.h`), so the engine asks a node only
+by an id it knows and never casts an answer.
 
 ### The system nodes' settings and params
 

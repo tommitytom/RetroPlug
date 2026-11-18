@@ -116,7 +116,9 @@ second: a reset inside it streams frames and re-sends until it ends). A `*` in i
 menu rejects (ERROR:40) does harm ([spec/13](13-subsystems.md#the-everdrive-n8-bridge)). Measure it on the cart with
 `retroplug-n8-hwtest menuguard` and a RESET press, framed BlipToaster and then BlipToaster held `raw` (a trip, and 0
 stream bytes after it), and time a reset menu's answer there too (`menuprobe test` after a RESET: a power-on menu
-answers in about 20 ms).
+answers in about 20 ms). Time the false leave too: how long the menu goes without answering while it loads a directory
+or a ROM from its browser (the longest gap between a probe and its `k`), against the three-miss leave's about 600 ms,
+and how many stream bytes reach it after a leave before the next probe is answered.
 
 ### The Launchpad real-device checklist
 

@@ -148,10 +148,14 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   so a `k` that comes within the probe's 100 ms never lands inside another reply. A job's menu probe asks the same
   question on a quiet turn (on a raw link, between two messages), and the stream's tracker books it as it books its own,
   so a running status it ended is written back; it may trip the guard but never clears it, and at a running game, which
-  the submission is refused for, it holds the serial thread, and so the stream, for its 100 ms wait. While it says menu,
-  `push` answers false and counts, the ring, the reliable window and any pending note release are discarded, and nothing
-  but the probe is written; leaving the menu re-runs the link probe, which flushes the input before its sync, as does
-  the connect-time one, so only the sync's own ack turns the framed link on. Jobs still run there (the SD card is
+  the submission is refused for, it holds the serial thread, and so the stream, for its 100 ms wait (a submission whose
+  probe began just before its second ran out is waited for, not refused as a failed port). The job's own first step asks
+  again over its port, and at a menu reads past what the menu still owes for two probe windows (200 ms from its probe),
+  so a slow menu's second `k` is not read as the first reply of the job's first command; a menu that takes longer than
+  100 ms to answer that probe is taken for a game, and the job is refused as at a game (a retry works). While it says
+  menu, `push` answers false and counts, the ring, the reliable window and any pending note release are discarded, and
+  nothing but the probe is written; leaving the menu re-runs the link probe, which flushes the input before its sync, as
+  does the connect-time one, so only the sync's own ack turns the framed link on. Jobs still run there (the SD card is
   reachable only at the menu), and a cart node's `connected` reads 0: what it pushes there is refused, and a note-off it
   loses stays owed until a game reads connected again (a note-off to a game that never sounded that note is harmless).
   Settings > N8's status row says "At the N8 menu (not streaming)".
@@ -160,7 +164,10 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     shows (the link's 100 ms timeout), and up to a second more after a stall's probe has heard an ack (the trusted
     second: a reset inside it streams frames and re-sends until it ends). Only a `*` followed by a byte the menu takes
     as a command (a GM hi-hat, `9n 2A 73`, is `*s` and starts the app) or rejects (ERROR:40, which stops the OS) does
-    harm; a stream without `0x2A` is harmless. A probe before every chunk is the only full fix
+    harm; a stream without `0x2A` is harmless. A menu that is busy and answers nothing for three probes in a
+    row (about 600 ms from the first unanswered one: a slow SD operation, a ROM load from the browser) is left as if it
+    were a game, and the raw stream and its probes go into its FIFO until a probe is answered again, with the same harm.
+    A probe before every chunk is the only full fix
     ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). The framed hold's trigger is not a lost frame as
     such: it is the OLDEST outstanding frame unacknowledged 100 ms after its first send. That covers a frame lost twice
     in a row, and equally a cart whose FIFO does not run empty for 100 ms under a dense stream and so acks only then.
