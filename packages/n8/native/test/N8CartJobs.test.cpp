@@ -1822,6 +1822,88 @@ TEST_CASE("a raw stream to a menu the console's reset reached trips the guard wi
     CHECK_FALSE(rig.dev.error40);
 }
 
+TEST_CASE("a raw stream across the OS's boot window ends at ERROR:40 while the guard still trips and goes quiet",
+          "[n8][menu-guard]") {
+    // The real cart (spec/13, the N8 bridge): a note byte about a third of a second into the booting OS's life sends it
+    // to ERROR:40, and a raw link cannot see the reset before the menu answers. The window is set early here so the
+    // stream is certain to be inside it before the guard's first probe; MIDI clock alone is safe.
+    using Clock = std::chrono::steady_clock;
+    const auto run = [](bool clock, bool& tripped, bool& error40, std::size_t& after) {
+        Rig rig;
+        rig.connectGame();
+        rig.dev.bootWindowModel  = true;
+        rig.dev.bootWindowFromMs = 20;
+        rig.dev.bootWindowToMs   = 150;
+        rig.push({0x90, 0x3C, 0x7F});
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
+        rig.dev.resetToMenu();
+        const auto end = Clock::now() + std::chrono::milliseconds(1000);
+        while (Clock::now() < end) {
+            if (clock) rig.push({0xF8});
+            else rig.push({0x90, 0x45, 0x64});
+            std::this_thread::sleep_for(std::chrono::milliseconds(clock ? 20 : 30));
+        }
+        tripped = !rig.cart.connected();
+        const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.countExact("fifo:F0 2A 74 F7"); };
+        const std::size_t before = streamed();
+        rig.push({0x90, 0x41, 0x7F});
+        rig.push({0xF8});
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        after = streamed() - before;
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        error40 = rig.dev.error40;
+    };
+    bool tripped = false, error40 = false;
+    std::size_t after = 99;
+    SECTION("notes: the OS stops, the guard still sees the menu's 'k', and nothing is written after the trip") {
+        run(false, tripped, error40, after);
+        CHECK(error40);
+        CHECK(tripped);
+        CHECK(after == 0);
+    }
+    SECTION("MIDI clock through the same window leaves the OS alone") {
+        run(true, tripped, error40, after);
+        CHECK_FALSE(error40);
+        CHECK(tripped);
+        CHECK(after == 0);
+    }
+}
+
+TEST_CASE("FakeN8: the boot model is off by default, and a boot time keeps the menu from answering", "[n8][fake]") {
+    using retroplug::test::FakeN8Port;
+    FakeN8 dev;
+    dev.menu = false;
+    FakeN8Port port(dev);
+    Edio       edio(port);
+    const std::uint8_t note[3] = {0x90, 0x45, 0x64}, probe[2] = {0x2A, 0x74};
+    std::uint8_t       b[4];
+    SECTION("off: a note a third of a second after the reset does nothing") {
+        dev.resetToMenu();
+        std::this_thread::sleep_for(std::chrono::milliseconds(350));
+        REQUIRE(edio.fifoWR(note, sizeof note).ok());
+        CHECK_FALSE(dev.error40);
+    }
+    SECTION("on: a note in the window stops the OS, a note before it does not") {
+        dev.bootWindowModel = true;
+        dev.resetToMenu();
+        REQUIRE(edio.fifoWR(note, sizeof note).ok());
+        CHECK_FALSE(dev.error40);
+        std::this_thread::sleep_for(std::chrono::milliseconds(350));
+        REQUIRE(edio.fifoWR(note, sizeof note).ok());
+        CHECK(dev.error40);
+    }
+    SECTION("a boot time: no probe is answered until it has passed") {
+        dev.bootMs = 150;
+        dev.resetToMenu();
+        REQUIRE(edio.fifoWR(probe, sizeof probe).ok());
+        CHECK(port.read(b, 1, 30) == 0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        REQUIRE(edio.fifoWR(probe, sizeof probe).ok());
+        REQUIRE(port.read(b, 1, 200) == 1);
+        CHECK(b[0] == 'k');
+    }
+}
+
 TEST_CASE("a framed stream of '*'-bearing messages after a reset never drives the menu to ERROR:40",
           "[n8][menu-guard]") {
     // ERROR:40 is a '*' followed by a byte that is not one of the menu's commands, which a framed stream carries sooner
@@ -2316,7 +2398,7 @@ TEST_CASE("the probes a submission and its job write are in the write log like t
     CHECK(probes == rig.dev.countExact("fifo:F0 2A 74 F7") - 1);
 }
 
-TEST_CASE("FakeN8: a console reset drops what the game owed, and a menu in ERROR:40 answers nothing from the card",
+TEST_CASE("FakeN8: a console reset drops what the game owed, and a menu in ERROR:40 answers only its probe",
           "[n8][fake]") {
     using retroplug::test::FakeN8Port;
     SECTION("an ack the game had not written yet is not written after the reset") {
@@ -2344,5 +2426,20 @@ TEST_CASE("FakeN8: a console reset drops what the game owed, and a menu in ERROR
         CHECK(edio.freeSpace(free).code == rp::n8::Code::Timeout);
         dev.resetToMenu();
         CHECK(edio.freeSpace(free).ok());
+    }
+    SECTION("a menu stopped on ERROR:40 still answers '*t' with its 'k', and nothing else") {
+        FakeN8 dev;
+        dev.menu    = true;
+        dev.error40 = true;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        const std::uint8_t probe[2] = {0x2A, 0x74};
+        REQUIRE(edio.fifoWR(probe, sizeof probe).ok());
+        std::uint8_t b[4];
+        REQUIRE(port.read(b, 1, 200) == 1);
+        CHECK(b[0] == 'k');
+        const std::uint8_t other[3] = {0x2A, 0x76, 0x90};  // '*v' gets no screen from a stopped OS
+        REQUIRE(edio.fifoWR(other, sizeof other).ok());
+        CHECK(port.read(b, sizeof b, 0) == 0);
     }
 }

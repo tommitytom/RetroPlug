@@ -7,8 +7,10 @@
 // 255 while a menu reached by power-on shows; a menu the console's RESET reached leaves it at the game's mapper, as the
 // real cart does), answers the menu's '*' commands while the menu is showing (skipping every byte that is not a '*', so
 // a '*t' wrapped in a SysEx is answered too, and stopping at ERROR:40 when a '*' is followed by a byte that is not a
-// command), and plays BlipToaster's end of the reliable link while a game that speaks it runs (its acks late, never, or
-// reporting every frame damaged, when a case asks, and an ack for bytes that came unframed, as the ROM writes one).
+// command, after which it still answers '*t' and nothing else; an optional model of the booting OS after a RESET, off
+// by default: a note byte in a window about a third of a second in sends it to ERROR:40, and it can be silent for a
+// boot time), and plays BlipToaster's end of the reliable link while a game that speaks it runs (its acks late, never,
+// or reporting every frame damaged, when a case asks, and an ack for bytes that came unframed, as the ROM writes one).
 // Every event (a FIFO write, a battery read, a file block) lands in one ordered log.
 //
 // Shared by retroplug-n8-test (Ops.test.cpp: the menu and the operations; N8CartJobs.test.cpp: the jobs and the pause,
@@ -57,6 +59,13 @@ struct FakeN8 {
     // The menu read a '*' followed by a byte that is not one of its commands and stopped answering, as the N8 OS stops
     // on "ERROR:40 unexpected io status": what a stream carrying 0x2A does to it sooner or later
     bool                     error40 = false;
+    // The OS boot window measured on a real N8 Pro (docs, spec/13): off by default, so no case moves. On, a byte below
+    // 0xF8 (a note, not a clock tick) read between bootWindowFromMs and bootWindowToMs after a RESET sends the booting
+    // OS to ERROR:40, and the menu answers no '*t' for the first bootMs after it (0: it answers at once)
+    bool                     bootWindowModel = false;
+    int                      bootWindowFromMs = 330, bootWindowToMs = 400;
+    int                      bootMs = 0;
+    std::chrono::steady_clock::time_point resetAt{};  // the last resetToMenu
     bool                     linkRom = false;       // the running game answers the reliable link (BlipToaster)
     bool                     linkDeaf = false;      // ... until it stops answering (it read no frame and acks nothing)
     int                      linkAckDelayMs = 0;    // how long the game takes to write a frame's ack back
@@ -118,6 +127,7 @@ struct FakeN8 {
         menu      = true;
         resetMenu = true;
         error40   = false;  // the OS starts afresh
+        resetAt   = std::chrono::steady_clock::now();
         ++consoleResets;
     }
 
@@ -497,7 +507,21 @@ private:
     // What the cart's side of the FIFO makes of a byte: the menu's commands, or the game's reliable link.
     void fifoByte(std::uint8_t b) {
         if (dev_.menu) {
-            if (dev_.error40) return;  // the OS has stopped on its error: it reads nothing more
+            const auto since = std::chrono::steady_clock::now() - dev_.resetAt;
+            const auto sinceMs = std::chrono::duration_cast<std::chrono::milliseconds>(since).count();
+            if (dev_.bootWindowModel && dev_.resetMenu && b < 0xF8 && sinceMs >= dev_.bootWindowFromMs &&
+                sinceMs < dev_.bootWindowToMs)
+                dev_.error40 = true;  // a note byte while the OS boots
+            if (dev_.error40) {
+                // The OS has stopped on its error; its loop still answers '*t' with a 'k' (measured), and nothing else
+                menu_.push_back(b);
+                if (menu_[0] != '*' || (menu_.size() > 1 && menu_[1] != 't')) menu_.clear();
+                else if (menu_.size() == 2) {
+                    replyAfter(dev_.menuAnswerDelayMs, {dev_.testReply}, true);
+                    menu_.clear();
+                }
+                return;
+            }
             menu_.push_back(b);
             if (menu_[0] != '*') { menu_.clear(); return; }      // not a command: the menu skips it
             if (menu_.size() < 2) return;
@@ -508,6 +532,10 @@ private:
                     busyAnswers_ = 0;
                     dev_.menuBusyNextMs = 0;
                     ++dev_.menuBusyStarts;
+                }
+                if (dev_.bootMs > 0 && dev_.resetMenu && sinceMs < dev_.bootMs) {  // the OS is not up yet
+                    menu_.clear();
+                    return;
                 }
                 int delayMs = dev_.menuAnswerDelayMs;
                 if (now < busyUntil_) {
