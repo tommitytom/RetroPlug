@@ -112,8 +112,10 @@ second costs a running BlipToaster nothing (`retroplug-n8-hwtest timing busy --r
 
 What the link writes before the menu's `k` is heard reaches the menu: up to 250 ms of raw MIDI; framed, the frames
 written before a stall shows (100 ms), and up to a second more when a stall's probe has just heard an ack (the trusted
-second: a reset inside it streams frames and re-sends until it ends). A `*` in it followed by a command or by a byte the
-menu rejects (ERROR:40) does harm ([spec/13](13-subsystems.md#the-everdrive-n8-bridge)). Measure it on the cart with
+second: a reset inside it streams frames and re-sends until it ends, or until the window has drained, which a
+lossy link's game does at once, so a reset after that is probed at the 100 ms timeout). A `*` in it followed by a
+command or by a byte the menu rejects (ERROR:40) does harm
+([spec/13](13-subsystems.md#the-everdrive-n8-bridge)). Measure it on the cart with
 `retroplug-n8-hwtest menuguard` and a RESET press, framed BlipToaster and then BlipToaster held `raw` (a trip, and 0
 stream bytes after it), and time a reset menu's answer there too (`menuprobe test` after a RESET: a power-on menu
 answers in about 20 ms). Time the false leave too: how long the menu goes without answering while it loads a directory

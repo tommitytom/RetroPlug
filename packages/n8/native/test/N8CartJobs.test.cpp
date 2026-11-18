@@ -304,7 +304,8 @@ TEST_CASE("battery jobs refuse a running game before the stream pauses, so the g
         Job job;
         std::string why;
         CHECK_FALSE(rig.submit(r, job, &why));
-        CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+        CHECK(why ==
+              "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first");
         CHECK(job.state.load() == Job::Queued);  // the record is untouched
         CHECK_FALSE(rig.host.cartJobBusy());
         CHECK(rig.cart.connected());
@@ -416,7 +417,8 @@ TEST_CASE("a ROM upload boots through the menu, stops streaming and clears the e
     std::string why;
     CHECK_FALSE(rig.submit(r, again, &why));
     CHECK(why ==
-          "the cart is running a game, which has no menu to load a ROM: power-cycle the console to its menu first");
+          "the cart is running a game, which has no menu to load a ROM: "
+          "reset or power-cycle the console to its menu first");
     CHECK(again.state.load() == Job::Queued);
     CHECK(rig.dev.count("fifo:2A") == menuCommands);
     CHECK(rig.cart.connected());
@@ -941,7 +943,7 @@ TEST_CASE("a submission's wake outlasts a turn the link is busy on, so a failing
     std::string why;
     const auto t0 = Clock::now();
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));
-    CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    CHECK(why == "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first");
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() < 500);
     CHECK(rig.cart.connected());
 }
@@ -2048,6 +2050,40 @@ TEST_CASE("a framed game that is slow or damaged resumes on its ack, and is aske
     }
 }
 
+TEST_CASE("a recovered stall's trusted second ends when the window drains: a RESET after it trips in the timeout",
+          "[n8][menu-guard]") {
+    // A game with damaged acks earns the trusted second (its ack answered the stall's probe), and then its window
+    // drains. On a lossy link that is most of the time, and a RESET in it must not stream into the menu for the second:
+    // the next frame stalls at the link's 100 ms timeout and the guard's probe finds the menu.
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.dev.menu    = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0]  = 69;
+    rig.dev.cfg[2]  = 0;
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.linkDamaged = true;
+    }
+    const std::size_t probes = rig.dev.countExact("fifo:F0 2A 74 F7");
+    rig.push({0x90, 0x3E, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.dev.countExact("fifo:F0 2A 74 F7") > probes; }, 2000));  // the stall's probe
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));  // its ack is heard: the second is earned
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.linkDamaged = false;  // the next re-send is acknowledged
+    }
+    REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 0; }, 2000));
+    CHECK_FALSE(rig.host.link().atMenu());
+    rig.dev.resetToMenu();
+    const auto t0 = Clock::now();
+    rig.push({0x90, 0x41, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }, 3000));
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() < 500);
+}
+
 TEST_CASE("a submission's menu probe on a raw stream has the game's running status written back after it",
           "[n8][menu-guard]") {
     // The probe is a SysEx, and a game's MIDI parser loses running status at its F0. The stream's tracker writes the
@@ -2061,7 +2097,7 @@ TEST_CASE("a submission's menu probe on a raw stream has the game's running stat
     Job job;
     std::string why;
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));  // a game: refused, once the probe has gone unanswered
-    CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    CHECK(why == "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first");
     REQUIRE(rig.dev.countExact("fifo:F0 2A 74 F7") == 1);
     rig.push({0x3E, 0x00});  // a note-off by running status, as a bytes port may hand it over
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:3E 00") == 1; }));
@@ -2136,6 +2172,25 @@ TEST_CASE("an upload whose open's status reads wrong still deletes the file the 
     CHECK(rig.dev.booted.empty());
 }
 
+TEST_CASE("an upload whose open took but whose status was lost closes the file before it deletes it",
+          "[n8][cart-jobs]") {
+    // The cart holds the file open though the host read a bad status, and FatFs refuses to delete a held file: the
+    // close comes first, so the browser is not left a locked, empty file.
+    Rig rig;
+    rig.connect();
+    rig.dev.failNextOpen     = 0x07;
+    rig.dev.failedOpenLands = true;
+    Job job;
+    REQUIRE(rig.submit(uploadOf(inesImage(1)), job));
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Failed);
+    CHECK(rig.dev.count("file-del-locked:usb-games/game.nes") == 0);
+    std::lock_guard<std::mutex> l(rig.dev.mu);
+    CHECK(rig.dev.files.count("usb-games/game.nes") == 0);
+    CHECK(rig.dev.filesOpen == 0);
+    CHECK(rig.dev.booted.empty());
+}
+
 TEST_CASE("a config read that timed out on a raw link leaves a tail the guard does not read as the menu's answer",
           "[n8][menu-guard]") {
     // Auto's volume write reads the config block, and a read that gives up leaves its reply in the input. On a raw
@@ -2184,8 +2239,43 @@ TEST_CASE("a menu probe that is on its way at the submission's deadline is waite
     const auto t0 = Clock::now();
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));
     tail.join();
-    CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    CHECK(why == "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first");
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 1000);
+}
+
+TEST_CASE("a probe that a later submission's probe answers is waited for too, and answers as itself",
+          "[n8][cart-jobs]") {
+    // Two submissions probe at once and the serial thread takes the newer generation, which answers both. The older
+    // one, whose deadline comes while that probe is on its way, is extended as a lone submission is: it is not refused
+    // as a port that failed the probe.
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.connectGame();
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.readsWait = true;
+    }
+    rig.push({0xF0, 0x7E, 0x7F});  // the stream is inside a message, so no probe goes until its tail
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
+    const auto t0 = Clock::now();
+    std::thread tail([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(900));
+        rig.push({0x09, 0x01, 0xF7});
+    });
+    Job         older, newer;
+    std::string whyOlder, whyNewer;
+    std::thread second([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        CHECK_FALSE(rig.submit(battery("dump"), newer, &whyNewer));
+    });
+    CHECK_FALSE(rig.submit(battery("dump"), older, &whyOlder));
+    second.join();
+    tail.join();
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 1000);
+    const std::string atGame =
+        "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first";
+    CHECK(whyOlder == atGame);
+    CHECK(whyNewer == atGame);
 }
 
 TEST_CASE("a raw stream that leaves a message open refuses a job for that, not as an acknowledging link",

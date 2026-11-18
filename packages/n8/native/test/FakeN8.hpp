@@ -75,6 +75,7 @@ struct FakeN8 {
     bool                     failNextRead = false;  // the next SD file read block answers an error
     bool                     failNextList = false;  // the next directory load answers a disk error
     std::uint8_t             failNextOpen = 0;      // the next file open makes its file, then answers this FatFs status
+    bool                     failedOpenLands = false; // with failNextOpen: the open took, only its status was lost
     int                      filesOpen = 0;         // files opened on the card and not yet closed
     std::uint16_t            mapIndex = 69;         // what '*n' answers
     std::string              booted;                // the path '*s' started
@@ -439,19 +440,30 @@ private:
                 }
             } else if (cmd == Edio::CMD_F_DEL) {
                 const std::string path(c.begin() + 6, c.end());
-                if (dev_.files.erase(path) + dev_.dirs.erase(path) == 0) status_ = 0x04;  // FR_NO_FILE
-                dev_.log.push_back("file-del:" + path);
+                if (!heldPath_.empty() && path == heldPath_) {  // FatFs refuses a file that is still open
+                    status_ = 0x10;                             // FR_LOCKED
+                    dev_.log.push_back("file-del-locked:" + path);
+                } else {
+                    if (dev_.files.erase(path) + dev_.dirs.erase(path) == 0) status_ = 0x04;  // FR_NO_FILE
+                    dev_.log.push_back("file-del:" + path);
+                }
             } else if (cmd == Edio::CMD_F_FOPN) {
                 filePath_ = std::string(c.begin() + 7, c.end());
                 readPos_ = 0;
                 if (c[4] & Edio::FA_WRITE) dev_.files[filePath_].clear();
                 else if (!dev_.files.count(filePath_)) status_ = 0x04;  // FR_NO_FILE
+                bool landed = status_ == 0;
                 if (dev_.failNextOpen != 0 && status_ == 0) {
-                    status_            = dev_.failNextOpen;
+                    status_           = dev_.failNextOpen;
                     dev_.failNextOpen = 0;
+                    landed            = dev_.failedOpenLands;
                 }
-                if (status_ == 0) ++dev_.filesOpen;
+                if (landed) {
+                    ++dev_.filesOpen;
+                    heldPath_ = filePath_;
+                }
             } else if (cmd == Edio::CMD_F_FCLOSE) {
+                heldPath_.clear();
                 if (dev_.filesOpen > 0) --dev_.filesOpen;
             } else if (cmd == Edio::CMD_F_FWR) {
                 dev_.log.push_back("file-wr");
@@ -598,6 +610,7 @@ private:
     Bytes                    in_;
     std::deque<std::uint8_t> out_;
     std::string              filePath_;
+    std::string              heldPath_;  // the file an open left held, until its close
     std::size_t              readPos_ = 0;
     std::uint8_t             status_ = 0;  // what the next CMD_STATUS answers (a FatFs error, or 0)
     struct Listed {

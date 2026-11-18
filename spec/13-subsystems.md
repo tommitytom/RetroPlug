@@ -162,11 +162,13 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   - **What is left exposed.** The guard knows the cart is at its menu only once the `k` is heard, so bytes written
     before it reach the menu: raw, up to one probe cadence (250 ms) of MIDI; framed, the frames written before the stall
     shows (the link's 100 ms timeout), and up to a second more after a stall's probe has heard an ack (the trusted
-    second: a reset inside it streams frames and re-sends until it ends). Only a `*` followed by a byte the menu takes
-    as a command (a GM hi-hat, `9n 2A 73`, is `*s` and starts the app) or rejects (ERROR:40, which stops the OS) does
-    harm; a stream without `0x2A` is harmless. A menu that is busy and answers nothing for three probes in a
-    row (about 600 ms from the first unanswered one: a slow SD operation, a ROM load from the browser) is left as if it
-    were a game, and the raw stream and its probes go into its FIFO until a probe is answered again, with the same harm.
+    second: a reset inside it streams frames and re-sends until it ends, or until the window has drained, which a
+    lossy link's game does at once, so a reset after that is probed at the 100 ms timeout). Only a `*` followed by a
+    byte the menu takes as a command (a GM hi-hat, `9n 2A 73`, is `*s` and starts the app) or rejects (ERROR:40, which
+    stops the OS) does harm; a stream without `0x2A` is harmless. A menu that is busy and answers nothing for three
+    probes in a row (about 600 ms from the first unanswered one: a slow SD operation, a ROM load from the browser) is
+    left as if it were a game, and the raw stream and its probes go into its FIFO until a probe is answered again, with
+    the same harm.
     A probe before every chunk is the only full fix
     ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). The framed hold's trigger is not a lost frame as
     such: it is the OLDEST outstanding frame unacknowledged 100 ms after its first send. That covers a frame lost twice

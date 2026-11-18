@@ -430,9 +430,12 @@ bool N8Link::menuHold(std::int64_t now) {
     }
     if (rel_) {
         // The window moves (or a stall's ack was heard within the second): no probe of a stall is awaited any more,
-        // and a miss left from an earlier stall does not count toward the next one's drop.
+        // and a miss left from an earlier stall does not count toward the next one's drop. A window that has drained
+        // ends the trusted second too: it vouched for the game that was stalled, and the next frame's stall (a RESET
+        // since) is asked about at the link's own timeout, which on a lossy link is otherwise a second away.
         menuProbeAtNs_ = 0;
         stallMisses_   = 0;
+        if (rel_->outstanding() == 0) menuGameUntilNs_ = 0;
         return false;
     }
     if (menuProbeAtNs_ != 0 && now - menuProbeAtNs_ >= kMenuAnswerNs) menuProbeAtNs_ = 0;  // unanswered: a game

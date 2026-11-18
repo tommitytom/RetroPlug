@@ -358,7 +358,8 @@ TEST_CASE("N8CartLink: a submission's menu probe takes a turn of its own, not th
     const auto        t0 = std::chrono::steady_clock::now();
     CHECK_FALSE(link.submitJob(rp::n8::test::requestView(r), rp::n8::test::handle(&job), rp::n8::test::jobReports(),
                                &link, why, sizeof why));
-    CHECK(std::string(why) == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    CHECK(std::string(why) ==
+          "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first");
     const auto took =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
     CHECK(took < 500);

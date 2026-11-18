@@ -52,10 +52,11 @@ public:
     // copy of a frame the host sent twice, and the second copy's ack can come after the first has emptied the window. A
     // read that meets one misreads a few bytes (an Auto that sees no expansion mapper writes nothing; a probe that sees
     // no menu refuses the job) and leaves the reply's last bytes in the input, which the link parses as an ack only if
-    // they spell one. A throw is caught and ignored, so a config
-    // write never takes the MIDI link down; the callback then waits a second, not the next 200 us turn, so a port that
-    // keeps refusing a write cannot take the link's turns from the MIDI stream (a caller that cannot wait that out, a
-    // submission's probe, asks for a quiet turn of its own through wakeControl).
+    // they spell one, and which the guard's scan reads too, so a 'k' among them trips it (left again after three
+    // probes). A throw is caught and ignored, so a config write never takes the MIDI link down; the callback then
+    // waits a second, not the next 200 us turn, so a port that keeps refusing a write cannot take the link's turns from
+    // the MIDI stream (a caller that cannot wait that out, a submission's probe, asks for a quiet turn of its own
+    // through wakeControl).
     using OnControl = std::function<void(rp::n8::Edio&, bool backChannelQuiet)>;
     // Where the cart runs, asked at connect, before the serial thread starts: 1 when the N8 menu answers, 0 when
     // nothing does (a game), -1 when the port failed (the last state then stands). A menu reads the same FIFO a game

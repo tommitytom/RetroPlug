@@ -128,12 +128,12 @@ bool settleMenu(Edio& edio, std::chrono::steady_clock::time_point deadline) {
 // reaches (a running game has no menu), and the cart's own battery is never touched over USB (on the real cart one
 // read of it wedged a running BlipToaster, and one at the menu left the menu deaf to its commands).
 constexpr const char* kBatteryAtGame =
-    "the battery file can only be reached at the N8 menu: power-cycle to the menu first";
+    "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first";
 
 // Why an upload refuses one: the menu's own commands would go into a running game's MIDI stream, and it has no menu to
 // install into.
 constexpr const char* kUploadAtGame =
-    "the cart is running a game, which has no menu to load a ROM: power-cycle the console to its menu first";
+    "the cart is running a game, which has no menu to load a ROM: reset or power-cycle the console to its menu first";
 
 // The largest battery file a restore takes: far past any the N8 writes (a 64 KB battery is a 66,560-byte file), so
 // only a mistake is refused.
@@ -353,7 +353,7 @@ int N8Host::probeMenu() {
         if (now >= deadline) {
             // A probe the serial thread has begun is answered within its own wait: the answer is what this asked for,
             // so it is given that long (and a little over, for the turn that books it) past the deadline.
-            if (!extended && menuProbeStarted_.load(std::memory_order_acquire) == generation) {
+            if (!extended && menuProbeStarted_.load(std::memory_order_acquire) >= generation) {
                 deadline = now + std::chrono::milliseconds(kMenuAnswerMs + kMenuProbeMarginMs);
                 extended = true;
                 continue;
@@ -657,7 +657,9 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                 // first chunk leaves it. The file the open made (or emptied) goes with it, so the cart's browser never
                 // lists a partial image (best-effort).
                 outcome->error = e.what();
-                if (opened) (void)edio->fileClose();
+                // A garbled open status leaves `opened` false for a file the cart did open: the close comes first
+                // (answering an error status when nothing is open), so the delete is not refused for a held file.
+                if (opened || created) (void)edio->fileClose();
                 if (created) (void)edio->fileDelete(bootPath);
                 return AfterJob::Resume;
             }

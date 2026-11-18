@@ -197,7 +197,8 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             }
             const auto atGame = e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump", "game.nes"));
             CHECK(atGame.id == 0);
-            CHECK(atGame.error == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+            CHECK(atGame.error ==
+                  "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first");
             e.stageMidi(0, Bytes{0x80, 60, 0});
             block(e);
             REQUIRE(waitUntil([&] { return dev.count("fifo:80 3C 00") == 1; }));
