@@ -176,6 +176,9 @@ Where the cart runs is readable without touching its bus: the FPGA config block'
 **What stays in spec/07:** a single line under hardware: confirm on a cart that the menu writes nothing unprompted on
 the back-channel, which the quiet rule and the guard's read both assume.
 
+**Superseded:** map_idx tells only a power-on menu from a game; the guard asks the menu instead
+([n8-menu-guard-reset-design.md](n8-menu-guard-reset-design.md)).
+
 ## 6. Plan, execution and acceptance
 
 **Tasks**, each test-first, in this order:

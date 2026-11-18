@@ -97,19 +97,16 @@ What `feature/modularize` owes before it merges to main.
 
 ### The N8 menu's back-channel
 
-The menu guard reads the cart's FPGA config block to tell a menu (map_idx 255) from a game, and drops the stream there
-([spec/13](13-subsystems.md#the-everdrive-n8-bridge)). The quiet rule that decides when that read may be made assumes
-the menu writes nothing unprompted on the back-channel: unsolicited bytes keep the quiet rule's `lastHeardNs` fresh, so
-a menu with stale frames reads as one that never goes quiet, and the guard only looks when the hold's one-second bound
-trips it. That bound now always ends the guard's own wait, so its read costs a second's delay and may be garbled by the
-chatter. A submission's probe is a different read: unflushed, and gated on a quiet turn of its own, so a chattering
-cart can still refuse it as busy, or garble the block into a game - which is what the check below is for. A cadence read
-is a third: the guard reads the config block about every 250 ms between chunks on every raw or idle-framed stream to a
-running game ([`N8Link.cpp`](../packages/n8/native/src/n8/desktop/N8Link.cpp)), a read no performance ran before this
-batch and one whose cost to a busy cart is unmeasured. Confirm on a cart at its menu, with nothing streamed to it, that
-the back-channel stays silent, and that a job submitted right after a power-cycle to the menu is accepted, and promptly;
-and that the guard's periodic config reads cost a running BlipToaster nothing (`retroplug-n8-hwtest timing`, the
-heavy-chord stress) with no stall.
+The menu guard tells a menu from a game by the menu's answer to its probe, a `k` on the back-channel outside an ack
+([spec/13](13-subsystems.md#the-everdrive-n8-bridge)), so a menu that wrote a `0x6B` unprompted would trip it with no
+reset, a game that writes one outside an ack would trip it too (and, writing it often, hold it at the menu), and a game
+that answered the probe would read as a menu. On the lab's cart the menu answered every probe, in about 20 ms, and a
+running BlipToaster ignored three ([the design](../docs/n8-menu-guard-reset-design.md) section 1). Confirm on a cart at
+its menu, with nothing streamed to it, that the back-channel stays silent between probes; that browsing the menu with
+the pad for a minute while the guard probes it shows nothing odd and no ERROR; that a job submitted right after a
+power-cycle or a RESET to the menu is accepted, and promptly; and that the probe a raw stream carries four times a
+second costs a running BlipToaster nothing (`retroplug-n8-hwtest timing busy --raw --guard` against the same run without
+`--guard`) and stalls nothing.
 
 ### The N8 menu's residual window
 

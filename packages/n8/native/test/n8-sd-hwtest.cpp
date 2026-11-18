@@ -457,7 +457,7 @@ int main(int argc, char** argv) {
         return tripMs >= 0 && after == 0 ? 0 : 1;
     }
 
-    // What the N8 OS menu does with bytes it did not ask for (spec/07 "The menu guard misses a console reset"): 'test'
+    // What the N8 OS menu does with bytes it did not ask for (docs/n8-menu-guard-reset-design.md section 1): 'test'
     // sends '*t' and reports the answer ('k' is the menu); 'sysex' sends '*t' wrapped as F0 2A 74 F7, a SysEx a MIDI
     // game ignores, then reports its answer and a plain '*t' after it; 'note' sends one note-on (90 3C 40), a stray
     // byte run of the residual window's kind, then a plain '*t'. Run at a menu; check the screen after each.

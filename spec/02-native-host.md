@@ -491,11 +491,12 @@ node's job goes to its link, on the device's own thread: one at a time ("busy"),
 request and the report are C ([rp_jobs.h](../packages/node-sdk/native/src/graph/rp_jobs.h)): a request's strings are C
 strings (a device job whose strings hold a NUL byte is refused, as a C string would cut it), and a link reports
 progress, success, a bounded UTF-8 failure reason or an abandon through the engine's `rp.host.jobs/1` over an opaque
-`rp_job`. The cart reads its FPGA config block at submission (on that thread, between MIDI chunks, as the expansion
-volume reaches it, and only on a turn quiet for the read: nothing outstanding on the reliable link, or a cart silent
-for 250 ms since its oldest outstanding frame first went out, as one at its menu is), so a transfer a running game
-will refuse is refused without pausing the stream and dropping the block's notes; the submitting thread waits for that
-read, up to its 1 s bound. The cart node keeps books on the notes the cart holds: it re-sends at frame 0 the note-offs
+`rp_job`. The cart is asked at submission whether its menu runs (the menu's probe, on that thread, between MIDI
+chunks, as the expansion volume reaches it, and only on a turn quiet for its read: nothing outstanding on the reliable
+link, or a cart silent for 250 ms since its oldest outstanding frame first went out, as one at its menu is), so a
+transfer a running game will refuse is refused without pausing the stream and dropping the block's notes; the
+submitting thread waits for that answer, up to its 1 s bound. The cart node keeps books on the notes the cart holds:
+it re-sends at frame 0 the note-offs
 a pause dropped, and its destroy hands what is still sounding to the link (`CartLink::releaseNotes`), with the push
 count it recorded after its own last push (`pushMark`): the serial thread writes the note-offs behind THAT mark, and
 skips a key whose last note-on went out at or past it, so the node taking over keeps a key it struck while the old one
