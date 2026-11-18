@@ -467,7 +467,7 @@ private:
             case Idle:
                 if (b == 0xF4) link_ = WantSync;
                 else if (b == 0xF5) link_ = WantSeq;
-                else if (linkOn_) ackOwed_ = true;
+                else if (linkOn_ && b < 0xF8) ackOwed_ = true;  // real-time bytes are skipped, never acknowledged
                 return;
             case WantSync:
                 next_ = b;
@@ -478,6 +478,7 @@ private:
                 link_ = Idle;
                 return;
             case WantSeq:
+                linkOn_ = true;  // a frame header turns the link on, as a sync does
                 seq_ = b;
                 msg_.clear();
                 link_ = InMsg;

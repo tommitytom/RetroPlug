@@ -1,7 +1,7 @@
 // retroplug-n8-hwtest timing - BlipToaster's MIDI latency, jitter and latency-under-load on a REAL console, in ms.
 //
 //   retroplug-n8-hwtest timing <idle|busy> [steps] [--raw] [--no-kick] [--pcm hw:L6,0] [--tick-ch 3] [--kick-ch 4] [--db -40]
-//                              [--wav out.wav] [--port /dev/ttyACM0]
+//                              [--wav out.wav] [--port /dev/ttyACM0] [--guard]
 //
 // Plays a 170 bpm arrangement through N8Link - the code the plugin streams to a cart with, over the reliable link
 // unless --raw - while capturing the console's analog out on the lab's Zoom L6, and times every hit from the moment
@@ -180,7 +180,7 @@ bool flag(int argc, char** argv, const char* name) {
 int runTiming(int argc, char** argv, const std::string& defaultPort) {
     if (argc < 3) {
         std::fprintf(stderr, "usage: %s timing <idle|busy> [steps] [--raw] [--pcm hw:L6,0] [--tick-ch 3] [--kick-ch 4] "
-                             "[--db -40] [--wav out.wav] [--port dev]\n", argv[0]);
+                             "[--db -40] [--wav out.wav] [--port dev] [--guard]\n", argv[0]);
         return 2;
     }
     const std::string mode  = argv[2];
@@ -188,6 +188,7 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     const int         steps = (argc > 3 && argv[3][0] != '-') ? std::atoi(argv[3]) : 128;
     const bool        raw   = flag(argc, argv, "--raw");
     const bool        noKick = flag(argc, argv, "--no-kick");   // no DMC: tells DMC-DMA effects from the rest
+    const bool        guard  = flag(argc, argv, "--guard");     // the menu guard on: what its probes cost the game
     const std::string pcmDev = arg(argc, argv, "--pcm", "hw:L6,0");
     const std::string port  = arg(argc, argv, "--port", defaultPort.c_str());
     const float       thr   = static_cast<float>(std::pow(10.0, std::atof(arg(argc, argv, "--db", "-40")) / 20.0));
@@ -237,6 +238,9 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     N8Link link(
         [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); });
     link.setLinkAllowed(!raw);
+    // The menu guard on, as the plugin runs it, so its probes are among the writes (a raw stream carries one every
+    // 250 ms; a framed one only in a stall). The connect seed is taken as a game, which is where this leg runs.
+    if (guard) link.setMenuCheck([](rp::n8::Edio&) { return 0; });
     link.setWriteLog([&](const std::uint8_t* d, std::size_t n, std::int64_t ns, bool resend) {
         if (resend) return;   // a hit's latency runs from its FIRST write: a re-send is part of it
         std::lock_guard<std::mutex> l(wm);

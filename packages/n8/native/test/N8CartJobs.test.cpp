@@ -526,7 +526,7 @@ TEST_CASE("the menu guard reads the cart's state between chunks, so a streamed f
         rig.dev.linkRom = true;  // a game's link, stale after the console went back to its menu
         cfgTail(rig.dev);
         rig.dev.files[kGameBattery] = saveOf(1024, 3);
-        rig.connect();  // at the menu: the guard reads that off the config block before anything may stream
+        rig.connect();  // at the menu: the guard's seed hears its answer before anything may stream
         // A message pushed now would be read as one of the menu's commands, so it is dropped rather than framed, and
         // nothing is left outstanding for a re-send to carry into the menu.
         rig.push({0x90, 0x3C, 0x7F});
@@ -862,9 +862,8 @@ TEST_CASE("a cart reset to its menu with a frame its game never acknowledged sti
     }));
 
     // The console's reset button: the N8 goes back to its menu with USB still up, and the menu acknowledges nothing (it
-    // skips every byte that is not one of its commands). The guard reads that between chunks - the frame below is due
-    // to be re-sent, the cart has been silent, so it looks - and the stale window is reset there rather than re-sent
-    // into a command parser.
+    // skips every byte that is not one of its commands). The frame below stops the window, the guard asks, and the
+    // menu's answer resets the stale window there rather than re-sending it into a command parser.
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
         rig.dev.menu = true;
@@ -1587,8 +1586,8 @@ TEST_CASE("a seed menu read that timed out leaves nothing for the connect-time p
 
 TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser there", "[n8][menu-guard]") {
     // The N8 menu reads the same FIFO a game reads MIDI from, so a data pair inside a message - 0x2A 0x73, say - is its
-    // '*s': start an app. The guard reads where the cart runs from the FPGA config block (a system-region read: no bus,
-    // no FIFO), and drops rather than streams while that says menu.
+    // '*s': start an app. The guard asks the menu where the cart runs ('*t' in a SysEx, which only the menu answers),
+    // and drops rather than streams while the answer says menu.
     Rig rig;
     rig.connect();  // at its menu: the fake's default
     // The connect-time link probe holds the serial thread for up to 100 ms, and a push waits in the ring behind it:
@@ -1661,7 +1660,7 @@ TEST_CASE("leaving the menu re-probes the link, so a game the user starts by han
         rig.dev.cfg[0] = 69;
         rig.dev.cfg[2] = 0;
     }
-    // The guard's next read sees a game, and leaving the menu runs the link probe again: the frames start.
+    // The guard's next probe goes unanswered, and leaving the menu runs the link probe again: the frames start.
     REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
     rig.push({0x90, 0x3C, 0x7F});
     REQUIRE(waitUntil([&] {
@@ -1714,7 +1713,7 @@ TEST_CASE("a job submitted under a stream into the menu is accepted, and the str
     CHECK_FALSE(rig.cart.connected());  // the menu: attached, streaming nothing
 }
 
-TEST_CASE("a menu that never goes quiet is read anyway after about a second", "[n8][menu-guard]") {
+TEST_CASE("a menu that never goes quiet is caught by its answer, and nothing is re-sent into it", "[n8][menu-guard]") {
     using Clock = std::chrono::steady_clock;
     Rig rig;
     rig.dev.menu    = false;
@@ -1729,40 +1728,41 @@ TEST_CASE("a menu that never goes quiet is read anyway after about a second", "[
         return rig.dev.applied.size() == 1;
     }));
     // The console resets to its menu, and the menu chatters on the back-channel: the quiet rule stamps the last heard
-    // on ANY byte, so the turn never goes quiet and only the hold's bound can end it.
+    // on ANY byte, so no turn is ever quiet. The guard's probe needs none, and a chattered byte is no answer and no
+    // ack.
+    rig.dev.resetToMenu();
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
-        rig.dev.menu      = true;
         rig.dev.chatterMs = 40;
     }
     rig.push({0x90, 0x3E, 0x7F});  // an unacknowledged frame: this is what a re-send would take into the menu
-    // A second message pushed while the hold waits for its read, a lookahead out so it is still in the ring (or in
-    // hand) at the trip: the trip drops it, and nothing may write it afterwards. It is what the FIFO count below is for
-    // - a frame the fake's menu branch never reads cannot show it.
+    // A second message pushed while the hold waits for the menu's answer, a lookahead out so it is still in the ring
+    // (or in hand) at the trip: the trip drops it, and nothing may write it afterwards. It is what the FIFO count below
+    // is for - a frame the fake's menu branch never reads cannot show it.
     rig.host.link().setLookaheadMs(1100);
     rig.push({0x90, 0x41, 0x7F});
     rig.host.link().setLookaheadMs(0);
     const auto t0 = Clock::now();
-    REQUIRE(waitUntil([&] { return !rig.cart.connected(); }, 4000));  // the trip, which is the read landing
+    REQUIRE(waitUntil([&] { return !rig.cart.connected(); }, 4000));  // the trip, which is the menu's 'k' heard
     const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count();
-    CHECK(waited >= 900);    // it waited out the bound rather than reading on a hunch with a frame in flight
-    CHECK(waited < 2500);
-    // The frame was held, not re-sent, on every turn of the wait: the menu would have read a re-send as a command.
+    CHECK(waited < 900);  // as soon as the window stopped (the link's 100 ms timeout), not after a quiet turn
+    // The frame was held, not re-sent, while the probe waited: the menu would have read a re-send as a command.
     CHECK(rig.host.link().linkResends() == 0);
-    // And nothing more goes to the cart's FIFO after the trip. The fake's frameSeqs cannot say this (its menu branch
-    // returns before it reads a frame), so this counts what the host WROTE, which a re-send would add to.
-    const std::size_t writes = rig.dev.count("fifo:");
+    // And nothing of the stream goes to the cart's FIFO after the trip. The fake's frameSeqs cannot say this (its menu
+    // branch returns before it reads a frame), so this counts what the host WROTE, which a re-send would add to; the
+    // guard's own probes go on at the menu, and are not the stream's.
+    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.count("fifo:F0 2A 74 F7"); };
+    const std::size_t writes = streamed();
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    CHECK(rig.dev.count("fifo:") == writes);  // nothing more was written after the trip
+    CHECK(streamed() == writes);  // nothing more was written after the trip
     CHECK(rig.dev.menu);
     CHECK(rig.dev.booted.empty());
 }
 
 TEST_CASE("a menu whose chatter lands ahead of its answers is read as a menu, not as a game", "[n8][menu-guard]") {
-    // The guard's read of the config block takes the reply's first bytes as they come. A cart that talks while the host
-    // is not reading leaves bytes in the input, and a reply read behind them is garbled: map_idx 255 with one status
-    // byte in front of it reads as a game, which would leave the guard streaming into the menu. Flushing the input
-    // before the read is what keeps the answer the cart's own.
+    // A cart that talks while the host is not reading leaves bytes in the input, ahead of the menu's 'k'. Taken for the
+    // answer, a status byte there would read as a game and leave the guard streaming into the menu: the answer is a
+    // 'k' wherever it lands among them.
     Rig rig;
     rig.dev.chatterMs      = 40;  // one byte whenever the cart owes the host no reply
     rig.dev.chatterGarbles = true;  // ... left in the input for the next read, as one said between reads is
@@ -1778,7 +1778,7 @@ TEST_CASE("a menu whose chatter lands ahead of its answers is read as a menu, no
 }
 
 TEST_CASE("a framed stream to a menu the console's reset reached trips the guard, and nothing is written after",
-          "[n8][menu-guard][!shouldfail]") {
+          "[n8][menu-guard]") {
     // What the real cart did (docs/n8-menu-guard-reset-design.md section 1): RESET drops BlipToaster to the menu with
     // USB and the framed link still up, and the config block keeps the game's mapper. The acks stop at once, and only
     // the menu's own answer tells it from a game that has merely gone quiet.
@@ -1812,7 +1812,7 @@ TEST_CASE("a framed stream to a menu the console's reset reached trips the guard
 }
 
 TEST_CASE("a raw stream to a menu the console's reset reached trips the guard within a probe's cadence",
-          "[n8][menu-guard][!shouldfail]") {
+          "[n8][menu-guard]") {
     // Raw MIDI has no acks to stop, so nothing the cart says on its own marks the reset: the guard has to ask.
     using Clock = std::chrono::steady_clock;
     Rig rig;
@@ -1835,7 +1835,7 @@ TEST_CASE("a raw stream to a menu the console's reset reached trips the guard wi
 }
 
 TEST_CASE("a framed stream of '*'-bearing messages after a reset never drives the menu to ERROR:40",
-          "[n8][menu-guard][!shouldfail]") {
+          "[n8][menu-guard]") {
     // ERROR:40 is a '*' followed by a byte that is not one of the menu's commands, which a framed stream carries sooner
     // or later (0x2A 0x40, '*@', in every message here); on the real cart the reset stream reached it within 21 s, and
     // the OS stopped there. Once the guard has tripped no byte of the stream reaches the menu, so it never sees one.
@@ -1930,5 +1930,134 @@ TEST_CASE("a 'k' inside the reliable link's acks is not the menu's answer", "[n8
             std::lock_guard<std::mutex> l(dev.mu);
             return dev.applied.size() == 1;
         }));
+    }
+}
+
+TEST_CASE("a menu whose answer comes late is still the menu: one unanswered probe does not leave it",
+          "[n8][menu-guard]") {
+    // The lab's menu answers '*t' in about 20 ms, well inside the probe's 100 ms, but a menu busy with a slow turn can
+    // miss that window now and then. Leaving the menu on one miss would stream into it until the next probe tripped the
+    // guard again: it takes three misses in a row.
+    Rig rig;
+    rig.connectGame();
+    rig.dev.resetToMenu();
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menuAnswerDelayMs = 150;  // every answer from here on comes after the probe's window
+    }
+    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.count("fifo:F0 2A 74 F7"); };
+    const std::size_t before = streamed();
+    bool left = false;
+    for (int i = 0; i < 300 && !left; ++i) {  // 1.5 s, six probes, each answered late
+        left = !rig.host.link().atMenu();
+        rig.push({0x90, 0x3C, 0x7F});
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK_FALSE(left);
+    CHECK(streamed() == before);  // no link probe (F4 00) and no note went to the menu
+}
+
+TEST_CASE("a framed link whose cart answers neither the menu's probe nor the link is streamed raw again, not held",
+          "[n8][menu-guard]") {
+    // A framed link asks only in a stall, so a RESET between songs and a game without the link started from the cart's
+    // own browser go unseen: the next frame stalls, and neither a 'k' nor an ack ever comes. Two stall probes that hear
+    // nothing (two seconds) give the window up and probe the link again, which that game does not answer.
+    Rig rig;
+    rig.dev.menu    = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0]  = 69;
+    rig.dev.cfg[2]  = 0;
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;
+    }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.linkRom = false;  // the game running now reads plain MIDI and acknowledges nothing
+    }
+    rig.push({0x90, 0x3E, 0x7F});  // the frame that stalls
+    REQUIRE(waitUntil([&] { return !rig.host.link().reliable(); }, 4000));
+    CHECK(rig.cart.connected());
+    CHECK_FALSE(rig.host.link().atMenu());
+    rig.push({0x90, 0x41, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 41 7F") == 1; }));  // raw, as that game reads it
+}
+
+TEST_CASE("the raw probe waits for a message to end, however long it stays open", "[n8][menu-guard]") {
+    // The probe is a SysEx of its own, so inside another message it would cut that one short. A node's bytes port can
+    // leave a SysEx open for a while; a release goes anyway after 250 ms (a held note is the worse harm), but a probe
+    // that waits costs nothing.
+    Rig rig;
+    rig.connectGame();
+    rig.push({0xF0, 0x7E, 0x7F});  // a SysEx head whose tail comes late
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
+    const std::size_t probes = rig.dev.count("fifo:F0 2A 74 F7");
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));  // past the release's bound, and two cadences
+    CHECK(rig.dev.count("fifo:F0 2A 74 F7") == probes);
+    rig.push({0x09, 0x01, 0xF7});  // the tail
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 2A 74 F7") > probes; }, 1000));
+    CHECK(lastLogIndex(rig.dev, "fifo:09 01 F7") < lastLogIndex(rig.dev, "fifo:F0 2A 74 F7"));
+}
+
+TEST_CASE("a framed game that is slow or damaged resumes on its ack, and is asked at most once a second",
+          "[n8][menu-guard]") {
+    // In a stall the guard holds every re-send, so the probe's own bytes are all a live BlipToaster reads: it drops
+    // them as unframed and acknowledges F5 <next> <next> (bliptoaster src/midi/parse_asm.s), and that ack is what
+    // resumes the stream. Neither game may trip the guard.
+    SECTION("acks that take longer than the link's timeout") {
+        Rig rig;
+        rig.dev.menu    = false;
+        rig.dev.linkRom = true;
+        rig.dev.cfg[0]  = 69;
+        rig.dev.cfg[2]  = 0;
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+        {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            rig.dev.linkAckDelayMs = 150;  // from here on: the link probe's own ack must come inside its 100 ms
+        }
+        bool tripped = false;
+        for (int i = 0; i < 20; ++i) {
+            rig.push({0x90, static_cast<std::uint8_t>(0x30 + i), 0x7F});
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            tripped = tripped || rig.host.link().atMenu();
+        }
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 20;
+        }));
+        CHECK_FALSE(tripped);
+        CHECK_FALSE(rig.host.link().atMenu());
+        CHECK(rig.dev.count("fifo:F0 2A 74 F7") >= 1);  // the last frame's ack came after the window had stopped
+    }
+    SECTION("every frame reported damaged") {
+        Rig rig;
+        rig.dev.menu    = false;
+        rig.dev.linkRom = true;
+        rig.dev.cfg[0]  = 69;
+        rig.dev.cfg[2]  = 0;
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+        rig.push({0x90, 0x3C, 0x7F});
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 1;
+        }));
+        {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            rig.dev.linkDamaged = true;
+        }
+        rig.push({0x90, 0x3E, 0x7F});
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        const std::uint64_t resends = rig.host.link().linkResends();
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        CHECK(rig.host.link().linkResends() > resends);  // the re-sends go on: the stall resumed on the probe's ack
+        CHECK_FALSE(rig.host.link().atMenu());
+        CHECK(rig.cart.connected());
+        CHECK(rig.dev.count("fifo:F0 2A 74 F7") <= 3);  // a probe a second, not one a re-send
     }
 }

@@ -41,9 +41,10 @@ public:
     // written: where a setting whose value lives in an atomic (N8Host's expansion volume and its config-block probe)
     // reaches the device without the caller taking a lock or building a std::function. Set once before any connect,
     // like OnConnected, so it is never mutated while the thread reads it. `backChannelQuiet` is false while the cart
-    // may be about to acknowledge an outstanding frame: anything that reads a reply off the port must wait for a quiet
-    // turn, since an ack landing inside that read is taken for the reply's first bytes and the reply's tail is then
-    // parsed as link traffic. A turn is quiet with nothing outstanding, or once the cart has said nothing for the
+    // may be about to acknowledge an outstanding frame, or to answer the guard's probe: anything that reads a reply off
+    // the port must wait for a quiet turn, since an ack (or the menu's 'k') landing inside that read is taken for the
+    // reply's first bytes and the reply's tail is then parsed as link traffic. A turn is quiet with nothing outstanding
+    // and no probe of the guard's awaiting its answer (100 ms at most), or once the cart has said nothing for the
     // pause's ack bound (250 ms) since the oldest outstanding frame first went out: a cart at its menu acknowledges
     // nothing, and would otherwise never give a read a turn. What it does not cover is an ack for no outstanding frame:
     // on a lossy link the ROM acknowledges each copy of a frame the host sent twice, and the second copy's ack can come
@@ -54,12 +55,44 @@ public:
     // keeps refusing a write cannot take the link's turns from the MIDI stream (a caller that cannot wait that out, a
     // submission's probe, asks for a quiet turn of its own through wakeControl).
     using OnControl = std::function<void(rp::n8::Edio&, bool backChannelQuiet)>;
-    // What the cart runs, read on the serial thread (and at connect, before the thread starts): 1 at the N8 menu, 0 in
-    // a game, -1 when the FPGA config block did not answer (the last state then stands). A menu reads the same FIFO a
-    // game takes MIDI from, so a streamed message can be read as one of its '*' commands (0x2A 0x73 is '*s'), which is
-    // why the link drops rather than streams while this says menu. N8Host installs one whose read has a short timeout:
-    // it runs between chunks, and a cart that stopped answering must not cost the stream two seconds a turn.
+    // Where the cart runs, asked at connect, before the serial thread starts: 1 when the N8 menu answers, 0 when
+    // nothing does (a game), -1 when the port failed (the last state then stands). A menu reads the same FIFO a game
+    // takes MIDI from, so a streamed message can be read as one of its '*' commands (0x2A 0x73 is '*s'), which is why
+    // the link drops rather than streams while the cart is at its menu. N8Host installs one that writes kMenuProbe and
+    // waits 100 ms for the 'k'. While streaming the link asks on its own, with the same probe written between chunks
+    // and the answer read off the back-channel (see menuHold).
     using MenuCheck = std::function<int(rp::n8::Edio&)>;
+    // The guard's question: '*t' inside a SysEx. The N8 menu skips every byte that is not a '*', so it reads the '*t'
+    // and answers 'k' (kMenuAnswer) on the back-channel, after a console RESET too, which leaves the FPGA config
+    // block's map_idx at the game's mapper (docs/n8-menu-guard-reset-design.md); a MIDI game ignores a SysEx it does
+    // not know, and BlipToaster, on the real cart, ignores this one.
+    static constexpr std::uint8_t kMenuProbe[4] = {0xF0, 0x2A, 0x74, 0xF7};
+    static constexpr std::uint8_t kMenuAnswer   = 0x6B;
+    // The back-channel, a byte at a time: the menu's answer is a 'k' OUTSIDE an ack. An ack is F5 <next> <last>, both
+    // 7-bit (N8ReliableSender::onBackChannel), so either can be a 0x6B, and the scan follows the same states to tell.
+    struct BackChannelScan {
+        enum class Heard { Nothing, Ack, MenuAnswer };
+        int state = 0;  // 0 between acks, 1 after F5, 2 after <next>
+        Heard feed(std::uint8_t b) {
+            if (b == rp::N8ReliableSender::FRAME) {
+                state = 1;
+                return Heard::Nothing;
+            }
+            if (b & 0x80) {
+                state = 0;
+                return Heard::Nothing;
+            }
+            if (state == 1) {
+                state = 2;
+                return Heard::Nothing;
+            }
+            if (state == 2) {
+                state = 0;
+                return Heard::Ack;
+            }
+            return b == kMenuAnswer ? Heard::MenuAnswer : Heard::Nothing;
+        }
+    };
 
     // What a paused job tells the link once it has run: resume streaming, or stop it (a ROM boot: the old stream is
     // stale, and a running game has no menu to come back to). Stop closes the port, as a disconnect does.
@@ -94,13 +127,13 @@ public:
     // Set once by the owner before any connect; connect() runs it on the caller's thread, while the link is the only
     // thing on the port.
     void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
-    // Set once by the owner before any connect, like OnConnected: read at each connect (to seed the state) and on quiet
-    // turns while streaming. Null on a link with no cart behind it (N8CartLink.test.cpp's fake device), which then
-    // streams whatever it is given, as it always did.
+    // Set once by the owner before any connect, like OnConnected: asked at each connect to seed the state, and what
+    // turns the guard on (its probes while streaming). Null on a link with no cart behind it (N8CartLink.test.cpp's
+    // fake device), which then streams whatever it is given, as it always did.
     void          setMenuCheck(MenuCheck fn) { menuCheck_ = std::move(fn); }
-    // [serial thread] What a config-block read said about where the cart runs (a MenuCheck's answer, or N8Host's own
-    // menu probe): the guard takes it as its state at once, so a probe made for a submission trips the guard before
-    // that job's pause drains the ring into a menu.
+    // [serial thread] What a probe said about where the cart runs (the guard's own, or N8Host's for a submission): the
+    // guard takes it as its state at once, so a probe made for a submission trips the guard before that job's pause
+    // drains the ring into a menu.
     void          reportMenuState(bool menu);
     void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
     // [any] Run OnControl at the next quiet turn, whatever the wait a failed config write armed: the wake stands
@@ -208,10 +241,11 @@ private:
     void serialLoop();
     void streamLoop();                                   // serial thread: the probe, then stream until stopped
     // serial thread: the cart's at-menu state for this turn (see MenuCheck). True while the stream must put no new
-    // chunk, re-send or release on the wire: the cart is at its menu, or the window has stopped moving and the guard
-    // has not been able to look yet. The turn's quietForRead is the second argument.
-    bool        menuHold(std::int64_t now, bool quiet);
-    bool        readMenuState(std::int64_t now);                // serial thread: read it; false when it did not answer
+    // chunk, re-send or release on the wire: the cart is at its menu, or the window has stopped moving and the guard's
+    // probe has heard neither the menu's answer nor an ack yet.
+    bool        menuHold(std::int64_t now);
+    void        writeMenuProbe(std::int64_t now);              // serial thread: kMenuProbe out, between two messages
+    bool        menuProbeAwaited(std::int64_t now) const;     // serial thread: a probe's answer may still be coming
     void        enterMenu();                                    // serial thread: discard what is held, reset the link
     void        leaveMenu();                                    // serial thread: probe the link again
     void        discardRing();                                   // serial thread: drop what the ring holds, counted
@@ -227,12 +261,16 @@ private:
     void        noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now, bool streamed);
     static std::size_t wireDataBytes(std::uint8_t status);
     bool        atMessageBoundary(std::int64_t now) const;
+    // serial thread: no message open on the wire at all, with no time bound: where the guard's probe may go, since a
+    // probe that waits for a long-open message costs only its delay (atMessageBoundary lets a release through after
+    // kMidMessageNs, a held note being the worse of its two harms).
+    bool        betweenMessages() const;
     void runJob(TimedChunk& chunk, bool& have);          // serial thread: pause, run the pending job, resume
     void drainForJob(TimedChunk& chunk, bool& have);     // serial thread: what was pushed before the pause goes out
     void stopStreaming();                                // serial thread: stop and close the port (AfterJob::Stop)
     void probeLink();                                    // serial thread: sync + listen for an ack
     void serviceLink(std::int64_t now);                  // serial thread: read acks, send re-sends
-    void serviceLinkAcks();                              // serial thread: the cart's back-channel, read
+    void readBackChannel();                              // serial thread: the cart's back-channel: acks, the menu's 'k'
     // serial thread: whatever the reliable link is due to re-send at `now`, the turn's own timestamp: the same one the
     // guard judged, so a re-send can never slip past the hold by re-reading the clock a moment later.
     void serviceLinkResends(std::int64_t now);
@@ -291,14 +329,23 @@ private:
     // The earliest moment OnControl runs again after a throw (see the loop in streamLoop), and a wake a caller asked
     // for since the last quiet turn: the first is serial-thread state, the second is stored from any thread.
     std::int64_t               controlRetryAtNs_ = 0;
-    // The next periodic menu read, and when a re-send the guard must look before began to wait for a quiet turn (0:
-    // not waiting). Serial thread.
-    std::int64_t               menuReadDueNs_ = 0;
-    std::int64_t               menuHoldSince_ = 0;
-    std::int64_t               menuGameUntilNs_ = 0;  // a read answered "a game" here: no hold before this moment
-    // A menu read timed out and its reply may still be arriving: the next turn flushes the port instead of parsing what
-    // it said as acks (readMenuState, streamLoop). Serial thread, reset at each connect.
-    bool                       menuFlushNext_ = false;
+    // The guard's probe (menuHold): when the last one went out (0: none awaiting its answer), when the next is due, and
+    // the moment before which a stopped window is not probed again, because the last probe's stall heard an ack (a
+    // game). Serial thread, reset at each connect.
+    std::int64_t               menuProbeAtNs_   = 0;
+    std::int64_t               menuProbeDueNs_  = 0;
+    std::int64_t               menuGameUntilNs_ = 0;
+    // Probes in a row the menu left unanswered (it leaves at kMenuLeaveMisses), and stall probes in a row that heard
+    // nothing at all (the link is given up at kStallMisses). Serial thread, reset at each connect.
+    int                        menuMisses_  = 0;
+    int                        stallMisses_ = 0;
+    // What the back-channel has said (readBackChannel): the menu's 'k', and how many whole acks against the count when
+    // the probe went out. The scan's state runs on across reads, since an ack can be split between two. Serial thread,
+    // reset at each connect.
+    bool                       menuAnswered_ = false;
+    BackChannelScan            backScan_;
+    std::uint64_t              acksHeard_   = 0;
+    std::uint64_t              acksAtProbe_ = 0;
     std::atomic<bool>          controlWanted_{false};
     std::atomic<bool>          backChannelQuiet_{true};  // the last turn's quietForRead, for other threads
 

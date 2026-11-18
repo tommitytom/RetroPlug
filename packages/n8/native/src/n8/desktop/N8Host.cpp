@@ -79,9 +79,30 @@ constexpr int kProbeLinkBusy = -3;
 // a control thread (the DAW's) from waiting out the read's own 2 s timeout to learn it.
 constexpr int kMenuProbeMs = 1000;
 
-// How long the menu guard's own read of the config block may wait for the cart: it runs between chunks on the serial
-// thread, so a cart that stopped answering must cost the stream a fraction of the read timeout (2 s), not all of it.
-constexpr std::uint32_t kMenuReadMs = 100;
+// How long the N8 menu's answer to a probe may take: one USB round trip and a turn of the menu's loop. Past it nothing
+// answered, and the cart runs a game. The link waits as long for the answer to the probe it streams (N8Link.cpp's
+// kMenuAnswerNs).
+constexpr std::uint32_t kMenuAnswerMs = 100;
+
+// Whether the N8 menu runs, asked the one way that holds after a console RESET (which leaves the config block's map_idx
+// at the game's mapper): N8Link::kMenuProbe out, then up to kMenuAnswerMs for the menu's 'k'. 1 for the menu, 0 when
+// nothing answered (a game, which ignores the SysEx), -1 when the port failed. What else the cart says meanwhile is
+// stepped over, an ack whole (a 'k' inside one is not the menu's).
+int askMenu(Edio& edio) {
+    if (!edio.fifoWR(N8Link::kMenuProbe, sizeof N8Link::kMenuProbe).ok()) return -1;
+    N8Link::BackChannelScan scan;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kMenuAnswerMs);
+    for (;;) {
+        const auto left =
+            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (left <= 0) return 0;
+        std::uint8_t         b = 0;
+        const rp::n8::Status s = edio.rx8(b, static_cast<std::uint32_t>(left));
+        if (s.code == rp::n8::Code::Timeout) return 0;
+        if (!s.ok()) return -1;
+        if (scan.feed(b) == N8Link::BackChannelScan::Heard::MenuAnswer) return 1;
+    }
+}
 
 // Why a battery job refuses a running game: the battery file lives on the SD card, which only the menu's file API
 // reaches (a running game has no menu), and the cart's own battery is never touched over USB (on the real cart one
@@ -188,22 +209,9 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
     // A value a param changed while the link is up: the serial thread owns the port, so it writes the standing value
     // on its own turn, between MIDI chunks, and marks the generation it wrote. A throw leaves the generation behind,
     // so the next turn tries again (N8Link catches it: a config write must not take the MIDI link down).
-    // Where the cart runs, for the link's menu guard (N8Link::MenuCheck): the config block's map_idx, 255 while the N8
-    // OS's own menu shows. A system-region read, so it touches neither the cart's bus nor a running game's FIFO, and it
-    // takes a short timeout: it is made between chunks, and a cart silent for two seconds per turn would stall the
-    // stream. -1 (the block did not answer) leaves the link's state as it was.
-    link_.setMenuCheck([](Edio& edio) {
-        // The short timeout is this call's, not the Edio's from here on: a scope guard puts the table back however the
-        // read ends, a throw from the port included, so no later call inherits a 100 ms reply timeout.
-        struct ReadMs {
-            rp::n8::Timeouts& table;
-            rp::n8::Timeouts  saved;
-            ~ReadMs() { table = saved; }
-        } restore{edio.timeouts(), edio.timeouts()};
-        restore.table.readMs = kMenuReadMs;
-        const int mapper = runningMapper(edio);
-        return mapper < 0 ? -1 : (mapper == kMenuMapper ? 1 : 0);
-    });
+    // Where the cart runs, for the link's menu guard (N8Link::MenuCheck), asked at each connect: whether the menu
+    // answers its probe. -1 (the port failed) leaves the link's state as it was, and its own probes ask again.
+    link_.setMenuCheck([](Edio& edio) { return askMenu(edio); });
     link_.setOnControl([this](Edio& edio, bool backChannelQuiet) {
         // The config block a submission's refusal reads (probeMenu). Taken here, between chunks, for the reason the
         // volume is: a system-region read on the thread that owns the port, putting no byte in a running game's FIFO.

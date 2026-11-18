@@ -20,7 +20,7 @@
 //   retroplug-n8-hwtest write    <local-src> <sd-path> [port]  # CMD_F_FWR: write a local file to the SD card
 //   retroplug-n8-hwtest fiford   <count> [timeout-ms] [port]   # read the cart's USB back-channel (CMD_USB_WR)
 //   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
-//   retroplug-n8-hwtest menuguard <seconds> [port]  # the menu guard, streaming while a person presses RESET
+//   retroplug-n8-hwtest menuguard <seconds> [port] [raw] # the menu guard, streaming while a person presses RESET
 //   retroplug-n8-hwtest menuprobe <test|sysex|note> [port] # what the N8 OS menu does with bytes it did not ask for
 //   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
 //   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw]   # latency / jitter / load on the real console
@@ -366,17 +366,22 @@ int main(int argc, char** argv) {
     // the production one, streaming a short 2A03 note every 60 ms for <seconds> while a person presses the console's
     // RESET button (it keeps USB and the link up and drops the cart to its menu: the case a power-cycle cannot make).
     // Logs every change of the link's state with its time, then what was written after the guard tripped (expected: 0
-    // bytes) and how long the trip took after the cart stopped acknowledging. Boot a game that answers the probe first.
+    // bytes) and how long the trip took after the cart stopped acknowledging. Boot a game with the reliable link
+    // (BlipToaster) first.
+    // `raw` holds the link raw (no link probe, so BlipToaster gets plain MIDI): the raw path, whose only reset signal
+    // is the guard's own probe cadence.
     if (op == "menuguard") {
         const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
-        const std::string gport   = argc > 3 ? argv[3] : findN8Port();
+        const bool        raw     = std::string(argv[argc - 1]) == "raw";
+        const std::string gport   = argc > 3 && std::string(argv[3]) != "raw" ? argv[3] : findN8Port();
         if (seconds <= 0 || gport.empty()) {
-            std::fprintf(stderr, "usage: %s menuguard <seconds> [port] (no Everdrive N8 found?)\n", argv[0]);
+            std::fprintf(stderr, "usage: %s menuguard <seconds> [port] [raw] (no Everdrive N8 found?)\n", argv[0]);
             return 2;
         }
         N8Host host(
             [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); },
             [] { return std::vector<N8PortDto>{}; }, "/tmp");
+        if (raw) host.link().setLinkAllowed(false);
         host.setPort(gport);
         host.connect(true);
         N8Link& link = host.link();
@@ -403,7 +408,7 @@ int main(int argc, char** argv) {
         const std::uint8_t on[]  = {0x90, 69, 100};
         const std::uint8_t off[] = {0x80, 69, 0};
         bool          wasMenu = link.atMenu(), wasUp = link.isConnected(), stalled = false;
-        double        stallMs = -1, tripMs = -1, lastWriteMs = 0;
+        double        stallMs = -1, tripMs = -1, lastWriteMs = 0, outstandingSince = -1;
         std::uint64_t lastBytes = link.bytesForwarded(), bytesAtTrip = 0;
         int           step = 0;
         // Up to <seconds>, or 5 s past a trip: enough to see that nothing more is written once the guard has the menu.
@@ -415,10 +420,16 @@ int main(int argc, char** argv) {
             const std::uint64_t bytes = link.bytesForwarded();
             if (bytes != lastBytes) { lastBytes = bytes; lastWriteMs = ms(); }
             // The cart stopped acknowledging: frames outstanding past the link's 100 ms timeout (the reset, on a
-            // framed link). The first sight of it is when the console went away, near enough.
-            if (!stalled && link.reliable() && link.linkOutstanding() > 0 && link.linkResends() > 0) {
+            // framed link). The guard holds the re-sends in that stall, so it shows as the outstanding count staying
+            // up, not as a re-send; when it went up is when the console went away, near enough.
+            if (link.reliable() && link.linkOutstanding() > 0) {
+                if (outstandingSince < 0) outstandingSince = ms();
+            } else {
+                outstandingSince = -1;
+            }
+            if (!stalled && outstandingSince >= 0 && ms() - outstandingSince >= 100.0) {
                 stalled = true;
-                stallMs = ms();
+                stallMs = outstandingSince;
                 say("acks stopped (reset?)");
             }
             if (link.atMenu() != wasMenu) {
