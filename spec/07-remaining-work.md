@@ -574,8 +574,11 @@ against it. So on an NTSC console the DMC sample DMA's repeated FIFO read drops 
 which the lab's PAL console never shows, and a console RESET mid-song is not guarded, so a note stream across the
 booting OS's window leaves it at ERROR:40 (a second RESET recovers). The host half of the link (`N8ReliableSender`, in
 the `n8-wire` package) is transport-agnostic; whether it and the menu guard fit the box's RAM and code budget beside the
-engine is unmeasured. Measure the loss first on an NTSC Famicom, raw and framed through the desktop link, then decide.
-([the menu guard's design](../docs/n8-menu-guard-reset-design.md) section 7.)
+engine is unmeasured. Measured on the lab's NTSC Famicom (2026-11-19, `retroplug-n8-hwtest timing idle 512 --tick-ch 3
+--kick-ch 6 --db -20`, through the desktop link, DMC kicks playing): framed, every run sounded 512 of 512 ticks on the
+grid (p50 0.13 ms), repairing 3 to 7 lost bytes a 45 s run; raw, 1 tick in 3 of 7 runs never sounded, 5 of 7 runs had
+notes off the grid (p50 5.9 to 48.6 ms), and a DMC note was left stuck. So the box needs the link on NTSC; what remains
+is whether it fits. ([the menu guard's design](../docs/n8-menu-guard-reset-design.md) section 7.)
 
 ## Feature gaps and SDL
 
@@ -586,9 +589,10 @@ Feature gaps a user could reasonably expect, and the SDL standalone's unbuilt or
 `retroplug-cli n8-bridge` and `n8-play`, and risa's `n8-sync`, write the cart FIFO straight through Edio
 ([bridge.ts](../packages/n8/ts/bridge.ts), [n8Play.ts](../packages/n8/ts/cli/n8Play.ts)), not through `N8Link`: they get
 neither the framed link nor the menu guard, whatever the ROM. `n8-play` is a scripted test tool and fine as it is;
-`n8-bridge` is a performance path, so on an NTSC console it loses bytes to the DMC DMA and a console RESET mid-song can
-leave the N8 OS at ERROR:40. Move the bridge onto the native link (the N8 facet's streaming), or state the limit in its
-help. ([the menu guard's design](../docs/n8-menu-guard-reset-design.md) section 7.)
+`n8-bridge` is a performance path, so on an NTSC console it loses bytes to the DMC DMA (missed, off-grid and stuck notes
+on the lab's Famicom, see the box's entry) and a console RESET mid-song can leave the N8 OS at ERROR:40. Move the bridge
+onto the native link (the N8 facet's streaming), or state the limit in its help. ([the menu guard's
+design](../docs/n8-menu-guard-reset-design.md) section 7.)
 
 ### Raw LSDj Keyboard sync mode
 
