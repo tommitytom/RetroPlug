@@ -21,6 +21,7 @@
 //   retroplug-n8-hwtest fiford   <count> [timeout-ms] [port]   # read the cart's USB back-channel (CMD_USB_WR)
 //   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
 //   retroplug-n8-hwtest menuguard <seconds> [port]  # the menu guard, streaming while a person presses RESET
+//   retroplug-n8-hwtest menuprobe <test|sysex|note> [port] # what the N8 OS menu does with bytes it did not ask for
 //   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
 //   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw]   # latency / jitter / load on the real console
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
@@ -443,6 +444,51 @@ int main(int argc, char** argv) {
                         static_cast<unsigned long long>(after));
         link.disconnect();
         return tripMs >= 0 && after == 0 ? 0 : 1;
+    }
+
+    // What the N8 OS menu does with bytes it did not ask for (spec/07 "The menu guard misses a console reset"): 'test'
+    // sends '*t' and reports the answer ('k' is the menu); 'sysex' sends '*t' wrapped as F0 2A 74 F7, a SysEx a MIDI
+    // game ignores, then reports its answer and a plain '*t' after it; 'note' sends one note-on (90 3C 40), a stray
+    // byte run of the residual window's kind, then a plain '*t'. Run at a menu; check the screen after each.
+    if (op == "menuprobe") {
+        const std::string mode  = argv[2];
+        const std::string mport = argc > 3 ? argv[3] : findN8Port();
+        if (mport.empty() || (mode != "test" && mode != "sysex" && mode != "note")) {
+            std::fprintf(stderr, "usage: %s menuprobe <test|sysex|note> [port]\n", argv[0]);
+            return 2;
+        }
+        const auto show = [](const char* what, const rp::n8::Status& s, int got) {
+            if (s.ok()) std::printf("%s: answered 0x%02X%s\n", what, got, got == 0x6b ? " ('k': the menu)" : "");
+            else std::printf("%s: %s (reply 0x%02X)\n", what, rp::n8::codeName(s.code), s.reply);
+        };
+        try {
+            SerialTransport sp(mport);
+            rp::n8::Edio    edio(sp);   // the pack's, whose calls answer a Status rather than throw
+            if (const rp::n8::Status c = edio.connect(); !c.ok()) {
+                std::fprintf(stderr, "menuprobe: connect: %s\n", rp::n8::codeName(c.code));
+                return 1;
+            }
+            rp::n8::Menu menu(edio);
+            if (mode != "test") {
+                const std::uint8_t sysex[] = {0xF0, 0x2A, 0x74, 0xF7};
+                const std::uint8_t note[]  = {0x90, 0x3C, 0x40};
+                const bool         isSx    = mode == "sysex";
+                rp::n8::Status     w = isSx ? edio.fifoWR(sysex, sizeof sysex) : edio.fifoWR(note, sizeof note);
+                std::printf("%s written: %s\n", isSx ? "F0 2A 74 F7" : "90 3C 40", rp::n8::codeName(w.code));
+                if (isSx) {
+                    std::uint8_t   got = 0;
+                    rp::n8::Status r   = edio.rx8(got, 1000);
+                    show("the wrapped *t", r, got);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            }
+            const rp::n8::Status s = menu.test();
+            show("a plain *t", s, s.ok() ? 0x6b : 0);
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "menuprobe failed: %s\n", e.what());
+            return 1;
+        }
     }
 
     if (op == "fiford") {
