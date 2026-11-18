@@ -68,9 +68,11 @@ than work.
 - [ ] [A 32-bit runner in the build](#a-32-bit-runner-in-the-build)
 - [ ] [The box's stats print can stall a message](#the-boxs-stats-print-can-stall-a-message)
 - [ ] [A SysEx past 3 bytes allocates](#a-sysex-past-3-bytes-allocates)
+- [ ] [The box's cart stream has no framing and no menu guard](#the-boxs-cart-stream-has-no-framing-and-no-menu-guard)
 
 **Feature gaps and SDL**
 - [ ] [Raw LSDj Keyboard sync mode](#raw-lsdj-keyboard-sync-mode)
+- [ ] [The CLI's N8 tools stream unframed and unguarded](#the-clis-n8-tools-stream-unframed-and-unguarded)
 - [ ] [NES per-mapper expansion sub-channels](#nes-per-mapper-expansion-sub-channels)
 - [ ] [The standalone reopens the last project](#the-standalone-reopens-the-last-project)
 - [ ] [Live memory-region subscription](#live-memory-region-subscription)
@@ -564,9 +566,29 @@ A SysEx past 3 bytes allocates a view per message (dying with its block), and at
 allocates, so a SysEx stream makes the box collect in the MIDI path; the policy's worst block fits with 4 KB spare. ([E4
 design](../docs/modular-graph-phase-e4-design.md) section 11.8.)
 
+### The box's cart stream has no framing and no menu guard
+
+The box writes MIDI to the cart FIFO raw ([BoxCartLink.hpp](../pico/n8-host/BoxCartLink.hpp)): it predates the framed
+link to BlipToaster (the box began 2026-08-14, the link 2026-10-22) and never moved onto it, and no design decided
+against it. So on an NTSC console the DMC sample DMA's repeated FIFO read drops bytes (a lost hit or a stuck note),
+which the lab's PAL console never shows, and a console RESET mid-song is not guarded, so a note stream across the
+booting OS's window leaves it at ERROR:40 (a second RESET recovers). The host half of the link (`N8ReliableSender`, in
+the `n8-wire` package) is transport-agnostic; whether it and the menu guard fit the box's RAM and code budget beside the
+engine is unmeasured. Measure the loss first on an NTSC Famicom, raw and framed through the desktop link, then decide.
+([the menu guard's design](../docs/n8-menu-guard-reset-design.md) section 7.)
+
 ## Feature gaps and SDL
 
 Feature gaps a user could reasonably expect, and the SDL standalone's unbuilt or unverified pieces. None block shipping.
+
+### The CLI's N8 tools stream unframed and unguarded
+
+`retroplug-cli n8-bridge` and `n8-play`, and risa's `n8-sync`, write the cart FIFO straight through Edio
+([bridge.ts](../packages/n8/ts/bridge.ts), [n8Play.ts](../packages/n8/ts/cli/n8Play.ts)), not through `N8Link`: they get
+neither the framed link nor the menu guard, whatever the ROM. `n8-play` is a scripted test tool and fine as it is;
+`n8-bridge` is a performance path, so on an NTSC console it loses bytes to the DMC DMA and a console RESET mid-song can
+leave the N8 OS at ERROR:40. Move the bridge onto the native link (the N8 facet's streaming), or state the limit in its
+help. ([the menu guard's design](../docs/n8-menu-guard-reset-design.md) section 7.)
 
 ### Raw LSDj Keyboard sync mode
 

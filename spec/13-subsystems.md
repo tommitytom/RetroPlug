@@ -178,6 +178,11 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     chunks too. That is deliberate, since a re-send decided while the window has stopped moving is what a menu would
     read, so a slow recovery on a lossy NTSC link is that trade and not a new fault. The hardware check the answer rests
     on is [spec/07](07-remaining-work.md#the-n8-menus-back-channel).
+  - **Where the guard runs.** Only on the app's path to a cart: `N8Link` under `N8Host`, which the cart node streams
+    through in the plugin and the standalones. The CLI's `n8-bridge` and `n8-play`, risa's `n8-sync` and the Pico box
+    write the cart FIFO without it, raw and unguarded
+    ([spec/07](07-remaining-work.md#the-clis-n8-tools-stream-unframed-and-unguarded),
+    [box](07-remaining-work.md#the-boxs-cart-stream-has-no-framing-and-no-menu-guard)).
   - **The raw-link limit.** A console RESET during a raw stream of notes will usually leave the N8 OS at ERROR:40: on
     the lab's cart, a note byte landing about 330 to 400 ms into the booting OS's life breaks it (one note at 200, 300
     or 1000 ms after the reset is clean; notes every 60 ms over 200 to 600 ms are not, over 400 to 600 ms are), and a
