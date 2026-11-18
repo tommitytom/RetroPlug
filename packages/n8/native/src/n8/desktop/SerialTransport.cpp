@@ -120,8 +120,11 @@ std::size_t SerialTransport::read(std::uint8_t* buffer, std::size_t size, std::u
         // short write, and the N8's command parser was left mid-command, swallowing everything after it - frames that
         // never landed, then a device that answered nothing (2026-10-22, measured: a 0-1 ms read before a fifoWR, every
         // time).
-        serial::Timeout t(serial::Timeout::max(), timeoutMs, 0, kWriteTimeoutMs, 0);
-        port_->setTimeout(t);
+        if (readTimeoutMs_ != static_cast<std::int64_t>(timeoutMs)) {
+            serial::Timeout t(serial::Timeout::max(), timeoutMs, 0, kWriteTimeoutMs, 0);
+            port_->setTimeout(t);
+            readTimeoutMs_ = timeoutMs;  // only once the port took it
+        }
         return port_->read(buffer, size);
     } catch (const std::exception& e) {
         failure_ = e.what();

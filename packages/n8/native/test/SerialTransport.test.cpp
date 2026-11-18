@@ -79,6 +79,25 @@ TEST_CASE("SerialTransport: a write is not cut short by the previous read's time
     CHECK(written == big.size());
 }
 
+TEST_CASE("SerialTransport: a read keeps its own timeout when the last one's is reused or changed", "[n8][serial]") {
+    // The transport skips setTimeout for a timeout equal to the last one set (which on Windows reconfigures the port),
+    // so a repeated timeout must still be honoured and a changed one applied: the port itself cannot show how often
+    // setTimeout ran, only that every read waits as long as it asked.
+    Pty pty;
+    retroplug::SerialTransport port(pty.slave);
+    std::uint8_t               b[4];
+    const auto                 took = [&](std::uint32_t timeoutMs) {
+        const auto t0 = std::chrono::steady_clock::now();
+        CHECK(port.read(b, sizeof b, timeoutMs) == 0);
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    };
+    CHECK(took(0) < 40);
+    CHECK(took(0) < 40);
+    CHECK(took(120) >= 100);
+    CHECK(took(120) >= 100);  // the same timeout again: not applied twice, still waited for
+    CHECK(took(0) < 40);      // and back to a poll
+}
+
 TEST_CASE("SerialTransport: an open port is exclusive, a second open fails busy", "[n8][serial]") {
     if (geteuid() == 0) SKIP("running as root: TIOCEXCL does not bind a process with CAP_SYS_ADMIN");
     Pty pty;

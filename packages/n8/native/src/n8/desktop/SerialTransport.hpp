@@ -42,6 +42,10 @@ private:
     std::string                     failure_;
     int                             exclusiveFd_ = -1;  // POSIX: the descriptor holding TIOCEXCL, -1 when none
     std::unique_ptr<serial::Serial> port_;
+    // The read timeout the port is set to, -1 before the first read: setTimeout reconfigures the port on Windows (a
+    // GetCommState, SetCommState and SetCommTimeouts), which a link that polls the back-channel every turn at the same
+    // timeout must not pay each time.
+    std::int64_t                    readTimeoutMs_ = -1;
 };
 
 // A discovered serial port + whether it looks like an Everdrive N8 Pro (USB VID:PID 38df:0017).
