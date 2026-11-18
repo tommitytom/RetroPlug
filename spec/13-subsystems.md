@@ -160,16 +160,17 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   loses stays owed until a game reads connected again (a note-off to a game that never sounded that note is harmless).
   Settings > N8's status row says "At the N8 menu (not streaming)".
   - **What is left exposed.** The guard knows the cart is at its menu only once the `k` is heard, so bytes written
-    before it reach the menu: raw, up to one probe cadence (250 ms) of MIDI; framed, the frames written before the stall
-    shows (the link's 100 ms timeout), and up to a second more after a stall's probe has heard an ack (the trusted
-    second: a reset inside it streams frames and re-sends until it ends, or until the window has drained, which a lossy
-    link's game does between notes (under a dense stream the second runs on), so a reset after that is probed at the 100
-    ms timeout). At an OS that is up, only a `*` followed by a byte the menu takes as a command (a GM hi-hat,
-    `9n 2A 73`, is `*s` and starts the app) or rejects (ERROR:40, which stops the OS) does harm; a stream without
-    `0x2A` is harmless there. The OS is not harmless while it boots (the raw-link limit below). A menu that is
-    busy and answers nothing for three probes in a row (about 600 ms from the first unanswered one: a slow SD operation,
-    a ROM load from the browser) is left as if it were a game, and the raw stream and its probes go into its FIFO until
-    a probe is answered again, with the same harm. A probe before every chunk is the only full fix
+    before it reach the menu: raw, up to about a second plus one probe cadence (250 ms) of MIDI after a RESET, since the
+    booting OS answers no probe for about its first second; framed, the frames written before the stall shows (the
+    link's 100 ms timeout), and up to a second more after a stall's probe has heard an ack (the trusted second: a reset
+    inside it streams frames and re-sends until it ends, or until the window has drained, which a lossy link's game does
+    between notes (under a dense stream the second runs on), so a reset after that is probed at the 100 ms timeout). At
+    an OS that is up, only a `*` followed by a byte the menu takes as a command (a GM hi-hat, `9n 2A 73`, is `*s` and
+    starts the app) or rejects (ERROR:40, which stops the OS) does harm; a stream without `0x2A` is harmless there. The
+    OS is not harmless while it boots (the raw-link limit below). A menu that is busy and answers nothing for three
+    probes in a row (about 600 ms from the first unanswered one: a slow SD operation, a ROM load from the browser) is
+    left as if it were a game, and the raw stream and its probes go into its FIFO until a probe is answered again, with
+    the same harm. A probe before every chunk is the only full fix
     ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). The framed hold's trigger is not a lost frame as
     such: it is the OLDEST outstanding frame unacknowledged 100 ms after its first send. That covers a frame lost twice
     in a row, and equally a cart whose FIFO does not run empty for 100 ms under a dense stream and so acks only then.
@@ -181,10 +182,13 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     the lab's cart, a note byte landing about 330 to 400 ms into the booting OS's life breaks it (one note at 200, 300
     or 1000 ms after the reset is clean; notes every 60 ms over 200 to 600 ms are not, over 400 to 600 ms are), and a
     raw link cannot see the reset before the menu answers (the OS answers no probe for about its first second). The
-    guard still trips and writes nothing after, but the damage is done. MIDI clock alone is safe (`F8` every 20 ms
-    over the same window is clean), and so is an idle menu taking notes. Framed links are protected: the stall shows
-    in 100 ms and the guard trips 1.1 s after the acks stop, with the menu clean. A menu at ERROR:40 still answers
-    `*t` with `k`, and a second RESET brings back a clean menu. `retroplug-n8-hwtest bootwindow` measures it.
+    guard still trips and writes nothing after, but the damage is done. MIDI clock alone is safe (`F8` every 20 ms over
+    the same window is clean), and so is an idle menu taking notes. A framed link streaming when the RESET comes is
+    protected: the stall shows in 100 ms, nothing more is written, and the guard trips 1.1 s after the acks stop, with
+    the menu clean. That is what was measured. A RESET during a pause in the stream, or inside the trusted second, is
+    not covered by it: the next frame, or the stall's probe, can then reach the booting OS in its window (spec/07). A
+    menu at ERROR:40 still answers `*t` with `k`, and a second RESET brings back a clean menu. `retroplug-n8-hwtest
+    bootwindow` measures it.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session` and `pnpm test:native n8-sdk` (`connectN8`
   over the fake N8); for the box, `pnpm device:box`, then the rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each

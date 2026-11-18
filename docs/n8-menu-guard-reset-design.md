@@ -84,3 +84,50 @@ seed, the back-channel scan), removing the config read; 3 the job check; 4 docs 
 entry replaced by the residual line, batch 4's design pointing here). Process as batch 4: a validated plan, Flash-Next
 implementers, Opus reviews (all three code tasks touch the serial thread), an Opus final review. Acceptance: the serial
 kit, then the rig check above with a RESET press.
+
+## 7. As built
+
+The four tasks landed as planned, each tree identical to the one the plan's author validated; follow-up passes took the
+reviews' findings and then the rig's. What differs from sections 2 to 6:
+
+- **Section 2: the connect seed and the job check send the wrapped probe too**, not a plain `'*t'`: a reconnect can
+  reach a game left in running status, and the job check runs mid-stream, where a bare `2A 74` plays as a stuck note.
+  The guard leaves the menu after three unanswered probes in a row (the real menu answers in about 20 ms, 27 ms at
+  worst, timed at a power-on menu); a framed link whose stall hears neither a `'k'` nor an ack for two probes drops its
+  window and re-runs the link probe, so a ROM without the link booted after a quiet reset is not held for good. A
+  framed stall resumes on an ack because BlipToaster acknowledges unframed bytes (`parse_asm.s`), which FakeN8 now
+  models. The trusted second after a stall's ack ends once the window drains.
+- **Section 3: the job's first step reads past late answers**: a menu that answered a guard probe late left a `'k'`
+  for the job to take as its own status, which failed a dump and left an upload's file open on the card. The job also
+  books its probe on the raw stream's running status, so a running-status note after it is not misread.
+- **Found on the way and fixed:** a serial read on Windows reconfigured the port at every call, which raw links' every-
+  turn back-channel read made hot; it now does so only when its timeout changes. A config read that timed out leaves
+  no tail for the guard's scan.
+- **Section 4 is narrower than designed for raw links.** On the cart a framed link streaming when the RESET comes is
+  protected (a reset in a pause or inside the trusted second is not covered by that run, spec/07): a RESET mid-stream
+  tripped the guard 1.1 s after the acks stopped (the N8 OS answers no probe for about the first second after a reset),
+  with 0 stream bytes after the trip and a clean menu. A raw link is not: the guard tripped and wrote nothing after, yet
+  the menu stood at ERROR:40, and it does so with no guard at all. `retroplug-n8-hwtest bootwindow` timed it: note bytes
+  landing about 330 to 400 ms after a RESET (estimates, +-30 ms) send the booting OS to ERROR:40; single notes at 200,
+  300 or 1000 ms, notes over 400 to 600 ms, 100 notes at an idle menu, and MIDI clock (`F8` every 20 ms, risa's sync)
+  through the window are all harmless. A menu at ERROR:40 still answers `'k'`, and a second RESET recovers it. Nothing
+  on the host sees a reset on a raw link before the menu answers, so spec/13 states the limit and spec/07 keeps what is
+  open.
+- **Section 5's FakeN8** answers `'*t'` at ERROR:40 as the cart does, and can model the boot window and the OS's
+  silence after a reset (off by default, so no case moved).
+- **Left as it is:** a raw stream left inside a message holds off the raw probe (the plan review's optional D); the
+  connect seed's probe is not in the write log, as it runs before the serial thread.
+
+## 8. Execution
+
+- Design 6a4b3fb72; plan c5cff9d9c, written and validated on the tree by an Opus agent (a DeepSeek run was stopped
+  when the user moved the work to Claude models), replayed from its text to the identical tree; an Opus review was
+  ready with fixes (five Important: the 3-miss leave, the unframed ack, the silent stall, the exposure text, the job
+  probe's running status), the revision's re-check ready with three one-line fixes the controller applied.
+- Tasks, each by a Sonnet implementer and checked byte-identical to the validated diff by a script: 6014cfe1f,
+  38209e536, 7134d6d11, 0996992da. Opus code reviews: tasks 1 and 2 approved, task 3 asked for changes (the late `'k'`).
+- Follow-ups, Sonnet, each Opus-reviewed: A 1dea305ad..49545b05a; B b4c7f673c, 63c5210ac (the final review's five
+  fixes); c6e399fcb; C d995ed575, d77e61b0f, 70d85254b (the rig's findings). The Opus final review was ready.
+- Acceptance: the serial kit at 49545b05a, 45 of 45 legs; the parallel kit at 63c5210ac, 47 legs exit 0 (BlipToaster
+  57/57, NESVJ 22/22, SDL PipeWire 27/0/0) and `sdl:controller` on its own; on the cart, with a person pressing RESET:
+  `menuguard` framed and raw, `bootwindow` at seven settings, and the second-RESET recovery. Nothing is pushed.

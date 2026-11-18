@@ -112,12 +112,14 @@ second costs a running BlipToaster nothing (`retroplug-n8-hwtest timing busy --r
 
 What the link writes before the menu's `k` is heard reaches the menu
 ([spec/13](13-subsystems.md#the-everdrive-n8-bridge) has the sizes and the raw-link limit measured on the cart: a RESET
-during a raw note stream usually leaves the OS at ERROR:40, framed links are protected). Still open: the false
-leave's timing, how long the menu goes without answering
-while it loads a directory or a ROM from its browser (the longest gap between a probe and its `k`) against the
-three-miss leave's about 600 ms, and how many stream bytes reach it after a leave before the next probe is answered;
-and whether raw streams to other ROMs than BlipToaster behave as BlipToaster's does (the 330 to 400 ms window is the
-OS's, so they should, but only BlipToaster was run).
+during a raw note stream usually leaves the OS at ERROR:40, a framed link streaming when the RESET comes is protected).
+Still open: the false leave's timing, how long the menu goes without answering while it loads a directory or a ROM from
+its browser (the longest gap between a probe and its `k`) against the three-miss leave's about 600 ms, and how many
+stream bytes reach it after a leave before the next probe is answered; and whether raw streams to other ROMs than
+BlipToaster behave as BlipToaster's does (the 330 to 400 ms window is the OS's, so they should, but only BlipToaster was
+run); and a RESET during a pause in a framed stream, or inside the trusted second, where the next frame or the stall's
+probe can reach the booting OS in its window (by the code; not yet run on the cart: `bootwindow` with the stream stopped
+before the press).
 
 ### The Launchpad real-device checklist
 
