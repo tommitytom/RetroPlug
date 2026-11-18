@@ -20,6 +20,7 @@
 //   retroplug-n8-hwtest write    <local-src> <sd-path> [port]  # CMD_F_FWR: write a local file to the SD card
 //   retroplug-n8-hwtest fiford   <count> [timeout-ms] [port]   # read the cart's USB back-channel (CMD_USB_WR)
 //   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
+//   retroplug-n8-hwtest menuguard <seconds> [port]  # the menu guard, streaming while a person presses RESET
 //   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
 //   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw]   # latency / jitter / load on the real console
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
@@ -157,8 +158,8 @@ int main(int argc, char** argv) {
                          "usage: %s dump <rom-name> <dest.srm> [port]\n"
                          "       %s load <rom.nes> [port]\n"
                          "       %s restore <rom-name> <save.srm> [port]\n"
-                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|linkdbg|timing|info|"
-                         "fstest> <path|addr|count> [len|byte|dest] [port]\n",
+                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|menuguard|linkdbg|"
+                         "timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
                          argv[0], argv[0], argv[0], argv[0]);
             return 2;
         }
@@ -358,6 +359,90 @@ int main(int argc, char** argv) {
             return 1;
         }
         return outstanding == 0 ? 0 : 1;
+    }
+
+    // The menu guard on real hardware (spec/07 "The N8 menu's residual window"): N8Host's own link, so its MenuCheck is
+    // the production one, streaming a short 2A03 note every 60 ms for <seconds> while a person presses the console's
+    // RESET button (it keeps USB and the link up and drops the cart to its menu: the case a power-cycle cannot make).
+    // Logs every change of the link's state with its time, then what was written after the guard tripped (expected: 0
+    // bytes) and how long the trip took after the cart stopped acknowledging. Boot a game that answers the probe first.
+    if (op == "menuguard") {
+        const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
+        const std::string gport   = argc > 3 ? argv[3] : findN8Port();
+        if (seconds <= 0 || gport.empty()) {
+            std::fprintf(stderr, "usage: %s menuguard <seconds> [port] (no Everdrive N8 found?)\n", argv[0]);
+            return 2;
+        }
+        N8Host host(
+            [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); },
+            [] { return std::vector<N8PortDto>{}; }, "/tmp");
+        host.setPort(gport);
+        host.connect(true);
+        N8Link& link = host.link();
+        if (!link.isConnected()) {
+            std::fprintf(stderr, "menuguard: the link did not come up on %s: %s\n", gport.c_str(),
+                         link.lastError().c_str());
+            return 1;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));   // the connect seed and the probe
+        using Clock = std::chrono::steady_clock;
+        const auto t0  = Clock::now();
+        const auto ms  = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - t0).count(); };
+        const auto say = [&](const char* what) {
+            std::printf("%9.1f ms  %-26s connected=%d atMenu=%d reliable=%d bytes=%llu dropped=%llu resends=%llu "
+                        "outstanding=%llu\n",
+                        ms(), what, link.isConnected(), link.atMenu(), link.reliable(),
+                        static_cast<unsigned long long>(link.bytesForwarded()),
+                        static_cast<unsigned long long>(link.pushesDropped()),
+                        static_cast<unsigned long long>(link.linkResends()),
+                        static_cast<unsigned long long>(link.linkOutstanding()));
+            std::fflush(stdout);
+        };
+        say(link.atMenu() ? "start: AT THE MENU" : "start: streaming");
+        const std::uint8_t on[]  = {0x90, 69, 100};
+        const std::uint8_t off[] = {0x80, 69, 0};
+        bool          wasMenu = link.atMenu(), wasUp = link.isConnected(), stalled = false;
+        double        stallMs = -1, tripMs = -1, lastWriteMs = 0;
+        std::uint64_t lastBytes = link.bytesForwarded(), bytesAtTrip = 0;
+        int           step = 0;
+        // Up to <seconds>, or 5 s past a trip: enough to see that nothing more is written once the guard has the menu.
+        while (ms() < seconds * 1000.0 && (tripMs < 0 || ms() < tripMs + 5000.0)) {
+            if (step % 6 == 0) link.push(0, on, sizeof on, 48000.0);    // a 30 ms A4 every 60 ms
+            if (step % 6 == 3) link.push(0, off, sizeof off, 48000.0);
+            ++step;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            const std::uint64_t bytes = link.bytesForwarded();
+            if (bytes != lastBytes) { lastBytes = bytes; lastWriteMs = ms(); }
+            // The cart stopped acknowledging: frames outstanding past the link's 100 ms timeout (the reset, on a
+            // framed link). The first sight of it is when the console went away, near enough.
+            if (!stalled && link.reliable() && link.linkOutstanding() > 0 && link.linkResends() > 0) {
+                stalled = true;
+                stallMs = ms();
+                say("acks stopped (reset?)");
+            }
+            if (link.atMenu() != wasMenu) {
+                wasMenu = link.atMenu();
+                if (wasMenu && tripMs < 0) { tripMs = ms(); bytesAtTrip = bytes; }
+                say(wasMenu ? "GUARD TRIPPED: at the menu" : "left the menu");
+            }
+            if (link.isConnected() != wasUp) {
+                wasUp = link.isConnected();
+                say(wasUp ? "link up" : "link down");
+            }
+            if (step % 500 == 0) say("tick");
+        }
+        link.push(0, off, sizeof off, 48000.0);   // never leave the last note held behind the disconnect
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        say("end");
+        const std::uint64_t after = tripMs >= 0 ? link.bytesForwarded() - bytesAtTrip : 0;
+        if (tripMs < 0) std::printf("menuguard: the guard never tripped (no reset seen)\n");
+        else
+            std::printf("menuguard: tripped at %.1f ms (%.1f ms after the acks stopped); last write at %.1f ms; %llu "
+                        "byte(s) written after the trip\n",
+                        tripMs, stallMs >= 0 ? tripMs - stallMs : -1.0, lastWriteMs,
+                        static_cast<unsigned long long>(after));
+        link.disconnect();
+        return tripMs >= 0 && after == 0 ? 0 : 1;
     }
 
     if (op == "fiford") {

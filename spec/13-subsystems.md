@@ -125,20 +125,21 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   sniffer or FIFO reads.
 - **A cart at its menu is not streamed to.** The menu takes commands over the same FIFO a game reads MIDI from, so a
   data pair inside a message (`0x2A 0x73` is `*s`: start an app) can reach it. `N8Link` keeps the cart's at-menu state,
-  read from the FPGA config block's map_idx (255 at the menu; a system-region read that touches neither the cart's bus
-  nor a game's FIFO) - seeded at connect, and re-read about every 250 ms on a turn quiet for a read, with a 100 ms
-  timeout, and, on the first quiet turn after it stops moving (or when the hold's second trips), at once (the oldest
-  frame unacknowledged past the link's own 100 ms timeout, which is the console reset), whose new frames and re-sends
-  wait for that read and at most a second.
-  Every guard read flushes the input first, so a chattering cart's bytes cannot garble the block; a job's menu probe
-  reads unflushed, so it may trip the guard but never clear it. While it says menu, `push` answers false and counts, the
-  ring, the reliable window and any pending note release are discarded, and nothing is written; leaving the menu re-runs
-  the link probe (which flushes the input before its sync, as does the connect-time one: a menu read that timed out
-  leaves the tail of its reply in the input, and a config block's bytes could otherwise be read as the link's ack, which
-  would frame the stream for a ROM that reads no frames). Jobs still run there (the SD card is reachable only at the
-  menu), and a cart node's `connected` reads 0: what it pushes there is refused, and a note-off it loses stays owed
-  until a game reads connected again (a note-off to a game that never sounded that note is harmless). Settings >
-  N8's status row says "At the N8 menu (not streaming)".
+  read from the FPGA config block's map_idx (255 at a power-on menu only: after a console reset the block keeps the
+  game's mapper, so a reset menu reads as a game and is streamed to, see
+  [spec/07](07-remaining-work.md#the-menu-guard-misses-a-console-reset); a system-region read that touches neither the
+  cart's bus nor a game's FIFO) - seeded at connect, and re-read about every 250 ms on a turn quiet for a read, with a
+  100 ms timeout, and, on the first quiet turn after it stops moving (or when the hold's second trips), at once (the
+  oldest frame unacknowledged past the link's own 100 ms timeout, which is the console reset), whose new frames and
+  re-sends wait for that read and at most a second. Every guard read flushes the input first, so a chattering cart's
+  bytes cannot garble the block; a job's menu probe reads unflushed, so it may trip the guard but never clear it. While
+  it says menu, `push` answers false and counts, the ring, the reliable window and any pending note release are
+  discarded, and nothing is written; leaving the menu re-runs the link probe (which flushes the input before its sync,
+  as does the connect-time one: a menu read that timed out leaves the tail of its reply in the input, and a config
+  block's bytes could otherwise be read as the link's ack, which would frame the stream for a ROM that reads no frames).
+  Jobs still run there (the SD card is reachable only at the menu), and a cart node's `connected` reads 0: what it
+  pushes there is refused, and a note-off it loses stays owed until a game reads connected again (a note-off to a game
+  that never sounded that note is harmless). Settings > N8's status row says "At the N8 menu (not streaming)".
   - **The residual window, in its bounds.** The guard knows the cart's state only when a read lands, so bytes that go
     out before it are not held back. The bounds in full: raw, up to 250 ms of streamed MIDI, one read cadence; framed,
     up to 100 ms of frames and re-sends, the link's own timeout, which is when the guard's read becomes due; and up to a
