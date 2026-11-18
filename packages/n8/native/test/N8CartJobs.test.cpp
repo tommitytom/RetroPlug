@@ -2069,3 +2069,69 @@ TEST_CASE("a submission's menu probe on a raw stream has the game's running stat
     CHECK(lastLogIndex(rig.dev, "fifo:F0 2A 74 F7") < lastLogIndex(rig.dev, "fifo:90"));
     CHECK(lastLogIndex(rig.dev, "fifo:90") < lastLogIndex(rig.dev, "fifo:3E 00"));
 }
+
+TEST_CASE("a menu busy past the probe's window answers its probes together: the job reads past the extra 'k' before "
+          "its first command", "[n8][menu-guard]") {
+    // The menu is busy for 150 ms from the guard's probe and then answers every probe that came meanwhile, a few
+    // milliseconds apart: the 'k' the guard's probe is owed comes in the submission's window and the submission's own
+    // in the job's, so the job's own 'k' is still to come when its first command reads its reply. The job reads past
+    // both answers before it sends a command. The stretch is armed for each guard probe in turn until a job is taken
+    // (a submission whose probe the menu misses is refused as a game).
+    Rig rig;
+    rig.connectGame();
+    rig.dev.resetToMenu();
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+    const auto submitTaken = [&](const JobRequest& r, Job& job) {
+        for (int i = 0; i < 10; ++i) {
+            int starts = 0;
+            {
+                std::lock_guard<std::mutex> l(rig.dev.mu);
+                starts                    = rig.dev.menuBusyStarts;
+                rig.dev.menuBusyNextMs = 150;
+            }
+            REQUIRE(waitUntil([&] {
+                std::lock_guard<std::mutex> l(rig.dev.mu);
+                return rig.dev.menuBusyStarts > starts;  // the guard's next probe: the stretch began with it
+            }));
+            if (rig.submit(r, job)) return true;
+        }
+        return false;
+    };
+    SECTION("a dump reads its listing") {
+        rig.dev.fileReadDelayMs = 30;  // the job is still reading when the late answer comes
+        rig.dev.files[kGameBattery] = saveOf(1024, 21);
+        for (int round = 0; round < 3; ++round) {
+            Job job;
+            REQUIRE(submitTaken(battery("dump"), job));
+            REQUIRE(waitUntil([&] { return job.finished(); }, 8000));
+            INFO("round " << round << ": " << job.error);
+            CHECK(job.state.load() == Job::Done);
+            CHECK(job.result == saveOf(1024, 21));
+        }
+    }
+    SECTION("an upload leaves no empty file behind, and boots") {
+        rig.dev.fileDelayMs = 30;
+        Job job;
+        REQUIRE(submitTaken(uploadOf(inesImage(1)), job));
+        REQUIRE(waitUntil([&] { return job.finished(); }, 8000));
+        INFO(job.error);
+        CHECK(job.state.load() == Job::Done);
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        CHECK(rig.dev.booted == "usb-games/game.nes");
+    }
+}
+
+TEST_CASE("an upload whose open's status reads wrong still deletes the file the open made", "[n8][cart-jobs]") {
+    // The open creates the file before it answers, so a status that comes back garbled (or bad) leaves a file the
+    // browser would list as a partial image: the cleanup does not wait for an open that read well.
+    Rig rig;
+    rig.connect();
+    rig.dev.failNextOpen = 0x07;  // FR_WRITE_PROTECTED
+    Job job;
+    REQUIRE(rig.submit(uploadOf(inesImage(1)), job));
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Failed);
+    std::lock_guard<std::mutex> l(rig.dev.mu);
+    CHECK(rig.dev.files.count("usb-games/game.nes") == 0);
+    CHECK(rig.dev.booted.empty());
+}

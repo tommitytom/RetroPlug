@@ -74,6 +74,7 @@ struct FakeN8 {
     bool                     failFlushAtGame = false; // every flush after the cart booted fails (an upload's last)
     bool                     failNextRead = false;  // the next SD file read block answers an error
     bool                     failNextList = false;  // the next directory load answers a disk error
+    std::uint8_t             failNextOpen = 0;      // the next file open makes its file, then answers this FatFs status
     int                      filesOpen = 0;         // files opened on the card and not yet closed
     std::uint16_t            mapIndex = 69;         // what '*n' answers
     std::string              booted;                // the path '*s' started
@@ -97,7 +98,13 @@ struct FakeN8 {
     std::uint64_t            freeBytes = 0;         // what CMD_F_AVB answers
     Bytes                    vram    = Bytes(2048, 0), palette = Bytes(16, 0);  // what '*v' answers
     std::uint8_t             testReply = 'k';       // what '*t' answers
-    int                      menuAnswerDelayMs = 0; // how long the menu takes to write that answer (0: at once)
+    int                      menuAnswerDelayMs = 0; // how long the menu takes to write that answer (0: at once); a
+                                                     // write of the host's does not hurry it
+    // A busy menu: the next '*t' it reads starts a stretch of `menuBusyNextMs` in which it reads nothing, and answers
+    // every '*t' that came during it as it comes back to its loop, `menuBusyGapMs` apart. 0: no stretch pending.
+    int                      menuBusyNextMs = 0;
+    int                      menuBusyGapMs  = 20;
+    int                      menuBusyStarts = 0;    // stretches begun
     std::uint8_t             installStatus = 0;     // what '*n' answers first (0x44: the menu is out of memory)
     int                      resets = 0;            // '*r's the menu took
     int                      consoleResets = 0;     // RESET presses (resetToMenu): the cart's parsers start afresh
@@ -154,10 +161,24 @@ struct FakeN8Port : PortTransport {
         std::lock_guard<std::mutex> l(dev_.mu);
         return failure_.empty() ? n : 0;
     }
-    std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t) override {
-        std::lock_guard<std::mutex> l(dev_.mu);
+    std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t timeoutMs) override {
+        std::unique_lock<std::mutex> l(dev_.mu);
         failure_.clear();
         releaseAcks(true);  // whatever the game has had time to write since the last read
+        // A read that waits (a timeout) hears what falls due inside it, as a port does; one that finds nothing coming
+        // answers short at once, which the fake has always done.
+        if (out_.empty() && timeoutMs > 0 && !acks_.empty()) {
+            const auto limit = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+            const auto next  = std::min_element(acks_.begin(), acks_.end(),
+                                               [](const PendingAck& a, const PendingAck& b) { return a.due < b.due; });
+            if (next->due <= limit) {
+                const auto due = next->due;
+                l.unlock();
+                std::this_thread::sleep_until(due);
+                l.lock();
+                releaseAcks(true);
+            }
+        }
         // A menu that never goes quiet: one byte whenever the cart owes the host no reply, which the link reads as it
         // having said something (its quiet rule stamps the last heard on ANY byte). It is handed back in this read, so
         // a reply the cart owes is never garbled by one - unless chatterGarbles, which leaves it in the input for the
@@ -220,25 +241,28 @@ private:
     struct PendingAck {
         std::chrono::steady_clock::time_point due;
         std::deque<std::uint8_t>              bytes;
+        bool                                  whenDue = false;  // a menu's answer: only once due, whatever is written
     };
     void replyAck(std::initializer_list<std::uint8_t> bytes) { replyAfter(dev_.linkAckDelayMs, bytes); }
-    // A reply the cart writes `delayMs` from now (0: at once), queued with what the game owes, as an ack is.
-    void replyAfter(int delayMs, std::initializer_list<std::uint8_t> bytes) {
+    // A reply the cart writes `delayMs` from now (0: at once), queued with what the game owes, as an ack is. `whenDue`
+    // keeps a write of the host's from handing it over early (releaseAcks), as the menu's answer to '*t' is.
+    void replyAfter(int delayMs, std::initializer_list<std::uint8_t> bytes, bool whenDue = false) {
         if (delayMs <= 0) {
             reply(bytes);
             return;
         }
         acks_.push_back({std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs),
-                         std::deque<std::uint8_t>(bytes)});
+                         std::deque<std::uint8_t>(bytes), whenDue});
     }
     // Hand the host the acks the game has written: only those now due, or everything it still owes - what a command
-    // arriving first sees, since the cart answers it behind what its queue holds. Any write releases them all, a FIFO
-    // write included, which a real cart does not do (its ack waits for the game, not for the host): harmless where an
-    // owed ack is all a case is after, but a case that measures a round trip across a write would measure a short one.
+    // arriving first sees, since the cart answers it behind what its queue holds. Any write releases the game's acks, a
+    // FIFO write included, which a real cart does not do (its ack waits for the game, not for the host): harmless where
+    // an owed ack is all a case is after, but a case that measures a round trip across a write would measure a short
+    // one. A menu's answer (`whenDue`) is the exception: how long the menu takes is what menuAnswerDelayMs sets.
     void releaseAcks(bool dueOnly) {
         const auto now = std::chrono::steady_clock::now();
         for (auto it = acks_.begin(); it != acks_.end();) {
-            if (!dueOnly || now >= it->due) {
+            if (now >= it->due || (!dueOnly && !it->whenDue)) {
                 out_.insert(out_.end(), it->bytes.begin(), it->bytes.end());
                 it = acks_.erase(it);
             } else {
@@ -384,6 +408,10 @@ private:
                 readPos_ = 0;
                 if (c[4] & Edio::FA_WRITE) dev_.files[filePath_].clear();
                 else if (!dev_.files.count(filePath_)) status_ = 0x04;  // FR_NO_FILE
+                if (dev_.failNextOpen != 0 && status_ == 0) {
+                    status_            = dev_.failNextOpen;
+                    dev_.failNextOpen = 0;
+                }
                 if (status_ == 0) ++dev_.filesOpen;
             } else if (cmd == Edio::CMD_F_FCLOSE) {
                 if (dev_.filesOpen > 0) --dev_.filesOpen;
@@ -431,7 +459,23 @@ private:
             menu_.push_back(b);
             if (menu_[0] != '*') { menu_.clear(); return; }      // not a command: the menu skips it
             if (menu_.size() < 2) return;
-            if (menu_[1] == 't') { replyAfter(dev_.menuAnswerDelayMs, {dev_.testReply}); menu_.clear(); return; }
+            if (menu_[1] == 't') {
+                const auto now = std::chrono::steady_clock::now();
+                if (dev_.menuBusyNextMs > 0 && now >= busyUntil_) {
+                    busyUntil_ = now + std::chrono::milliseconds(dev_.menuBusyNextMs);
+                    busyAnswers_ = 0;
+                    dev_.menuBusyNextMs = 0;
+                    ++dev_.menuBusyStarts;
+                }
+                int delayMs = dev_.menuAnswerDelayMs;
+                if (now < busyUntil_) {
+                    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(busyUntil_ - now);
+                    delayMs         = static_cast<int>(left.count()) + dev_.menuBusyGapMs * busyAnswers_++;
+                }
+                replyAfter(delayMs, {dev_.testReply}, true);
+                menu_.clear();
+                return;
+            }
             if (menu_[1] == 'v') {  // the screen: 2048 VRAM bytes, then 16 palette bytes
                 out_.insert(out_.end(), dev_.vram.begin(), dev_.vram.end());
                 out_.insert(out_.end(), dev_.palette.begin(), dev_.palette.end());
@@ -540,6 +584,8 @@ private:
     std::deque<PendingAck>   acks_;  // what the game owes the link, in the order it will write it
     std::chrono::steady_clock::time_point chatterDue_{};  // the next unsolicited back-channel byte
     std::string              menuPath_;
+    std::chrono::steady_clock::time_point busyUntil_{};  // the end of the menu's busy stretch (menuBusyNextMs)
+    int                      busyAnswers_ = 0;   // the '*t's that stretch has answered
     int                      resetsSeen_ = 0;    // the dev's consoleResets this port's parsers have caught up with
     bool                     linkOn_ = false;    // a sync has turned the game's link on
     bool                     ackOwed_ = false;   // an unframed byte arrived with the link on: an ack is due

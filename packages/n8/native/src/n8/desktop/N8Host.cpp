@@ -99,6 +99,22 @@ int askMenu(Edio& edio) {
     }
 }
 
+// What a menu that answered a probe may still owe it: a menu slower than kMenuAnswerMs answers the guard's earlier
+// probe inside this one's window, and the answer to this one comes behind it, up to kMenuAnswerMs after its window
+// closed. Read and thrown away until `deadline` (a job's probe plus two windows), so a job's first command reads its
+// own reply and not a stray 'k'. false when the port failed.
+bool settleMenu(Edio& edio, std::chrono::steady_clock::time_point deadline) {
+    for (;;) {
+        const auto left =
+            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (left <= 0) return true;
+        std::uint8_t         b = 0;
+        const rp::n8::Status s = edio.rx8(b, static_cast<std::uint32_t>(left));
+        if (s.code == rp::n8::Code::Timeout) return true;
+        if (!s.ok()) return false;
+    }
+}
+
 // Why a battery job refuses a running game: the battery file lives on the SD card, which only the menu's file API
 // reaches (a running game has no menu), and the cart's own battery is never touched over USB (on the real cart one
 // read of it wedged a running BlipToaster, and one at the menu left the menu deaf to its commands).
@@ -220,8 +236,8 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
         // covers a cart that keeps acknowledging.
         const unsigned probe = menuProbeGeneration_.load(std::memory_order_acquire);
         if (backChannelQuiet && probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
-            const int menu = askMenu(edio);
             link_.noteMenuProbe();  // on a raw stream's wire too, where it ends the game's running status
+            const int menu = askMenu(edio);
             menuProbeAnswer_.store(menu, std::memory_order_relaxed);
             // The same answer tells the guard the cart is at its menu, and it does so before the submission that asked
             // for it can hand over a job: a pause's drain must not write the ring into a menu the probe has just seen.
@@ -465,9 +481,11 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
     // The cart's state, asked of its menu (askMenu): the job's own port, and the one question a menu the console's
     // reset reached answers as a menu.
     const auto atMenu = [this](Edio& edio) {
-        const int menu = askMenu(edio);
-        link_.noteMenuProbe();  // the stream resumes after the job, on the wire this probe went onto
-        if (menu < 0) throw std::runtime_error("the cart's port failed the menu's probe");
+        link_.noteMenuProbe();  // the stream resumes after the job, on the wire this probe goes onto
+        const auto probed = std::chrono::steady_clock::now();
+        const int  menu   = askMenu(edio);
+        if (menu < 0 || (menu == 1 && !settleMenu(edio, probed + 2 * std::chrono::milliseconds(kMenuAnswerMs))))
+            throw std::runtime_error("the cart's port failed the menu's probe");
         return menu == 1;
     };
     using AfterJob = N8Link::AfterJob;
@@ -589,8 +607,9 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                     throw std::runtime_error(
                         "N8 is not at its menu (no '*t' answer) - reset the cart to the file browser and retry");
                 check(tested, *edio);
+                created = true;  // an open whose status reads wrong may still have made the file
                 check(edio->fileOpen(bootPath, Edio::FA_REPLACE), *edio);
-                created = opened = true;
+                opened = true;
                 // Each chunk its own write command (its 1 KB blocks acknowledged, then its status), so the job may stop
                 // between two.
                 constexpr std::size_t CHUNK = 8192;
