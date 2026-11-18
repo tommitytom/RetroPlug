@@ -2169,7 +2169,10 @@ TEST_CASE("a menu probe that is on its way at the submission's deadline is waite
     using Clock = std::chrono::steady_clock;
     Rig rig;
     rig.connectGame();  // a game on a raw link: the probe waits for the stream to be between two messages
-    rig.dev.readsWait = true;  // the probe's 100 ms listen takes its 100 ms
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.readsWait = true;  // the probe's 100 ms listen takes its 100 ms
+    }
     rig.push({0xF0, 0x7E, 0x7F});  // a SysEx head whose tail comes near the end of the submission's second
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
     std::thread tail([&] {
