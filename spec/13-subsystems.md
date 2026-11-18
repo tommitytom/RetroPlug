@@ -190,10 +190,10 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     guard still trips and writes nothing after, but the damage is done. MIDI clock alone is safe (`F8` every 20 ms over
     the same window is clean), and so is an idle menu taking notes. A framed link streaming when the RESET comes is
     protected: the stall shows in 100 ms, nothing more is written, and the guard trips 1.1 s after the acks stop, with
-    the menu clean. That is what was measured. A RESET during a pause in the stream, or inside the trusted second, is
-    not covered by it: the next frame, or the stall's probe, can then reach the booting OS in its window (spec/07). A
-    menu at ERROR:40 still answers `*t` with `k`, and a second RESET brings back a clean menu. `retroplug-n8-hwtest
-    bootwindow` measures it.
+    the menu clean, on the PAL NES and on an NTSC Famicom alike. That is what was measured. A RESET during a pause in
+    the stream, or inside the trusted second, is not covered by it: the next frame, or the stall's probe, can then reach
+    the booting OS in its window (spec/07). A menu at ERROR:40 still answers `*t` with `k`, and a second RESET brings
+    back a clean menu. `retroplug-n8-hwtest bootwindow` measures it.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session` and `pnpm test:native n8-sdk` (`connectN8`
   over the fake N8); for the box, `pnpm device:box`, then the rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each

@@ -106,13 +106,14 @@ reviews' findings and then the rig's. What differs from sections 2 to 6:
 - **Section 4 is narrower than designed for raw links.** On the cart a framed link streaming when the RESET comes is
   protected (a reset in a pause or inside the trusted second is not covered by that run, spec/07): a RESET mid-stream
   tripped the guard 1.1 s after the acks stopped (the N8 OS answers no probe for about the first second after a reset),
-  with 0 stream bytes after the trip and a clean menu. A raw link is not: the guard tripped and wrote nothing after, yet
-  the menu stood at ERROR:40, and it does so with no guard at all. `retroplug-n8-hwtest bootwindow` timed it: note bytes
-  landing about 330 to 400 ms after a RESET (estimates, +-30 ms) send the booting OS to ERROR:40; single notes at 200,
-  300 or 1000 ms, notes over 400 to 600 ms, 100 notes at an idle menu, and MIDI clock (`F8` every 20 ms, risa's sync)
-  through the window are all harmless. A menu at ERROR:40 still answers `'k'`, and a second RESET recovers it. Nothing
-  on the host sees a reset on a raw link before the menu answers, so spec/13 states the limit and spec/07 keeps what is
-  open.
+  with 0 stream bytes after the trip and a clean menu. An NTSC Famicom with the Famicom N8 Pro gave the same
+  (2026-11-19: tripped 1107 ms after the acks stopped, 0 bytes after, clean menu, map_idx still the game's). A raw link
+  is not: the guard tripped and wrote nothing after, yet the menu stood at ERROR:40, and it does so with no guard at
+  all. `retroplug-n8-hwtest bootwindow` timed it: note bytes landing about 330 to 400 ms after a RESET (estimates, +-30
+  ms) send the booting OS to ERROR:40; single notes at 200, 300 or 1000 ms, notes over 400 to 600 ms, 100 notes at an
+  idle menu, and MIDI clock (`F8` every 20 ms, risa's sync) through the window are all harmless. A menu at ERROR:40
+  still answers `'k'`, and a second RESET recovers it. Nothing on the host sees a reset on a raw link before the menu
+  answers, so spec/13 states the limit and spec/07 keeps what is open.
 - **Section 5's FakeN8** answers `'*t'` at ERROR:40 as the cart does, and can model the boot window and the OS's
   silence after a reset (off by default, so no case moved).
 - **Left as it is:** a raw stream left inside a message holds off the raw probe (the plan review's optional D); the
