@@ -48,11 +48,11 @@ public:
     // pause's ack bound (250 ms) since the oldest outstanding frame first went out: a cart at its menu acknowledges
     // nothing, and would otherwise never give a read a turn. On a raw link a turn is quiet only between two messages:
     // a read may come with a probe of its own (N8Host's menu probe writes a SysEx), which inside a message would cut
-    // it short. What it does not cover is an ack for no outstanding frame:
-    // on a lossy link the ROM acknowledges each copy of a frame the host sent twice, and the second copy's ack can come
-    // after the first has emptied the window. A read that meets one misreads a few bytes (an Auto that sees no
-    // expansion mapper writes nothing; a probe that sees no menu refuses the job) and leaves the reply's last bytes in
-    // the input, which the link parses as an ack only if they spell one. A throw is caught and ignored, so a config
+    // it short. What it does not cover is an ack for no outstanding frame: on a lossy link the ROM acknowledges each
+    // copy of a frame the host sent twice, and the second copy's ack can come after the first has emptied the window. A
+    // read that meets one misreads a few bytes (an Auto that sees no expansion mapper writes nothing; a probe that sees
+    // no menu refuses the job) and leaves the reply's last bytes in the input, which the link parses as an ack only if
+    // they spell one. A throw is caught and ignored, so a config
     // write never takes the MIDI link down; the callback then waits a second, not the next 200 us turn, so a port that
     // keeps refusing a write cannot take the link's turns from the MIDI stream (a caller that cannot wait that out, a
     // submission's probe, asks for a quiet turn of its own through wakeControl).
@@ -140,7 +140,8 @@ public:
     // [serial thread] A probe (kMenuProbe) written outside the link's own turns - N8Host's for a submission, or a job's
     // first step - is on the cart's wire all the same, and a game's parser loses running status at its F0: on a raw
     // link the tracker books it as the SysEx it is, so the stream's next running-status chunk gets its status written
-    // back (see writeChunk).
+    // back (see writeChunk). Called as the probe goes out, and it logs the probe as the guard's own is (setWriteLog,
+    // RP_N8LINK_TRACE).
     void          noteMenuProbe();
     void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
     // [any] Run OnControl at the next quiet turn, whatever the wait a failed config write armed: the wake stands

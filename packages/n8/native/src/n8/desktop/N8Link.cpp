@@ -455,7 +455,12 @@ void N8Link::writeMenuProbe(std::int64_t now) {
 }
 
 void N8Link::noteMenuProbe() {
-    if (!rel_) noteWireBytes(kMenuProbe, sizeof kMenuProbe, nowNs(), false);
+    const std::int64_t now = nowNs();
+    if (!rel_) noteWireBytes(kMenuProbe, sizeof kMenuProbe, now, false);
+    if (traceOn())
+        std::fprintf(stderr, "[n8link] %.3f tx F0 2A 74 F7 (a menu probe from a submission or a job)\n",
+                     static_cast<double>(now) / 1e6);
+    if (writeLog_) writeLog_(kMenuProbe, sizeof kMenuProbe, now, false);
 }
 
 bool N8Link::menuProbeAwaited(std::int64_t now) const {

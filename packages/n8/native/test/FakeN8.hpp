@@ -105,6 +105,7 @@ struct FakeN8 {
     int                      menuBusyNextMs = 0;
     int                      menuBusyGapMs  = 20;
     int                      menuBusyStarts = 0;    // stretches begun
+    bool                     readsWait = false;     // a read with nothing coming waits out its timeout, as a port does
     std::uint8_t             installStatus = 0;     // what '*n' answers first (0x44: the menu is out of memory)
     int                      resets = 0;            // '*r's the menu took
     int                      consoleResets = 0;     // RESET presses (resetToMenu): the cart's parsers start afresh
@@ -115,6 +116,7 @@ struct FakeN8 {
         std::lock_guard<std::mutex> l(mu);
         menu      = true;
         resetMenu = true;
+        error40   = false;  // the OS starts afresh
         ++consoleResets;
     }
 
@@ -122,6 +124,18 @@ struct FakeN8 {
         std::lock_guard<std::mutex> l(mu);
         return static_cast<std::size_t>(
             std::count_if(log.begin(), log.end(), [&](const std::string& e) { return e.rfind(prefix, 0) == 0; }));
+    }
+
+    // The log entries that are exactly `entry` (the menu probe's "fifo:F0 2A 74 F7", say, which a write that merely
+    // starts with it is not), and the entries that hold `part` anywhere.
+    std::size_t countExact(const std::string& entry) {
+        std::lock_guard<std::mutex> l(mu);
+        return static_cast<std::size_t>(std::count(log.begin(), log.end(), entry));
+    }
+    std::size_t countContaining(const std::string& part) {
+        std::lock_guard<std::mutex> l(mu);
+        return static_cast<std::size_t>(std::count_if(
+            log.begin(), log.end(), [&](const std::string& e) { return e.find(part) != std::string::npos; }));
     }
 };
 
@@ -164,6 +178,7 @@ struct FakeN8Port : PortTransport {
     std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t timeoutMs) override {
         std::unique_lock<std::mutex> l(dev_.mu);
         failure_.clear();
+        catchUpReset();
         releaseAcks(true);  // whatever the game has had time to write since the last read
         // A read that waits (a timeout) hears what falls due inside it, as a port does; one that finds nothing coming
         // answers short at once, which the fake has always done.
@@ -178,6 +193,11 @@ struct FakeN8Port : PortTransport {
                 l.lock();
                 releaseAcks(true);
             }
+        }
+        if (out_.empty() && timeoutMs > 0 && dev_.readsWait && acks_.empty()) {
+            l.unlock();
+            std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+            l.lock();
         }
         // A menu that never goes quiet: one byte whenever the cart owes the host no reply, which the link reads as it
         // having said something (its quiet rule stamps the last heard on ANY byte). It is handed back in this read, so
@@ -271,8 +291,23 @@ private:
         }
     }
 
+    // A RESET since this port last looked: the menu and the next game read from a clean slate, and the game that is
+    // gone writes nothing more, so what it still owed the link (its acks) is dropped. Caught up at the top of every
+    // write and read, ahead of anything the port says, so no ack of the old game is handed over after the reset.
+    void catchUpReset() {
+        if (resetsSeen_ == dev_.consoleResets) return;
+        resetsSeen_ = dev_.consoleResets;
+        menu_.clear();
+        msg_.clear();
+        link_    = Idle;
+        linkOn_  = false;
+        ackOwed_ = false;
+        acks_.clear();
+    }
+
     // Consume every complete command in in_; the delay a battery read asks for, applied outside the lock.
     int parse() {
+        catchUpReset();
         releaseAcks(false);  // ahead of any reply below: what the game owes a frame is written first
         int delay = 0;
         for (;;) {
@@ -308,6 +343,9 @@ private:
             if (in_.size() < need) return delay;
             const Bytes c(in_.begin(), in_.begin() + static_cast<std::ptrdiff_t>(need));
             in_.erase(in_.begin(), in_.begin() + static_cast<std::ptrdiff_t>(need));
+            // A menu stopped on its ERROR:40 serves nothing: the SD card's file API is the menu's, so its commands go
+            // unanswered, as they would to a cart whose OS has halted.
+            if (dev_.menu && dev_.error40 && cmd >= Edio::CMD_F_DIR_LD && cmd <= Edio::CMD_F_AVB) continue;
             if (cmd == Edio::CMD_STATUS) {
                 reply({status_, 0xA5});
                 status_ = 0;
@@ -446,14 +484,6 @@ private:
 
     // What the cart's side of the FIFO makes of a byte: the menu's commands, or the game's reliable link.
     void fifoByte(std::uint8_t b) {
-        if (resetsSeen_ != dev_.consoleResets) {  // a RESET: the menu and the next game read from a clean slate
-            resetsSeen_ = dev_.consoleResets;
-            menu_.clear();
-            msg_.clear();
-            link_   = Idle;
-            linkOn_ = false;
-            ackOwed_ = false;
-        }
         if (dev_.menu) {
             if (dev_.error40) return;  // the OS has stopped on its error: it reads nothing more
             menu_.push_back(b);

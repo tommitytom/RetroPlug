@@ -198,6 +198,7 @@ private:
     // with the generation it answered. The serial thread stores the answer, then the generation, so a reader that sees
     // the generation sees the value.
     std::atomic<unsigned> menuProbeGeneration_{0};
+    std::atomic<unsigned> menuProbeStarted_{0};  // the generation the serial thread last began a probe for
     std::atomic<unsigned> menuProbeApplied_{0};
     std::atomic<int>      menuProbeAnswer_{-1};
     // The one capability job running on the cart, and what this host last booted there (rom.header / rom.title), which

@@ -468,8 +468,8 @@ TEST_CASE("the reliable link keeps its sequence across a pause: no new sync, the
     CHECK(rig.host.link().reliable());
 }
 
-TEST_CASE("the menu guard reads the cart's state between chunks, so a streamed frame never reaches a menu, and a "
-          "read waits out an ack the game still owes", "[n8][cart-jobs]") {
+TEST_CASE("the menu guard asks the cart where it runs between chunks, so a streamed frame never reaches a menu, and "
+          "a probe waits out an ack the game still owes", "[n8][cart-jobs]") {
     using Clock = std::chrono::steady_clock;
     const auto ms = [](Clock::time_point t) {
         return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count();
@@ -504,7 +504,7 @@ TEST_CASE("the menu guard reads the cart's state between chunks, so a streamed f
         Job job;
         const auto t0 = Clock::now();
         REQUIRE(rig.submit(battery("dump"), job));
-        CHECK(ms(t0) >= 30);  // it waited for the ack the game still owed, then read the block
+        CHECK(ms(t0) >= 30);  // it waited for the ack the game still owed, then asked the menu
         REQUIRE(waitUntil([&] { return job.finished(); }));
         CHECK(job.state.load() == Job::Done);
         CHECK(job.result == saveOf(1024, 3));
@@ -1587,7 +1587,7 @@ TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser t
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     CHECK(rig.dev.menu);  // nothing booted it
     CHECK(rig.dev.booted.empty());
-    CHECK(rig.dev.count("fifo:90 2A 73") == 0);
+    CHECK(rig.dev.countContaining("90 2A 73") == 0);
     CHECK_FALSE(rig.cart.connected());  // attached, streaming nothing: what a cart node reads
 
     // A game booted by hand is streamed to, and reads connected again.
@@ -1597,7 +1597,7 @@ TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser t
     }
     REQUIRE(waitUntil([&] { return rig.cart.connected(); }));
     rig.push({0x90, 0x2A, 0x73});
-    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 2A 73") == 1; }));
+    REQUIRE(waitUntil([&] { return rig.dev.countContaining("90 2A 73") == 1; }));
     // And once the guard has read the menu during a stream, what is pushed goes nowhere and is counted: the cart reads
     // disconnected the moment the read lands, which is how this waits for it.
     {
@@ -1609,7 +1609,7 @@ TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser t
     rig.push({0x90, 0x2A, 0x73});
     CHECK(rig.cart.dropped() == dropped + 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    CHECK(rig.dev.count("fifo:90 2A 73") == 1);
+    CHECK(rig.dev.countContaining("90 2A 73") == 1);
 }
 
 TEST_CASE("a job submitted while the ring holds a push, right after the console resets to its menu, writes nothing "
@@ -1737,7 +1737,7 @@ TEST_CASE("a menu that never goes quiet is caught by its answer, and nothing is 
     // And nothing of the stream goes to the cart's FIFO after the trip. The fake's frameSeqs cannot say this (its menu
     // branch returns before it reads a frame), so this counts what the host WROTE, which a re-send would add to; the
     // guard's own probes go on at the menu, and are not the stream's.
-    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.count("fifo:F0 2A 74 F7"); };
+    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.countExact("fifo:F0 2A 74 F7"); };
     const std::size_t writes = streamed();
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     CHECK(streamed() == writes);  // nothing more was written after the trip
@@ -1760,7 +1760,7 @@ TEST_CASE("a menu whose chatter lands ahead of its answers is read as a menu, no
     CHECK_FALSE(rig.cart.connected());
     CHECK(rig.dev.menu);
     CHECK(rig.dev.booted.empty());
-    CHECK(rig.dev.count("fifo:90 2A 73") == 0);
+    CHECK(rig.dev.countContaining("90 2A 73") == 0);
 }
 
 TEST_CASE("a framed stream to a menu the console's reset reached trips the guard, and nothing is written after",
@@ -1787,7 +1787,7 @@ TEST_CASE("a framed stream to a menu the console's reset reached trips the guard
     CHECK(rig.host.link().linkOutstanding() == 0);  // the stale window went with the trip
     // Nothing of the stream goes to the cart's FIFO after the trip; the guard's own probe still does, which is how it
     // sees a game the user starts from the menu.
-    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.count("fifo:F0 2A 74 F7"); };
+    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.countExact("fifo:F0 2A 74 F7"); };
     const std::size_t before = streamed();
     rig.push({0x90, 0x41, 0x7F});
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -1813,7 +1813,7 @@ TEST_CASE("a raw stream to a menu the console's reset reached trips the guard wi
     CHECK(rig.host.link().atMenu());
     rig.push({0x90, 0x2A, 0x73});  // '*s' if the menu ever read it
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    CHECK(rig.dev.count("fifo:90 2A 73") == 0);
+    CHECK(rig.dev.countContaining("90 2A 73") == 0);
     std::lock_guard<std::mutex> l(rig.dev.mu);
     CHECK(rig.dev.menu);
     CHECK(rig.dev.booted.empty());
@@ -1932,7 +1932,7 @@ TEST_CASE("a menu whose answer comes late is still the menu: one unanswered prob
         std::lock_guard<std::mutex> l(rig.dev.mu);
         rig.dev.menuAnswerDelayMs = 150;  // every answer from here on comes after the probe's window
     }
-    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.count("fifo:F0 2A 74 F7"); };
+    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.countExact("fifo:F0 2A 74 F7"); };
     const std::size_t before = streamed();
     bool left = false;
     for (int i = 0; i < 300 && !left; ++i) {  // 1.5 s, six probes, each answered late
@@ -1981,11 +1981,11 @@ TEST_CASE("the raw probe waits for a message to end, however long it stays open"
     rig.connectGame();
     rig.push({0xF0, 0x7E, 0x7F});  // a SysEx head whose tail comes late
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
-    const std::size_t probes = rig.dev.count("fifo:F0 2A 74 F7");
+    const std::size_t probes = rig.dev.countExact("fifo:F0 2A 74 F7");
     std::this_thread::sleep_for(std::chrono::milliseconds(700));  // past the release's bound, and two cadences
-    CHECK(rig.dev.count("fifo:F0 2A 74 F7") == probes);
+    CHECK(rig.dev.countExact("fifo:F0 2A 74 F7") == probes);
     rig.push({0x09, 0x01, 0xF7});  // the tail
-    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 2A 74 F7") > probes; }, 1000));
+    REQUIRE(waitUntil([&] { return rig.dev.countExact("fifo:F0 2A 74 F7") > probes; }, 1000));
     CHECK(lastLogIndex(rig.dev, "fifo:09 01 F7") < lastLogIndex(rig.dev, "fifo:F0 2A 74 F7"));
 }
 
@@ -2018,7 +2018,7 @@ TEST_CASE("a framed game that is slow or damaged resumes on its ack, and is aske
         }));
         CHECK_FALSE(tripped);
         CHECK_FALSE(rig.host.link().atMenu());
-        CHECK(rig.dev.count("fifo:F0 2A 74 F7") >= 1);  // the last frame's ack came after the window had stopped
+        CHECK(rig.dev.countExact("fifo:F0 2A 74 F7") >= 1);  // the last frame's ack came after the window had stopped
     }
     SECTION("every frame reported damaged") {
         Rig rig;
@@ -2044,7 +2044,7 @@ TEST_CASE("a framed game that is slow or damaged resumes on its ack, and is aske
         CHECK(rig.host.link().linkResends() > resends);  // the re-sends go on: the stall resumed on the probe's ack
         CHECK_FALSE(rig.host.link().atMenu());
         CHECK(rig.cart.connected());
-        CHECK(rig.dev.count("fifo:F0 2A 74 F7") <= 3);  // a probe a second, not one a re-send
+        CHECK(rig.dev.countExact("fifo:F0 2A 74 F7") <= 3);  // a probe a second, not one a re-send
     }
 }
 
@@ -2062,7 +2062,7 @@ TEST_CASE("a submission's menu probe on a raw stream has the game's running stat
     std::string why;
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));  // a game: refused, once the probe has gone unanswered
     CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
-    REQUIRE(rig.dev.count("fifo:F0 2A 74 F7") == 1);
+    REQUIRE(rig.dev.countExact("fifo:F0 2A 74 F7") == 1);
     rig.push({0x3E, 0x00});  // a note-off by running status, as a bytes port may hand it over
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:3E 00") == 1; }));
     CHECK(rig.dev.count("fifo:90") == 2);  // the note-on, and its status written back alone
@@ -2159,4 +2159,95 @@ TEST_CASE("a config read that timed out on a raw link leaves a tail the guard do
     REQUIRE(waitUntil([&] { return stalled.load() > before; }));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));  // a few turns of the guard's scan
     CHECK_FALSE(host.link().atMenu());
+}
+
+TEST_CASE("a menu probe that is on its way at the submission's deadline is waited for, and answers as itself",
+          "[n8][cart-jobs]") {
+    // The submission's probe waits for a gap in the stream, and then for the guard's own probe (100 ms), so a tail that
+    // closes the message late in the second has the probe begin just before the deadline and be answered after it: the
+    // refusal then says what the cart said, not that the link never went quiet.
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.connectGame();  // a game on a raw link: the probe waits for the stream to be between two messages
+    rig.dev.readsWait = true;  // the probe's 100 ms listen takes its 100 ms
+    rig.push({0xF0, 0x7E, 0x7F});  // a SysEx head whose tail comes near the end of the submission's second
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
+    std::thread tail([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(850));
+        rig.push({0x09, 0x01, 0xF7});
+    });
+    Job job;
+    std::string why;
+    const auto t0 = Clock::now();
+    CHECK_FALSE(rig.submit(battery("dump"), job, &why));
+    tail.join();
+    CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 1000);
+}
+
+TEST_CASE("a raw stream that leaves a message open refuses a job for that, not as an acknowledging link",
+          "[n8][cart-jobs]") {
+    Rig rig;
+    rig.connectGame();
+    rig.push({0xF0, 0x7E, 0x7F});  // a SysEx head whose tail never comes
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
+    Job job;
+    std::string why;
+    CHECK_FALSE(rig.submit(battery("dump"), job, &why));
+    CHECK(why == "the stream left a message open, so the menu's probe had no gap to go in");
+}
+
+TEST_CASE("the probes a submission and its job write are in the write log like the guard's", "[n8][cart-jobs]") {
+    // setWriteLog promises every FIFO write the link makes, and the timing tool reads it. Every probe but the connect's
+    // seed (which runs before the serial thread) is the link's: the guard's, the submission's and the job's.
+    Rig rig;
+    std::mutex           logMutex;
+    std::vector<Bytes>   logged;
+    rig.host.link().setWriteLog([&](const std::uint8_t* d, std::size_t n, std::int64_t, bool) {
+        std::lock_guard<std::mutex> l(logMutex);
+        logged.emplace_back(d, d + n);
+    });
+    rig.dev.files[kGameBattery] = saveOf(512, 3);
+    rig.connect();
+    Job job;
+    REQUIRE(rig.submit(battery("dump"), job));
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Done);
+    std::size_t probes = 0;
+    {
+        std::lock_guard<std::mutex> l(logMutex);
+        probes = static_cast<std::size_t>(std::count(logged.begin(), logged.end(), Bytes{0xF0, 0x2A, 0x74, 0xF7}));
+    }
+    CHECK(probes == rig.dev.countExact("fifo:F0 2A 74 F7") - 1);
+}
+
+TEST_CASE("FakeN8: a console reset drops what the game owed, and a menu in ERROR:40 answers nothing from the card",
+          "[n8][fake]") {
+    using retroplug::test::FakeN8Port;
+    SECTION("an ack the game had not written yet is not written after the reset") {
+        FakeN8 dev;
+        dev.menu           = false;
+        dev.linkRom        = true;
+        dev.linkAckDelayMs = 60;  // the game takes its time to write the sync's ack
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        const std::uint8_t sync[2] = {0xF4, 0x00};
+        REQUIRE(edio.fifoWR(sync, sizeof sync).ok());
+        dev.resetToMenu();  // the game is gone before it writes it
+        std::this_thread::sleep_for(std::chrono::milliseconds(120));
+        std::uint8_t b[4];
+        CHECK(port.read(b, sizeof b, 0) == 0);
+    }
+    SECTION("a menu stopped on ERROR:40 serves no file command, and a reset brings it back") {
+        FakeN8 dev;
+        dev.menu    = true;
+        dev.error40 = true;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        edio.timeouts().readMs = 20;
+        std::uint64_t free = 0;
+        CHECK(edio.freeSpace(free).code == rp::n8::Code::Timeout);
+        dev.resetToMenu();
+        CHECK(edio.freeSpace(free).ok());
+    }
 }

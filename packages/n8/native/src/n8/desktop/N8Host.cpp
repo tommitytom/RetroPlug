@@ -69,8 +69,8 @@ int runningMapper(Edio& edio) {
 }
 
 // What N8Host::probeMenu answers when the link went down while the probe was on its way to the serial thread, and when
-// its deadline passed with the reliable link still busy (a cart acknowledging the stream, so no turn was quiet for the
-// probe's read).
+// its deadline passed with no turn quiet for the probe's read: a reliable link whose cart kept acknowledging the
+// stream, or a raw one whose stream stayed inside a message.
 constexpr int kProbeLinkDown = -2;
 constexpr int kProbeLinkBusy = -3;
 
@@ -78,6 +78,10 @@ constexpr int kProbeLinkBusy = -3;
 // the menu's answer time (kMenuAnswerMs), taken between two MIDI chunks. A link that never gives it a quiet turn gets
 // its refusal either way, and this keeps a control thread (the DAW's) from waiting on it longer.
 constexpr int kMenuProbeMs = 1000;
+
+// What a probe the serial thread began just before the deadline is given beyond its own wait (kMenuAnswerMs): the turn
+// that books it and the submitter's polling.
+constexpr int kMenuProbeMarginMs = 100;
 
 // How long the N8 menu's answer to a probe may take: one USB round trip and a turn of the menu's loop. Past it nothing
 // answered, and the cart runs a game. The link waits as long for the answer to the probe it streams (N8Link.cpp's
@@ -241,6 +245,7 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
         // covers a cart that keeps acknowledging.
         const unsigned probe = menuProbeGeneration_.load(std::memory_order_acquire);
         if (backChannelQuiet && probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
+            menuProbeStarted_.store(probe, std::memory_order_release);
             link_.noteMenuProbe();  // on a raw stream's wire too, where it ends the game's running status
             const int menu = askMenu(edio);
             menuProbeAnswer_.store(menu, std::memory_order_relaxed);
@@ -340,10 +345,21 @@ int N8Host::probeMenu() {
     // A turn of its own, so a volume write that keeps failing (whose retry interval is a second) is not what this
     // waits behind; the deadline below covers a cart that never answers, whatever the link is doing.
     link_.wakeControl();
-    const auto     deadline   = std::chrono::steady_clock::now() + std::chrono::milliseconds(kMenuProbeMs);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kMenuProbeMs);
+    bool extended = false;
     while (menuProbeApplied_.load(std::memory_order_acquire) < generation) {
         if (!link_.isConnected()) return kProbeLinkDown;
-        if (std::chrono::steady_clock::now() >= deadline) return link_.backChannelQuiet() ? -1 : kProbeLinkBusy;
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) {
+            // A probe the serial thread has begun is answered within its own wait: the answer is what this asked for,
+            // so it is given that long (and a little over, for the turn that books it) past the deadline.
+            if (!extended && menuProbeStarted_.load(std::memory_order_acquire) == generation) {
+                deadline = now + std::chrono::milliseconds(kMenuAnswerMs + kMenuProbeMarginMs);
+                extended = true;
+                continue;
+            }
+            return link_.backChannelQuiet() ? -1 : kProbeLinkBusy;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     return menuProbeAnswer_.load(std::memory_order_relaxed);
@@ -460,8 +476,9 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
     const int menu = probeMenu();
     if (menu == kProbeLinkDown) return refuse("not connected");
     if (menu == kProbeLinkBusy)
-        return refuse("the reliable link never went quiet for the menu's probe: the cart kept acknowledging the "
-                      "stream");
+        return refuse(link_.reliable() ? "the reliable link never went quiet for the menu's probe: the cart kept "
+                                         "acknowledging the stream"
+                                       : "the stream left a message open, so the menu's probe had no gap to go in");
     if (menu < 0) return refuse("the cart's port failed the menu's probe");
     if (menu != 1) return refuse(dump || restore ? kBatteryAtGame : kUploadAtGame);
     if (!cartJob_.claim(reports, job, owner)) return refuse("busy: the cart is running another job");
