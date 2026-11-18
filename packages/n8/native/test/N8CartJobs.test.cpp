@@ -2135,3 +2135,28 @@ TEST_CASE("an upload whose open's status reads wrong still deletes the file the 
     CHECK(rig.dev.files.count("usb-games/game.nes") == 0);
     CHECK(rig.dev.booted.empty());
 }
+
+TEST_CASE("a config read that timed out on a raw link leaves a tail the guard does not read as the menu's answer",
+          "[n8][menu-guard]") {
+    // Auto's volume write reads the config block, and a read that gives up leaves its reply in the input. On a raw
+    // link the guard's scan reads the input every turn, and a 'k' (0x6B) in that block is the byte the menu answers
+    // its probe with: the cart is running a game, which is not at its menu for it.
+    FakeN8 dev;
+    dev.menu    = false;
+    dev.cfg[5]  = 0x6B;
+    std::atomic<int> stalled{0};
+    N8Host           host([&dev, &stalled](const std::string&) -> std::unique_ptr<PortTransport> {
+                    return std::make_unique<LateCfgPort>(dev, stalled);
+                }, [] { return std::vector<N8PortDto>{{"/dev/fake", true}}; }, tempDir());
+    host.setPort("/dev/fake");
+    host.connect(true);
+    REQUIRE(host.link().isConnected());
+    REQUIRE_FALSE(host.link().reliable());
+    host.link().setLookaheadMs(0);
+    const int before = stalled.load();
+    host.setExpVol(100);
+    host.setExpVol(N8Host::EXP_VOL_AUTO);  // a new generation at Auto: one config read, which the port stalls
+    REQUIRE(waitUntil([&] { return stalled.load() > before; }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // a few turns of the guard's scan
+    CHECK_FALSE(host.link().atMenu());
+}

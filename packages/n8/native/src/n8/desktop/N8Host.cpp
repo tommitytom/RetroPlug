@@ -56,10 +56,15 @@ int inesMapper(std::span<const std::uint8_t> rom) {
 // The mapper of the RUNNING cart, read off the N8's FPGA config block - what the OS told the cart it is, so
 // it answers for a game the user booted from the cart's own file browser (the usual state when the menu says
 // Connect). map_idx = scfg[0] | scfg[2]'s high nibble << 8, as decodeMapConfig does TS-side. Returns -1 when
-// the block can't be read, which lands on "leave the register alone" - the safe answer.
+// the block can't be read, which lands on "leave the register alone" - the safe answer. A read that gave up leaves
+// its reply behind, which the link's next scan of the back-channel would read byte by byte (a 0x6B in the block is
+// the menu's answer): so it is flushed away.
 int runningMapper(Edio& edio) {
     std::uint8_t cfg[Edio::SIZE_CFG] = {0};
-    if (!edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok()) return -1;
+    if (!edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok()) {
+        edio.flushInput();
+        return -1;
+    }
     return ((cfg[2] >> 4) << 8) | cfg[0];
 }
 
