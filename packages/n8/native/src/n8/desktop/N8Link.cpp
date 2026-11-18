@@ -454,6 +454,10 @@ void N8Link::writeMenuProbe(std::int64_t now) {
     check(edio_->fifoWR(kMenuProbe, sizeof kMenuProbe));
 }
 
+void N8Link::noteMenuProbe() {
+    if (!rel_) noteWireBytes(kMenuProbe, sizeof kMenuProbe, nowNs(), false);
+}
+
 bool N8Link::menuProbeAwaited(std::int64_t now) const {
     return menuProbeAtNs_ != 0 && now - menuProbeAtNs_ < kMenuAnswerNs;
 }
@@ -530,7 +534,9 @@ bool N8Link::quietForRead(std::int64_t now) const {
     // exception, see OnControl). Or a cart that has said nothing for the pause's ack bound since the oldest outstanding
     // frame first went out: one at its menu (a console reset keeps USB and the link up, and the menu acknowledges
     // nothing), or a game that has stopped answering, the same risk the pause's drain takes when it gives up waiting.
-    if (!rel_ || rel_->outstanding() == 0) return true;
+    // A raw link has no acks, but its stream may be inside a message, which a read's own probe (a SysEx) would cut.
+    if (!rel_) return betweenMessages();
+    if (rel_->outstanding() == 0) return true;
     const std::int64_t spoke = std::max(rel_->lastHeardNs(), rel_->oldestFirstSentNs());
     return spoke != rp::N8ReliableSender::kNever && now - spoke >= kAckWaitNs;
 }

@@ -126,8 +126,8 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
 - **A cart at its menu is not streamed to.** The menu takes commands over the same FIFO a game reads MIDI from, so a
   data pair inside a message (`0x2A 0x73` is `*s`: start an app) can reach it. `N8Link` keeps the cart's at-menu state,
   read from the FPGA config block's map_idx (255 at a power-on menu only: after a console reset the block keeps the
-  game's mapper, so a reset menu reads as a game and is streamed to, see
-  [spec/07](07-remaining-work.md#the-menu-guard-misses-a-console-reset); a system-region read that touches neither the
+  game's mapper, which is why the guard asks the menu instead, see
+  [the design](../docs/n8-menu-guard-reset-design.md); a system-region read that touches neither the
   cart's bus nor a game's FIFO) - seeded at connect, and re-read about every 250 ms on a turn quiet for a read, with a
   100 ms timeout, and, on the first quiet turn after it stops moving (or when the hold's second trips), at once (the
   oldest frame unacknowledged past the link's own 100 ms timeout, which is the console reset), whose new frames and

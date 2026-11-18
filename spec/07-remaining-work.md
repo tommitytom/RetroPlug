@@ -10,7 +10,7 @@ than work.
 
 **Before merge**
 - [ ] [The N8 menu's back-channel](#the-n8-menus-back-channel)
-- [ ] [The menu guard misses a console reset](#the-menu-guard-misses-a-console-reset)
+- [ ] [The N8 menu's residual window](#the-n8-menus-residual-window)
 - [ ] [The Launchpad real-device checklist](#the-launchpad-real-device-checklist)
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
@@ -111,18 +111,15 @@ the back-channel stays silent, and that a job submitted right after a power-cycl
 and that the guard's periodic config reads cost a running BlipToaster nothing (`retroplug-n8-hwtest timing`, the
 heavy-chord stress) with no stall.
 
-### The menu guard misses a console reset
+### The N8 menu's residual window
 
-On a real cart (2026-11-18, `retroplug-n8-hwtest menuguard`, BlipToaster streaming framed), a console RESET mid-stream
-was not caught. The cart stopped acknowledging at once, but the config block kept the game's mapper: map_idx read 69
-(`45 65 02 80 01 ...`) with the N8 OS running, where the power-on menu reads 255 (`FF 00 00 00 ...`). The guard
-therefore read "a game" every time and never tripped; about 35 KB of frames and 202 re-sends reached the menu in 21 s,
-and the OS stopped on "ERROR:40 unexpected io status". So map_idx 255 tells only a cold-booted menu from a game, and
-FakeN8 models every menu that way. The guard needs a signal that holds after a reset (one the OS answers and a game
-cannot, or treating a framed window that stops moving as "not a game" until a probe is answered again), proven with
-`menuguard` and a reset by hand; the raw path, which has no acks, has no reset signal at all. Once it trips on a reset,
-the windows spec/13 states (up to 250 ms raw, the frames written before the hold, the trusted second) are what is left
-to measure. ([spec/13](13-subsystems.md#the-everdrive-n8-bridge).)
+What the link writes before the menu's `k` is heard reaches the menu: up to 250 ms of raw MIDI; framed, the frames
+written before a stall shows (100 ms), and up to a second more when a stall's probe has just heard an ack (the trusted
+second: a reset inside it streams frames and re-sends until it ends). A `*` in it followed by a command or by a byte the
+menu rejects (ERROR:40) does harm ([spec/13](13-subsystems.md#the-everdrive-n8-bridge)). Measure it on the cart with
+`retroplug-n8-hwtest menuguard` and a RESET press, framed BlipToaster and then BlipToaster held `raw` (a trip, and 0
+stream bytes after it), and time a reset menu's answer there too (`menuprobe test` after a RESET: a power-on menu
+answers in about 20 ms).
 
 ### The Launchpad real-device checklist
 

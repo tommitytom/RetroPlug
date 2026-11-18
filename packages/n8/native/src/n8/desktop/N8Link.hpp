@@ -38,7 +38,7 @@ public:
     // write must never fail a working MIDI link.
     using OnConnected = std::function<void(rp::n8::Edio&)>;
     // Ran on the serial thread each turn while the link is up, once the reliable link's acks are read and its re-sends
-    // written: where a setting whose value lives in an atomic (N8Host's expansion volume and its config-block probe)
+    // written: where a setting whose value lives in an atomic (N8Host's expansion volume and its menu probe)
     // reaches the device without the caller taking a lock or building a std::function. Set once before any connect,
     // like OnConnected, so it is never mutated while the thread reads it. `backChannelQuiet` is false while the cart
     // may be about to acknowledge an outstanding frame, or to answer the guard's probe: anything that reads a reply off
@@ -46,7 +46,9 @@ public:
     // reply's first bytes and the reply's tail is then parsed as link traffic. A turn is quiet with nothing outstanding
     // and no probe of the guard's awaiting its answer (100 ms at most), or once the cart has said nothing for the
     // pause's ack bound (250 ms) since the oldest outstanding frame first went out: a cart at its menu acknowledges
-    // nothing, and would otherwise never give a read a turn. What it does not cover is an ack for no outstanding frame:
+    // nothing, and would otherwise never give a read a turn. On a raw link a turn is quiet only between two messages:
+    // a read may come with a probe of its own (N8Host's menu probe writes a SysEx), which inside a message would cut
+    // it short. What it does not cover is an ack for no outstanding frame:
     // on a lossy link the ROM acknowledges each copy of a frame the host sent twice, and the second copy's ack can come
     // after the first has emptied the window. A read that meets one misreads a few bytes (an Auto that sees no
     // expansion mapper writes nothing; a probe that sees no menu refuses the job) and leaves the reply's last bytes in
@@ -135,6 +137,11 @@ public:
     // guard takes it as its state at once, so a probe made for a submission trips the guard before that job's pause
     // drains the ring into a menu.
     void          reportMenuState(bool menu);
+    // [serial thread] A probe (kMenuProbe) written outside the link's own turns - N8Host's for a submission, or a job's
+    // first step - is on the cart's wire all the same, and a game's parser loses running status at its F0: on a raw
+    // link the tracker books it as the SysEx it is, so the stream's next running-status chunk gets its status written
+    // back (see writeChunk).
+    void          noteMenuProbe();
     void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
     // [any] Run OnControl at the next quiet turn, whatever the wait a failed config write armed: the wake stands
     // through turns that are not quiet, and is spent by the first that is. A submission's menu probe is why this
@@ -143,8 +150,8 @@ public:
     void          wakeControl() { controlWanted_.store(true, std::memory_order_release); }
     // [any] Whether the serial thread's last turn was quiet for a read (see OnControl): what tells a probe that timed
     // out on a link that kept acknowledging from one whose read never answered. The last turn's answer, not the probe's
-    // whole second: a quiet turn with the probe pending always applies it, since runningMapper stores its answer before
-    // the generation is checked.
+    // whole second: a quiet turn with the probe pending always applies it, since the probe stores its answer before the
+    // generation is checked.
     bool          backChannelQuiet() const { return backChannelQuiet_.load(std::memory_order_relaxed); }
     // Hand the serial thread a job to run with streaming paused (see PausedJob). False, and nothing runs, while the
     // link is down or another job is pending. From the moment the thread takes it until it is done, isConnected()

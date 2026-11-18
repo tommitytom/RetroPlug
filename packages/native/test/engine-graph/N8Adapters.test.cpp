@@ -189,11 +189,11 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             CHECK(title.id == 0);
             CHECK(title.error == "nothing this host booted is running");
 
-            // A dump while a game runs is refused at submission, from the config block read between chunks, and the
+            // A dump while a game runs is refused at submission, from the menu probe made between chunks, and the
             // stream never paused for it (the note-off the block carries reaches the cart).
             {
                 std::lock_guard<std::mutex> l(dev.mu);
-                dev.menu = false;  // the config block names mapper 0, a game
+                dev.menu = false;  // a game: nothing answers the menu's probe
             }
             const auto atGame = e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump", "game.nes"));
             CHECK(atGame.id == 0);

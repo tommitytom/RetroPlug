@@ -346,7 +346,7 @@ TEST_CASE("N8CartLink: a submission's menu probe takes a turn of its own, not th
     link.setExpansionVolume(64);
     REQUIRE(host.link().connect("fake"));
     // The connect-time write dies and the retry interval is a second. A probe that waited behind it would be refused
-    // "the cart's config block did not answer" after its own 1 s deadline, on a cart whose block answers.
+    // "the cart's port failed the menu's probe" after its own 1 s deadline, on a cart whose port answers.
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     rp::n8::test::JobRequest r;
     r.nodeId     = "cart";

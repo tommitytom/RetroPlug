@@ -63,20 +63,15 @@ int runningMapper(Edio& edio) {
     return ((cfg[2] >> 4) << 8) | cfg[0];
 }
 
-// The mapper the N8 OS runs its own file browser on: the config block's map_idx while the menu shows (read on an N8
-// Pro; mapConfig.ts: "the OS clears it to force map 255"). A system-region read, so telling the menu from a game this
-// way touches neither the cart's bus nor a running game's FIFO.
-constexpr int kMenuMapper = 255;
-
 // What N8Host::probeMenu answers when the link went down while the probe was on its way to the serial thread, and when
 // its deadline passed with the reliable link still busy (a cart acknowledging the stream, so no turn was quiet for the
-// read).
+// probe's read).
 constexpr int kProbeLinkDown = -2;
 constexpr int kProbeLinkBusy = -3;
 
-// How long a submission waits for the serial thread's answer to its menu probe: a config-block read is one USB round
-// trip, taken between two MIDI chunks. A cart that has stopped answering gets its refusal either way, and this keeps
-// a control thread (the DAW's) from waiting out the read's own 2 s timeout to learn it.
+// How long a submission waits for the serial thread's answer to its menu probe: the probe is one USB write and at most
+// the menu's answer time (kMenuAnswerMs), taken between two MIDI chunks. A link that never gives it a quiet turn gets
+// its refusal either way, and this keeps a control thread (the DAW's) from waiting on it longer.
 constexpr int kMenuProbeMs = 1000;
 
 // How long the N8 menu's answer to a probe may take: one USB round trip and a turn of the menu's loop. Past it nothing
@@ -213,10 +208,10 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
     // answers its probe. -1 (the port failed) leaves the link's state as it was, and its own probes ask again.
     link_.setMenuCheck([](Edio& edio) { return askMenu(edio); });
     link_.setOnControl([this](Edio& edio, bool backChannelQuiet) {
-        // The config block a submission's refusal reads (probeMenu). Taken here, between chunks, for the reason the
-        // volume is: a system-region read on the thread that owns the port, putting no byte in a running game's FIFO.
-        // Ahead of the volume, and a submission asks the link for a quiet turn of its own (N8Link::wakeControl), so a
-        // config write that keeps failing does not hold it up.
+        // The menu probe a submission's refusal asks for (probeMenu). Taken here, between chunks, on the thread that
+        // owns the port, as the volume is: kMenuProbe is a SysEx a running game ignores, so the stream's game hears
+        // nothing it would play. Ahead of the volume, and a submission asks the link for a quiet turn of its own
+        // (N8Link::wakeControl), so a config write that keeps failing does not hold it up.
         //
         // Both reads below wait for a quiet turn (N8Link::OnControl): an ack for an outstanding frame can arrive
         // inside a read, and would be taken for the reply's first bytes while the reply's tail was left in the input
@@ -225,13 +220,14 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
         // covers a cart that keeps acknowledging.
         const unsigned probe = menuProbeGeneration_.load(std::memory_order_acquire);
         if (backChannelQuiet && probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
-            const int mapper = runningMapper(edio);
-            menuProbeIndex_.store(mapper, std::memory_order_relaxed);
-            // The same read tells the guard the cart is at its menu, and it does so before the submission that asked
+            const int menu = askMenu(edio);
+            link_.noteMenuProbe();  // on a raw stream's wire too, where it ends the game's running status
+            menuProbeAnswer_.store(menu, std::memory_order_relaxed);
+            // The same answer tells the guard the cart is at its menu, and it does so before the submission that asked
             // for it can hand over a job: a pause's drain must not write the ring into a menu the probe has just seen.
-            // Only that way round: this read is not flushed first, as the guard's own are, so a chattering cart's byte
-            // could make a menu read as a game, and only the guard's flushed read may re-enable the stream.
-            if (mapper == kMenuMapper) link_.reportMenuState(true);
+            // Only that way round: a menu whose 'k' came later than this probe's wait reads as a game here, and only
+            // the guard's own probes may re-enable the stream.
+            if (menu == 1) link_.reportMenuState(true);
             menuProbeApplied_.store(probe, std::memory_order_release);
         }
         const unsigned generation = expVolGeneration_.load(std::memory_order_acquire);
@@ -329,7 +325,7 @@ int N8Host::probeMenu() {
         if (std::chrono::steady_clock::now() >= deadline) return link_.backChannelQuiet() ? -1 : kProbeLinkBusy;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    return menuProbeIndex_.load(std::memory_order_relaxed);
+    return menuProbeAnswer_.load(std::memory_order_relaxed);
 }
 
 void N8Host::applyExpVol(Edio& edio, int value, int mapperHint) {
@@ -440,13 +436,13 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
     // Where the cart is, before any pause: the transfers run at the menu only, so one a running game will refuse is
     // refused here, and the stream never pauses for it (every note-on pushed during such a pause was lost; note-offs
     // are owed, note-ons are not). The job checks again at its first step, for a cart that changed in between.
-    const int mapper = probeMenu();
-    if (mapper == kProbeLinkDown) return refuse("not connected");
-    if (mapper == kProbeLinkBusy)
-        return refuse("the reliable link never went quiet for the cart's config read: the cart kept acknowledging the "
+    const int menu = probeMenu();
+    if (menu == kProbeLinkDown) return refuse("not connected");
+    if (menu == kProbeLinkBusy)
+        return refuse("the reliable link never went quiet for the menu's probe: the cart kept acknowledging the "
                       "stream");
-    if (mapper < 0) return refuse("the cart's config block did not answer");
-    if (mapper != kMenuMapper) return refuse(dump || restore ? kBatteryAtGame : kUploadAtGame);
+    if (menu < 0) return refuse("the cart's port failed the menu's probe");
+    if (menu != 1) return refuse(dump || restore ? kBatteryAtGame : kUploadAtGame);
     if (!cartJob_.claim(reports, job, owner)) return refuse("busy: the cart is running another job");
 
     // The job's outcome, which `run` fills and `done` posts once streaming is back: both on the serial thread, one
@@ -466,12 +462,13 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
     const auto checkStop = [stopReason] {
         if (const char* why = stopReason()) throw std::runtime_error(why);
     };
-    // The cart's state, read off its FPGA config block (a system-region read, which never touches the cart's bus and
-    // puts no byte in a running game's FIFO): the OS runs on its own mapper, 255, so that is the menu.
-    const auto atMenu = [](Edio& edio) {
-        const int mapper = runningMapper(edio);
-        if (mapper < 0) throw std::runtime_error("the cart's config block did not answer");
-        return mapper == kMenuMapper;
+    // The cart's state, asked of its menu (askMenu): the job's own port, and the one question a menu the console's
+    // reset reached answers as a menu.
+    const auto atMenu = [this](Edio& edio) {
+        const int menu = askMenu(edio);
+        link_.noteMenuProbe();  // the stream resumes after the job, on the wire this probe went onto
+        if (menu < 0) throw std::runtime_error("the cart's port failed the menu's probe");
+        return menu == 1;
     };
     using AfterJob = N8Link::AfterJob;
     N8Link::PausedJob paused;

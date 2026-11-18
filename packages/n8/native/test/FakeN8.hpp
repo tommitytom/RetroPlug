@@ -84,6 +84,10 @@ struct FakeN8 {
     std::vector<Bytes>       applied;               // messages the reliable link delivered to the game
     int                      syncs = 0;             // F4 syncs the game saw
     int                      syncAckLast = -1;      // the last header a sync's ack names (-1: the seq before its own)
+    // The running game answers the menu's '*t' with a 'k' as the menu does: the fake's combination, never a real
+    // cart's, which takes a job with a game's reliable link up. Like the menu it then acks nothing for the probe's
+    // bytes, which the job's next read would take for its reply.
+    bool                     gameAnswersProbe = false;
     std::vector<int>         frameSeqs;             // the seq of every intact frame it read
     int                      opens = 0, openNow = 0;
     int                      writes = 0;            // every write a port took a call for (one per frame, Edio.hpp)
@@ -362,6 +366,7 @@ private:
                 if (addr == kFifo) {
                     dev_.log.push_back("fifo:" + hex(data, size));
                     for (std::uint32_t i = 0; i < size; ++i) fifoByte(data[i]);
+                    if (ackOwed_ && dev_.gameAnswersProbe) ackOwed_ = false;
                     if (ackOwed_) {  // what the game says about unframed bytes, once its FIFO has run empty
                         ackOwed_ = false;
                         replyAck({0xF5, next_, next_});
@@ -458,6 +463,10 @@ private:
             menu_.clear();
             return;
         }
+        if (dev_.gameAnswersProbe) {  // a '*t' anywhere in what the game reads, the probe's SysEx included
+            if (gameStar_ && b == 't') reply({dev_.testReply});
+            gameStar_ = b == '*';
+        }
         if (!dev_.linkRom || dev_.linkDeaf) return;
         // BlipToaster's end of the link, for intact traffic: a sync sets the next seq, a frame carrying it is applied,
         // and each is acknowledged with F5 <next expected> <last header read>. Once a sync has turned the link on, a
@@ -527,6 +536,7 @@ private:
     Bytes                    file_;
     std::size_t              fileLeft_ = 0, blockLeft_ = 0;
     Bytes                    menu_;
+    bool                     gameStar_ = false;  // the game's last byte was a '*' (gameAnswersProbe)
     std::deque<PendingAck>   acks_;  // what the game owes the link, in the order it will write it
     std::chrono::steady_clock::time_point chatterDue_{};  // the next unsolicited back-channel byte
     std::string              menuPath_;

@@ -142,16 +142,18 @@ public:
     //                              this host booted is running" then; another game of the same mapper is what it
     //                              cannot tell.
     //
-    // One job at a time ("busy: ..."), and none while the link is down ("not connected"). Every transfer first reads
-    // the cart's FPGA config block - the map_idx that tells the menu (255) from a running game - on the serial thread
+    // One job at a time ("busy: ..."), and none while the link is down ("not connected"). Every transfer first asks
+    // whether the cart's menu runs - N8Link::kMenuProbe, a SysEx whose '*t' only the menu answers, with a 'k' (the
+    // config block's map_idx cannot tell: a console reset leaves it at the game's mapper) - on the serial thread
     // between MIDI chunks, the expansion volume's path, and refuses there: a job a running game will not have pauses
-    // nothing, so the notes the block pushes meanwhile reach the cart. The read waits for a turn quiet for it
-    // (N8Link::OnControl: nothing outstanding on the reliable link, or a cart silent for a while, as one at its menu
-    // is), so an ack the cart owes for a frame it is answering now cannot land inside it (a cart silent past that
-    // bound is taken not to be answering at all, the risk the pause's drain already takes). Within a second: a link
-    // that keeps acknowledging the whole time is refused for that ("the reliable link never went quiet ..."), and a
-    // read that does not answer as such ("the cart's config block did not answer"); the job checks again at its first
-    // step, for a cart that changed in between.
+    // nothing, so the notes the block pushes meanwhile reach the cart. A game is what answers nothing within 100 ms.
+    // The probe waits for a turn quiet for it (N8Link::OnControl: nothing outstanding on the reliable link, or a cart
+    // silent for a while, as one at its menu is, and on a raw link between two messages), so an ack the cart owes for
+    // a frame it is answering now cannot land inside its read (a cart silent past that bound is taken not to be
+    // answering at all, the risk the pause's drain already takes). Within a second: a link that keeps acknowledging
+    // the whole time is refused for that ("the reliable link never went quiet ..."), and a probe the port fails as such
+    // ("the cart's port failed the menu's probe"); the job asks again at its first step, for a cart that changed in
+    // between.
     // [control], like abandonCartJobs: the node submitting is the job's owner, and a node leaving the plan abandons its
     // job, which fails at once (Removed) and stops at its next safe point.
     // The job is the host's record, finished through `reports` (rp.host.jobs/1); the request is borrowed for the call.
@@ -167,10 +169,10 @@ private:
     // link_.connect(port) unless the guard refuses it.
     void connectLink(const std::string& port);
 
-    // The cart's running map_idx, read on the serial thread that owns the port (a config-block read, between two MIDI
-    // chunks) and answered here: the map_idx, or -1 when the block did not answer, -2 when the link went down while
-    // the probe was asked, or -3 when its deadline passed with the link never quiet for the read. Each call asks
-    // afresh, since a game can boot between two jobs.
+    // Whether the cart's menu runs, asked on the serial thread that owns the port (the menu probe, between two MIDI
+    // chunks) and answered here: 1 for the menu, 0 for a game, or -1 when the port failed the probe, -2 when the link
+    // went down while the probe was asked, or -3 when its deadline passed with the link never quiet for it. Each call
+    // asks afresh, since a game can boot between two jobs.
     int probeMenu();
 
     // Write the expansion-audio master volume `value` through `edio` (see EXP_VOL_AUTO). `mapperHint` is the iNES
@@ -192,12 +194,12 @@ private:
     // re-arm.
     std::atomic<unsigned> expVolGeneration_{0};
     std::atomic<unsigned> expVolApplied_{0};  // serial thread writes, after a successful write
-    // The menu probe (probeMenu): a submission asks the serial thread for the cart's config block, and the answer lands
-    // here with the generation it answered. The serial thread stores the index, then the generation, so a reader that
-    // sees the generation sees the value.
+    // The menu probe (probeMenu): a submission asks the serial thread whether the menu runs, and the answer lands here
+    // with the generation it answered. The serial thread stores the answer, then the generation, so a reader that sees
+    // the generation sees the value.
     std::atomic<unsigned> menuProbeGeneration_{0};
     std::atomic<unsigned> menuProbeApplied_{0};
-    std::atomic<int>      menuProbeIndex_{-1};
+    std::atomic<int>      menuProbeAnswer_{-1};
     // The one capability job running on the cart, and what this host last booted there (rom.header / rom.title), which
     // an upload writes on the serial thread and those read on the control thread.
     rp::DeviceJobSlot         cartJob_;
