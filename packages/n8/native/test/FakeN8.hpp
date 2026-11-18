@@ -4,9 +4,12 @@
 // parses Edio's command frames as they are written (status, memory reads and writes, the SD directory and file API,
 // with a failure it can inject into a directory load, a file write, a file read or an expansion-volume write), counts
 // the files open on the card, keeps a 64 KB battery (logged if anything touches it) and the FPGA config block (map_idx
-// 255 while the menu shows), answers the menu's '*' commands while the menu is showing, and plays BlipToaster's end of
-// the reliable link while a game that speaks it runs (its acks late, never, or reporting every frame damaged, when a
-// case asks). Every event (a FIFO write, a battery read, a file block) lands in one ordered log.
+// 255 while a menu reached by power-on shows; a menu the console's RESET reached leaves it at the game's mapper, as the
+// real cart does), answers the menu's '*' commands while the menu is showing (skipping every byte that is not a '*', so
+// a '*t' wrapped in a SysEx is answered too, and stopping at ERROR:40 when a '*' is followed by a byte that is not a
+// command), and plays BlipToaster's end of the reliable link while a game that speaks it runs (its acks late, never, or
+// reporting every frame damaged, when a case asks, and an ack for bytes that came unframed, as the ROM writes one).
+// Every event (a FIFO write, a battery read, a file block) lands in one ordered log.
 //
 // Shared by retroplug-n8-test (Ops.test.cpp: the menu and the operations; N8CartJobs.test.cpp: the jobs and the pause,
 // against N8Host with no engine), retroplug-engine-graph-test (N8Adapters.test.cpp: the production adapters behind a
@@ -48,6 +51,12 @@ struct FakeN8 {
     Bytes                    cfg  = Bytes(Edio::SIZE_CFG, 0);
     std::map<std::string, Bytes> files;
     bool                     menu = true;           // the file browser is showing (it answers '*' commands)
+    // ... reached by the console's RESET (resetToMenu), not a power-on: the config block keeps the game's mapper, since
+    // the FPGA routes the OS mapper on a reset without the OS writing map_idx 255 (docs/n8-menu-guard-reset-design.md)
+    bool                     resetMenu = false;
+    // The menu read a '*' followed by a byte that is not one of its commands and stopped answering, as the N8 OS stops
+    // on "ERROR:40 unexpected io status": what a stream carrying 0x2A does to it sooner or later
+    bool                     error40 = false;
     bool                     linkRom = false;       // the running game answers the reliable link (BlipToaster)
     bool                     linkDeaf = false;      // ... until it stops answering (it read no frame and acks nothing)
     int                      linkAckDelayMs = 0;    // how long the game takes to write a frame's ack back
@@ -74,6 +83,7 @@ struct FakeN8 {
     std::vector<std::pair<std::size_t, std::size_t>> dirGets;
     std::vector<Bytes>       applied;               // messages the reliable link delivered to the game
     int                      syncs = 0;             // F4 syncs the game saw
+    int                      syncAckLast = -1;      // the last header a sync's ack names (-1: the seq before its own)
     std::vector<int>         frameSeqs;             // the seq of every intact frame it read
     int                      opens = 0, openNow = 0;
     int                      writes = 0;            // every write a port took a call for (one per frame, Edio.hpp)
@@ -83,8 +93,19 @@ struct FakeN8 {
     std::uint64_t            freeBytes = 0;         // what CMD_F_AVB answers
     Bytes                    vram    = Bytes(2048, 0), palette = Bytes(16, 0);  // what '*v' answers
     std::uint8_t             testReply = 'k';       // what '*t' answers
+    int                      menuAnswerDelayMs = 0; // how long the menu takes to write that answer (0: at once)
     std::uint8_t             installStatus = 0;     // what '*n' answers first (0x44: the menu is out of memory)
     int                      resets = 0;            // '*r's the menu took
+    int                      consoleResets = 0;     // RESET presses (resetToMenu): the cart's parsers start afresh
+
+    // The console's RESET button with a game running: the menu shows again, with USB and the port still up, and the
+    // config block left as the game had it, so only the menu's own answer to '*t' tells it from the game.
+    void resetToMenu() {
+        std::lock_guard<std::mutex> l(mu);
+        menu      = true;
+        resetMenu = true;
+        ++consoleResets;
+    }
 
     std::size_t count(const std::string& prefix) {
         std::lock_guard<std::mutex> l(mu);
@@ -110,6 +131,7 @@ struct FakeN8Port : PortTransport {
         std::lock_guard<std::mutex> l(dev_.mu);
         ++dev_.opens;
         ++dev_.openNow;
+        resetsSeen_ = dev_.consoleResets;
     }
     ~FakeN8Port() override {
         std::lock_guard<std::mutex> l(dev_.mu);
@@ -195,12 +217,14 @@ private:
         std::chrono::steady_clock::time_point due;
         std::deque<std::uint8_t>              bytes;
     };
-    void replyAck(std::initializer_list<std::uint8_t> bytes) {
-        if (dev_.linkAckDelayMs <= 0) {
+    void replyAck(std::initializer_list<std::uint8_t> bytes) { replyAfter(dev_.linkAckDelayMs, bytes); }
+    // A reply the cart writes `delayMs` from now (0: at once), queued with what the game owes, as an ack is.
+    void replyAfter(int delayMs, std::initializer_list<std::uint8_t> bytes) {
+        if (delayMs <= 0) {
             reply(bytes);
             return;
         }
-        acks_.push_back({std::chrono::steady_clock::now() + std::chrono::milliseconds(dev_.linkAckDelayMs),
+        acks_.push_back({std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs),
                          std::deque<std::uint8_t>(bytes)});
     }
     // Hand the host the acks the game has written: only those now due, or everything it still owes - what a command
@@ -338,6 +362,10 @@ private:
                 if (addr == kFifo) {
                     dev_.log.push_back("fifo:" + hex(data, size));
                     for (std::uint32_t i = 0; i < size; ++i) fifoByte(data[i]);
+                    if (ackOwed_) {  // what the game says about unframed bytes, once its FIFO has run empty
+                        ackOwed_ = false;
+                        replyAck({0xF5, next_, next_});
+                    }
                 } else {
                     for (std::uint32_t i = 0; i < size; ++i) poke(addr + i, data[i]);
                     if (addr >= kSrm && addr < kSrmEnd) dev_.log.push_back("srm-wr");
@@ -372,9 +400,9 @@ private:
     }
     std::uint8_t peek(std::uint32_t addr) {
         if (addr >= kSrm && addr < kSrmEnd) return dev_.sram[addr - kSrm];
-        // The menu runs on the OS's own mapper, 255.
-        if (dev_.menu && addr == kCfg) return 0xFF;
-        if (dev_.menu && addr == kCfg + 2) return 0;
+        // A menu reached by power-on runs on the OS's own mapper, 255; one a reset reached reads as the game left it.
+        if (dev_.menu && !dev_.resetMenu && addr == kCfg) return 0xFF;
+        if (dev_.menu && !dev_.resetMenu && addr == kCfg + 2) return 0;
         if (addr >= kCfg && addr < kCfgEnd) return dev_.cfg[addr - kCfg];
         return 0;
     }
@@ -385,11 +413,20 @@ private:
 
     // What the cart's side of the FIFO makes of a byte: the menu's commands, or the game's reliable link.
     void fifoByte(std::uint8_t b) {
+        if (resetsSeen_ != dev_.consoleResets) {  // a RESET: the menu and the next game read from a clean slate
+            resetsSeen_ = dev_.consoleResets;
+            menu_.clear();
+            msg_.clear();
+            link_   = Idle;
+            linkOn_ = false;
+            ackOwed_ = false;
+        }
         if (dev_.menu) {
+            if (dev_.error40) return;  // the OS has stopped on its error: it reads nothing more
             menu_.push_back(b);
             if (menu_[0] != '*') { menu_.clear(); return; }      // not a command: the menu skips it
             if (menu_.size() < 2) return;
-            if (menu_[1] == 't') { reply({dev_.testReply}); menu_.clear(); return; }
+            if (menu_[1] == 't') { replyAfter(dev_.menuAnswerDelayMs, {dev_.testReply}); menu_.clear(); return; }
             if (menu_[1] == 'v') {  // the screen: 2048 VRAM bytes, then 16 palette bytes
                 out_.insert(out_.end(), dev_.vram.begin(), dev_.vram.end());
                 out_.insert(out_.end(), dev_.palette.begin(), dev_.palette.end());
@@ -399,6 +436,7 @@ private:
             if (menu_[1] == 'r') { ++dev_.resets; menu_.clear(); return; }  // no ack: the console reboots
             if (menu_[1] == 's') {  // the game boots, and the FPGA's config block names its mapper
                 dev_.menu = false;
+                dev_.resetMenu = false;
                 dev_.booted = menuPath_;
                 dev_.cfg[0] = static_cast<std::uint8_t>(dev_.mapIndex);
                 dev_.cfg[2] = static_cast<std::uint8_t>((dev_.mapIndex >> 8) << 4);
@@ -416,21 +454,27 @@ private:
                 menu_.clear();
                 return;
             }
+            dev_.error40 = true;  // a '*' and then no command: "ERROR:40 unexpected io status"
             menu_.clear();
             return;
         }
         if (!dev_.linkRom || dev_.linkDeaf) return;
         // BlipToaster's end of the link, for intact traffic: a sync sets the next seq, a frame carrying it is applied,
-        // and each is acknowledged with F5 <next expected> <last header read>.
+        // and each is acknowledged with F5 <next expected> <last header read>. Once a sync has turned the link on, a
+        // byte outside a frame is dropped and said so: the ROM marks its ack due with <last> at <next> (bliptoaster
+        // src/midi/parse_asm.s, _midiRead), so a write of unframed bytes is answered F5 <next> <next>.
         switch (link_) {
             case Idle:
                 if (b == 0xF4) link_ = WantSync;
                 else if (b == 0xF5) link_ = WantSeq;
+                else if (linkOn_) ackOwed_ = true;
                 return;
             case WantSync:
                 next_ = b;
+                linkOn_ = true;
                 ++dev_.syncs;
-                replyAck({0xF5, next_, static_cast<std::uint8_t>((next_ - 1) & 0x7F)});
+                replyAck({0xF5, next_,
+                          static_cast<std::uint8_t>(dev_.syncAckLast >= 0 ? dev_.syncAckLast : (next_ - 1) & 0x7F)});
                 link_ = Idle;
                 return;
             case WantSeq:
@@ -485,6 +529,9 @@ private:
     std::deque<PendingAck>   acks_;  // what the game owes the link, in the order it will write it
     std::chrono::steady_clock::time_point chatterDue_{};  // the next unsolicited back-channel byte
     std::string              menuPath_;
+    int                      resetsSeen_ = 0;    // the dev's consoleResets this port's parsers have caught up with
+    bool                     linkOn_ = false;    // a sync has turned the game's link on
+    bool                     ackOwed_ = false;   // an unframed byte arrived with the link on: an ack is due
     enum { Idle, WantSync, WantSeq, InMsg, WantSum } link_ = Idle;
     std::uint8_t             next_ = 0, seq_ = 0;
     Bytes                    msg_;

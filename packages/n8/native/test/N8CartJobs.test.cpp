@@ -78,6 +78,15 @@ private:
     bool              armed_ = false;
 };
 
+// A port that hands back one byte a read, as USB may split what the cart wrote: an ack then arrives a byte at a time.
+class ByteAtATimePort : public retroplug::test::FakeN8Port {
+public:
+    using FakeN8Port::FakeN8Port;
+    std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t timeoutMs) override {
+        return FakeN8Port::read(b, std::min<std::size_t>(n, 1), timeoutMs);
+    }
+};
+
 std::string tempDir() {
     const auto dir = std::filesystem::temp_directory_path() / "rp-n8-cartjobs-test";
     std::filesystem::create_directories(dir);
@@ -1766,4 +1775,160 @@ TEST_CASE("a menu whose chatter lands ahead of its answers is read as a menu, no
     CHECK(rig.dev.menu);
     CHECK(rig.dev.booted.empty());
     CHECK(rig.dev.count("fifo:90 2A 73") == 0);
+}
+
+TEST_CASE("a framed stream to a menu the console's reset reached trips the guard, and nothing is written after",
+          "[n8][menu-guard][!shouldfail]") {
+    // What the real cart did (docs/n8-menu-guard-reset-design.md section 1): RESET drops BlipToaster to the menu with
+    // USB and the framed link still up, and the config block keeps the game's mapper. The acks stop at once, and only
+    // the menu's own answer tells it from a game that has merely gone quiet.
+    Rig rig;
+    rig.dev.menu    = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0]  = 69;  // BlipToaster's mapper, which the reset leaves in the block
+    rig.dev.cfg[2]  = 0;
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;
+    }));
+    rig.dev.resetToMenu();
+    rig.push({0x90, 0x3E, 0x7F});  // a frame the menu never acknowledges: the window stops moving
+    REQUIRE(waitUntil([&] { return !rig.cart.connected(); }, 2000));
+    CHECK(rig.host.link().atMenu());
+    CHECK(rig.host.link().linkOutstanding() == 0);  // the stale window went with the trip
+    // Nothing of the stream goes to the cart's FIFO after the trip; the guard's own probe still does, which is how it
+    // sees a game the user starts from the menu.
+    const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.count("fifo:F0 2A 74 F7"); };
+    const std::size_t before = streamed();
+    rig.push({0x90, 0x41, 0x7F});
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK(streamed() == before);
+    std::lock_guard<std::mutex> l(rig.dev.mu);
+    CHECK(rig.dev.menu);
+    CHECK_FALSE(rig.dev.error40);
+}
+
+TEST_CASE("a raw stream to a menu the console's reset reached trips the guard within a probe's cadence",
+          "[n8][menu-guard][!shouldfail]") {
+    // Raw MIDI has no acks to stop, so nothing the cart says on its own marks the reset: the guard has to ask.
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.connectGame();  // a game whose block names mapper 0, which the reset leaves there
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
+    rig.dev.resetToMenu();
+    const auto t0 = Clock::now();
+    REQUIRE(waitUntil([&] { return !rig.cart.connected(); }, 2000));
+    // One cadence is 250 ms; the rest is room for a loaded runner.
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() < 600);
+    CHECK(rig.host.link().atMenu());
+    rig.push({0x90, 0x2A, 0x73});  // '*s' if the menu ever read it
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK(rig.dev.count("fifo:90 2A 73") == 0);
+    std::lock_guard<std::mutex> l(rig.dev.mu);
+    CHECK(rig.dev.menu);
+    CHECK(rig.dev.booted.empty());
+    CHECK_FALSE(rig.dev.error40);
+}
+
+TEST_CASE("a framed stream of '*'-bearing messages after a reset never drives the menu to ERROR:40",
+          "[n8][menu-guard][!shouldfail]") {
+    // ERROR:40 is a '*' followed by a byte that is not one of the menu's commands, which a framed stream carries sooner
+    // or later (0x2A 0x40, '*@', in every message here); on the real cart the reset stream reached it within 21 s, and
+    // the OS stopped there. Once the guard has tripped no byte of the stream reaches the menu, so it never sees one.
+    Rig rig;
+    rig.dev.menu    = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0]  = 69;
+    rig.dev.cfg[2]  = 0;
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;
+    }));
+    rig.dev.resetToMenu();
+    // The frame that stops the window carries no '*': what is written before the guard can know is the exposure the
+    // design leaves (section 4), and this case is about what comes after.
+    rig.push({0x90, 0x3E, 0x7F});
+    // Time for the guard to see the window stop and ask; the checks below say whether it did.
+    (void)waitUntil([&] { return rig.host.link().atMenu(); }, 1000);
+    for (int i = 0; i < 100; ++i) {
+        rig.push({0x90, 0x2A, 0x40});
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    CHECK(rig.host.link().atMenu());
+    std::lock_guard<std::mutex> l(rig.dev.mu);
+    CHECK_FALSE(rig.dev.error40);
+    CHECK(rig.dev.menu);
+}
+
+TEST_CASE("a job submitted at a menu the console's reset reached is taken", "[n8][menu-guard][!shouldfail]") {
+    // The block keeps the game's mapper after a reset, so a check that reads it refuses the job as "a game runs" at the
+    // one place a battery file can be reached.
+    Rig rig;
+    rig.dev.menu   = false;
+    rig.dev.cfg[0] = 69;
+    rig.dev.cfg[2] = 0;
+    rig.dev.files[kGameBattery] = saveOf(1024, 21);
+    rig.connect();
+    rig.dev.resetToMenu();
+    Job job;
+    std::string why;
+    const bool taken = rig.submit(battery("dump"), job, &why);
+    CHECK(why == "");
+    REQUIRE(taken);
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Done);
+    CHECK(job.result == saveOf(1024, 21));
+}
+
+TEST_CASE("a 'k' inside the reliable link's acks is not the menu's answer", "[n8][menu-guard]") {
+    // The menu answers the guard's probe with a 'k' (0x6B), and an ack is F5 <next> <last> with both 7-bit, so a 'k'
+    // can stand inside one. Only a 'k' outside an ack is the menu's, and a game whose acks carry one keeps its stream.
+    SECTION("as <next> and <last> of a stream's acks") {
+        Rig rig;
+        rig.dev.menu    = false;
+        rig.dev.linkRom = true;
+        rig.dev.cfg[0]  = 69;
+        rig.dev.cfg[2]  = 0;
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+        // Frames 0 to 109: the acks of frames 0x6A and 0x6B name 0x6B as <next> and as <last>.
+        for (int i = 0; i < 110; ++i) rig.push({0x90, static_cast<std::uint8_t>(i & 0x7F), 0x40});
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 110;
+        }));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        CHECK_FALSE(rig.host.link().atMenu());
+        CHECK(rig.cart.connected());
+    }
+    SECTION("as <last> of the sync's ack, which the link probe leaves for the stream's first read") {
+        // The probe goes on as soon as it has read F5 <next>: a port that hands the ack over a byte at a time leaves
+        // its <last> in the input.
+        FakeN8 dev;
+        dev.menu        = false;
+        dev.linkRom     = true;
+        dev.syncAckLast = 0x6B;
+        N8Link link([&dev](const std::string&) -> std::unique_ptr<PortTransport> {
+            return std::make_unique<ByteAtATimePort>(dev);
+        });
+        link.setMenuCheck([](Edio&) { return 0; });  // the guard on, and a game at connect
+        REQUIRE(link.connect("/dev/fake"));
+        REQUIRE(waitUntil([&] { return link.reliable(); }));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        CHECK_FALSE(link.atMenu());
+        const Bytes on{0x90, 0x3C, 0x7F};
+        CHECK(link.push(0, on.data(), on.size(), 48000.0));
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(dev.mu);
+            return dev.applied.size() == 1;
+        }));
+    }
 }
