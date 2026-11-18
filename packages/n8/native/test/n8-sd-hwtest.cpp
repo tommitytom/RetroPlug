@@ -22,6 +22,7 @@
 //   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
 //   retroplug-n8-hwtest menuguard <seconds> [port] [raw] # the menu guard, streaming while a person presses RESET
 //   retroplug-n8-hwtest menuprobe <test|sysex|note> [port] # what the N8 OS menu does with bytes it did not ask for
+//   retroplug-n8-hwtest bootwindow <delay-ms> [stream-ms] [port]  # raw notes from <delay-ms> after a RESET
 //   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
 //   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw]   # latency / jitter / load on the real console
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
@@ -370,6 +371,86 @@ int main(int argc, char** argv) {
     // (BlipToaster) first.
     // `raw` holds the link raw (no link probe, so BlipToaster gets plain MIDI): the raw path, whose only reset signal
     // is the guard's own probe cadence.
+    // How long the N8 OS is fragile after a console RESET (the menu-guard design's raw-link limit): streams framed
+    // through N8Host's link to a game with the reliable link (BlipToaster) until a person presses RESET, which shows as
+    // the window standing still; then disconnects at once, so nothing more goes out, waits until <delay-ms> after the
+    // window stopped (when the console went away, near enough; the stall is seen 100 ms later, so a delay under that
+    // cannot be taken), and writes one raw note-on and its note-off straight to the FIFO. Read the screen after it: an
+    // ERROR:40 means a raw note at that delay breaks the OS's boot.
+    if (op == "bootwindow") {
+        const int         delayMs = static_cast<int>(std::strtol(argv[2], nullptr, 0));
+        // [stream-ms]: keep writing the note every 60 ms for that long, the raw stream's shape, rather than once.
+        const int         streamMs = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 0;
+        // [clock]: the stream is MIDI clock, one F8 every 20 ms (24 a quarter at 120 bpm, risa's sync), not notes.
+        const bool        clock    = std::string(argv[argc - 1]) == "clock";
+        const std::string bport    = argc > 4 && std::string(argv[4]) != "clock" ? argv[4] : findN8Port();
+        if (delayMs <= 0 || bport.empty()) {
+            std::fprintf(stderr, "usage: %s bootwindow <delay-ms> [stream-ms] [port] (no Everdrive N8 found?)\n",
+                         argv[0]);
+            return 2;
+        }
+        N8Host host(
+            [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); },
+            [] { return std::vector<N8PortDto>{}; }, "/tmp");
+        host.setPort(bport);
+        host.connect(true);
+        N8Link& link = host.link();
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));   // the connect seed and the probe
+        if (!link.isConnected() || !link.reliable()) {
+            std::fprintf(stderr, "bootwindow: needs a game with the reliable link (connected=%d reliable=%d)\n",
+                         link.isConnected(), link.reliable());
+            return 1;
+        }
+        using Clock = std::chrono::steady_clock;
+        const auto         t0 = Clock::now();
+        const auto         ms = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - t0).count(); };
+        const std::uint8_t on[]  = {0x90, 69, 100};
+        const std::uint8_t off[] = {0x80, 69, 0};
+        std::printf("bootwindow: streaming framed; press RESET\n");
+        std::fflush(stdout);
+        double outstandingSince = -1, resetMs = -1;
+        for (int step = 0; resetMs < 0 && ms() < 1800000.0; ++step) {
+            if (step % 6 == 0) link.push(0, on, sizeof on, 48000.0);
+            if (step % 6 == 3) link.push(0, off, sizeof off, 48000.0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (link.linkOutstanding() == 0) outstandingSince = -1;
+            else if (outstandingSince < 0) outstandingSince = ms();
+            else if (ms() - outstandingSince >= 100.0) resetMs = outstandingSince;
+        }
+        const double seenMs = ms();
+        host.connect(false);   // nothing more of the stream, and no guard probe, from here
+        if (resetMs < 0) {
+            std::printf("bootwindow: no reset seen\n");
+            return 1;
+        }
+        std::this_thread::sleep_until(
+            t0 + std::chrono::microseconds(static_cast<long long>((resetMs + delayMs) * 1000)));
+        const double noteMs = ms();
+        try {
+            SerialTransport sp(bport);
+            rp::n8::Edio    edio(sp);
+            const auto streamEnd = Clock::now() + std::chrono::milliseconds(streamMs);
+            const std::uint8_t tick[] = {0xF8};
+            do {
+                if (clock) {
+                    edio.fifoWR(tick, sizeof tick);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                    continue;
+                }
+                edio.fifoWR(on, sizeof on);
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                edio.fifoWR(off, sizeof off);
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            } while (Clock::now() < streamEnd);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "bootwindow: the note could not be written: %s\n", e.what());
+            return 1;
+        }
+        std::printf("bootwindow: reset at %.1f ms (seen %.1f ms later); the raw note went out %.1f ms after it\n",
+                    resetMs, seenMs - resetMs, noteMs - resetMs);
+        return 0;
+    }
+
     if (op == "menuguard") {
         const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
         const bool        raw     = std::string(argv[argc - 1]) == "raw";
