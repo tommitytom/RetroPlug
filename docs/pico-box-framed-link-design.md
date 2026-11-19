@@ -164,3 +164,68 @@ runs meet their bar. Until it runs, spec/07's box entry keeps only the hardware 
 
 **Docs:** spec/13's "Where the guard runs" adds the box; the box README's RESET section and stats line; spec/07 as
 above; and this design gains an as-built and an execution section.
+
+## 8. As built
+
+The six tasks landed as planned; follow-up passes took the reviews' findings. What differs from sections 2 to 6:
+
+- **Section 2: the sender's storage is raw `.bss` made by placement new**, so its window is not 3.5 KB of `.data`.
+  The guard's decisions are `N8MenuGuard` (with its `Scan` and `Turn`), and `N8Link` keeps `kMenuProbe`,
+  `kMenuAnswer` and `BackChannelScan` as aliases; `N8Link::serialLoop` now resets the guard beside `atMenu_`, so the
+  two copies of the menu state agree (nothing could see the difference before). The box frames and guards only when
+  its `Writer` has `read` and its `Clock` the 64-bit `monotonicUs`, which kept every existing box case unedited.
+- **Section 3: the framed drain stops framing one frame short of the window** (`outstanding() >= kWindow - 1`), and
+  the rest waits in the ring for the next drain. Reading acks only at a drain's start, a burst of 49 or more messages
+  (the ring after a 1 s hold) would otherwise have made the sender give its window up and re-sync, and a DMC loss in it
+  would have lost every frame up to the re-sync for good, note-offs too. So the sender's 48-frame give-up cannot
+  happen on the box.
+- **Section 3: a failed write's frames are re-sent on the guard's stall, not the 100 ms timeout.** On a silent cart
+  the guard's stall probe comes first, and BlipToaster's ack to it (`F5 <next> <next>`) names the missing frame, which
+  sets off the re-send; the desktop link does the same.
+- **Section 3: a raw link that hears an ack probes the link again**, once per connect, and never with a split SysEx
+  half written. A BlipToaster that reads the connect's `F4 00` after the 100 ms window is in its sticky link mode and
+  drops unframed messages; the late ack is how the box finds out. The desktop's `N8Link` has the same gap and does not
+  re-probe: spec/07 lists it.
+- **Section 3: no probe is written in the drain that hears the menu's `'k'`**: the box leaves the link at once, and a
+  fresh probe's answer could land after the boot's 20 ms flush and shift its replies.
+- **Section 4: no boot runs with the link connected.** `health_check`'s menu return and the boot block both disconnect
+  first, so a framed link is never left synced to the game that went. Once the menu has answered, a boot whose 20
+  `'*t'` fail takes the stuck branch rather than trusting `CMD_STATUS`, and the retry goes straight to `'*t'`. A
+  failed boot retries every 20 s, at most three times in a row, then stops with the error LED until a power-cycle or a
+  fresh mount (a persistent upload failure would otherwise rewrite the SD card every 20 s for ever).
+- **Section 4: the quiet test** also counts a pending or waiting link probe as not quiet, and treats a scan left inside
+  an ack as between acks after 250 ms of back-channel silence (a cart that stopped mid-ack held it false for good).
+  `n8_probe` flushes the input before its `CMD_STATUS`. A failed raw write stops that drain.
+- **Section 4: `[stats]`** prints `link=off|raw|framed`, `resends`, `resent` and `unframed`, and `writes` less the
+  probes written alone (`probeOnly`), so an idle raw link's 250 ms probe does not print a line every second.
+- **Section 5: the byte-loss case runs on `LinkRomModel`, not FakeN8**, which models only intact traffic; its loss is
+  a local LCG. The box's cases are 20 `[box-link]` ones.
+- **Section 5's `PICO_BOARD=pico` build does not link, before or after** ("RAM overflowed by 106472 bytes" at
+  7fa0d1e17: the copy-to-RAM image needs about 350 KB of SRAM), so only the two pico2 variants are sized. PIO-USB went
+  from flash 199752 / data 46120 / bss 120600 to 206608 / 46424 / 124304 bytes; native from 200136 / 32148 / 114368 to
+  206912 / 32452 / 118072.
+- **Section 6: `timing --midi`** stamps each write just before `snd_rawmidi_write`, as `N8Link` stamps its USB
+  writes, and its figure includes the CH345's USB-to-serial delay and the 31250-baud wire (about 0.96 ms a message):
+  on 4 of 16 steps the tick waits about 1 ms behind a kick, so a box against desktop comparison runs `--no-kick`. It
+  lists outputs before opening one and refuses a name without "CH345", one no output has exactly, or one two share.
+- **Left as it is:** a game started by hand during a failed boot's 20 s wait gets no MIDI until the retry finds it
+  running; an ack split across the 100 ms probe window's end is missed, and the next ack heals it.
+
+## 9. Execution
+
+- Design 7fa0d1e17; plan f85879ac9, written by an Opus agent without a compiler (its 65 edit blocks replayed against
+  the tree), then an Opus review (one Important, the window give-up, and eleven Minor) and its fixes.
+- Tasks, each by a Sonnet implementer, test first, each Opus-reviewed: 47fd153b8, 221630027, 81537b79a (+0ebeaa671:
+  the failed-write case the review asked for), b7b0ec0a4 (+f5031f6d5: the review's two Important, a boot with the link
+  connected and the stuck menu after its answer), d6d1b94c3 (+297fb15b1: what the latency includes), 35436e675.
+- Follow-ups, Sonnet, Opus-reviewed: A 3137baf27, b2f3dc7c4 (+65fa13efa: no late-ack re-probe inside a split SysEx);
+  B 0e01d2f25, 29003aada (the final review's items). The Opus final review was ready.
+- Acceptance, headless: the serial kit at 29003aada, 45 of 45 legs exit 0; the parallel kit at 65fa13efa, every leg but
+  `tsandevmode`, whose script-pack CPU-time deadline case failed under the parallel lanes' load (75 ms against 62.5 ms)
+  and passed alone and in the serial run. `pnpm device:box` builds both variants under the link trap, and the
+  `N8_LAT_TRACE=1` and `N8_BOX_LINK=0` builds link.
+- **Not yet run: the hardware acceptance** (section 7) and the latency runs (section 6), which need the rig rewired for
+  the box. Beside section 7's list, the final review adds: whether `CMD_STATUS` reads 0 after an idle RESET, a RESET on
+  the `N8_BOX_LINK=0` build, `faults.sh` (the boot, retry cap and error LED have no headless test), whether the
+  first note after a reboot is lost to BlipToaster's first-message drop, and the expansion volume written again after
+  each reboot. spec/07 keeps the entry until they pass. Nothing is pushed.

@@ -164,8 +164,8 @@ MIDI). `link=framed`, `link=raw` or `link=off` is the cart link's state (framed 
 connect's sync, raw when it did not or the build is `N8_BOX_LINK=0`, off while no game is forwarded to), `resends` and
 `resent` its re-send rounds and the frames they wrote again, and `unframed` the messages a framed link could not carry
 (a SysEx past 40 bytes, which BlipToaster acts on none of); `writes` counts the link's syncs, the guard's probes that
-ride with a message, and re-sends too (a probe written alone, an idle raw link's every 250 ms, is left out, so an idle link
-prints nothing). A raw link that hears an ack later (a BlipToaster that read the connect's sync after the 100 ms window)
+ride with a message, and re-sends too (a probe written alone, an idle raw link's every 250 ms, is left out, so an idle
+link prints nothing). A raw link that hears an ack later (a BlipToaster that read the connect's sync after the 100 ms window)
 probes the link once more for that connect. The framed drain stops framing at one frame short of the window
 outstanding, so the sender's 48-frame give-up cannot happen on the box; and a write that fails on a silent cart is
 followed by the guard's stall probe, whose ack from BlipToaster sets off the re-send, not the sender's 100 ms timeout.
