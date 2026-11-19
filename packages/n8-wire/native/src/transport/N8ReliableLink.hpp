@@ -4,10 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <limits>
-
-#include "util/FixedQueue.hpp"
 
 // The host half of BlipToaster's reliable link (bliptoaster src/midi/main.c "The reliable link").
 //
@@ -26,10 +23,16 @@
 // keeps delivery strictly in order, so a note-off can never overtake its note-on). Writes are never repeated by a DMA
 // halt, so acks are not lost; the timeout is only a safety net for a cart that stops answering.
 //
-// ONE implementation, two transports: the emulator's cart FIFO (NesN8FifoRole, timed in emulated CPU time) and a
-// physical N8 over USB (N8Link, wall-clock time). Which is the point - a user hears the same recovery in the plugin
-// as on the cartridge. The transport supplies time and carries the bytes; everything protocol-shaped lives here.
-// Not thread-safe: each transport drives its sender from one thread.
+// ONE implementation, three transports: the emulator's cart FIFO (NesN8FifoRole, timed in emulated CPU time), and a
+// physical N8 over USB, from the desktop (N8Link, wall-clock time) and from the Pico box (pico/n8-host's BoxCartLink,
+// the box's microsecond clock). Which is the point - a user hears the same recovery in the plugin as on the cartridge.
+// The transport supplies time and carries the bytes; everything protocol-shaped lives here. Not thread-safe: each
+// transport drives its sender from one thread.
+//
+// It allocates nothing and includes no heap or exception header, so the box's firmware links it under the device
+// build's trap on the heap, exceptions and RTTI: the window is a ring of kWindow frames held inline (about 3.4 KiB),
+// and an emitter is a template parameter, called where it is rather than wrapped in a std::function, which allocates
+// for a lambda that captures more than two references.
 
 namespace rp {
 
@@ -54,9 +57,11 @@ public:
         std::int64_t timeoutNs = 100'000'000;
     };
 
-    // Bytes for the transport. seq >= 0 marks the first byte of a frame, which the transport reports back through
-    // onSent() once it is actually on its way (released into the FIFO / written to USB); -1 for anything else.
-    using Emit = std::function<void(const std::uint8_t* data, std::size_t n, int seq)>;
+    // Bytes for the transport: send(), sendMessage() and poll() take an emitter, any callable as
+    // emit(const std::uint8_t* data, std::size_t n, int seq). seq >= 0 marks the first byte of a frame, which the
+    // transport reports back through onSent() once it is actually on its way (released into the FIFO / written to
+    // USB); -1 for anything else. `data` is the sender's own storage, valid for the call; an emitter may call onSent()
+    // from inside it.
 
     N8ReliableSender() : timing_(Timing{}) {}
     explicit N8ReliableSender(Timing t) : timing_(t) {}
@@ -65,7 +70,7 @@ public:
     // Forget everything in flight and sync again before the next frame - after a transport barrier (a flush, a
     // reset, a savestate load), where the ROM's idea of the sequence and ours may differ.
     void reset() {
-        window_.clear();
+        clearWindow();
         synced_ = false;
         status_ = 0;
         msgLen_ = 0;
@@ -79,7 +84,8 @@ public:
     // Host MIDI in - any run of bytes, possibly several messages, running status, SysEx, real-time. Each complete
     // channel message or SysEx goes out as one frame; real-time bytes (F8-FF) pass through unframed, since the ROM
     // takes them at any point; System Common messages the ROM ignores (F1-F3, F6) are dropped, as are truncated ones.
-    void send(const std::uint8_t* data, std::size_t n, const Emit& emit) {
+    template <class EmitFn>
+    void send(const std::uint8_t* data, std::size_t n, const EmitFn& emit) {
         for (std::size_t i = 0; i < n; ++i) feed(data[i], emit);
     }
 
@@ -88,7 +94,8 @@ public:
     // status cuts a split SysEx short, its bytes framed as messages of their own, and the SysEx's tail then read as
     // running-status data. The message being collected is left exactly as it was, bytes and all, so its own tail still
     // completes it.
-    void sendMessage(const std::uint8_t* data, std::size_t n, const Emit& emit) {
+    template <class EmitFn>
+    void sendMessage(const std::uint8_t* data, std::size_t n, const EmitFn& emit) {
         const std::uint8_t                              status  = status_;
         const std::array<std::uint8_t, kMaxMessage + 2> msg     = msg_;
         const std::size_t                               msgLen  = msgLen_;
@@ -108,12 +115,14 @@ public:
 
     // The frame `seq` has gone out at nowNs.
     void onSent(int seq, std::int64_t nowNs) {
-        for (auto& f : window_)
+        for (std::size_t i = 0; i < windowSize_; ++i) {
+            Frame& f = at(i);
             if (f.seq == seq && f.sentNs < 0) {
                 f.sentNs = nowNs;
                 if (f.firstSentNs < 0) f.firstSentNs = nowNs;
                 return;
             }
+        }
     }
 
     // Back-channel bytes from the cart: the ROM's `F5 <next>` acks (anything else is ignored).
@@ -133,15 +142,17 @@ public:
     // outstanding), so a transport can skip calling until then.
     // `cartBusy`: the transport knows the cart still has unread bytes (the emulator can see its FIFO) - it cannot
     // have answered yet, so the timeout waits.
-    std::int64_t poll(std::int64_t nowNs, const Emit& emit, bool cartBusy = false) {
-        if (window_.empty()) { resendAt_ = kNever; return kNever; }
-        const Frame& oldest = window_.front();
+    template <class EmitFn>
+    std::int64_t poll(std::int64_t nowNs, const EmitFn& emit, bool cartBusy = false) {
+        if (windowSize_ == 0) { resendAt_ = kNever; return kNever; }
+        const Frame& oldest = at(0);
         const bool timedOut = !cartBusy && oldest.sentNs >= 0 && nowNs - lastHeard(oldest) >= timing_.timeoutNs;
         if (nowNs >= resendAt_ || timedOut) {
             resendAt_ = kNever;
             ++resends_;
             if (pendingSyncLen_) { emit(pendingSync_.data(), pendingSyncLen_, -1); pendingSyncLen_ = 0; }
-            for (auto& f : window_) {
+            for (std::size_t i = 0; i < windowSize_; ++i) {
+                Frame& f = at(i);
                 if (f.sentNs < 0) continue;   // still queued in the transport: it goes out on its own
                 f.sentNs = -1;                // re-armed; onSent marks it again when it actually leaves
                 ++framesResent_;
@@ -151,7 +162,7 @@ public:
         return nextDue();
     }
 
-    std::size_t outstanding() const { return window_.size(); }
+    std::size_t outstanding() const { return windowSize_; }
     // Whether the window has stopped MOVING: the oldest outstanding frame first went out at least timeoutNs ago, and
     // nothing has acknowledged it since (an ack that advances the window makes a newer frame the oldest, with a newer
     // first send). This is not the re-send question above, which measures from the last thing the cart said: a
@@ -167,7 +178,7 @@ public:
     // lastHeardNs is the int64 minimum until the cart has said something.
     std::int64_t lastHeardNs() const { return lastAckNs_; }
     std::int64_t oldestFirstSentNs() const {
-        return window_.empty() || window_.front().firstSentNs < 0 ? kNever : window_.front().firstSentNs;
+        return windowSize_ == 0 || at(0).firstSentNs < 0 ? kNever : at(0).firstSentNs;
     }
     // Round trips (frame out -> the ack that covered it): the fastest, and the latest. -1 until one is measured.
     std::int64_t rttMinNs() const { return rttMinNs_; }
@@ -200,7 +211,28 @@ private:
         return (k == 0xC0 || k == 0xD0) ? 1 : 2;
     }
 
-    void feed(std::uint8_t b, const Emit& emit) {
+    // The window, oldest first, as a ring: frames leave from the front (an ack) and join at the back (a new frame),
+    // and the whole window goes at once (a reset, a full window's re-sync), so a frame stays where it was written
+    // until it goes and nothing ever moves.
+    Frame&       at(std::size_t i) { return window_[(windowHead_ + i) % kWindow]; }
+    const Frame& at(std::size_t i) const { return window_[(windowHead_ + i) % kWindow]; }
+    void         clearWindow() {
+        windowHead_ = 0;
+        windowSize_ = 0;
+    }
+    Frame& pushFrame(const Frame& f) {
+        Frame& slot = window_[(windowHead_ + windowSize_) % kWindow];
+        slot = f;
+        ++windowSize_;
+        return slot;
+    }
+    void popFrame() {
+        windowHead_ = (windowHead_ + 1) % kWindow;
+        --windowSize_;
+    }
+
+    template <class EmitFn>
+    void feed(std::uint8_t b, const EmitFn& emit) {
         if (b >= 0xF8) { emit(&b, 1, -1); return; }   // real-time: unframed, anywhere (the ROM skips or acts on it)
         if (inSysex_) {
             if (b == 0xF7) {
@@ -233,16 +265,17 @@ private:
         else msgTooLong_ = true;
     }
 
-    void frame(const Emit& emit) {
+    template <class EmitFn>
+    void frame(const EmitFn& emit) {
         if (!synced_) {
             const std::uint8_t s[2] = { SYNC, nextSeq_ };
             emit(s, 2, -1);
             synced_ = true;
         }
-        if (window_.size() >= kWindow) {
+        if (windowSize_ >= kWindow) {
             // The cart has stopped answering (unplugged, crashed, a ROM without the link): give the whole window up
             // and re-point the ROM past it rather than grow without bound.
-            window_.clear();
+            clearWindow();
             const std::uint8_t s[2] = { SYNC, nextSeq_ };
             emit(s, 2, -1);
         }
@@ -259,27 +292,27 @@ private:
         f.bytes[2 + msgLen_] = static_cast<std::uint8_t>(sum & 0x7F);   // the ROM checks it before anything applies
         ++framesSent_;
         nextSeq_ = static_cast<std::uint8_t>((nextSeq_ + 1) & 0x7F);
-        window_.push(f);
-        emit(window_.back().bytes, window_.back().size, window_.back().seq);
+        const Frame& added = pushFrame(f);
+        emit(added.bytes, added.size, added.seq);
         msgLen_ = 0;
         msgTooLong_ = false;
     }
 
     void onAck(std::uint8_t next, std::uint8_t last, std::int64_t nowNs) {
         bool advanced = false;
-        while (!window_.empty() && before(window_.front().seq, next)) {
+        while (windowSize_ != 0 && before(at(0).seq, next)) {
             advanced = true;
-            const std::int64_t sent = window_.front().sentNs;
+            const std::int64_t sent = at(0).sentNs;
             if (sent >= 0) {
                 const std::int64_t rtt = nowNs - sent;
                 lastRttNs_ = rtt;
                 if (rttMinNs_ < 0 || rtt < rttMinNs_) rttMinNs_ = rtt;
             }
-            window_.pop();
+            popFrame();
         }
-        if (window_.empty()) { resendAt_ = kNever; return; }
+        if (windowSize_ == 0) { resendAt_ = kNever; return; }
         if (advanced) resendAt_ = kNever;   // what a pending re-send was for has (partly) arrived: decide afresh
-        const Frame& oldest = window_.front();
+        const Frame& oldest = at(0);
         if (oldest.seq != next) {
             // The ROM expects something we no longer hold (it rebooted and latched another number, or we reset):
             // point it at our oldest frame and re-send from there.
@@ -307,17 +340,20 @@ private:
 
     std::int64_t nextDue() const {
         std::int64_t due = resendAt_;
-        if (!window_.empty() && window_.front().sentNs >= 0) {
-            const std::int64_t t = lastHeard(window_.front()) + timing_.timeoutNs;
+        if (windowSize_ != 0 && at(0).sentNs >= 0) {
+            const std::int64_t t = lastHeard(at(0)) + timing_.timeoutNs;
             if (t < due) due = t;
         }
         return due;
     }
 
     Timing                    timing_;
-    // Fixed storage, sized once here: the sender runs inside a block (the NES role frames a released message as the
-    // block's emulation reaches it), so neither the window nor the message being collected may grow there.
-    rp::FixedQueue<Frame>     window_{kWindow};
+    // Fixed storage, held inline: the sender runs inside a block (the NES role frames a released message as the
+    // block's emulation reaches it) and on the Pico box, which has no heap, so neither the window nor the message being
+    // collected may grow, and nothing here is allocated at all.
+    std::array<Frame, kWindow> window_{};
+    std::size_t               windowHead_ = 0;   // the oldest frame's slot
+    std::size_t               windowSize_ = 0;   // frames outstanding
     std::uint8_t              nextSeq_    = 0;
     bool                      synced_     = false;
     std::uint8_t              status_     = 0;

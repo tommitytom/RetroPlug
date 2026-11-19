@@ -7,9 +7,11 @@
 # meet at a package that is nobody's own.
 #
 # Header-only, so an INTERFACE target: a consumer gets this package's include root, where the two headers keep the paths
-# they are included by ("transport/N8ReliableLink.hpp", "n8wire/ExpansionVolume.hpp"), and node-sdk's include root,
-# for the link's frame store (util/FixedQueue.hpp, header-only: nothing here links reflect-cpp or any library). A build
-# adds it too, between node-sdk and the packages that list it.
+# they are included by ("transport/N8ReliableLink.hpp", "n8wire/ExpansionVolume.hpp"). Both are the standard library's
+# alone and heap-free (the link's window is a ring inside the sender), so the Pico box's firmware links the link under
+# the device build's trap; node-sdk's headers, which this package declares as every native package does, come along
+# with the link below and are not included by either. A build adds it too, between node-sdk and the packages that list
+# it.
 add_library(retroplug-n8-wire INTERFACE)
 target_include_directories(retroplug-n8-wire INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-n8-wire INTERFACE retroplug-node-sdk-headers)

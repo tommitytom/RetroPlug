@@ -22,6 +22,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -31,6 +32,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string>
@@ -56,6 +58,7 @@
 #include "n8/Edio.hpp"
 #include "n8/N8Node.hpp"
 #include "script/MqjsHost.hpp"
+#include "transport/N8ReliableLink.hpp"
 
 // The bliptoaster script pack's registration, the desktop's and the device's (retroplug_device_mode_objects), and its
 // source (its heap).
@@ -1233,4 +1236,59 @@ TEST_CASE("the box's volume write: done whatever it reads back, tried again only
               std::vector<std::string>{
                   "[n8-host] cart link: expansion volume 128: write did not go through, trying again each second"});
     }
+}
+
+TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: made, a full window, its re-sends and a "
+          "re-sync",
+          "[device-mode][box][n8-wire]") {
+    using rp::N8ReliableSender;
+    // The box's transport keeps what goes out in storage of its own and marks each frame sent as it leaves: an emitter
+    // of five references, past the two a std::function holds without allocating.
+    std::optional<N8ReliableSender> s;
+    std::array<std::uint8_t, 4096>  wire{};
+    std::size_t                     wireLen = 0;
+    int                             framesOut = 0;
+    std::int64_t                    now = 1'000'000'000;
+    const auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) {
+        for (std::size_t i = 0; i < n && wireLen < wire.size(); ++i) wire[wireLen++] = d[i];
+        if (seq >= 0) {
+            ++framesOut;
+            s->onSent(seq, now);
+        }
+    };
+    N8ReliableSender::Timing t;
+    t.resendDelayNs = 0;
+
+    rp::test::beginCountingAllocations();
+    s.emplace(t);  // made where the box makes it: inside a pass
+    for (int i = 0; i < 48; ++i) {
+        const std::uint8_t on[3] = {0x90, static_cast<std::uint8_t>(36 + i), 100};
+        s->send(on, 3, emit);
+    }
+    const std::size_t full = s->outstanding();
+    now += 100'000'000;  // nothing heard for the timeout: the whole window again
+    s->poll(now, emit);
+    const std::uint8_t ack[3] = {0xF5, 10, 20};  // ten arrived, and the ROM read 20: from 10 again, at once
+    s->onBackChannel(ack, 3, now);
+    s->poll(now, emit);
+    const std::uint8_t sysex[5] = {0xF0, 0x7D, 0x42, 0x02, 0xF7};
+    s->sendMessage(sysex, 5, emit);
+    for (int i = 0; i < 10; ++i) {  // 39 out: the 49th outstanding frame gives the window up and re-syncs
+        const std::uint8_t off[3] = {0x80, 60, 0};
+        s->send(off, 3, emit);
+    }
+    const auto counted = rp::test::endCountingAllocations();
+
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    CHECK(full == 48);
+    CHECK(s->resends() == 2);
+    CHECK(s->framesResent() == 48 + 38);
+    CHECK(s->framesSent() == 59);
+    CHECK(framesOut == 59 + 48 + 38);
+    CHECK(s->outstanding() == 1);
+    // The re-sync, F4 <58>, ahead of the last frame (six bytes: F5 58 80 3C 00 <sum>).
+    REQUIRE(wireLen >= 8);
+    CHECK(wire[wireLen - 8] == N8ReliableSender::SYNC);
+    CHECK(wire[wireLen - 7] == 58);
 }
