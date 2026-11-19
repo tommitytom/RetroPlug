@@ -84,8 +84,8 @@ constexpr int kMenuProbeMs = 1000;
 constexpr int kMenuProbeMarginMs = 100;
 
 // How long the N8 menu's answer to a probe may take: one USB round trip and a turn of the menu's loop. Past it nothing
-// answered, and the cart runs a game. The link waits as long for the answer to the probe it streams (N8Link.cpp's
-// kMenuAnswerNs).
+// answered, and the cart runs a game. The link waits as long for the answer to the probe it streams (the menu guard's
+// kAnswerNs, transport/N8MenuGuard.hpp).
 constexpr std::uint32_t kMenuAnswerMs = 100;
 
 // Whether the N8 menu runs, asked the one way that holds after a console RESET (which leaves the config block's map_idx

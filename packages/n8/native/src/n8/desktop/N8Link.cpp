@@ -13,18 +13,6 @@ namespace retroplug {
 
 namespace {
 using steady = std::chrono::steady_clock;
-// How often the guard asks where the cart runs (on a raw link, and at the menu whatever the link); how long the menu's
-// answer may take before the cart is taken for a game, which ignores the probe (N8Host's seed waits as long, its
-// kMenuAnswerMs); and how long a framed hold waits for an answer or an ack before it asks again. The lab's menu
-// answers in about 20 ms (27 ms the worst of 8, at a power-on menu), so the answer window has room to spare.
-constexpr std::int64_t kMenuProbeNs  = 250'000'000;
-constexpr std::int64_t kMenuAnswerNs = 100'000'000;
-constexpr std::int64_t kMenuHoldNs   = 1'000'000'000;
-// How many probes in a row the menu may leave unanswered before the cart is taken for a game (one slow turn of the
-// menu's loop must not stream into it: about 750 ms for a game booted by hand), and how many stall probes a framed link
-// may hear nothing at all to before it gives the window up (see menuHold).
-constexpr int kMenuLeaveMisses = 3;
-constexpr int kStallMisses     = 2;
 // RP_N8LINK_TRACE=1 logs every byte the link writes and every back-channel byte it reads (stderr) - read once.
 bool traceOn() {
     static const bool on = std::getenv("RP_N8LINK_TRACE") != nullptr;
@@ -73,7 +61,7 @@ std::size_t N8Link::readPort(std::uint8_t* buffer, std::size_t size, std::uint32
 void N8Link::flushPort() {
     // What the flush drops may end halfway through an ack: the scan starts afresh with the input, or the bytes after it
     // (the menu's 'k' among them) would be read as that ack's.
-    backScan_ = {};
+    guard_.scan() = {};
     serialPort_->flushInput();
     if (std::string said = serialPort_->failure(); !said.empty()) throw std::runtime_error(said);
 }
@@ -125,20 +113,14 @@ bool N8Link::connect(const std::string& port) {
     // so the state decides whether anything may be streamed at all. A check whose port fails leaves the state as it was
     // (not the menu), which streams as the link always did, and the stream's own probe asks again at its first turn.
     atMenu_.store(false, std::memory_order_relaxed);
-    menuProbeAtNs_   = 0;
-    menuProbeDueNs_  = 0;
-    menuGameUntilNs_ = 0;
-    menuAnswered_    = false;
-    menuMisses_      = 0;
-    stallMisses_     = 0;
-    backScan_        = {};
-    acksHeard_       = 0;
-    acksAtProbe_     = 0;
+    guard_.reset();
     if (menuCheck_) {
         try {
             // What the cart said after the handshake is not this check's answer: a flush leaves its reply on its own.
             flushPort();
-            atMenu_.store(menuCheck_(*edio_) == 1, std::memory_order_relaxed);
+            const bool menu = menuCheck_(*edio_) == 1;
+            guard_.seed(menu);
+            atMenu_.store(menu, std::memory_order_relaxed);
         } catch (const std::exception&) {
         }
     }
@@ -161,8 +143,7 @@ void N8Link::disconnect() {
     // Where the OLD cart ran says nothing about the next one: a status read while the link is down must not keep saying
     // "at the menu" for a port that has been closed.
     atMenu_.store(false, std::memory_order_relaxed);
-    menuProbeAtNs_   = 0;
-    menuGameUntilNs_ = 0;
+    guard_.reset();
     rel_.reset();
     reliable_.store(false, std::memory_order_release);
     connected_.store(false, std::memory_order_release);
@@ -292,7 +273,7 @@ void N8Link::probeLink() {
                 reliable_.store(true, std::memory_order_release);
                 // The ack's <last> was in this read, and goes with the rest of it, or is still to come, and then the
                 // scan must read it as the ack's: a 0x6B there is not the menu's answer.
-                backScan_.state = i + 1 < n ? 0 : 2;
+                guard_.scan().state = i + 1 < n ? 0 : 2;
                 return;
             }
             sawFrame = (buf[i] == rp::N8ReliableSender::FRAME);
@@ -348,12 +329,7 @@ void N8Link::readBackChannel() {
         std::fprintf(stderr, "\n");
     }
     if (n && rel_) rel_->onBackChannel(buf, n, now);
-    if (!menuCheck_) return;
-    for (std::size_t i = 0; i < n; ++i) {
-        const BackChannelScan::Heard heard = backScan_.feed(buf[i]);
-        if (heard == BackChannelScan::Heard::Ack) ++acksHeard_;
-        else if (heard == BackChannelScan::Heard::MenuAnswer) menuAnswered_ = true;
-    }
+    if (menuCheck_) guard_.hear(buf, n);
 }
 
 // Whatever the reliable link is due to re-send at `now`, out. Held while the menu guard looks (menuHold): a cart at its
@@ -373,83 +349,38 @@ void N8Link::serviceLinkResends(std::int64_t now) {
     linkRttMinNs_.store(rel_->rttMinNs(), std::memory_order_relaxed);
 }
 
-// The cart's at-menu state for this turn, asked with the guard's probe (kMenuProbe) and answered by the menu's 'k' on
-// the back-channel (readBackChannel), which trips the guard whenever it is heard: only the menu answers. When it asks:
-// - raw, every 250 ms between two messages, as part of the stream: no read and no wait, the answer is heard on a later
-//   turn. A raw link has no acks, so nothing else tells a menu the console's reset reached from a game.
-// - framed, only once the window has STOPPED MOVING (the oldest frame unacknowledged past the link's own timeout, which
-//   is the console reset), holding new frames and re-sends until a 'k' (the menu) or an ack (a game whose acks are
-//   merely lost or damaged: its stream goes on, and a stall is not asked about again for a second), and asking again
-//   each second that hears neither. A framed game never sees the probe outside a stall. A live BlipToaster drops the
-//   probe's bytes as unframed and acknowledges F5 <next> <next> for them (bliptoaster src/midi/parse_asm.s), so a game
-//   whose own acks were lost still answers the stall. Two stall probes that hear nothing at all are neither the menu
-//   nor this link's game: a game without the link, started from the cart's browser after a reset the guard never saw
-//   (a framed link asks only in a stall). The window and what the ring held for it go, counted, and the link is
-//   probed again: a game with the link re-syncs framed, any other is streamed raw.
-// - at the menu, every 250 ms whatever the link: a game the user starts from the cart's own browser answers no probe,
-//   and three left unanswered in a row leave the menu (leaveMenu runs the link probe again); a single miss is a slow
-//   turn of the menu's, and leaving on it would stream into the menu until the next probe.
+// The cart's at-menu state for this turn: the menu guard's (transport/N8MenuGuard.hpp, which says when it asks and
+// what it takes for the menu's answer), carried out here on the link's port in the order the guard gives: the menu's
+// 'k' drops what the link holds (enterMenu); leaving the menu (leaveMenu) or a stalled window two probes heard nothing
+// to (the window and what the ring held for it go, counted) probes the link again, so a game with the link re-syncs
+// framed and any other is streamed raw; then the probe goes out when the guard asks for it. A link with no MenuCheck
+// has no guard.
 bool N8Link::menuHold(std::int64_t now) {
     if (!menuCheck_) return false;
-    if (menuAnswered_) {
-        menuAnswered_  = false;
-        menuProbeAtNs_ = 0;
-        menuMisses_    = 0;
-        reportMenuState(true);
+    const rp::N8MenuGuard::Turn turn = guard_.turn(now, rel_.get(), betweenMessages());
+    if (turn.enteredMenu) {
+        atMenu_.store(true, std::memory_order_relaxed);
+        enterMenu();
     }
-    if (atMenu_.load(std::memory_order_relaxed)) {
-        if (menuProbeAtNs_ != 0 && now - menuProbeAtNs_ >= kMenuAnswerNs) {
-            menuProbeAtNs_ = 0;
-            if (++menuMisses_ >= kMenuLeaveMisses) {
-                menuMisses_ = 0;
-                reportMenuState(false);
-                return atMenu_.load(std::memory_order_relaxed);
-            }
-        }
-        if (menuProbeAtNs_ == 0 && now >= menuProbeDueNs_) writeMenuProbe(now);
-        return true;  // nothing new goes out while it says menu
+    if (turn.leftMenu) {
+        atMenu_.store(false, std::memory_order_relaxed);
+        leaveMenu();
     }
-    if (rel_ && rel_->progressOverdue(now) && now >= menuGameUntilNs_) {
-        if (menuProbeAtNs_ != 0 && acksHeard_ != acksAtProbe_) {
-            menuProbeAtNs_   = 0;
-            stallMisses_     = 0;
-            menuGameUntilNs_ = now + kMenuHoldNs;
-            return false;
-        }
-        if (menuProbeAtNs_ != 0 && now - menuProbeAtNs_ >= kMenuHoldNs && ++stallMisses_ >= kStallMisses) {
-            menuProbeAtNs_ = 0;
-            stallMisses_   = 0;
-            discardRing();
-            rel_->reset();
-            linkOutstanding_.store(0, std::memory_order_relaxed);
-            probeLink();
-            return false;
-        }
-        if (menuProbeAtNs_ == 0 || now - menuProbeAtNs_ >= kMenuHoldNs) writeMenuProbe(now);
-        return true;  // hold the re-send until the cart has answered
+    if (turn.reprobeLink) {
+        discardRing();
+        rel_->reset();
+        linkOutstanding_.store(0, std::memory_order_relaxed);
+        probeLink();
     }
-    if (rel_) {
-        // The window moves (or a stall's ack was heard within the second): no probe of a stall is awaited any more,
-        // and a miss left from an earlier stall does not count toward the next one's drop. A window that has drained
-        // ends the trusted second too: it vouched for the game that was stalled, and the next frame's stall (a RESET
-        // since) is asked about at the link's own timeout, which on a lossy link is otherwise a second away.
-        menuProbeAtNs_ = 0;
-        stallMisses_   = 0;
-        if (rel_->outstanding() == 0) menuGameUntilNs_ = 0;
-        return false;
-    }
-    if (menuProbeAtNs_ != 0 && now - menuProbeAtNs_ >= kMenuAnswerNs) menuProbeAtNs_ = 0;  // unanswered: a game
-    if (menuProbeAtNs_ == 0 && now >= menuProbeDueNs_ && betweenMessages()) writeMenuProbe(now);
-    return false;
+    if (turn.writeProbe) writeMenuProbe(now);
+    return turn.hold;
 }
 
-// The guard's probe, out: unframed, at a point the caller has made sure is between two messages, and on a raw link
-// through the tracker as any message is, since a SysEx ends running status on the cart's wire too (the stream's next
-// chunk gets its status written back, see writeChunk). Not counted as forwarded: it is the link's question, not MIDI.
+// The guard's probe, out: unframed, at a point the guard was told is between two messages, and on a raw link through
+// the tracker as any message is, since a SysEx ends running status on the cart's wire too (the stream's next chunk
+// gets its status written back, see writeChunk). Not counted as forwarded: it is the link's question, not MIDI. The
+// guard has already booked it (its time, the next one's, the acks it is judged against).
 void N8Link::writeMenuProbe(std::int64_t now) {
-    menuProbeAtNs_  = now;
-    menuProbeDueNs_ = now + kMenuProbeNs;
-    acksAtProbe_    = acksHeard_;
     if (!rel_) noteWireBytes(kMenuProbe, sizeof kMenuProbe, now, false);
     if (traceOn())
         std::fprintf(stderr, "[n8link] %.3f tx F0 2A 74 F7 (the menu probe)\n", static_cast<double>(now) / 1e6);
@@ -466,15 +397,13 @@ void N8Link::noteMenuProbe() {
     if (writeLog_) writeLog_(kMenuProbe, sizeof kMenuProbe, now, false);
 }
 
-bool N8Link::menuProbeAwaited(std::int64_t now) const {
-    return menuProbeAtNs_ != 0 && now - menuProbeAtNs_ < kMenuAnswerNs;
-}
+bool N8Link::menuProbeAwaited(std::int64_t now) const { return guard_.probeAwaited(now); }
 
 void N8Link::reportMenuState(bool menu) {
     // A link with no MenuCheck has no guard - a fake device's, or a case that turned it off on purpose - so there is
     // nothing for a probe's answer to feed.
     if (!menuCheck_) return;
-    if (menu == atMenu_.load(std::memory_order_relaxed)) return;
+    if (!guard_.report(menu)) return;
     atMenu_.store(menu, std::memory_order_relaxed);
     if (menu)
         enterMenu();
@@ -504,20 +433,11 @@ void N8Link::enterMenu() {
         releaseAfter_ = 0;
         releaseWanted_.store(false, std::memory_order_relaxed);
     }
-    // A probe of the guard's still awaited is the menu's to answer: whatever becomes of its 'k', it is not "nothing
-    // answered", which at the menu would read as a game.
-    menuProbeAtNs_   = 0;
-    menuMisses_      = 0;
-    stallMisses_     = 0;
-    menuGameUntilNs_ = 0;
     if (traceOn()) std::fprintf(stderr, "[n8link] the cart is at its menu: the stream is dropped\n");
 }
 
 void N8Link::leaveMenu() {
     if (traceOn()) std::fprintf(stderr, "[n8link] the cart runs a game: streaming, and probing the link\n");
-    menuProbeAtNs_   = 0;
-    stallMisses_     = 0;
-    menuGameUntilNs_ = 0;
     // A game started from the cart's own browser may speak the reliable link, and the connect-time probe could not have
     // told: the frames it would carry start from a sync here.
     if (linkAllowed_) probeLink();
@@ -537,7 +457,7 @@ void N8Link::discardRing() {
 bool N8Link::quietForRead(std::int64_t now) const {
     // A probe of the guard's whose answer may still be coming: a 'k' read inside a reply would be taken for its first
     // byte, and lost to the guard. Nor halfway through an ack, whose tail would be the reply's first bytes.
-    if (menuProbeAwaited(now) || backScan_.state != 0) return false;
+    if (menuProbeAwaited(now) || guard_.scan().state != 0) return false;
     // Nothing outstanding, so no ack is owed (an ack the ROM repeats for a frame it already acknowledged is the one
     // exception, see OnControl). Or a cart that has said nothing for the pause's ack bound since the oldest outstanding
     // frame first went out: one at its menu (a console reset keeps USB and the link up, and the menu acknowledges

@@ -6,12 +6,12 @@
 # (cmake/packages.cmake); `n8` and `mesen` both list it and neither lists the other, so the console and the cartridge
 # meet at a package that is nobody's own.
 #
-# Header-only, so an INTERFACE target: a consumer gets this package's include root, where the two headers keep the paths
-# they are included by ("transport/N8ReliableLink.hpp", "n8wire/ExpansionVolume.hpp"). Both are the standard library's
-# alone and heap-free (the link's window is a ring inside the sender), so the Pico box's firmware links the link under
-# the device build's trap; node-sdk's headers, which this package declares as every native package does, come along
-# with the link below and are not included by either. A build adds it too, between node-sdk and the packages that list
-# it.
+# Header-only, so an INTERFACE target: a consumer gets this package's include root, where the headers keep the paths
+# they are included by ("transport/N8ReliableLink.hpp", "transport/N8MenuGuard.hpp", "n8wire/ExpansionVolume.hpp"). All
+# three are the standard library's alone and heap-free (the link's window is a ring inside the sender, and the menu
+# guard's decisions do no I/O), so the Pico box's firmware links the link and the guard under the device build's
+# trap; node-sdk's headers, which this package declares as every native package does, come along with the link below
+# and are included by none of them. A build adds it too, between node-sdk and the packages that list it.
 add_library(retroplug-n8-wire INTERFACE)
 target_include_directories(retroplug-n8-wire INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-n8-wire INTERFACE retroplug-node-sdk-headers)

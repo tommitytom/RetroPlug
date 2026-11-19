@@ -71,6 +71,7 @@ retroplug_add_test_binary(
     SOURCES  test/Edio.test.cpp
              test/Ops.test.cpp             # the menu's commands and the operations over FakeN8
              test/N8ReliableLink.test.cpp  # the reliable link's sender half, over LinkRomModel.hpp's ROM rules
+             test/N8MenuGuard.test.cpp     # the menu guard's decisions, driven by hand
              test/N8Host.test.cpp
              test/N8CartLink.test.cpp      # the cart device link over N8Link + N8Host
              test/N8CartJobs.test.cpp      # the cart's capability jobs, run with streaming paused
