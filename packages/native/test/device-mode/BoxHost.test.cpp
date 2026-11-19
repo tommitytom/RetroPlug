@@ -22,6 +22,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -1398,6 +1399,7 @@ struct LossyRig {
     rp::n8::test::RomModel                         rom;
     std::uint32_t                                  rng = 0x2545F491u;
     bool                                           lossy = false;
+    bool                                           failNext = false;  // the next FIFO write delivers nothing and fails
     int                                            lost = 0;
     Bytes                                          back;
     std::unique_ptr<rp::box::BoxCartLink::Storage> ring = std::make_unique<rp::box::BoxCartLink::Storage>();
@@ -1412,6 +1414,10 @@ struct LossyRig {
     }
     static bool          fifo(void* ctx, const std::uint8_t* d, std::size_t n, std::uint32_t, std::uint32_t) {
         auto& self = *static_cast<LossyRig*>(ctx);
+        if (self.failNext) {
+            self.failNext = false;
+            return false;
+        }
         for (std::size_t i = 0; i < n; ++i) {
             if (self.lossy && self.draw() % 1000 < 15) {
                 const int k = 1 + static_cast<int>(self.draw() % 3);
@@ -1579,6 +1585,7 @@ TEST_CASE("the box's framed link through a wire that loses bytes: every message 
     CHECK(r.link.outstanding() == 0);
     CHECK(r.lost > 0);                         // the wire really did lose bytes
     CHECK(r.link.counts().resends > 0);        // and the link repaired them
+    CHECK(r.link.counts().resent >= r.link.counts().resends);
     CHECK(r.link.framed());                    // without giving the link up
     REQUIRE(r.rom.applied.size() == sent.size());  // none lost, none applied twice
     CHECK(r.rom.applied == sent);                  // and in order
@@ -1677,6 +1684,7 @@ TEST_CASE("two stall probes the box's framed link hears nothing to are a game wi
     CHECK(r.dev.countExact(fifoEntry({0xF4, 0x00})) == 2);  // the connect's probe and the second
     CHECK(r.dev.countExact(fifoEntry(kProbeBytes)) == 3);   // two stall probes and the raw link's first
     CHECK(r.link.counts().resends == 0);                    // a held stall re-sends nothing
+    CHECK(r.link.counts().resent == 0);
 }
 
 TEST_CASE("the box's link is quiet for an Edio read only when nothing it is owed can land in the reply",
@@ -1797,4 +1805,75 @@ TEST_CASE("the box's pass on the framed link: the connect's probe, a frame and i
     CHECK(c.unframed == 0);
     CHECK(record->backCount == 0);
     unloadPlan(box->plan.plan());
+}
+
+TEST_CASE("a framed link the box disconnects and connects again is probed afresh, with a sender and a guard of its own",
+          "[device-mode][box][box-link]") {
+    CartRig r;
+    r.dev.linkRom = true;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    REQUIRE(r.push(note(0x90, 60, 100)));
+    r.drain();
+    REQUIRE(r.link.outstanding() == 1);
+    REQUIRE(r.dev.syncs == 2);  // the connect's probe and the sender's own
+    r.link.setConnected(false);
+    CHECK_FALSE(r.link.framed());
+    CHECK(r.link.outstanding() == 0);
+    CHECK(r.link.counts().notReady == 1);  // the window's unacknowledged frame
+    CHECK_FALSE(r.link.atMenu());
+    r.link.setConnected(true);
+    r.drain();
+    CHECK(r.link.framed());
+    CHECK(r.dev.countExact(fifoEntry({0xF4, 0x00})) == 2);  // the connect's probe, again
+    REQUIRE(r.push(note(0x90, 64, 100)));
+    r.drain();
+    CHECK(r.dev.applied.size() == 2);
+    CHECK(r.link.counts().notReady == 1);
+}
+
+TEST_CASE("the box's raw link probes no sooner than 250 ms after its last probe", "[device-mode][box][box-link]") {
+    ScriptedRig r;
+    r.link.setConnected(true);
+    r.drain();
+    r.drain(100);  // raw, and the guard's first probe
+    REQUIRE_FALSE(r.link.framed());
+    std::vector<std::uint64_t> probeAt;
+    std::size_t                seen = r.writes.size();
+    probeAt.push_back(r.us);  // the first probe went out in the drain above
+    for (int i = 0; i < 100; ++i) {
+        r.drain(10);
+        for (; seen < r.writes.size(); ++seen)
+            if (r.writes[seen] == kProbeBytes) probeAt.push_back(r.us);
+    }
+    REQUIRE(probeAt.size() >= 3);
+    for (std::size_t i = 1; i < probeAt.size(); ++i) CHECK(probeAt[i] - probeAt[i - 1] >= 250'000);
+}
+
+TEST_CASE("a failed framed write on the box's link: its frame is marked sent, re-sent once the cart shows it lost, and "
+          "every message arrives in order",
+          "[device-mode][box][box-link]") {
+    LossyRig r;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    const Bytes a = note(0x90, 60, 100), b = note(0x90, 62, 100), c = note(0x90, 64, 100);
+    REQUIRE(r.push(a));
+    r.failNext = true;
+    r.drain();
+    CHECK(r.link.counts().failed == 1);
+    // Written as far as the link is concerned, whether or not the write went through: a frame left unmarked would
+    // never be re-sent, and the oldest-sent time the quiet rule reads would never come, wedging the stream behind it.
+    CHECK(r.link.outstanding() == 1);
+    CHECK(r.rom.applied.empty());
+    REQUIRE(r.push(b));
+    r.drain();  // b's frame, which the cart reads past a gap and answers with the frame it still wants
+    REQUIRE(r.push(c));
+    for (int k = 0; k < 400 && (r.link.queued() != 0 || r.link.outstanding() != 0); ++k) r.drain();
+    CHECK(r.link.outstanding() == 0);
+    CHECK(r.link.counts().resends >= 1);
+    CHECK(r.link.counts().resent >= 1);
+    CHECK(r.rom.applied == std::vector<Bytes>{a, b, c});
+    CHECK(r.link.quietForRead());
 }
