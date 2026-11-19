@@ -178,11 +178,19 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     chunks too. That is deliberate, since a re-send decided while the window has stopped moving is what a menu would
     read, so a slow recovery on a lossy NTSC link is that trade and not a new fault. The hardware check the answer rests
     on is [spec/07](07-remaining-work.md#the-n8-menus-back-channel).
-  - **Where the guard runs.** Only on the app's path to a cart: `N8Link` under `N8Host`, which the cart node streams
-    through in the plugin and the standalones. The CLI's `n8-bridge` and `n8-play`, risa's `n8-sync` and the Pico box
-    write the cart FIFO without it, raw and unguarded
-    ([spec/07](07-remaining-work.md#the-clis-n8-tools-stream-unframed-and-unguarded),
-    [box](07-remaining-work.md#the-boxs-cart-stream-has-no-framing-and-no-menu-guard)).
+  - **Where the guard runs.** On the app's path to a cart, `N8Link` under `N8Host`, which the cart node streams through
+    in the plugin and the standalones, and on the Pico box, whose cart link (`BoxCartLink`) drives the same
+    `N8MenuGuard` and `N8ReliableSender` (the `n8-wire` package's) at each main-loop drain
+    ([the box's design](../docs/pico-box-framed-link-design.md)): it probes the link at a connect without holding the
+    loop, its probe goes at the front of a write (a drain starts between two messages), the menu's `k` sends the box
+    back through its boot (straight to `*t`, then the staged ROM, about 6 s from the press to playing, most of it the
+    boot's wait for the game), and the box's own Edio reads (`CMD_STATUS`, the sniff, the volume's read-back) wait for a
+    quiet pass. The box's framed drain stops framing at one frame short of the window outstanding, so the sender's
+    48-frame give-up cannot happen there; a write that fails on a silent cart is followed by the guard's stall probe
+    first, and BlipToaster's ack to it sets off the re-send. The rig has not run the box's
+    ([spec/07](07-remaining-work.md#the-boxs-framed-link-and-menu-guard-are-unproven-on-the-rig)). The CLI's
+    `n8-bridge` and `n8-play` and risa's `n8-sync` write the cart FIFO without it, raw and unguarded
+    ([spec/07](07-remaining-work.md#the-clis-n8-tools-stream-unframed-and-unguarded)).
   - **The raw-link limit.** A console RESET during a raw stream of notes will usually leave the N8 OS at ERROR:40: on
     the lab's cart, a note byte landing about 330 to 400 ms into the booting OS's life breaks it (one note at 200, 300
     or 1000 ms after the reset is clean; notes every 60 ms over 200 to 600 ms are not, over 400 to 600 ms are), and a
@@ -196,7 +204,8 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     back a clean menu. `retroplug-n8-hwtest bootwindow` measures it.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session` and `pnpm test:native n8-sdk` (`connectN8`
-  over the fake N8); for the box, `pnpm device:box`, then the rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each
+  over the fake N8); for the box, `retroplug-device-mode-test "[box]"` (its cart link's framed link and guard are
+  `[box-link]`), `pnpm device:box`, then the rig's `loop.sh`, `stress.sh` and `faults.sh` by hand, each
   given BlipToaster with `--rom` (`bliptoaster.nes`): without `--rom` the firmware boots its default, `n8-midi.nes`,
   which no check uses. `retroplug-n8-hwtest` needs the physical console.
 - Deeper: [docs/n8-bridge-plan.md](../docs/n8-bridge-plan.md),

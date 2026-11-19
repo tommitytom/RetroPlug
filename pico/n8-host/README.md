@@ -107,6 +107,7 @@ and capture the timestamped console until a verdict:
 ./loop.sh --native                            # the RP_NATIVE_USB build, in build-native/
 ./loop.sh --debug                             # + TinyUSB's attach/enumeration trace, in build-debug/
 ./loop.sh -DN8_MENU_TRIES=3                   # any CMake define; each set gets its own build dir
+./loop.sh -DN8_BOX_LINK=0                     # the raw build: no reliable-link probe (the guard stays on)
 ./loop.sh --rom a.nes --rom b.nes             # stage ROMs in Pico flash; the box boots the chosen one
 ```
 
@@ -158,7 +159,15 @@ The console shows `[sniff] p1=235/f (440 Hz) ...` - each voice as `<timer>/<leve
 keeps a voice's timer at note-off and silences it through its level, so `p1=235/0` is the note
 released, not a stuck one - plus a `[stats]` line once a second while anything moves (bytes in,
 messages parsed / forwarded, fifoWRs and their largest batch, and every way a byte can be lost:
-UART overrun, framing error, full receive ring; and `lat=avg/worst` in µs for the window).
+UART overrun, framing error, full receive ring; and `lat=avg/worst` in µs for the window, timed for writes that carry
+MIDI). `link=framed`, `link=raw` or `link=off` is the cart link's state (framed once BlipToaster answered the
+connect's sync, raw when it did not or the build is `N8_BOX_LINK=0`, off while no game is forwarded to), `resends` and
+`resent` its re-send rounds and the frames they wrote again, and `unframed` the messages a framed link could not carry
+(a SysEx past 40 bytes, which BlipToaster acts on none of); `writes` counts the link's syncs, the guard's probes and
+re-sends too. A raw link that hears an ack later (a BlipToaster that read the connect's sync after the 100 ms window)
+probes the link once more for that connect. The framed drain stops framing at one frame short of the window
+outstanding, so the sender's 48-frame give-up cannot happen on the box; and a write that fails on a silent cart is
+followed by the guard's stall probe, whose ack from BlipToaster sets off the re-send, not the sender's 100 ms timeout.
 `filtered` is what the plan took off the stream before the cart link: the policy node's drops (aftertouch, system
 common, real time), a SysEx past 4 KB and anything no block took, counted at the staging and the link rather than
 inside the plan (one read high, only while `linkfull` moves); `notready` is what the link refused while no game ran;
@@ -341,8 +350,10 @@ The box's own SysEx - `F0 7D 50 ...` (BlipToaster's are `7D 42`); acted on, neve
 | `F0 7D 50 02 F7` | print the staged ROMs, the booted one and the pending pick on the console; blink the booted index + 1 |
 | `F0 7D 50 7E F7` / `7D` | `-DN8_TEST_HOOKS=1` builds only: hang (the watchdog must fire) / fake a dead link (recovery must) |
 
-The menu coming back is noticed by `CMD_STATUS` turning 0 after a game was seen, and the chosen ROM is
-booted again.
+The menu coming back is noticed by the cart link's menu guard while the box forwards (the menu's `k` to its probe, see
+RESET below), and by `CMD_STATUS` turning 0 after a game was seen while nothing streams; either boots the chosen ROM
+again. A boot that fails (or a menu that does not answer) is retried every 20 s, at most 3 times in a row; then the box
+stops with the error LED until a power-cycle or a fresh N8 mount.
 
 **Tests (2026-10-30).**
 - Selection: two ROMs staged (the base build, mapper 69; the N163 build, mapper 19). A fresh box
@@ -367,16 +378,23 @@ ended in a 440.30 Hz A4. Then the Pico's own power was unplugged and replugged -
 debugger ever attached: with a game still running it forwarded at once (440.30 / 522.16 Hz), and after
 a NES power-cycle it drove the menu and booted the ROM (440.30 Hz).
 
-**RESET.** On this rig the NES's RESET button restarts the running ROM in place - the N8 does not show
-its menu (a 10 fps brightness trace of the press: ~2 s blank, ~1.4 s of lost signal, then BlipToaster
-again, never the menu's brighter frames) - so the box has nothing to do and plays on (440.30 Hz after
-two presses). Whether RESET goes to the menu is the N8's own setting; the box's menu-return path
-(`CMD_STATUS` 0 after a game) is for when it does, and that path is the one not seen here.
+**RESET.** The cart link runs BlipToaster's reliable link and the N8 menu guard, the desktop's, from the same code
+(`BoxCartLink`, [the box's design](../../docs/pico-box-framed-link-design.md)). When a RESET takes the N8 to its menu
+mid-song (the lab's rig does now; on the 2026-10-30 rig it restarted the ROM in place, a 10 fps brightness trace
+showing ~2 s blank, ~1.4 s of lost signal, then BlipToaster again), the guard notices: on a framed link the acks stop,
+and 100 ms later the stalled window is held and the menu asked with `F0 2A 74 F7` (`*t` inside a SysEx), again each
+second while the booting OS answers nothing; on a raw link the same probe goes out every 250 ms. The menu's `k` stops
+forwarding, drops what the link held, and runs the boot again straight from the `*t` handshake: the staged ROM
+installed with no upload (its saved CRC) and started, the boot's 4 s wait, and a fresh link probe, about 6 s from the
+press to playing. A framed stream stops writing at the stall; a raw one can still leave the booting OS at ERROR:40
+(notes landing about 330 to 400 ms after the press). `CMD_STATUS` turning 0 after a game stays the way back for a menu
+reached while nothing streams, which the guard does not ask about.
 
 **Not yet verified on hardware:** the "never enumerated" recovery firing for a real non-enumerating
-device (the only trigger seen was the false positive above, now fixed); the menu-return path just
-described (this N8 never returned to its menu on RESET); and the error LED's double blink (no boot
-failed or stuck while it was being sampled).
+device (the only trigger seen was the false positive above, now fixed); the guard's RESET path just described,
+and the framed link on the box (`stress.sh` and the latency runs:
+[spec/07](../../spec/07-remaining-work.md#the-boxs-framed-link-and-menu-guard-are-unproven-on-the-rig)); and the
+error LED's double blink (no boot failed or stuck while it was being sampled).
 
 ## The firmware's layout, build and link trap
 
@@ -386,7 +404,9 @@ main-loop pass sized by elapsed time, carrying at most four blocks; `MidiStaging
 `rp.device.midi-in/1` interface the plan's input node reads; `DeviceHost`: the device `rp_host`; `BuiltInPlan`: the
 load; `UartMidi`: the UART1 ISR and its 4 KB ring), and this directory is the N8 product. `main.cpp` is the main loop
 (USB host, the plan's blocks, the probe, the boot, the sniff), `BoxCartLink.{hpp,cpp}` the `rp::n8::CartLink` over a
-fixed 512-message ring (it drops and counts while no game runs and drains in FIFO writes of up to 192 bytes),
+fixed 512-message ring (it drops and counts while no game runs, drains in FIFO writes of up to 192 bytes, framed for
+BlipToaster's reliable link once a connect's sync is acknowledged, and runs the menu guard: both `n8-wire`'s, the
+desktop's own, held in the ring's `.bss` storage),
 `BoxStats.hpp` the `filtered` arithmetic, `CartVolume.{hpp,cpp}` the volume write, `plan.json` the bridge as a plan
 (`rp.device.midi-in` -> `rp.bliptoaster.midi-policy` -> `rp.n8.nes`) and `plan.cmake` its export options (48 kHz, 256
 frames, the 65536-byte arena, the packages `core device-io n8 bliptoaster`), `box.cpp` the
@@ -443,9 +463,10 @@ compile of the image, the SDK's, TinyUSB's and Pico-PIO-USB's included, takes `-
 
 **`pnpm device:box`** ([`../../tools/build-box.sh`](../../tools/build-box.sh)) builds both variants under the trap, in
 `build-box/{pio,native}/`, each with `n8_host_trap_probe` (an allocating program that must fail to link naming
-`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 199536 / 46120 / 120600,
-`RP_NATIVE_USB` 199920 / 32084 / 114368, with 191960 and 192344 bytes of the flash running from RAM and 358704 and
-338824 bytes of SRAM in all; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788 (312484 and 292636 bytes),
+`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss, with the reliable link and the menu
+guard: PIO-USB 206128 / 46408 / 124300, `RP_NATIVE_USB` 206496 / 32372 / 118068, with 198552 and 198920 bytes of the
+flash running from RAM and 369284 and 349404 bytes of SRAM in all; E4's were 199536 / 46120 / 120600 and 199920 / 32084 /
+114368 (358704 and 338824 bytes); E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788 (312484 and 292636 bytes),
 before MicroQuickJS, the pack and the halved arena; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128). It
 builds the desktop's `retroplug-export-plan` first (CI needs it), so `build/` must be
 configured, and that build shares `build/` with a concurrent `./build.sh`: two builds of one tree at once race, so on a

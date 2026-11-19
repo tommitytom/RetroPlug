@@ -1,7 +1,8 @@
 # The N8 wire (docs/modular-graph-phase-f5a-design.md section 4): what a real Everdrive N8 Pro cart and the emulated
 # NES FIFO that stands in for it have to agree on, and what neither owns - BlipToaster's reliable link, the one sender
 # (rp::N8ReliableSender) each side drives over its own transport: the cart's desktop link (packages/n8's N8Link) in wall
-# time, the emulator's FIFO role (packages/mesen's NesN8FifoRole) in emulated CPU time - and the expansion-volume range
+# time, the Pico box's cart link (pico/n8-host's BoxCartLink) in its main loop's microseconds, the emulator's FIFO role
+# (packages/mesen's NesN8FifoRole) in emulated CPU time - and the expansion-volume range
 # the emulated chip and the cart's master-volume register are both set from. Added by retroplug_package(n8-wire)
 # (cmake/packages.cmake); `n8` and `mesen` both list it and neither lists the other, so the console and the cartridge
 # meet at a package that is nobody's own.

@@ -68,7 +68,7 @@ than work.
 - [ ] [A 32-bit runner in the build](#a-32-bit-runner-in-the-build)
 - [ ] [The box's stats print can stall a message](#the-boxs-stats-print-can-stall-a-message)
 - [ ] [A SysEx past 3 bytes allocates](#a-sysex-past-3-bytes-allocates)
-- [ ] [The box's cart stream has no framing and no menu guard](#the-boxs-cart-stream-has-no-framing-and-no-menu-guard)
+- [ ] [The box's framed link and menu guard are unproven on the rig](#the-boxs-framed-link-and-menu-guard-are-unproven-on-the-rig)
 
 **Feature gaps and SDL**
 - [ ] [Raw LSDj Keyboard sync mode](#raw-lsdj-keyboard-sync-mode)
@@ -566,23 +566,27 @@ A SysEx past 3 bytes allocates a view per message (dying with its block), and at
 allocates, so a SysEx stream makes the box collect in the MIDI path; the policy's worst block fits with 4 KB spare. ([E4
 design](../docs/modular-graph-phase-e4-design.md) section 11.8.)
 
-### The box's cart stream has no framing and no menu guard
+### The box's framed link and menu guard are unproven on the rig
 
-The box writes MIDI to the cart FIFO raw ([BoxCartLink.hpp](../pico/n8-host/BoxCartLink.hpp)): it predates the framed
-link to BlipToaster (the box began 2026-08-14, the link 2026-10-22) and never moved onto it, and no design decided
-against it. So on an NTSC console the DMC sample DMA's repeated FIFO read drops bytes (a lost hit or a stuck note),
-which the lab's PAL console never shows, and a console RESET mid-song is not guarded, so a note stream across the
-booting OS's window leaves it at ERROR:40 (a second RESET recovers). The host half of the link (`N8ReliableSender`, in
-the `n8-wire` package) is transport-agnostic; whether it and the menu guard fit the box's RAM and code budget beside the
-engine is unmeasured. Measured on the lab's NTSC Famicom (2026-11-19, `retroplug-n8-hwtest timing idle 512 --tick-ch 3
---kick-ch 6 --db -20`, through the desktop link, DMC kicks playing): framed, every run sounded 512 of 512 ticks on the
-grid (p50 0.13 ms), repairing 3 to 7 lost bytes a 45 s run; raw, 1 tick in 3 of 7 runs never sounded, 5 of 7 runs had
-notes off the grid (p50 5.9 to 48.6 ms), and a DMC note was left stuck. So the box needs the link on NTSC; what remains
-is whether it fits. ([the menu guard's design](../docs/n8-menu-guard-reset-design.md) section 7.)
+The box streams to the cart through BlipToaster's reliable link and the N8 menu guard, the desktop's, from the one
+implementation both run (`N8ReliableSender` and `N8MenuGuard`, in the `n8-wire` package;
+[BoxCartLink.hpp](../pico/n8-host/BoxCartLink.hpp), [the box's design](../docs/pico-box-framed-link-design.md)), and a
+RESET's menu boots the staged ROM again. That is held headlessly (`retroplug-device-mode-test "[box-link]"`: the link
+over FakeN8, a scripted cart and the link's ROM model behind a lossy wire) and the image links under the trap (`pnpm
+device:box`); the rig has not run it (design section 7). Once the rig is rewired for the box (the N8 in the Pico's
+socket, the debug probe, the CH345 in its jack, the NTSC Famicom): `stress.sh` passing with nothing lost and `[stats]`
+showing `link=framed` and some re-sends; a soak with the DMC kicks keeping the sniffer in sync; three RESETs mid-song
+each coming back playing (an audio capture after each), no video frame showing ERROR:40, and the press-to-sound time
+measured. And the latency runs (section 6), `retroplug-n8-hwtest timing ... --midi "<CH345 port>"` in `idle` and
+`busy`: the box framed against its raw build (`-DN8_BOX_LINK=0`) with `--no-kick` and with the DMC kicks, the box
+framed against the desktop's framed link to the same ROM, and the `N8_LAT_TRACE` build's parts of a pass (`bcread`,
+`push>write`, `write`) against the raw build's, with the `[stats]` `lat` under `stress.sh`'s soak rates. The bar, fixed
+before the runs: without DMC, framed within 1 ms of raw at p50 and 2 ms at p95, and no worse grid error; with DMC, no
+missed hit and no stuck note in 5 runs, the tail (p95, max) reported beside the box's re-sends. A miss is a finding to
+investigate before acceptance. The NTSC loss that makes the link the box's need is in the design's section 1.
 
-## Feature gaps and SDL
-
-Feature gaps a user could reasonably expect, and the SDL standalone's unbuilt or unverified pieces. None block shipping.
+The desktop's `N8Link` stays raw if BlipToaster reads the connect's sync after the 100 ms probe window: the box's link
+probes once more when it hears an ack on a raw link, `N8Link` does not.
 
 ### The CLI's N8 tools stream unframed and unguarded
 
@@ -590,7 +594,8 @@ Feature gaps a user could reasonably expect, and the SDL standalone's unbuilt or
 ([bridge.ts](../packages/n8/ts/bridge.ts), [n8Play.ts](../packages/n8/ts/cli/n8Play.ts)), not through `N8Link`: they get
 neither the framed link nor the menu guard, whatever the ROM. `n8-play` is a scripted test tool and fine as it is;
 `n8-bridge` is a performance path, so on an NTSC console it loses bytes to the DMC DMA (missed, off-grid and stuck notes
-on the lab's Famicom, see the box's entry) and a console RESET mid-song can leave the N8 OS at ERROR:40. Move the bridge
+on the lab's Famicom, [the box's design](../docs/pico-box-framed-link-design.md) section 1) and a console RESET
+mid-song can leave the N8 OS at ERROR:40. Move the bridge
 onto the native link (the N8 facet's streaming), or state the limit in its help. ([the menu guard's
 design](../docs/n8-menu-guard-reset-design.md) section 7.)
 
