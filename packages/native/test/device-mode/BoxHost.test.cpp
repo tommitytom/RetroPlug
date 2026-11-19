@@ -1247,8 +1247,8 @@ TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: mad
           "[device-mode][box][n8-wire]") {
     using rp::N8ReliableSender;
     // The box's transport keeps what goes out in storage of its own and marks each frame sent as it leaves: an emitter
-    // of five references, past the two a libstdc++ std::function holds without allocating (other
-    // standard libraries differ).
+    // of five references, past the two a libstdc++ std::function holds without allocating
+    // (other standard libraries differ).
     std::optional<N8ReliableSender> s;
     std::array<std::uint8_t, 4096>  wire{};
     std::size_t                     wireLen = 0;
@@ -1297,11 +1297,14 @@ TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: mad
     REQUIRE(wireLen >= 8);
     CHECK(wire[wireLen - 8] == N8ReliableSender::SYNC);
     CHECK(wire[wireLen - 7] == 0x3A);
-    // The ring kept its frames where they were written: the ack of ten re-sent from the eleventh, whose header leads
+    // The ring kept its frames where they were written: the ack of ten re-sent from the eleventh, whose frame leads
     // what the second poll wrote.
     REQUIRE(wireLen > beforeResend + 1);
     CHECK(wire[beforeResend] == 0xF5);
     CHECK(wire[beforeResend + 1] == 10);
+    // and the eleventh note-on's own bytes, with the sum over the seq and the message.
+    CHECK((wire[beforeResend + 2] == 0x90 && wire[beforeResend + 3] == 46 && wire[beforeResend + 4] == 100));
+    CHECK(wire[beforeResend + 5] == ((10 + 0x90 + 46 + 100) & 0x7F));
 }
 
 namespace {
@@ -1362,6 +1365,7 @@ struct CartRig {
 // which takes every FIFO write.
 struct ScriptedRig {
     std::vector<Bytes>                             writes;
+    bool                                           failNext = false;  // the next FIFO write fails (and is logged)
     Bytes                                          back;  // what the cart has said and the link has not read
     std::unique_ptr<rp::box::BoxCartLink::Storage> ring = std::make_unique<rp::box::BoxCartLink::Storage>();
     rp::box::BoxCartLink                           link{*ring};
@@ -1371,6 +1375,11 @@ struct ScriptedRig {
     static std::uint64_t monotonic(void* ctx) { return static_cast<ScriptedRig*>(ctx)->us; }
     static bool          fifo(void* ctx, const std::uint8_t* d, std::size_t n, std::uint32_t, std::uint32_t) {
         static_cast<ScriptedRig*>(ctx)->writes.emplace_back(d, d + n);
+        auto& self = *static_cast<ScriptedRig*>(ctx);
+        if (self.failNext) {
+            self.failNext = false;
+            return false;
+        }
         return true;
     }
     static std::size_t read(void* ctx, std::uint8_t* d, std::size_t n) {
@@ -1917,6 +1926,36 @@ TEST_CASE("a lone framed message whose write fails: the stall, the guard's probe
     CHECK(r.link.outstanding() == 0);
     CHECK(r.rom.applied == std::vector<Bytes>{a});
     CHECK(r.link.quietForRead());
+}
+
+TEST_CASE("a late ack does not re-probe a raw link inside a split SysEx: the ring's bytes stay as they were",
+          "[device-mode][box][box-link]") {
+    ScriptedRig r;
+    r.link.setConnected(true);
+    r.drain();
+    r.drain(100);  // no answer in the window: raw
+    REQUIRE_FALSE(r.link.framed());
+    Bytes sysex(300, 0x55);  // longer than one 192-byte write: split across two
+    sysex.front() = 0xF0;
+    sysex.back() = 0xF7;
+    REQUIRE(r.push(sysex));
+    r.failNext = true;
+    r.drain();  // the first 192 bytes fail: the message is half taken from the ring
+    REQUIRE(r.link.queued() == 1);
+    r.back = {0xF5, 0x00, 0x7F};  // a late ack, heard before the rest of the message has gone
+    const std::size_t before = r.writes.size();
+    r.drain();
+    // The raw link finishes the message first: the re-probe waits for the message's next write.
+    CHECK(r.link.queued() == 0);
+    REQUIRE(r.writes.size() == before + 1);
+    CHECK(r.writes.back().size() == 108);
+    CHECK((r.writes.back().back() == 0xF7 && r.writes.back().front() == 0x55));
+    const Bytes a = note(0x90, 60, 100), b = note(0x90, 62, 100);
+    REQUIRE(r.push(a));
+    REQUIRE(r.push(b));
+    r.drain();
+    CHECK(r.writes.back() == Bytes({0x90, 60, 100, 0x90, 62, 100}));  // intact, and unframed: the ring was not skewed
+    CHECK(r.link.queued() == 0);
 }
 
 TEST_CASE("a cart that answers the connect's sync after the probe window: the link goes raw, hears the late ack, "

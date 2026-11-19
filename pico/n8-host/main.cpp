@@ -114,10 +114,10 @@ static bool          probed      = false;   // run the probe once per mount
 static bool          forward_ok  = false;   // gate MIDI->FIFO on a ready+probed N8: the cart link's connected state
 static volatile bool any_mounted = false;   // some USB device has enumerated (the N8, or its MCU alone)
 static volatile uint32_t n8_gen  = 0;      // bumped on every N8 mount: a boot checks it is still its N8
-static bool          boot_error  = false;   // the last menu boot failed: LED_ERROR until the next mount
+static bool          boot_error  = false;   // the last menu boot failed: LED_ERROR until its retry, or the next mount
 static int           write_fail_streak = 0; // consecutive failed fifoWRs
 static int           cur_sel     = -1;      // the staged ROM the box last booted (-1 = none / unknown)
-static uint32_t      menu_stuck_until = 0; // !0: the menu stopped answering - no forwarding; retry the boot then
+static uint32_t      menu_stuck_until = 0; // !0: stuck menu or failed boot - no forwarding; retry then (not once boot_gave_up)
 static int           boot_fails  = 0;      // consecutive failed boots since the last mount or successful boot
 static bool          boot_gave_up = false; // BOOT_TRIES failed in a row: no more retries until a fresh mount
 static bool          menu_answered = false; // the cart link's guard heard the menu: the next boot skips CMD_STATUS
@@ -487,6 +487,7 @@ static void boot_rom(int status, bool menu_known) {
     const uint32_t gen = n8_gen;
     if (status > 0) {   // CMD_STATUS is 0 at the menu and non-zero while a game runs
         printf("[n8-host] a game is already running (status %d) - forwarding MIDI to it\n", status);
+        boot_fails = 0;
         return;
     }
     // The N8's USB (MCU) enumerates before the menu core is ready, so retry the handshake
@@ -511,6 +512,7 @@ static void boot_rom(int status, bool menu_known) {
             return;
         }
         printf("[n8-host] no 'k', and CMD_STATUS %d - a game is running; forwarding MIDI to it\n", now_st);
+        boot_fails = 0;
         return;
     }
 

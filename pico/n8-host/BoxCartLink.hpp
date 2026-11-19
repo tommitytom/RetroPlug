@@ -21,13 +21,13 @@
 //   the window (BlipToaster read it late, and its link mode drops unframed messages): the probe runs once more for the
 //   connect. Each drain then reads the back-channel (the acks for the sender, the menu's 'k' for the guard), takes
 //   the guard's turn, puts the guard's probe at the front of its first write when one is due (a drain starts between
-//   two messages), and, unless the guard holds, writes the sender's re-sends and the
-//   ring's messages, each framed on a framed link, in writes that never split a frame, and never with more than the
-//   window less one outstanding (the rest waits for the next drain, which reads the acks first, so a backlog never
-//   makes the sender give its window up). A SysEx longer than a frame carries is dropped there (`unframed`), as the
-//   sender drops it. The menu's answer drops the ring and the window (counted not ready) and atMenu() says so until
-//   the box disconnects the link to boot the ROM again; two stall probes that hear nothing drop them too, and probe
-//   the link again, which a game without the link answers raw.
+//   two messages), and, unless the guard holds, writes the sender's re-sends and the ring's messages, each framed on a
+//   framed link, in writes that never split a frame, and never with more than the window less one outstanding (the
+//   rest waits for the next drain, which reads the acks first, so a backlog never makes the sender give its window
+//   up). A SysEx longer than a frame carries is dropped there (`unframed`), as the sender drops it. The menu's
+//   answer drops the ring and the window (counted not ready) and atMenu() says so until the box disconnects the link to
+//   boot the ROM again; two stall probes that hear nothing drop them too, and probe the link again, which a game
+//   without the link answers raw.
 // - quietForRead() answers whether an Edio read now (the box's CMD_STATUS, its sniff, the volume's read-back) can meet
 //   nothing the link is owed on the same USB input: N8Link's rule, and not while the connect's sync waits for its ack.
 // - releaseNotes() queues a note-off for each note the same way, behind what was already pushed.
