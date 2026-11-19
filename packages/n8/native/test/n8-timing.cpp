@@ -13,6 +13,13 @@
 // (N8_BOX_LINK=0) and only adds the unframed messages that take a ROM out of link mode; --guard is the desktop link's,
 // and refused.
 //
+// A latency with --midi also includes the host-to-CH345 USB transfer, the CH345's own USB-to-serial delay and the
+// 31250-baud wire (0.32 ms a byte, so 0.96 ms a 3-byte message, which the box receives whole before it forwards), plus
+// the wait behind a message written just before it: on 4 of 16 steps the kick or snare goes out ahead of the tick, so
+// the tick waits about 1 ms behind it on the wire (the desktop link puts both in one USB write), and in busy a CC1 or
+// pitch bend written in the millisecond before a tick does the same. Compare the box with the box (framed against raw);
+// compare the box with the desktop only with --no-kick, or read the tick's p95 knowing it carries that millisecond.
+//
 // Plays a 170 bpm arrangement through N8Link - the code the plugin streams to a cart with, over the reliable link
 // unless --raw - while capturing the console's analog out on the lab's Zoom L6, and times every hit from the moment
 // its MIDI was WRITTEN to USB to the moment it SOUNDED:
@@ -277,6 +284,10 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     const float       thr   = static_cast<float>(std::pow(10.0, std::atof(arg(argc, argv, "--db", "-40")) / 20.0));
     const char*       wav   = arg(argc, argv, "--wav", nullptr);
     const char*       midiName = arg(argc, argv, "--midi", nullptr);   // through the box: the CH345's whole name
+    if (!midiName && flag(argc, argv, "--midi")) {   // arg() finds no value after a trailing --midi
+        std::fprintf(stderr, "timing: --midi wants the CH345's port name, as `amidi -l` prints it\n");
+        return 2;
+    }
     if (midiName && guard) {
         std::fprintf(stderr, "timing: --guard is the desktop link's; the box runs its own guard\n");
         return 2;
@@ -454,6 +465,10 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
         std::printf("timing: %s, %d steps @ 170 bpm, %s, %llu re-sends\n", mode.c_str(), steps,
                     reliable ? "reliable link" : (raw ? "raw (--raw)" : "raw (the ROM did not answer the probe)"),
                     static_cast<unsigned long long>(resends));
+    if (midiName)
+        std::printf("note: a --midi latency includes the CH345's USB-to-serial delay and the 31250-baud wire (about 0.96 ms "
+                    "a 3-byte message), and a tick written just after a kick waits about 1 ms behind it: compare the box "
+                    "with the desktop with --no-kick\n");
     std::printf("clock: %zu ALSA timestamps, fit residual %.3f ms, L6 vs host %+.1f ppm (latency includes the L6's input delay)\n",
                 cap.stamps.size(), clk.residualNs / 1e6, ppm);
     std::printf("  voice   n    mean    p50    p95    max  jitter(sd)  missed   [ms, %s write -> sound]\n",
