@@ -73,6 +73,7 @@ than work.
 **Feature gaps and SDL**
 - [ ] [Raw LSDj Keyboard sync mode](#raw-lsdj-keyboard-sync-mode)
 - [ ] [The CLI's N8 tools stream unframed and unguarded](#the-clis-n8-tools-stream-unframed-and-unguarded)
+- [ ] [The desktop N8 link stays raw on a late sync](#the-desktop-n8-link-stays-raw-on-a-late-sync)
 - [ ] [NES per-mapper expansion sub-channels](#nes-per-mapper-expansion-sub-channels)
 - [ ] [The standalone reopens the last project](#the-standalone-reopens-the-last-project)
 - [ ] [Live memory-region subscription](#live-memory-region-subscription)
@@ -585,8 +586,9 @@ before the runs: without DMC, framed within 1 ms of raw at p50 and 2 ms at p95, 
 missed hit and no stuck note in 5 runs, the tail (p95, max) reported beside the box's re-sends. A miss is a finding to
 investigate before acceptance. The NTSC loss that makes the link the box's need is in the design's section 1.
 
-The desktop's `N8Link` stays raw if BlipToaster reads the connect's sync after the 100 ms probe window: the box's link
-probes once more when it hears an ack on a raw link, `N8Link` does not.
+## Feature gaps and SDL
+
+Feature gaps a user could reasonably expect, and the SDL standalone's unbuilt or unverified pieces. None block shipping.
 
 ### The CLI's N8 tools stream unframed and unguarded
 
@@ -607,6 +609,12 @@ and MasterSync in [lsdjSerialOutNode.ts](../packages/lsdj/ts/lsdjSerialOutNode.t
 Game Boy. Raw Keyboard sends nothing because it needs a per-block **`keys` feed**: `rp.lsdj.sync` has no `keys` input
 and no host stages any. A `keys` input on the node and a host I/O node that feeds it unblock Raw LSDj Keyboard sync.
 ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md#not-yet-built--deferred).)
+
+### The desktop N8 link stays raw on a late sync
+
+The desktop's `N8Link` stays raw if BlipToaster reads the connect's sync after the 100 ms probe window: the box's link
+([BoxCartLink.hpp](../pico/n8-host/BoxCartLink.hpp)) probes once more when it hears an ack on a raw link, `N8Link` does
+not.
 
 ### NES per-mapper expansion sub-channels
 
