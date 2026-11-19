@@ -155,10 +155,10 @@ bool BoxCartLink::quietForRead() const { return quietAt(nowNs()); }
 // first bytes), and a raw link between two messages, nothing outstanding, or a cart that has said nothing for the
 // pause's ack bound since the oldest outstanding frame first went out (one at its menu, or a game that has stopped
 // answering). And not while the connect's sync waits for its ack, which the desktop's probe waits out in a call of its
-// own and the box's across passes.
+// own and the box's across passes, nor while a probe is booked and not yet written (a late ack's second one).
 bool BoxCartLink::quietAt(std::int64_t now) const {
     if (!backChannel_) return true;  // nothing the link reads, so nothing a read can meet
-    if (probe_ == Probe::Waiting) return false;
+    if (probe_ == Probe::Pending || probe_ == Probe::Waiting) return false;
     if (s_.guard.probeAwaited(now)) return false;
     // A scan halfway through an ack is waiting for its tail, which a cart that has gone silent for the ack bound is not
     // sending: the scan then counts as between acks, so a lone F5 does not hold the reads back for good.
@@ -175,6 +175,12 @@ bool BoxCartLink::write(const Writer& writer, const std::uint8_t* data, std::uin
                         std::uint32_t firstUs) {
     ++counts_.writes;
     return writer.fifo && writer.fifo(writer.ctx, data, size, messages, firstUs);
+}
+
+// The guard's probe on a write of its own: counted apart, so an idle link's probes are not MIDI the stats report.
+void BoxCartLink::writeProbe(const Writer& writer) {
+    ++counts_.probeOnly;
+    write(writer, rp::N8MenuGuard::kProbe, static_cast<std::uint32_t>(sizeof rp::N8MenuGuard::kProbe), 0, nowUs());
 }
 
 void BoxCartLink::writeVolume(const Writer& writer, std::uint32_t nowMs) {
@@ -224,9 +230,7 @@ void BoxCartLink::drain(const Writer& writer, std::uint32_t nowMs) {
     if (turn.hold) {
         // Nothing new and no re-send: the window has stopped moving and the guard is asking, or the cart is at its
         // menu. Only the probe, alone.
-        if (turn.writeProbe)
-            write(writer, rp::N8MenuGuard::kProbe, static_cast<std::uint32_t>(sizeof rp::N8MenuGuard::kProbe), 0,
-                  nowUs());
+        if (turn.writeProbe) writeProbe(writer);
         return;
     }
     if (sender_)
@@ -294,7 +298,7 @@ void BoxCartLink::readBackChannel(const Writer& writer, std::int64_t now) {
 
 void BoxCartLink::drainRaw(const Writer& writer, bool probe) {
     if (probe && messageCount_ == 0) {
-        write(writer, rp::N8MenuGuard::kProbe, static_cast<std::uint32_t>(sizeof rp::N8MenuGuard::kProbe), 0, nowUs());
+        writeProbe(writer);
         return;
     }
     while (messageCount_ != 0) {

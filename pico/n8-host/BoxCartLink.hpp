@@ -119,6 +119,7 @@ public:
         std::uint32_t failed = 0;    // messages in writes that failed
         std::uint32_t sysex = 0;     // of the forwarded, SysEx
         std::uint32_t writes = 0;    // FIFO writes (the link's syncs, the guard's probes and re-sends among them)
+        std::uint32_t probeOnly = 0; // of the writes, those carrying only the guard's probe
         std::uint32_t maxBatch = 0;  // the most messages one write carried
         std::uint32_t resends = 0;   // the framed link's re-send rounds (N8ReliableSender::resends, across connects)
         std::uint32_t resent = 0;    // frames those rounds wrote again
@@ -205,6 +206,7 @@ private:
     bool quietAt(std::int64_t now) const;
     bool write(const Writer& writer, const std::uint8_t* data, std::uint32_t size, std::uint32_t messages,
                std::uint32_t firstUs);
+    void writeProbe(const Writer& writer);
     void writeVolume(const Writer& writer, std::uint32_t nowMs);
     void startProbe(const Writer& writer, std::int64_t now);
     void readBackChannel(const Writer& writer, std::int64_t now);

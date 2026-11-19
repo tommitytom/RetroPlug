@@ -1247,8 +1247,8 @@ TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: mad
           "[device-mode][box][n8-wire]") {
     using rp::N8ReliableSender;
     // The box's transport keeps what goes out in storage of its own and marks each frame sent as it leaves: an emitter
-    // of five references, past the two a libstdc++ std::function holds without allocating
-    // (other standard libraries differ).
+    // of five references, past the two a libstdc++ std::function holds without allocating (other standard libraries
+    // differ).
     std::optional<N8ReliableSender> s;
     std::array<std::uint8_t, 4096>  wire{};
     std::size_t                     wireLen = 0;
@@ -1867,6 +1867,10 @@ TEST_CASE("the box's raw link probes no sooner than 250 ms after its last probe"
     }
     REQUIRE(probeAt.size() >= 3);
     for (std::size_t i = 1; i < probeAt.size(); ++i) CHECK(probeAt[i] - probeAt[i - 1] >= 250'000);
+    // Every one of those probes went out alone, and the counters say so apart from the writes that carry MIDI, so an
+    // idle raw link is not a change the stats line prints.
+    CHECK(r.link.counts().probeOnly == probeAt.size());
+    CHECK(r.link.counts().forwarded == 0);
 }
 
 TEST_CASE("a failed framed write on the box's link: its frame is marked sent, re-sent once the cart shows it lost, and "
@@ -1956,6 +1960,17 @@ TEST_CASE("a late ack does not re-probe a raw link inside a split SysEx: the rin
     r.drain();
     CHECK(r.writes.back() == Bytes({0x90, 60, 100, 0x90, 62, 100}));  // intact, and unframed: the ring was not skewed
     CHECK(r.link.queued() == 0);
+    // Once the SysEx is finished a later ack does re-probe: the deferred probe was only held back, not dropped.
+    const auto syncs = [&] {
+        int n = 0;
+        for (const Bytes& w : r.writes) n += w == Bytes{0xF4, 0x00} ? 1 : 0;
+        return n;
+    };
+    REQUIRE(syncs() == 1);
+    r.back = {0xF5, 0x00, 0x7F};
+    r.drain();
+    r.drain();
+    CHECK(syncs() == 2);
 }
 
 TEST_CASE("a cart that answers the connect's sync after the probe window: the link goes raw, hears the late ack, "
@@ -1972,14 +1987,21 @@ TEST_CASE("a cart that answers the connect's sync after the probe window: the li
         return n;
     };
     REQUIRE(syncs() == 1);
+    // Past the guard's own probe (whose answer a read would meet), the raw link between messages is quiet.
+    for (int i = 0; i < 40 && !r.link.quietForRead(); ++i) r.drain(10);
+    REQUIRE(r.link.quietForRead());
+    REQUIRE(syncs() == 1);
     r.back = {0xF5, 0x00, 0x7F};  // the late answer: BlipToaster read the sync after the window
     r.drain();
     CHECK_FALSE(r.link.framed());
+    CHECK_FALSE(r.link.quietForRead());  // the second probe is booked: a read now would take its ack for the reply
     r.drain();  // the probe runs again
     CHECK(syncs() == 2);
+    CHECK_FALSE(r.link.quietForRead());  // and its sync is waiting for the ack
     r.back = {0xF5, 0x00, 0x7F};
     r.drain();
     CHECK(r.link.framed());
+    CHECK(r.link.quietForRead());
     const Bytes a = note(0x90, 60, 100);
     REQUIRE(r.push(a));
     const std::size_t before = r.writes.size();

@@ -117,7 +117,8 @@ static volatile uint32_t n8_gen  = 0;      // bumped on every N8 mount: a boot c
 static bool          boot_error  = false;   // the last menu boot failed: LED_ERROR until its retry, or the next mount
 static int           write_fail_streak = 0; // consecutive failed fifoWRs
 static int           cur_sel     = -1;      // the staged ROM the box last booted (-1 = none / unknown)
-static uint32_t      menu_stuck_until = 0; // !0: stuck menu or failed boot - no forwarding; retry then (not once boot_gave_up)
+static uint32_t      menu_stuck_until = 0; // !0: stuck menu or failed boot - no forwarding; retry then (not once
+                                           // boot_gave_up)
 static int           boot_fails  = 0;      // consecutive failed boots since the last mount or successful boot
 static bool          boot_gave_up = false; // BOOT_TRIES failed in a row: no more retries until a fresh mount
 static bool          menu_answered = false; // the cart link's guard heard the menu: the next boot skips CMD_STATUS
@@ -647,7 +648,8 @@ static void stats_report(void) {
     stats.msgs = in.channelMessages;
     stats.fwd = out.forwarded;
     stats.fwd_fail = out.failed;
-    stats.writes = out.writes;
+    // A probe written alone is the idle raw link's own 250 ms, not traffic: it would make this line print every second.
+    stats.writes = out.writes - out.probeOnly;
     stats.max_batch = out.maxBatch;
     stats.sysex = out.sysex;
     stats.not_ready = out.notReady;

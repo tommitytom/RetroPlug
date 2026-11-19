@@ -163,8 +163,9 @@ UART overrun, framing error, full receive ring; and `lat=avg/worst` in µs for t
 MIDI). `link=framed`, `link=raw` or `link=off` is the cart link's state (framed once BlipToaster answered the
 connect's sync, raw when it did not or the build is `N8_BOX_LINK=0`, off while no game is forwarded to), `resends` and
 `resent` its re-send rounds and the frames they wrote again, and `unframed` the messages a framed link could not carry
-(a SysEx past 40 bytes, which BlipToaster acts on none of); `writes` counts the link's syncs, the guard's probes and
-re-sends too. A raw link that hears an ack later (a BlipToaster that read the connect's sync after the 100 ms window)
+(a SysEx past 40 bytes, which BlipToaster acts on none of); `writes` counts the link's syncs, the guard's probes that
+ride with a message, and re-sends too (a probe written alone, an idle raw link's every 250 ms, is left out, so an idle link
+prints nothing). A raw link that hears an ack later (a BlipToaster that read the connect's sync after the 100 ms window)
 probes the link once more for that connect. The framed drain stops framing at one frame short of the window
 outstanding, so the sender's 48-frame give-up cannot happen on the box; and a write that fails on a silent cart is
 followed by the guard's stall probe, whose ack from BlipToaster sets off the re-send, not the sender's 100 ms timeout.
@@ -464,8 +465,8 @@ compile of the image, the SDK's, TinyUSB's and Pico-PIO-USB's included, takes `-
 **`pnpm device:box`** ([`../../tools/build-box.sh`](../../tools/build-box.sh)) builds both variants under the trap, in
 `build-box/{pio,native}/`, each with `n8_host_trap_probe` (an allocating program that must fail to link naming
 `__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss, with the reliable link and the menu
-guard: PIO-USB 206128 / 46408 / 124300, `RP_NATIVE_USB` 206496 / 32372 / 118068, with 198552 and 198920 bytes of the
-flash running from RAM and 369284 and 349404 bytes of SRAM in all; E4's were 199536 / 46120 / 120600 and 199920 / 32084 /
+guard: PIO-USB 206608 / 46424 / 124304, `RP_NATIVE_USB` 206912 / 32452 / 118072, with 199032 and 199336 bytes of the
+flash running from RAM and 369816 and 349872 bytes of SRAM in all; E4's were 199536 / 46120 / 120600 and 199920 / 32084 /
 114368 (358704 and 338824 bytes); E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788 (312484 and 292636 bytes),
 before MicroQuickJS, the pack and the halved arena; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128). It
 builds the desktop's `retroplug-export-plan` first (CI needs it), so `build/` must be
