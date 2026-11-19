@@ -124,6 +124,7 @@ void BoxCartLink::setConnected(bool connected) {
         // afresh.
         s_.guard.reset();
         probe_ = linkAllowed_ ? Probe::Pending : Probe::Done;
+        lateProbed_ = false;
     }
     if (!connected && connected_) {
         discard();
@@ -274,7 +275,16 @@ void BoxCartLink::readBackChannel(const Writer& writer, std::int64_t now) {
             }
         } else {
             if (sender_) sender_->onBackChannel(buf, n, now);
+            const std::uint64_t acks = s_.guard.acksHeard();
             s_.guard.hear(buf, n);
+            if (!sender_ && probe_ == Probe::Done && linkAllowed_ && !lateProbed_ && s_.guard.acksHeard() != acks) {
+                // An ack on a link taken for raw: the ROM speaks the link and answered the connect's sync after the
+                // probe's window (BlipToaster read it late), and is in its link mode, which drops unframed messages.
+                // The link is probed again, once for a connect, so it goes framed.
+                lateProbed_ = true;
+                probe_ = Probe::Pending;
+                return;
+            }
         }
         if (n < sizeof buf) return;
     }

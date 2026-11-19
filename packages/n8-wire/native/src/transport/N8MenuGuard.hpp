@@ -101,6 +101,8 @@ public:
     // The state a connect's own check found (N8Host's askMenu, before the stream starts): set, with nothing to enter.
     void seed(bool menu) { atMenu_ = menu; }
     bool atMenu() const { return atMenu_; }
+    // The cart's whole acks heard since the last reset: on a raw link a driver reads one as the ROM speaking the link.
+    std::uint64_t acksHeard() const { return acksHeard_; }
     Scan&       scan() { return scan_; }
     const Scan& scan() const { return scan_; }
 

@@ -17,9 +17,11 @@
 //   Clock has its 64-bit time; without either the link is raw and unguarded, as the box was before them. A connect
 //   writes the link's sync (F4 00) at its next drain and listens for the ack across the passes that follow, for 100 ms,
 //   while what is pushed waits in the ring: an ack makes the link framed (BlipToaster), silence leaves it raw
-//   (setLinkAllowed(false) skips the probe). Each drain then reads the back-channel (the acks for the sender, the
-//   menu's 'k' for the guard), takes the guard's turn, puts the guard's probe at the front of its first write when one
-//   is due (a drain starts between two messages), and, unless the guard holds, writes the sender's re-sends and the
+//   (setLinkAllowed(false) skips the probe). An ack heard later on a raw link is a ROM that answered the sync after
+//   the window (BlipToaster read it late, and its link mode drops unframed messages): the probe runs once more for the
+//   connect. Each drain then reads the back-channel (the acks for the sender, the menu's 'k' for the guard), takes
+//   the guard's turn, puts the guard's probe at the front of its first write when one is due (a drain starts between
+//   two messages), and, unless the guard holds, writes the sender's re-sends and the
 //   ring's messages, each framed on a framed link, in writes that never split a frame, and never with more than the
 //   window less one outstanding (the rest waits for the next drain, which reads the acks first, so a backlog never
 //   makes the sender give its window up). A SysEx longer than a frame carries is dropped there (`unframed`), as the
@@ -236,6 +238,7 @@ private:
     std::int64_t          probeUntilNs_ = 0;
     bool                  linkAllowed_ = true;
     bool                  backChannel_ = false;
+    bool                  lateProbed_ = false;  // an ack heard on a raw link has had its one fresh probe this connect
     std::int64_t          lastBackNs_ = 0;  // when the back-channel last gave a byte
 
     Counts counts_{};

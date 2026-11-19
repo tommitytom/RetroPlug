@@ -1409,6 +1409,7 @@ struct LossyRig {
     bool                                           failNext = false;  // the next FIFO write delivers nothing and fails
     int                                            lost = 0;
     Bytes                                          back;
+    std::vector<Bytes>                             writes;  // every FIFO write the box made, failed or not
     std::unique_ptr<rp::box::BoxCartLink::Storage> ring = std::make_unique<rp::box::BoxCartLink::Storage>();
     rp::box::BoxCartLink                           link{*ring};
     std::uint64_t                                  us = 1'000'000;
@@ -1421,6 +1422,7 @@ struct LossyRig {
     }
     static bool          fifo(void* ctx, const std::uint8_t* d, std::size_t n, std::uint32_t, std::uint32_t) {
         auto& self = *static_cast<LossyRig*>(ctx);
+        self.writes.emplace_back(d, d + n);
         if (self.failNext) {
             self.failNext = false;
             return false;
@@ -1883,6 +1885,98 @@ TEST_CASE("a failed framed write on the box's link: its frame is marked sent, re
     CHECK(r.link.counts().resent >= 1);
     CHECK(r.rom.applied == std::vector<Bytes>{a, b, c});
     CHECK(r.link.quietForRead());
+}
+
+TEST_CASE("a lone framed message whose write fails: the stall, the guard's probe, the cart's ack to it, the re-send, "
+          "the message applied",
+          "[device-mode][box][box-link]") {
+    LossyRig r;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    const Bytes a = note(0x90, 60, 100);
+    REQUIRE(r.push(a));
+    r.failNext = true;
+    r.drain();
+    REQUIRE(r.link.counts().failed == 1);
+    REQUIRE(r.link.outstanding() == 1);
+    // Nothing more is pushed: the window's one frame is lost and nothing behind it tells the cart so. The link's own
+    // timeout makes the stall, the guard asks the cart with its probe (the ROM drops the probe's bytes as unframed and
+    // acknowledges the frame it still wants), and the ack has the frame sent again.
+    const auto probes = [&] {
+        int n = 0;
+        for (const Bytes& w : r.writes) n += w == kProbeBytes ? 1 : 0;
+        return n;
+    };
+    r.drain(99);
+    CHECK(probes() == 0);
+    CHECK(r.rom.applied.empty());
+    for (int k = 0; k < 400 && r.link.outstanding() != 0; ++k) r.drain();
+    CHECK(probes() == 1);
+    CHECK(r.link.counts().resends >= 1);
+    CHECK(r.link.outstanding() == 0);
+    CHECK(r.rom.applied == std::vector<Bytes>{a});
+    CHECK(r.link.quietForRead());
+}
+
+TEST_CASE("a cart that answers the connect's sync after the probe window: the link goes raw, hears the late ack, "
+          "probes again once, and is framed",
+          "[device-mode][box][box-link]") {
+    ScriptedRig r;
+    r.link.setConnected(true);
+    r.drain();  // the sync is written
+    r.drain(100);  // nothing answered within the window: raw
+    REQUIRE_FALSE(r.link.framed());
+    const auto syncs = [&] {
+        int n = 0;
+        for (const Bytes& w : r.writes) n += w == Bytes{0xF4, 0x00} ? 1 : 0;
+        return n;
+    };
+    REQUIRE(syncs() == 1);
+    r.back = {0xF5, 0x00, 0x7F};  // the late answer: BlipToaster read the sync after the window
+    r.drain();
+    CHECK_FALSE(r.link.framed());
+    r.drain();  // the probe runs again
+    CHECK(syncs() == 2);
+    r.back = {0xF5, 0x00, 0x7F};
+    r.drain();
+    CHECK(r.link.framed());
+    const Bytes a = note(0x90, 60, 100);
+    REQUIRE(r.push(a));
+    const std::size_t before = r.writes.size();
+    r.drain();
+    REQUIRE(r.writes.size() == before + 1);
+    // The new sender's first frame: its sync, F4 00, then the message framed as F5 <seq> 90 3C 64 <sum>.
+    const Bytes& w = r.writes.back();
+    REQUIRE(w.size() == 8);
+    CHECK((w[0] == 0xF4 && w[1] == 0x00));
+    CHECK(w[2] == 0xF5);
+    CHECK((w[4] == 0x90 && w[5] == 60 && w[6] == 100));
+    CHECK(r.link.counts().failed == 0);
+}
+
+TEST_CASE("an ack heard again on a link still raw after the second probe does not probe a third time",
+          "[device-mode][box][box-link]") {
+    ScriptedRig r;
+    r.link.setConnected(true);
+    r.drain();
+    r.drain(100);
+    REQUIRE_FALSE(r.link.framed());
+    r.back = {0xF5, 0x00, 0x7F};
+    r.drain();
+    r.drain();  // the second probe's sync
+    r.drain(100);  // unanswered again: raw
+    REQUIRE_FALSE(r.link.framed());
+    std::size_t syncs = 0;
+    for (const Bytes& w : r.writes) syncs += w == Bytes{0xF4, 0x00} ? 1 : 0;
+    REQUIRE(syncs == 2);
+    r.back = {0xF5, 0x00, 0x7F};
+    r.drain();
+    r.drain(100);
+    CHECK_FALSE(r.link.framed());
+    syncs = 0;
+    for (const Bytes& w : r.writes) syncs += w == Bytes{0xF4, 0x00} ? 1 : 0;
+    CHECK(syncs == 2);
 }
 
 TEST_CASE("the box's link writes no probe in the drain that hears the menu answer", "[device-mode][box][box-link]") {
