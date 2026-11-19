@@ -257,9 +257,11 @@ target_compile_definitions(n8_host PRIVATE N8_HOST_ARENA_BYTES=${N8_HOST_ARENA_B
 
 # Experiment knobs, each a plain #define in main.cpp with a default: N8_MENU_TRIES (how many
 # '*t' attempts before giving up on the menu), N8_LAT_TRACE (the latency trace, LatTrace.hpp: a message's way through
-# the box and what each part of a pass costs, printed after a second of quiet). The expansion volume is no knob: it is
-# rp.n8.nes's `expansionVolume` param, unity unless plan.json sets it, which the cart link writes.
-foreach(knob N8_MENU_TRIES N8_APU_LAT N8_TEST_HOOKS N8_LAT_TRACE)
+# the box and what each part of a pass costs, printed after a second of quiet), N8_BOX_LINK (0: the cart link never
+# probes for BlipToaster's reliable link and streams raw, its menu guard still on: the raw build the framed link's
+# latency is measured against). The expansion volume is no knob: it is rp.n8.nes's `expansionVolume` param, unity
+# unless plan.json sets it, which the cart link writes.
+foreach(knob N8_MENU_TRIES N8_APU_LAT N8_TEST_HOOKS N8_LAT_TRACE N8_BOX_LINK)
     if(DEFINED ${knob})
         target_compile_definitions(n8_host PRIVATE ${knob}=${${knob}})
     endif()

@@ -8,7 +8,12 @@
 //         total a/m over1500=<k> | path <cycles> cyc <misses> miss, block <cycles> cyc <misses> miss,
 //         write <misses> miss
 //   [lat] passes idle n=<N> <us> us avg, <us> max, <misses> miss avg, <misses> max | block in <p>% of passes,
-//         <us> us avg, <us> max | busy <N> | seg max us usb .. stats .. | worst msg <us>: rx in <seg>, ack in <seg>
+//         <us> us avg, <us> max | busy <N> | seg max us usb .. stats .. | bcread <us> avg/max | worst msg <us>:
+//         rx in <seg>, ack in <seg>
+//
+// `bcread` is the cart link's back-channel reads (main.cpp's cart_read: a USB pump and what it found), each timed,
+// the one part of the link's drain a message's own points do not split out: the guard's turn and the framing are in
+// push>write, the FIFO write in write.
 //
 // The message's points: its last byte's UART timestamp (the poll's, or the RX interrupt's), the end of the drain that
 // took it into the staging, the start of the block that pushed it, the link's push (BoxCartLink asking the staging when
@@ -128,6 +133,7 @@ struct State {
     // What the summary reports, since the last one.
     Acc rxDrain, drainBlock, blockPush, pushWrite, write, writeAck, total, path, pathMisses, msgBlock, msgBlockMisses,
         writeMisses, idleUs10, idleMiss, blockUs10;
+    Acc backReads;  // the cart link's back-channel reads (bcread), each
     uint32_t over1500 = 0, passes = 0, blockPasses = 0, busy = 0;
     uint32_t segMax[kSegs] = {};
     uint32_t worstTotal = 0;
@@ -214,6 +220,9 @@ inline void blockDone(uint64_t blocks) {
 inline void pushed(uint32_t stamp) {
     if (g.pushes < State::kPushes) g.push[g.pushes++] = State::Push{stamp, time_us_32()};
 }
+
+// One read of the cart link's back-channel, `us` long (main.cpp's cart_read).
+inline void backRead(uint32_t us) { g.backReads.add(us); }
 
 // Which segment a moment fell in: kReport while the last summary printed, else on the drain's own pass or the one
 // before; kSegs when earlier than both.
@@ -359,9 +368,11 @@ static void __noinline report() {
            static_cast<unsigned long>(g.total.n), f[0], f[1], f[2], f[3], f[4], f[5], f[6],
            static_cast<unsigned long>(g.over1500), f[7], f[8], f[9], f[10], f[11]);
     const uint32_t idle = g.idleUs10.avg(), idleMax = g.idleUs10.max, blk = g.blockUs10.avg(), blkMax = g.blockUs10.max;
+    char bcread[24];
+    am(g.backReads, bcread, sizeof bcread);
     printf("[lat] passes idle n=%lu %lu.%lu us avg, %lu.%lu max, %lu miss avg, %lu max | block in %lu%% of passes, "
            "%lu.%lu us avg, %lu.%lu max | busy %lu | seg max us usb %lu uart %lu block %lu link %lu n8 %lu diag %lu "
-           "watch %lu stats %lu | worst msg %lu: rx in %s, ack in %s\n",
+           "watch %lu stats %lu | bcread %s | worst msg %lu: rx in %s, ack in %s\n",
            static_cast<unsigned long>(g.idleUs10.n), static_cast<unsigned long>(idle / 10),
            static_cast<unsigned long>(idle % 10), static_cast<unsigned long>(idleMax / 10),
            static_cast<unsigned long>(idleMax % 10), static_cast<unsigned long>(g.idleMiss.avg()),
@@ -373,13 +384,13 @@ static void __noinline report() {
            static_cast<unsigned long>(g.segMax[Uart]), static_cast<unsigned long>(g.segMax[Block]),
            static_cast<unsigned long>(g.segMax[Link]), static_cast<unsigned long>(g.segMax[N8]),
            static_cast<unsigned long>(g.segMax[Diag]), static_cast<unsigned long>(g.segMax[Watch]),
-           static_cast<unsigned long>(g.segMax[Stats]), static_cast<unsigned long>(g.worstTotal),
+           static_cast<unsigned long>(g.segMax[Stats]), bcread, static_cast<unsigned long>(g.worstTotal),
            kSegNames[g.worstRxSeg], kSegNames[g.worstAckSeg]);
     g.reportTo = time_us_32();
     // A fresh window: the counters only (the clock set-up, the XIP totals and the timelines carry on).
     for (Acc* a : {&g.rxDrain, &g.drainBlock, &g.blockPush, &g.pushWrite, &g.write, &g.writeAck, &g.total, &g.path,
                    &g.pathMisses, &g.msgBlock, &g.msgBlockMisses, &g.writeMisses, &g.idleUs10, &g.idleMiss,
-                   &g.blockUs10})
+                   &g.blockUs10, &g.backReads})
         a->reset();
     g.over1500 = g.passes = g.blockPasses = g.busy = 0;
     for (uint32_t& m : g.segMax) m = 0;

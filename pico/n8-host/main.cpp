@@ -92,6 +92,13 @@ using rp::n8::Edio;
 #define LAT(call) ((void)0)
 #endif
 
+// 0 = the cart link never probes for BlipToaster's reliable link and streams raw, its menu guard still on, as the
+// desktop's N8Link::setLinkAllowed(false) does: the raw build the framed link's latency is measured against
+// (docs/pico-box-framed-link-design.md section 6). Measurement only.
+#ifndef N8_BOX_LINK
+#define N8_BOX_LINK 1
+#endif
+
 // The N8's link and its Edio, in static storage: one of each, for whichever N8 is mounted (UsbCdcTransport.hpp says
 // how a mount rebinds it). The transport's waits run the box's idle hook, so the long Edio calls keep it fed.
 static UsbCdcTransport usb(box_feed);
@@ -111,6 +118,7 @@ static bool          boot_error  = false;   // the last menu boot failed: LED_ER
 static int           write_fail_streak = 0; // consecutive failed fifoWRs
 static int           cur_sel     = -1;      // the staged ROM the box last booted (-1 = none / unknown)
 static uint32_t      menu_stuck_until = 0; // !0: the menu stopped answering - no forwarding; retry the boot then
+static bool          menu_answered = false; // the cart link's guard heard the menu: the next boot skips CMD_STATUS
 
 // --- The graph host ----------------------------------------------------------------------------------------------
 // The box's plan runs in a static arena (plan.cmake's N8_HOST_ARENA_BYTES), handed to retroplug-export-plan as the
@@ -186,6 +194,10 @@ typedef struct {
     uint32_t link_full;    // messages lost to a full cart-link ring (one block's MIDI twice over: none expected)
     uint32_t skipped;      // frames the block driver dropped past its carry's bound (an N8 boot's wait, a long hold;
                            //   BlockDriver.hpp), saturating
+    uint32_t framed;       // 1: the cart link is framed (BlipToaster answered the connect's sync), 0: raw
+    uint32_t resends;      // the framed link's re-send rounds, since boot
+    uint32_t resent;       // frames those rounds wrote again
+    uint32_t unframed;     // messages a framed link could not carry (a SysEx past 40 bytes), dropped
 } bridge_stats;
 static bridge_stats stats;
 
@@ -230,20 +242,23 @@ static void apu_latency_probe(uint32_t from_us) {
 }
 #endif
 
-// The cart link's FIFO writes: one fifoWR a batch (up to 192 bytes of whole messages; a write costs the same ~5 ms
-// whatever it carries, so batching is what lets a burst through), each timed from the arrival of the first message it
-// carries to the N8's ACK.
+// The cart link's FIFO writes: one fifoWR a batch (up to 192 bytes of whole messages, framed on a framed link; a write
+// costs the same ~5 ms whatever it carries, so batching is what lets a burst through), each timed from the arrival of
+// the first message it carries to the N8's ACK. A write that carries none of the ring's messages (the link's sync, the
+// guard's probe, re-sends alone: `msgs` 0) is no message's latency and no MIDI activity, so it is neither timed nor
+// blinked: a raw link's idle probe every 250 ms would otherwise blink the LED at 4 Hz and pull `lat=` down.
 static bool fifo_write(void *, const uint8_t *batch, size_t len, uint32_t msgs, uint32_t first_us) {
-    LAT(writeBegin(first_us, !ack_pending));
-    if (!ack_pending) { ack_from_us = first_us; ack_pending = true; }   // armed first: the
+    const bool timed = msgs != 0 && !ack_pending;
+    LAT(writeBegin(first_us, timed));
+    if (timed) { ack_from_us = first_us; ack_pending = true; }   // armed first: the
     // write pumps tuh_task, so its completion can arrive before Edio::fifoWR even returns
     uint64_t t0 = time_us_64();
     bool ok = edio.fifoWR(batch, len).ok();
     LAT(writeEnd(ok));
     uint32_t us = (uint32_t)(time_us_64() - t0);
-    if (!ok) ack_pending = false;
+    if (!ok && msgs != 0) ack_pending = false;
     write_fail_streak = ok ? 0 : write_fail_streak + 1;
-    if (ok) led_activity();
+    if (ok && msgs != 0) led_activity();
     if (us > stats.max_fwd_us) stats.max_fwd_us = us;
 #if N8_BRIDGE_VERBOSE
     printf("[bridge] MIDI -> FIFO (%lu msgs):", (unsigned long)msgs);
@@ -263,7 +278,19 @@ static bool fifo_write(void *, const uint8_t *batch, size_t len, uint32_t msgs, 
 static bool volume_write(void *, int value, bool again) {
     return rp::box::writeExpansionVolume(edio, value, again, print_line);
 }
-static const rp::box::BoxCartLink::Writer cart_writer = {nullptr, fifo_write, volume_write};
+// The cart link's back-channel: what the N8 has said (the reliable link's acks, the menu's answer to the guard's
+// probe), read without waiting: one USB pump, and what it found.
+static size_t cart_read(void *, uint8_t *data, size_t size) {
+#if N8_LAT_TRACE
+    const uint32_t from = time_us_32();
+    const size_t   n = usb.read(data, size, 0);
+    lat::backRead(time_us_32() - from);
+    return n;
+#else
+    return usb.read(data, size, 0);
+#endif
+}
+static const rp::box::BoxCartLink::Writer cart_writer = {nullptr, fifo_write, volume_write, cart_read};
 
 // TinyUSB's no-RTOS timing hook (no board layer), backed by the SDK clock.
 extern "C" uint32_t tusb_time_millis_api(void) { return to_ms_since_boot(get_absolute_time()); }
@@ -601,11 +628,16 @@ static void stats_report(void) {
     stats.filtered = rp::box::filtered(in, out);
     stats.lat_avg_us = lat_n ? lat_sum / lat_n : 0;
     stats.lat_max_us = lat_win_max;
+    stats.framed = cart.framed() ? 1u : 0u;
+    stats.resends = out.resends;
+    stats.resent = out.resent;
+    stats.unframed = out.unframed;
     lat_sum = lat_n = lat_win_max = 0;
     if (memcmp(&last, &stats, sizeof stats) == 0) return;
     last = stats;
     printf("[stats] rx=%lu msgs=%lu sysex=%lu fwd=%lu fail=%lu writes=%lu maxbatch=%lu filtered=%lu "
-           "notready=%lu oe=%lu fe=%lu ringfull=%lu maxfwd=%luus lat=%lu/%luus linkfull=%lu skipped=%lu\n",
+           "notready=%lu oe=%lu fe=%lu ringfull=%lu maxfwd=%luus lat=%lu/%luus linkfull=%lu skipped=%lu "
+           "link=%s resends=%lu resent=%lu unframed=%lu\n",
            (unsigned long)stats.rx_bytes, (unsigned long)stats.msgs, (unsigned long)stats.sysex,
            (unsigned long)stats.fwd,
            (unsigned long)stats.fwd_fail, (unsigned long)stats.writes,
@@ -613,7 +645,9 @@ static void stats_report(void) {
            (unsigned long)stats.not_ready, (unsigned long)stats.uart_oe,
            (unsigned long)stats.uart_fe, (unsigned long)stats.ring_full,
            (unsigned long)stats.max_fwd_us, (unsigned long)stats.lat_avg_us,
-           (unsigned long)stats.lat_max_us, (unsigned long)stats.link_full, (unsigned long)stats.skipped);
+           (unsigned long)stats.lat_max_us, (unsigned long)stats.link_full, (unsigned long)stats.skipped,
+           stats.framed ? "framed" : "raw", (unsigned long)stats.resends, (unsigned long)stats.resent,
+           (unsigned long)stats.unframed);
 }
 
 // Read-only confirmation: poll the running ROM's APU write-mirror ($4000-$401F at SSR+0x80)
@@ -728,7 +762,8 @@ int main(void) {
     // arena with the node types this image registers (retroplug_product in CMakeLists.txt). A plan the loader refuses
     // (which the build's export rules out) leaves the box running its N8 part with the error LED, forwarding nothing.
     staging.init(box_sysex, nullptr, frame_of, nullptr);
-    cart.setClock({nullptr, now_us, arrival_of});
+    cart.setClock({nullptr, now_us, arrival_of, clock_us});
+    cart.setLinkAllowed(N8_BOX_LINK != 0);
     host.init(links, sizeof links / sizeof links[0], staging.interface(), host_log, &script_clock);
     size_t package_count = 0;
     const rp_package *const *packages = rp_register_packages(&package_count);
@@ -788,11 +823,38 @@ int main(void) {
         cart.drain(cart_writer, to_ms_since_boot(get_absolute_time()));
         LAT(mark(lat::N8));
 
+        // The cart link's guard heard the N8 menu answer its probe: a console RESET took the game away. Forwarding
+        // stops, the link lets go of what it held (it dropped it at the answer), and the boot runs again knowing the
+        // menu is up: straight to the '*t' handshake, then the chosen ROM (or a pending MIDI pick). The reconnect after
+        // it starts from a clean stream and probes the link afresh. CMD_STATUS turning 0 (health_check) stays the way
+        // back for a menu reached while nothing streams, which the guard does not ask about.
+        if (forward_ok && cart.atMenu()) {
+            forward_ok = false;
+            was_forwarding = false;
+            cart.setConnected(false);
+            game_seen = false;
+            if (boot_error) {
+                // The boot that left the box forwarding failed (its line said why), so this menu is the one it could
+                // not leave: nothing is forwarded into it, and the boot is tried again in 20 s, as for a menu that
+                // stopped answering, rather than at once and over again.
+                printf("[box] the N8 menu answered the cart link's probe after a failed boot - retrying in 20 s\n");
+                menu_stuck_until = to_ms_since_boot(get_absolute_time()) + 20000;
+                menu_answered = true;  // the retry goes straight to '*t': CMD_STATUS at this menu is unknown
+            } else {
+                printf("[box] the N8 menu answered the cart link's probe - booting the chosen ROM\n");
+                menu_answered = true;
+                probed = false;
+            }
+        }
+
         if (n8_ready && !probed) {
             led_set_mode(LED_BUSY);   // the boot blocks for seconds: show it now, not after
             probed = true;
             usb.bind(n8_cdc_idx);     // here, at the top of the loop: never inside an Edio call's wait
-            int status = n8_probe();
+            // After the menu answered the guard, CMD_STATUS is not asked: whether it reads 0 after a RESET was never
+            // seen, and a non-zero one would take the menu for a game. The boot goes straight to the handshake.
+            int status = menu_answered ? 0 : n8_probe();
+            menu_answered = false;
             game_seen = false;
             boot_rom(status);
         }
@@ -811,9 +873,15 @@ int main(void) {
             staging.reset();
         }
         was_forwarding = forward_ok;
-        cart.setConnected(forward_ok);
+        // A plan the loader refused, or one whose node faulted, forwards nothing, so the link does not connect either
+        // (docs/pico-box-framed-link-design.md section 4): no link probe and no guard probe go to the cart for it.
+        cart.setConnected(forward_ok && plan.plan() && !plan.faulted());
         LAT(mark(lat::Diag));
-        if (forward_ok) { sniff_report(); health_check(); }
+        // Each reads a reply off the USB input the link's acks and the menu's answer come in on, so each waits for a
+        // pass the cart link says is quiet (an ack or a 'k' read as a reply's first byte would misread both); a pass
+        // that is not is skipped, and the next quiet one runs it (their own cadences stand).
+        if (forward_ok && cart.quietForRead()) sniff_report();
+        if (forward_ok && cart.quietForRead()) health_check();
         LAT(mark(lat::Watch));
         link_watch();
         // A plan that is refused, or whose node faulted (the policy's pack ran out, a deadline), forwards nothing for
@@ -860,6 +928,7 @@ extern "C" void tuh_cdc_mount_cb(uint8_t idx) {
         menu_stuck_until = 0;
         n8_gen = n8_gen + 1;
         boot_error = false;   // a fresh mount gets a fresh boot
+        menu_answered = false;   // ... from its probe: what the last N8's menu answered says nothing of this one
         n8_ready = true;
         probed = false;
     }
