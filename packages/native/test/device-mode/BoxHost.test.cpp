@@ -1877,3 +1877,51 @@ TEST_CASE("a failed framed write on the box's link: its frame is marked sent, re
     CHECK(r.rom.applied == std::vector<Bytes>{a, b, c});
     CHECK(r.link.quietForRead());
 }
+
+TEST_CASE("the box's link writes no probe in the drain that hears the menu answer", "[device-mode][box][box-link]") {
+    ScriptedRig r;
+    r.link.setConnected(true);
+    r.drain();
+    r.drain(100);  // raw, and the guard's first probe
+    REQUIRE_FALSE(r.link.framed());
+    REQUIRE(r.push(note(0x90, 60, 100)));
+    r.drain(300);  // a probe is due again: the one the menu will answer
+    r.back = {'k'};
+    REQUIRE(r.push(note(0x90, 62, 100)));
+    const std::size_t before = r.writes.size();
+    r.drain(300);  // the answer is heard, and a probe would be due
+    CHECK(r.link.atMenu());
+    CHECK(r.writes.size() == before);  // the box is leaving the link: nothing more goes to the menu
+}
+
+TEST_CASE("a scan left inside an ack is quiet for a read once the cart has said nothing for 250 ms",
+          "[device-mode][box][box-link]") {
+    ScriptedRig r;
+    r.connectFramed();
+    REQUIRE(r.link.framed());
+    r.back = {0xF5};
+    r.drain();
+    CHECK_FALSE(r.link.quietForRead());
+    r.us += 249'000;
+    CHECK_FALSE(r.link.quietForRead());
+    r.us += 1'000;
+    CHECK(r.link.quietForRead());
+}
+
+TEST_CASE("a failed raw write stops the drain: the rest stays queued and is not counted failed",
+          "[device-mode][box][box-link]") {
+    Link l;
+    l.link.setConnected(true);
+    for (std::uint32_t i = 0; i < 70; ++i) REQUIRE(l.push(i, note(0x90, static_cast<std::uint8_t>(i % 100), 100)));
+    l.log.fifoFails = true;
+    const auto w = l.log.writer();
+    l.link.drain(w, 1);
+    CHECK(l.log.writes.size() == 1);
+    CHECK(l.link.counts().failed == 64);  // 192 bytes of 3-byte messages
+    CHECK(l.link.queued() == 6);
+    l.log.fifoFails = false;
+    l.link.drain(w, 2);
+    CHECK(l.link.queued() == 0);
+    CHECK(l.link.counts().forwarded == 6);
+    CHECK(l.link.counts().failed == 64);
+}

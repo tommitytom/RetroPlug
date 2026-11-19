@@ -158,7 +158,10 @@ bool BoxCartLink::quietForRead() const { return quietAt(nowNs()); }
 bool BoxCartLink::quietAt(std::int64_t now) const {
     if (!backChannel_) return true;  // nothing the link reads, so nothing a read can meet
     if (probe_ == Probe::Waiting) return false;
-    if (s_.guard.probeAwaited(now) || s_.guard.scan().state != 0) return false;
+    if (s_.guard.probeAwaited(now)) return false;
+    // A scan halfway through an ack is waiting for its tail, which a cart that has gone silent for the ack bound is not
+    // sending: the scan then counts as between acks, so a lone F5 does not hold the reads back for good.
+    if (s_.guard.scan().state != 0 && now - lastBackNs_ < kAckWaitNs) return false;
     if (!sender_) return frontSent_ == 0;
     if (sender_->outstanding() == 0) return true;
     const std::int64_t first = sender_->oldestFirstSentNs();
@@ -200,7 +203,12 @@ void BoxCartLink::drain(const Writer& writer, std::uint32_t nowMs) {
     // The ring waits for the probe's verdict (a sync whose write failed goes out again at the next drain).
     if (probe_ != Probe::Done) return;
     const rp::N8MenuGuard::Turn turn = s_.guard.turn(now, sender_, frontSent_ == 0);
-    if (turn.enteredMenu) discard();  // the menu: what the ring held and the window go, counted
+    if (turn.enteredMenu) {
+        // The menu: what the ring held and the window go, counted. Nothing more is written: the box leaves the link at
+        // once, and a probe now would be answered into the boot's own handshake.
+        discard();
+        return;
+    }
     if (turn.reprobeLink || (turn.leftMenu && linkAllowed_)) {
         // A stalled window two probes heard nothing to (a game without the link), or a game the user started from the
         // menu: the link is probed again at the next drain, and a game with it re-syncs framed.
@@ -247,6 +255,7 @@ void BoxCartLink::readBackChannel(const Writer& writer, std::int64_t now) {
     for (int r = 0; r < kBackReads; ++r) {
         const std::size_t n = writer.read(writer.ctx, buf, sizeof buf);
         if (n == 0) return;
+        lastBackNs_ = now;
         if (probe_ == Probe::Waiting) {
             // The probe's answer, F5 <next> (N8Link::probeLink's test): the link is framed from here, with a sender of
             // its own. The rest of this read goes with the ack, as the desktop's probe leaves it unread: the ack's
@@ -312,6 +321,9 @@ void BoxCartLink::drainRaw(const Writer& writer, bool probe) {
             counts_.failed += carried;
         }
         if (carried > counts_.maxBatch) counts_.maxBatch = carried;
+        // A write that failed ends the drain: the cart may be gone, and what is left waits in the ring for the next
+        // drain (or the disconnect, which counts it not ready), rather than failing one write after another.
+        if (!ok) return;
     }
 }
 

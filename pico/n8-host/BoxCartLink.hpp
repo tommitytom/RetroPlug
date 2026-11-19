@@ -236,6 +236,7 @@ private:
     std::int64_t          probeUntilNs_ = 0;
     bool                  linkAllowed_ = true;
     bool                  backChannel_ = false;
+    std::int64_t          lastBackNs_ = 0;  // when the back-channel last gave a byte
 
     Counts counts_{};
 };

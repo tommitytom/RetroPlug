@@ -194,7 +194,8 @@ typedef struct {
     uint32_t link_full;    // messages lost to a full cart-link ring (one block's MIDI twice over: none expected)
     uint32_t skipped;      // frames the block driver dropped past its carry's bound (an N8 boot's wait, a long hold;
                            //   BlockDriver.hpp), saturating
-    uint32_t framed;       // 1: the cart link is framed (BlipToaster answered the connect's sync), 0: raw
+    uint32_t framed;       // 1: the cart link is framed (BlipToaster answered the connect's sync), 0: raw;
+                           //   2: not connected
     uint32_t resends;      // the framed link's re-send rounds, since boot
     uint32_t resent;       // frames those rounds wrote again
     uint32_t unframed;     // messages a framed link could not carry (a SysEx past 40 bytes), dropped
@@ -315,6 +316,7 @@ static int status_byte(const rp::n8::Status &s) { return s.code == rp::n8::Code:
 // Edio calls block + pump tuh_task() internally.
 static int n8_probe(void) {
     printf("[n8-host] --- Edio probe ---\n");
+    edio.flushInput();   // a stale back-channel byte (a late ack, the guard's 'k') would be read as the status
 
     // Status is 0 (OK) at the N8 menu; a running ROM reports a non-zero busy state
     // (e.g. 5) while the link stays fully functional - not an error. -1 = no reply.
@@ -458,7 +460,14 @@ static int boot_through_menu(boot_run &run, bool upload) {
     return status_byte(s);
 }
 
-static void boot_rom(int status) {
+// A boot that failed leaves the box at a menu it could not leave: the error LED, and nothing is forwarded (so the cart
+// link never connects there) until the boot is tried again in 20 s.
+static void boot_failed(void) {
+    boot_error = true;
+    menu_stuck_until = to_ms_since_boot(get_absolute_time()) + 20000;
+}
+
+static void boot_rom(int status, bool menu_known) {
     const uint32_t gen = n8_gen;
     if (status > 0) {   // CMD_STATUS is 0 at the menu and non-zero while a game runs
         printf("[n8-host] a game is already running (status %d) - forwarding MIDI to it\n", status);
@@ -475,8 +484,9 @@ static void boot_rom(int status) {
     if (BOOT_GONE()) ABANDON();
     if (!menu) {
         int now_st = n8_status();
-        if (now_st == 0) {
-            // CMD_STATUS says menu, but the menu does not answer: the console came back in a bad
+        if (now_st == 0 || menu_known) {
+            // CMD_STATUS says menu (or the guard heard the menu, which CMD_STATUS may not then say), but the menu
+            // does not answer: the console came back in a bad
             // state (seen after a power cut only ~2.7 s long). MIDI must not go into a menu's FIFO -
             // a 0x2A data byte is its '*' command prefix - so hold off, show the error, and try
             // the boot again in 20 s in case it comes alive. A power-cycle of the NES clears it.
@@ -521,20 +531,20 @@ static void boot_rom(int status) {
     }
 
     int result = boot_through_menu(run, upload);
-    if (result == -2) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
+    if (result == -2) { if (BOOT_GONE()) ABANDON(); boot_failed(); return; }
     if (result > 0 && result != 0x44 && run.rom && !upload) {   // the device's own status, not a lost link
         // The saved CRC said the file was on the card, but the menu could not load it - it was
         // deleted or replaced behind the box's back. Put it back and try once more.
         printf("[n8-host] install FAILED (status %d) - uploading it again\n", result);
         run.retry = true;
         result = boot_through_menu(run, true);
-        if (result == -2) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
+        if (result == -2) { if (BOOT_GONE()) ABANDON(); boot_failed(); return; }
     }
     if (BOOT_GONE()) ABANDON();
     if (result != 0) {
         printf("[n8-host] install FAILED (status %d)%s\n", result,
                result == 0x44 ? " - dirty menu heap, power-cycle to a fresh menu" : "");
-        boot_error = true;
+        boot_failed();
         return;
     }
     wait_ms(4000);   // let the NES reboot into the game
@@ -628,7 +638,7 @@ static void stats_report(void) {
     stats.filtered = rp::box::filtered(in, out);
     stats.lat_avg_us = lat_n ? lat_sum / lat_n : 0;
     stats.lat_max_us = lat_win_max;
-    stats.framed = cart.framed() ? 1u : 0u;
+    stats.framed = !cart.connected() ? 2u : cart.framed() ? 1u : 0u;
     stats.resends = out.resends;
     stats.resent = out.resent;
     stats.unframed = out.unframed;
@@ -646,7 +656,8 @@ static void stats_report(void) {
            (unsigned long)stats.uart_fe, (unsigned long)stats.ring_full,
            (unsigned long)stats.max_fwd_us, (unsigned long)stats.lat_avg_us,
            (unsigned long)stats.lat_max_us, (unsigned long)stats.link_full, (unsigned long)stats.skipped,
-           stats.framed ? "framed" : "raw", (unsigned long)stats.resends, (unsigned long)stats.resent,
+           stats.framed == 2 ? "off" : stats.framed ? "framed" : "raw", (unsigned long)stats.resends,
+           (unsigned long)stats.resent,
            (unsigned long)stats.unframed);
 }
 
@@ -737,6 +748,7 @@ static void health_check(void) {
         printf("[box] the N8 is back at its menu - booting the chosen ROM\n");
         game_seen = false;
         probed = false;   // the main loop re-runs the probe and the menu boot
+        cart.setConnected(false);   // the link never spans a boot: the next connect probes and guards afresh
     }
 }
 
@@ -848,15 +860,21 @@ int main(void) {
         }
 
         if (n8_ready && !probed) {
+            // No boot runs with the link connected: its guard probes and the game's acks would meet the boot's own
+            // reads, and a game booted under the old sender would never be synced.
+            forward_ok = false;
+            was_forwarding = false;
+            cart.setConnected(false);
             led_set_mode(LED_BUSY);   // the boot blocks for seconds: show it now, not after
             probed = true;
             usb.bind(n8_cdc_idx);     // here, at the top of the loop: never inside an Edio call's wait
             // After the menu answered the guard, CMD_STATUS is not asked: whether it reads 0 after a RESET was never
             // seen, and a non-zero one would take the menu for a game. The boot goes straight to the handshake.
-            int status = menu_answered ? 0 : n8_probe();
+            const bool known = menu_answered;
+            int status = known ? 0 : n8_probe();
             menu_answered = false;
             game_seen = false;
-            boot_rom(status);
+            boot_rom(status, known);
         }
         if (menu_stuck_until && (int32_t)(to_ms_since_boot(get_absolute_time()) - menu_stuck_until) >= 0) {
             menu_stuck_until = 0;
