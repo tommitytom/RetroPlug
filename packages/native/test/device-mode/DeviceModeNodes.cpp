@@ -59,6 +59,18 @@ std::uint32_t boxNow(void*) { return gBoxRecord->now ? gBoxRecord->now(gBoxRecor
 bool          boxArrival(void*, std::uint32_t frame, const std::uint8_t* data, std::size_t size, std::uint32_t* us) {
     return gBoxRecord->arrival && gBoxRecord->arrival(gBoxRecord->clockCtx, frame, data, size, us);
 }
+std::uint64_t boxMonotonic(void*) {
+    return gBoxRecord->monotonicUs ? gBoxRecord->monotonicUs(gBoxRecord->clockCtx) : 0;
+}
+// The cart's back-channel, as the record holds it: what the case put there, handed over from the front.
+std::size_t boxRead(void*, std::uint8_t* data, std::size_t size) {
+    BoxRecord&          r = *gBoxRecord;
+    const std::uint32_t n = r.backCount < size ? r.backCount : static_cast<std::uint32_t>(size);
+    for (std::uint32_t i = 0; i < n; ++i) data[i] = r.back[i];
+    for (std::uint32_t i = n; i < r.backCount; ++i) r.back[i - n] = r.back[i];
+    r.backCount -= n;
+    return n;
+}
 
 }  // namespace
 }  // namespace rp::graph::devtest
@@ -79,7 +91,7 @@ extern "C" void* rp_devtest_box_link_device_mode(BoxRecord* record) {
     gBoxRecord = record;
     gBoxRing = rp::box::BoxCartLink::Storage{};
     gBox = new (gBoxMemory) rp::box::BoxCartLink(gBoxRing);  // trivially destructible state: nothing to end first
-    gBox->setClock({nullptr, &boxNow, &boxArrival});
+    gBox->setClock({nullptr, &boxNow, &boxArrival, &boxMonotonic});
     return static_cast<rp::n8::CartLink*>(gBox);
 }
 extern "C" void rp_devtest_box_connect_device_mode(bool connected) {
@@ -87,14 +99,15 @@ extern "C" void rp_devtest_box_connect_device_mode(bool connected) {
 }
 extern "C" void rp_devtest_box_drain_device_mode(std::uint32_t nowMs) {
     using namespace rp::graph::devtest;
-    gBox->drain({nullptr, &boxFifo, &boxVolume}, nowMs);
+    gBox->drain({nullptr, &boxFifo, &boxVolume, gBoxRecord->backChannel ? &boxRead : nullptr}, nowMs);
 }
 extern "C" void rp_devtest_box_counts_device_mode(BoxCounts* out) {
     const auto& c = rp::graph::devtest::gBox->counts();
     *out = BoxCounts{c.received,  c.made,   c.notReady, c.full,   c.released,
                      c.forwarded, c.failed, c.sysex,    c.writes, c.maxBatch,
                      c.fromPlanInput(), rp::graph::devtest::gBox->expansionVolume(),
-                     rp::graph::devtest::gBox->holders()};
+                     rp::graph::devtest::gBox->holders(), c.resends, c.resent, c.unframed,
+                     rp::graph::devtest::gBox->framed()};
 }
 extern "C" void rp_devtest_box_acquired_device_mode(void*) { rp::graph::devtest::gBox->acquire(); }
 extern "C" void rp_devtest_box_released_device_mode(void*) { rp::graph::devtest::gBox->release(); }

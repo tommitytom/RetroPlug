@@ -42,6 +42,8 @@
 
 #include "BlockDriver.hpp"
 #include "BoxCartLink.hpp"
+#include "FakeN8.hpp"
+#include "LinkRomModel.hpp"
 #include "BoxStats.hpp"
 #include "BuiltInPlan.hpp"
 #include "CartVolume.hpp"
@@ -58,6 +60,7 @@
 #include "n8/Edio.hpp"
 #include "n8/N8Node.hpp"
 #include "script/MqjsHost.hpp"
+#include "transport/N8MenuGuard.hpp"
 #include "transport/N8ReliableLink.hpp"
 
 // The bliptoaster script pack's registration, the desktop's and the device's (retroplug_device_mode_objects), and its
@@ -1291,4 +1294,507 @@ TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: mad
     REQUIRE(wireLen >= 8);
     CHECK(wire[wireLen - 8] == N8ReliableSender::SYNC);
     CHECK(wire[wireLen - 7] == 58);
+}
+
+namespace {
+
+// ---- the cart link's framed link and menu guard (docs/pico-box-framed-link-design.md section 5, item 4) ------------
+
+using rp::n8::test::cat;
+using rp::n8::test::frame;
+
+const Bytes kProbeBytes(std::begin(rp::N8MenuGuard::kProbe), std::end(rp::N8MenuGuard::kProbe));
+
+// A FIFO write as FakeN8's log records it, and its FIFO writes in order.
+std::string fifoEntry(const Bytes& bytes) { return "fifo:" + retroplug::test::hex(bytes.data(), bytes.size()); }
+std::vector<std::string> fifoWrites(retroplug::test::FakeN8& dev) {
+    std::lock_guard<std::mutex> l(dev.mu);
+    std::vector<std::string>    out;
+    for (const std::string& e : dev.log)
+        if (e.rfind("fifo:", 0) == 0) out.push_back(e);
+    return out;
+}
+
+// The box's link over FakeN8 (packages/n8/native/test/FakeN8.hpp, the cart model the desktop's guard is tested on),
+// through the Writer the box gives it: a FIFO write is Edio's fifoWR over a FakeN8Port, the back-channel is that
+// port's input read without waiting, as the box's read(..., 0) is, and the link's clock is the case's own, so the
+// guard's 100 ms, 250 ms and 1 s pass as a case moves it. FakeN8 answers at once (its delays stay 0: they would run on
+// the wall clock), so no case sleeps. A game runs from the start (FakeN8 starts at its menu otherwise).
+struct CartRig {
+    retroplug::test::FakeN8                        dev;
+    std::unique_ptr<retroplug::test::FakeN8Port>   port = std::make_unique<retroplug::test::FakeN8Port>(dev);
+    rp::n8::Edio                                   edio{*port};
+    std::unique_ptr<rp::box::BoxCartLink::Storage> ring = std::make_unique<rp::box::BoxCartLink::Storage>();
+    rp::box::BoxCartLink                           link{*ring};
+    std::uint64_t                                  us = 1'000'000;  // never 0, which the guard reads as "no probe"
+
+    static std::uint32_t now(void* ctx) { return static_cast<std::uint32_t>(static_cast<CartRig*>(ctx)->us); }
+    static std::uint64_t monotonic(void* ctx) { return static_cast<CartRig*>(ctx)->us; }
+    static bool          fifo(void* ctx, const std::uint8_t* d, std::size_t n, std::uint32_t, std::uint32_t) {
+        return static_cast<CartRig*>(ctx)->edio.fifoWR(d, n).ok();
+    }
+    static std::size_t read(void* ctx, std::uint8_t* d, std::size_t n) {
+        return static_cast<CartRig*>(ctx)->port->read(d, n, 0);
+    }
+
+    CartRig() {
+        dev.menu = false;
+        link.setClock({this, &now, nullptr, &monotonic});
+    }
+    rp::box::BoxCartLink::Writer writer() { return {this, &fifo, nullptr, &read}; }
+    bool push(const Bytes& m) { return link.push(0, m.data(), m.size(), false, 48000.0); }
+    // One pass's drain, `ms` after the last.
+    void drain(std::uint64_t ms = 1) {
+        us += ms * 1000;
+        link.drain(writer(), static_cast<std::uint32_t>(us / 1000));
+    }
+};
+
+// A cart whose back-channel the case writes itself, for what FakeN8 never says on its own (an ack cut in two), and
+// which takes every FIFO write.
+struct ScriptedRig {
+    std::vector<Bytes>                             writes;
+    Bytes                                          back;  // what the cart has said and the link has not read
+    std::unique_ptr<rp::box::BoxCartLink::Storage> ring = std::make_unique<rp::box::BoxCartLink::Storage>();
+    rp::box::BoxCartLink                           link{*ring};
+    std::uint64_t                                  us = 1'000'000;
+
+    static std::uint32_t now(void* ctx) { return static_cast<std::uint32_t>(static_cast<ScriptedRig*>(ctx)->us); }
+    static std::uint64_t monotonic(void* ctx) { return static_cast<ScriptedRig*>(ctx)->us; }
+    static bool          fifo(void* ctx, const std::uint8_t* d, std::size_t n, std::uint32_t, std::uint32_t) {
+        static_cast<ScriptedRig*>(ctx)->writes.emplace_back(d, d + n);
+        return true;
+    }
+    static std::size_t read(void* ctx, std::uint8_t* d, std::size_t n) {
+        auto&             self = *static_cast<ScriptedRig*>(ctx);
+        const std::size_t k = n < self.back.size() ? n : self.back.size();
+        for (std::size_t i = 0; i < k; ++i) d[i] = self.back[i];
+        self.back.erase(self.back.begin(), self.back.begin() + static_cast<std::ptrdiff_t>(k));
+        return k;
+    }
+
+    ScriptedRig() { link.setClock({this, &now, nullptr, &monotonic}); }
+    rp::box::BoxCartLink::Writer writer() { return {this, &fifo, nullptr, &read}; }
+    bool push(const Bytes& m) { return link.push(0, m.data(), m.size(), false, 48000.0); }
+    void drain(std::uint64_t ms = 1) {
+        us += ms * 1000;
+        link.drain(writer(), static_cast<std::uint32_t>(us / 1000));
+    }
+    // Connected, and the probe's sync answered as BlipToaster answers it.
+    void connectFramed() {
+        link.setConnected(true);
+        drain();
+        back = {0xF5, 0x00, 0x7F};
+        drain();
+    }
+};
+
+// BlipToaster's end of the link as the link's ROM model plays it (LinkRomModel.hpp: the rules the sender's own soak is
+// held to), behind a wire that loses bytes as an NTSC console's DMC fetch does, in bursts of 1 to 3, once `lossy`:
+// FakeN8 models intact traffic only. Its FIFO runs empty after each write, so it acks then, when anything changed.
+// The losses come from a fixed LCG (N8Link::setTestLossPermille's), not a <random> distribution, whose draws differ
+// between standard libraries: the same bytes are lost on every platform, so a failure reproduces anywhere.
+struct LossyRig {
+    rp::n8::test::RomModel                         rom;
+    std::uint32_t                                  rng = 0x2545F491u;
+    bool                                           lossy = false;
+    int                                            lost = 0;
+    Bytes                                          back;
+    std::unique_ptr<rp::box::BoxCartLink::Storage> ring = std::make_unique<rp::box::BoxCartLink::Storage>();
+    rp::box::BoxCartLink                           link{*ring};
+    std::uint64_t                                  us = 1'000'000;
+
+    static std::uint32_t now(void* ctx) { return static_cast<std::uint32_t>(static_cast<LossyRig*>(ctx)->us); }
+    static std::uint64_t monotonic(void* ctx) { return static_cast<LossyRig*>(ctx)->us; }
+    std::uint32_t        draw() {
+        rng = rng * 1664525u + 1013904223u;
+        return rng >> 8;
+    }
+    static bool          fifo(void* ctx, const std::uint8_t* d, std::size_t n, std::uint32_t, std::uint32_t) {
+        auto& self = *static_cast<LossyRig*>(ctx);
+        for (std::size_t i = 0; i < n; ++i) {
+            if (self.lossy && self.draw() % 1000 < 15) {
+                const int k = 1 + static_cast<int>(self.draw() % 3);
+                self.lost += k;
+                i += static_cast<std::size_t>(k) - 1;
+                continue;
+            }
+            self.rom.byte(d[i]);
+        }
+        Bytes ack;
+        if (self.rom.ack(ack)) self.back.insert(self.back.end(), ack.begin(), ack.end());
+        return true;
+    }
+    static std::size_t read(void* ctx, std::uint8_t* d, std::size_t n) {
+        auto&             self = *static_cast<LossyRig*>(ctx);
+        const std::size_t k = n < self.back.size() ? n : self.back.size();
+        for (std::size_t i = 0; i < k; ++i) d[i] = self.back[i];
+        self.back.erase(self.back.begin(), self.back.begin() + static_cast<std::ptrdiff_t>(k));
+        return k;
+    }
+
+    LossyRig() { link.setClock({this, &now, nullptr, &monotonic}); }
+    rp::box::BoxCartLink::Writer writer() { return {this, &fifo, nullptr, &read}; }
+    bool push(const Bytes& m) { return link.push(0, m.data(), m.size(), false, 48000.0); }
+    void drain(std::uint64_t ms = 1) {
+        us += ms * 1000;
+        link.drain(writer(), static_cast<std::uint32_t>(us / 1000));
+    }
+};
+
+// The device-mode link's 64-bit clock: the box's fake clock, as main.cpp hands its link time_us_64.
+std::uint64_t boxNow64(void* ctx) { return static_cast<Box*>(ctx)->clock.us; }
+// What the cart says on the device-mode link's back-channel, for its next drain to read.
+void say(BoxRecord& r, std::initializer_list<std::uint8_t> bytes) {
+    for (const std::uint8_t b : bytes) r.back[r.backCount++] = b;
+}
+
+}  // namespace
+
+TEST_CASE("the box's link probe at a connect: framed for BlipToaster, raw for a ROM without the link",
+          "[device-mode][box][box-link]") {
+    CartRig     r;
+    const Bytes on = note(0x90, 60, 100);
+    SECTION("BlipToaster acknowledges the sync: framed, and the message goes out as a frame") {
+        r.dev.linkRom = true;
+        r.link.setConnected(true);
+        r.drain();
+        CHECK(r.link.framed());
+        REQUIRE(r.push(on));
+        r.drain();
+        CHECK(r.dev.applied == std::vector<Bytes>{on});
+        CHECK(fifoWrites(r.dev) ==
+              std::vector<std::string>{fifoEntry({0xF4, 0x00}), fifoEntry(cat({{0xF4, 0x00}, frame(0, on)}))});
+        CHECK(r.link.counts().forwarded == 1);
+    }
+    SECTION("a ROM without the link says nothing: raw after 100 ms, the message waiting in the ring until then") {
+        r.link.setConnected(true);
+        r.drain();  // the sync
+        REQUIRE(r.push(on));
+        r.drain(98);
+        CHECK(r.link.queued() == 1);
+        CHECK_FALSE(r.link.framed());
+        r.drain(1);  // 99 ms
+        CHECK(r.link.queued() == 1);
+        r.drain(1);  // 100 ms: raw, the guard's first probe ahead of the message
+        CHECK(r.link.queued() == 0);
+        CHECK_FALSE(r.link.framed());
+        CHECK(fifoWrites(r.dev) ==
+              std::vector<std::string>{fifoEntry({0xF4, 0x00}), fifoEntry(cat({kProbeBytes, on}))});
+    }
+    SECTION("a link the box may not probe (N8_BOX_LINK=0) streams raw at once, guarded") {
+        r.dev.linkRom = true;
+        r.link.setLinkAllowed(false);
+        r.link.setConnected(true);
+        REQUIRE(r.push(on));
+        r.drain();
+        CHECK_FALSE(r.link.framed());
+        CHECK(fifoWrites(r.dev) == std::vector<std::string>{fifoEntry(cat({kProbeBytes, on}))});
+        CHECK(r.dev.syncs == 0);
+    }
+}
+
+TEST_CASE("the box's link adds no pass of delay: a message pushed in a pass goes out in that pass's drain",
+          "[device-mode][box][box-link]") {
+    CartRig r;
+    SECTION("framed") {
+        r.dev.linkRom = true;
+        r.link.setConnected(true);
+        r.drain();
+        REQUIRE(r.link.framed());
+        for (std::uint8_t i = 0; i < 10; ++i) {
+            REQUIRE(r.push(note(0x90, static_cast<std::uint8_t>(60 + i), 100)));
+            r.drain();
+            CHECK(r.dev.applied.size() == i + 1u);
+            CHECK(r.link.counts().forwarded == i + 1u);
+        }
+        CHECK(r.link.outstanding() <= 1);  // the last frame's ack is read at the next drain
+    }
+    SECTION("raw") {
+        r.link.setConnected(true);
+        r.drain();
+        r.drain(100);  // raw, and the guard's first probe
+        REQUIRE_FALSE(r.link.framed());
+        for (std::uint8_t i = 0; i < 10; ++i) {
+            const Bytes on = note(0x90, static_cast<std::uint8_t>(60 + i), 100);
+            REQUIRE(r.push(on));
+            r.drain();
+            CHECK(fifoWrites(r.dev).back() == fifoEntry(on));
+            CHECK(r.link.counts().forwarded == i + 1u);
+        }
+    }
+}
+
+TEST_CASE("the box's framed link frames no more than its window in one drain, and the rest goes out once acks come",
+          "[device-mode][box][box-link]") {
+    // A backlog in one pass (the ring after a guard hold, a block after the loop was held): framed to empty, its 49th
+    // frame would make the sender give its window up and re-sync, and a frame lost before that would be gone for good.
+    CartRig r;
+    r.dev.linkRom = true;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    REQUIRE(r.dev.syncs == 1);  // the connect's probe
+    std::vector<Bytes> sent;
+    for (std::uint8_t i = 0; i < 100; ++i) {
+        sent.push_back(note(0x90, i, 100));
+        REQUIRE(r.push(sent.back()));
+    }
+    r.drain();
+    CHECK(r.link.outstanding() == rp::N8ReliableSender::kWindow - 1);
+    CHECK(r.link.queued() == 100 - (rp::N8ReliableSender::kWindow - 1));
+    CHECK(r.dev.syncs == 2);  // and the sender's own, before its first frame: no give-up's re-sync
+    for (int k = 0; k < 4 && r.link.queued() != 0; ++k) r.drain();  // each reads the acks, then frames more
+    r.drain();                                                        // the last acks
+    CHECK(r.link.queued() == 0);
+    CHECK(r.link.outstanding() == 0);
+    CHECK(r.dev.syncs == 2);
+    CHECK(r.dev.applied == sent);
+    CHECK(r.link.counts().forwarded == 100);
+}
+
+TEST_CASE("the box's framed link through a wire that loses bytes: every message arrives once, in order",
+          "[device-mode][box][box-link]") {
+    LossyRig r;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    r.lossy = true;
+    // 2000 messages (notes, CCs, the odd SysEx), three a sequencer step, four 1 ms passes a step.
+    std::vector<Bytes> sent;
+    for (int i = 0; i < 2000; ++i) {
+        Bytes m;
+        switch (i % 7) {
+            case 3: m = {0xB1, std::uint8_t(i & 0x7F), std::uint8_t((i * 3) & 0x7F)}; break;
+            case 6: m = {0xF0, 0x7D, 0x42, 0x02, 0xF7}; break;
+            default: m = note(std::uint8_t(0x90 | (i % 4)), std::uint8_t(36 + i % 40), 100); break;
+        }
+        sent.push_back(m);
+        REQUIRE(r.push(m));
+        if (i % 3 == 2)
+            for (int k = 0; k < 4; ++k) r.drain();
+    }
+    for (int k = 0; k < 4000 && (r.link.queued() != 0 || r.link.outstanding() != 0); ++k) r.drain();
+    CHECK(r.link.queued() == 0);
+    CHECK(r.link.outstanding() == 0);
+    CHECK(r.lost > 0);                         // the wire really did lose bytes
+    CHECK(r.link.counts().resends > 0);        // and the link repaired them
+    CHECK(r.link.framed());                    // without giving the link up
+    REQUIRE(r.rom.applied.size() == sent.size());  // none lost, none applied twice
+    CHECK(r.rom.applied == sent);                  // and in order
+}
+
+TEST_CASE("a console RESET on the box's framed link: nothing but the guard's probes after the stall, and the menu's "
+          "answer drops the ring and the window",
+          "[device-mode][box][box-link]") {
+    CartRig r;
+    r.dev.linkRom = true;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    const Bytes a = note(0x90, 60, 100), b = note(0x90, 62, 100), c = note(0x90, 64, 100);
+    REQUIRE(r.push(a));
+    r.drain();
+    REQUIRE(r.dev.applied.size() == 1);
+    // The RESET: the menu, which acknowledges nothing, and whose booting OS answers '*t' with nothing useful at first.
+    r.dev.testReply = 0x00;
+    r.dev.resetToMenu();
+    REQUIRE(r.push(b));
+    r.drain();  // b's frame, which the menu reads and skips (no 0x2A in it)
+    const std::size_t atStall = fifoWrites(r.dev).size();
+    r.drain(100);  // 100 ms: the window has stopped moving: held, and the menu asked
+    CHECK(r.link.connected());
+    REQUIRE(r.push(c));  // held in the ring, not written
+    r.drain(500);
+    r.dev.testReply = 'k';  // the OS is up
+    r.drain(500);           // a second on: asked again
+    r.drain();              // its 'k'
+    CHECK(r.link.atMenu());
+    CHECK_FALSE(r.link.connected());
+    const std::vector<std::string> writes = fifoWrites(r.dev);
+    CHECK(std::vector<std::string>(writes.begin() + static_cast<std::ptrdiff_t>(atStall), writes.end()) ==
+          std::vector<std::string>{fifoEntry(kProbeBytes), fifoEntry(kProbeBytes)});
+    CHECK(r.link.counts().notReady == 2);  // c from the ring, b from the window
+    CHECK(r.link.queued() == 0);
+    CHECK(r.link.outstanding() == 0);
+    CHECK_FALSE(r.push(note(0x80, 60, 0)));  // at the menu: refused, counted
+    CHECK(r.link.counts().notReady == 3);
+    CHECK(r.dev.applied.size() == 1);
+    CHECK_FALSE(r.dev.error40);
+    CHECK(r.dev.menu);
+}
+
+TEST_CASE("a console RESET on the box's raw link is seen by the guard's probe, every 250 ms between writes",
+          "[device-mode][box][box-link]") {
+    CartRig r;
+    r.link.setConnected(true);
+    r.drain();
+    r.drain(100);  // raw: the first probe, which the game ignores
+    REQUIRE_FALSE(r.link.framed());
+    std::uint64_t resetUs = 0;
+    for (int i = 0; i < 20 && !r.link.atMenu(); ++i) {
+        if (i == 2) {
+            r.dev.resetToMenu();
+            resetUs = r.us;
+        }
+        REQUIRE(r.push(note(0x90, static_cast<std::uint8_t>(60 + i), 100)));
+        r.drain(50);
+    }
+    CHECK(r.link.atMenu());
+    CHECK(r.us - resetUs <= static_cast<std::uint64_t>(rp::N8MenuGuard::kProbeNs / 1000) + 50'000);
+    CHECK(r.dev.countExact(fifoEntry(kProbeBytes)) == 1);  // the first; the answered one rode with a message
+    CHECK_FALSE(r.dev.error40);
+    CHECK_FALSE(r.push(note(0x80, 60, 0)));
+}
+
+TEST_CASE("two stall probes the box's framed link hears nothing to are a game without the link: the link is probed "
+          "again, and streams raw",
+          "[device-mode][box][box-link]") {
+    CartRig r;
+    r.dev.linkRom = true;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    // The game stops answering, as one without the link does when a reset the guard never saw started it.
+    r.dev.linkDeaf = true;
+    REQUIRE(r.push(note(0x90, 60, 100)));
+    r.drain();      // its frame, which nothing acknowledges
+    r.drain(100);   // the stall: held, probed
+    r.drain(1000);  // nothing heard: probed again
+    REQUIRE(r.push(note(0x90, 62, 100)));  // held
+    r.drain(1000);  // nothing again: the window and the ring go, and the link is probed again
+    CHECK(r.link.counts().notReady == 2);
+    r.drain();     // the sync, which nothing answers
+    r.drain(100);  // raw, and the guard's first raw probe
+    CHECK_FALSE(r.link.framed());
+    const Bytes after = note(0x90, 64, 100);
+    REQUIRE(r.push(after));
+    r.drain();
+    const std::vector<std::string> writes = fifoWrites(r.dev);
+    REQUIRE(writes.size() >= 3);
+    CHECK(std::vector<std::string>(writes.end() - 3, writes.end()) ==
+          std::vector<std::string>{fifoEntry({0xF4, 0x00}), fifoEntry(kProbeBytes), fifoEntry(after)});
+    CHECK(r.dev.countExact(fifoEntry({0xF4, 0x00})) == 2);  // the connect's probe and the second
+    CHECK(r.dev.countExact(fifoEntry(kProbeBytes)) == 3);   // two stall probes and the raw link's first
+    CHECK(r.link.counts().resends == 0);                    // a held stall re-sends nothing
+}
+
+TEST_CASE("the box's link is quiet for an Edio read only when nothing it is owed can land in the reply",
+          "[device-mode][box][box-link]") {
+    ScriptedRig r;
+    SECTION("not while the connect's sync waits for its ack, nor while a guard probe awaits its answer") {
+        r.link.setConnected(true);
+        CHECK(r.link.quietForRead());  // nothing written yet
+        r.drain();                     // the sync
+        CHECK_FALSE(r.link.quietForRead());
+        r.drain(100);                  // raw, and the guard's probe
+        REQUIRE_FALSE(r.link.framed());
+        REQUIRE(r.writes.back() == kProbeBytes);
+        CHECK_FALSE(r.link.quietForRead());
+        r.us += 99'000;
+        CHECK_FALSE(r.link.quietForRead());
+        r.us += 1'000;  // 100 ms: nothing answered, a game
+        CHECK(r.link.quietForRead());
+    }
+    SECTION("not inside an ack") {
+        r.connectFramed();
+        REQUIRE(r.link.framed());
+        CHECK(r.link.quietForRead());
+        r.back = {0xF5, 0x00};
+        r.drain();
+        CHECK_FALSE(r.link.quietForRead());
+        r.back = {0x7F};
+        r.drain();
+        CHECK(r.link.quietForRead());
+    }
+    SECTION("not with a fresh frame outstanding, until the cart has said nothing for 250 ms since it went") {
+        r.connectFramed();
+        REQUIRE(r.push(note(0x90, 60, 100)));
+        r.drain();
+        REQUIRE(r.link.outstanding() == 1);
+        CHECK_FALSE(r.link.quietForRead());
+        r.us += 249'000;
+        CHECK_FALSE(r.link.quietForRead());
+        r.us += 1'000;
+        CHECK(r.link.quietForRead());
+        r.back = {0xF5, 0x01, 0x00};
+        r.drain();
+        CHECK(r.link.outstanding() == 0);
+        CHECK(r.link.quietForRead());
+    }
+}
+
+TEST_CASE("a SysEx longer than a frame carries is dropped on the box's framed link, and counted",
+          "[device-mode][box][box-link]") {
+    CartRig r;
+    r.dev.linkRom = true;
+    r.link.setConnected(true);
+    r.drain();
+    REQUIRE(r.link.framed());
+    Bytes big(45, 0x10);
+    big.front() = 0xF0;
+    big.back() = 0xF7;
+    const Bytes on = note(0x90, 60, 100);
+    REQUIRE(r.push(big));
+    REQUIRE(r.push(on));
+    r.drain();
+    CHECK(r.link.counts().unframed == 1);
+    CHECK(r.link.counts().forwarded == 1);
+    CHECK(r.link.counts().sysex == 0);
+    CHECK(r.dev.applied == std::vector<Bytes>{on});
+}
+
+TEST_CASE("the box's pass on the framed link: the connect's probe, a frame and its ack, allocating nothing",
+          "[device-mode][box][box-link]") {
+    auto box = std::make_unique<Box>();
+    auto record = std::make_unique<BoxRecord>();
+    record->clockCtx = box.get();
+    record->now = &boxNow;
+    record->arrival = &boxArrival;
+    record->monotonicUs = &boxNow64;
+    record->backChannel = true;
+    void* link = rp_devtest_box_link_device_mode(record.get());
+    box->load(link, &rp_devtest_box_acquired_device_mode, &rp_devtest_box_released_device_mode);
+    auto drain = [&] { rp_devtest_box_drain_device_mode(static_cast<std::uint32_t>(box->clock.us / 1000)); };
+    // A note for the game, on the UART's ring before the window (a ring that grows allocates), held back from the
+    // passes until the link is framed.
+    box->ringEnd = 0;
+    box->arrive({0x90, 0x45, 0x7F});
+    const std::uint32_t noteAt = static_cast<std::uint32_t>(box->clock.us);
+
+    // The plan's first block prints its package listing (a string, once), so it runs before the count, with nothing
+    // for the game yet (the note is held back and no game runs).
+    REQUIRE(box->pass(1'000));
+    rp::test::beginCountingAllocations();
+    rp_devtest_box_connect_device_mode(true);
+    const bool ranOne = box->pass(1'000);
+    drain();                             // the connect's probe: F4 00
+    say(*record, {0xF5, 0x00, 0x7F});    // BlipToaster's ack for it
+    const bool ranTwo = box->pass(500);
+    drain();                             // framed, and the volume at the connect
+    box->ringEnd = SIZE_MAX;
+    const bool ranThree = box->pass(500);
+    drain();                             // the note, framed behind the sender's own sync
+    say(*record, {0xF5, 0x01, 0x00});    // its ack
+    const bool ranFour = box->pass(500);
+    drain();
+    const auto counted = rp::test::endCountingAllocations();
+
+    CHECK(ranOne);
+    CHECK(ranTwo);
+    CHECK(ranThree);
+    CHECK(ranFour);
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
+    const BoxCounts c = boxCounts();
+    CHECK(c.framed);
+    CHECK(writeLines(*record) == "0: f4 0\n1: f4 0 f5 0 90 45 7f 54\n");
+    CHECK(record->writes[1].firstUs == noteAt);
+    CHECK(record->volumeCount == 1);
+    CHECK(record->volumes[0] == 128);
+    CHECK(c.forwarded == 1);
+    CHECK(c.resends == 0);
+    CHECK(c.unframed == 0);
+    CHECK(record->backCount == 0);
+    unloadPlan(box->plan.plan());
 }

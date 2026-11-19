@@ -880,6 +880,7 @@ retroplug_add_test_binary(
              ${CMAKE_BINARY_DIR}/device-check          # DeviceCheckCases.hpp, DeviceCheckPlan.hpp
              ${RP_BOX_HOST_INCLUDES}                   # the box host and midi.h
              ${_rp_box_dir}                            # BoxCartLink.hpp, UsbCdcTransport.hpp
+             ${CMAKE_SOURCE_DIR}/packages/n8/native/test   # FakeN8.hpp: the cart the box's link is held against
              ${CMAKE_CURRENT_SOURCE_DIR}/src/util      # BuildTarget.hpp: the reference host, for float figures
     DEFS     RP_DEVICE_MODE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/golden"
              RP_EXPORT_PLAN_TOOL="$<TARGET_FILE:retroplug-export-plan>"

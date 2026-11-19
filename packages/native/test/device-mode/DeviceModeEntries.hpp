@@ -80,12 +80,21 @@ struct BoxRecord {
     std::uint32_t (*now)(void* ctx) = nullptr;
     bool (*arrival)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size,
                     std::uint32_t* us) = nullptr;
+    // The framed link's: the cart's back-channel (off unless a case turns it on, so the link is raw and unguarded, as
+    // the box's was before it), what the cart has said on it and the link has not read yet, and the link's 64-bit
+    // clock (main.cpp's time_us_64), read through clockCtx.
+    bool          backChannel = false;
+    std::uint8_t  back[64] = {};
+    std::uint32_t backCount = 0;
+    std::uint64_t (*monotonicUs)(void* ctx) = nullptr;
 };
 
 struct BoxCounts {
     std::uint32_t received, made, notReady, full, released, forwarded, failed, sysex, writes, maxBatch;
     std::uint32_t fromPlanInput;
     int           volume, holders;
+    std::uint32_t resends, resent, unframed;
+    bool          framed;
 };
 
 extern "C" {
