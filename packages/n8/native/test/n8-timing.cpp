@@ -1,7 +1,17 @@
 // retroplug-n8-hwtest timing - BlipToaster's MIDI latency, jitter and latency-under-load on a REAL console, in ms.
 //
 //   retroplug-n8-hwtest timing <idle|busy> [steps] [--raw] [--no-kick] [--pcm hw:L6,0] [--tick-ch 3] [--kick-ch 4] [--db -40]
-//                              [--wav out.wav] [--port /dev/ttyACM0] [--guard]
+//                              [--wav out.wav] [--port /dev/ttyACM0] [--guard] [--midi "<CH345 port name>"]
+//
+// --midi times the Pico box instead (docs/pico-box-framed-link-design.md section 6): the same arrangement goes out
+// of the CH345 USB MIDI cable plugged into the box's MIDI jack, through ALSA rawmidi, each write stamped with the
+// clock the capture is (CLOCK_MONOTONIC), so a latency runs from the MIDI write to the sound as it otherwise runs from
+// the USB write. The port is named by its whole name as `amidi -l` prints it, and it must be the CH345's: every MIDI
+// output is listed first (through the cards' control interfaces, which opens no port), and a name no output has
+// exactly, one two outputs share, or one without "CH345" is refused before anything is opened. The box frames, guards
+// and re-sends on its own, so its re-sends are its [stats] line's; --raw then means the box is its raw build
+// (N8_BOX_LINK=0) and only adds the unframed messages that take a ROM out of link mode; --guard is the desktop link's,
+// and refused.
 //
 // Plays a 170 bpm arrangement through N8Link - the code the plugin streams to a cart with, over the reliable link
 // unless --raw - while capturing the console's analog out on the lab's Zoom L6, and times every hit from the moment
@@ -175,12 +185,85 @@ bool flag(int argc, char** argv, const char* name) {
     return false;
 }
 
+// A rawmidi output as `amidi -l` lists it: hw:<card>,<device>,<subdevice> and its name (the subdevice's, or the
+// device's where the subdevice has none).
+struct MidiPort { std::string hw, name; };
+
+// Every rawmidi output ALSA has, read through each card's control interface: no MIDI port is opened to list them.
+std::vector<MidiPort> listMidiOutputs() {
+    std::vector<MidiPort> out;
+    snd_rawmidi_info_t*   info;
+    snd_rawmidi_info_alloca(&info);
+    int card = -1;
+    while (snd_card_next(&card) == 0 && card >= 0) {
+        char ctlName[32];
+        std::snprintf(ctlName, sizeof ctlName, "hw:%d", card);
+        snd_ctl_t* ctl = nullptr;
+        if (snd_ctl_open(&ctl, ctlName, 0) < 0) continue;
+        int device = -1;
+        while (snd_ctl_rawmidi_next_device(ctl, &device) == 0 && device >= 0) {
+            snd_rawmidi_info_set_device(info, static_cast<unsigned>(device));
+            snd_rawmidi_info_set_stream(info, SND_RAWMIDI_STREAM_OUTPUT);
+            snd_rawmidi_info_set_subdevice(info, 0);
+            if (snd_ctl_rawmidi_info(ctl, info) < 0) continue;   // no output on this device
+            const unsigned subs = snd_rawmidi_info_get_subdevices_count(info);
+            for (unsigned sub = 0; sub < subs; ++sub) {
+                snd_rawmidi_info_set_subdevice(info, sub);
+                if (snd_ctl_rawmidi_info(ctl, info) < 0) continue;
+                const char* subName = snd_rawmidi_info_get_subdevice_name(info);
+                const char* devName = snd_rawmidi_info_get_name(info);
+                char hw[48];
+                std::snprintf(hw, sizeof hw, "hw:%d,%d,%u", card, device, sub);
+                out.push_back({hw, subName && *subName ? subName : (devName ? devName : "")});
+            }
+        }
+        snd_ctl_close(ctl);
+    }
+    return out;
+}
+
+// The box's MIDI cable (timing --midi), opened for output: the one output named `name` exactly, which must be the
+// CH345's. Every output is printed first, so a refusal shows what there is; a name without "CH345", one no output has,
+// or one two outputs share opens nothing. The L6's own MIDI ports are its mixer's control ports, which a stray write
+// can reconfigure, so a name is matched whole, never as a prefix or a part. Null on a refusal, said on stderr.
+snd_rawmidi_t* openBoxMidi(const std::string& name, std::string& hw) {
+    const std::vector<MidiPort> ports = listMidiOutputs();
+    std::fprintf(stderr, "timing: MIDI outputs:\n");
+    for (const MidiPort& p : ports) std::fprintf(stderr, "  %-14s %s\n", p.hw.c_str(), p.name.c_str());
+    if (name.find("CH345") == std::string::npos) {
+        std::fprintf(stderr, "timing: --midi \"%s\" is not the CH345 cable's port; refused\n", name.c_str());
+        return nullptr;
+    }
+    const MidiPort* match = nullptr;
+    for (const MidiPort& p : ports) {
+        if (p.name != name) continue;
+        if (match) {
+            std::fprintf(stderr, "timing: two MIDI outputs are named \"%s\" (%s, %s); refused\n", name.c_str(),
+                         match->hw.c_str(), p.hw.c_str());
+            return nullptr;
+        }
+        match = &p;
+    }
+    if (!match) {
+        std::fprintf(stderr, "timing: no MIDI output is named \"%s\" exactly; refused\n", name.c_str());
+        return nullptr;
+    }
+    snd_rawmidi_t* out = nullptr;
+    if (snd_rawmidi_open(nullptr, &out, match->hw.c_str(), 0) < 0) {
+        std::fprintf(stderr, "timing: snd_rawmidi_open %s failed\n", match->hw.c_str());
+        return nullptr;
+    }
+    hw = match->hw;
+    return out;
+}
+
 }  // namespace
 
 int runTiming(int argc, char** argv, const std::string& defaultPort) {
     if (argc < 3) {
         std::fprintf(stderr, "usage: %s timing <idle|busy> [steps] [--raw] [--pcm hw:L6,0] [--tick-ch 3] [--kick-ch 4] "
-                             "[--db -40] [--wav out.wav] [--port dev] [--guard]\n", argv[0]);
+                             "[--db -40] [--wav out.wav] [--port dev] [--guard] [--midi \"<CH345 port name>\"]\n",
+                     argv[0]);
         return 2;
     }
     const std::string mode  = argv[2];
@@ -193,7 +276,12 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     const std::string port  = arg(argc, argv, "--port", defaultPort.c_str());
     const float       thr   = static_cast<float>(std::pow(10.0, std::atof(arg(argc, argv, "--db", "-40")) / 20.0));
     const char*       wav   = arg(argc, argv, "--wav", nullptr);
-    if (port.empty()) { std::fprintf(stderr, "no Everdrive N8 found; pass --port\n"); return 2; }
+    const char*       midiName = arg(argc, argv, "--midi", nullptr);   // through the box: the CH345's whole name
+    if (midiName && guard) {
+        std::fprintf(stderr, "timing: --guard is the desktop link's; the box runs its own guard\n");
+        return 2;
+    }
+    if (!midiName && port.empty()) { std::fprintf(stderr, "no Everdrive N8 found; pass --port\n"); return 2; }
 
     // The arrangement, in host ms from the start.
     const double STEP = 60000.0 / 170 / 4, T0 = 300;
@@ -232,38 +320,74 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     }
     std::stable_sort(evs.begin(), evs.end(), [](const Ev& a, const Ev& b) { return a.ms < b.ms; });
 
-    // The link, with its write log.
+    // The link, with its write log, or (--midi) the box's MIDI cable, whose writes are logged the same way.
     std::mutex wm;
     std::vector<std::pair<std::int64_t, std::vector<std::uint8_t>>> writes;
     N8Link link(
         [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); });
-    link.setLinkAllowed(!raw);
-    // The menu guard on, as the plugin runs it, so its probes are among the writes (a raw stream carries one every
-    // 250 ms; a framed one only in a stall). The connect seed is taken as a game, which is where this leg runs.
-    if (guard) link.setMenuCheck([](rp::n8::Edio&) { return 0; });
-    link.setWriteLog([&](const std::uint8_t* d, std::size_t n, std::int64_t ns, bool resend) {
-        if (resend) return;   // a hit's latency runs from its FIRST write: a re-send is part of it
-        std::lock_guard<std::mutex> l(wm);
-        writes.emplace_back(ns, std::vector<std::uint8_t>(d, d + n));
-    });
-    if (!link.connect(port)) { std::fprintf(stderr, "timing: connect failed: %s\n", link.lastError().c_str()); return 1; }
-    link.setLookaheadMs(0);
+    snd_rawmidi_t* midiOut = nullptr;
+    std::string    midiHw;
+    if (midiName) {
+        midiOut = openBoxMidi(midiName, midiHw);
+        if (!midiOut) return 2;
+    } else {
+        link.setLinkAllowed(!raw);
+        // The menu guard on, as the plugin runs it, so its probes are among the writes (a raw stream carries one every
+        // 250 ms; a framed one only in a stall). The connect seed is taken as a game, which is where this leg runs.
+        if (guard) link.setMenuCheck([](rp::n8::Edio&) { return 0; });
+        link.setWriteLog([&](const std::uint8_t* d, std::size_t n, std::int64_t ns, bool resend) {
+            if (resend) return;   // a hit's latency runs from its FIRST write: a re-send is part of it
+            std::lock_guard<std::mutex> l(wm);
+            writes.emplace_back(ns, std::vector<std::uint8_t>(d, d + n));
+        });
+        if (!link.connect(port)) {
+            std::fprintf(stderr, "timing: connect failed: %s\n", link.lastError().c_str());
+            return 1;
+        }
+        link.setLookaheadMs(0);
+    }
 
     Capture cap;
     cap.tickCh = static_cast<unsigned>(std::atoi(arg(argc, argv, "--tick-ch", "3")) - 1);
     cap.kickCh = static_cast<unsigned>(std::atoi(arg(argc, argv, "--kick-ch", "4")) - 1);
-    if (!cap.open(pcmDev, wav != nullptr)) { std::fprintf(stderr, "timing: capture: %s\n", cap.err.c_str()); return 1; }
+    if (!cap.open(pcmDev, wav != nullptr)) {
+        std::fprintf(stderr, "timing: capture: %s\n", cap.err.c_str());
+        if (midiOut) snd_rawmidi_close(midiOut);
+        return 1;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(400));   // the capture settles; the link probe is done
     const bool reliable = link.reliable();
 
     const auto t0 = Clock::now();
+    bool       midiFailed = false;
     for (const Ev& e : evs) {
         std::this_thread::sleep_until(t0 + std::chrono::microseconds(static_cast<std::int64_t>(e.ms * 1000)));
-        link.push(0, e.bytes.data(), e.bytes.size(), 48000.0);
+        if (!midiOut) {
+            link.push(0, e.bytes.data(), e.bytes.size(), 48000.0);
+            continue;
+        }
+        // Stamped just before the write, as N8Link's write log stamps its USB writes, with the same clock.
+        const std::int64_t ns = monoNs();
+        if (snd_rawmidi_write(midiOut, e.bytes.data(), e.bytes.size()) < 0) {
+            midiFailed = true;
+            break;
+        }
+        std::lock_guard<std::mutex> l(wm);
+        writes.emplace_back(ns, e.bytes);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
     const std::uint64_t resends = link.linkResends();
-    link.disconnect();
+    if (midiOut) {
+        snd_rawmidi_drain(midiOut);
+        snd_rawmidi_close(midiOut);
+    } else {
+        link.disconnect();
+    }
+    if (midiFailed) {
+        cap.stop();
+        std::fprintf(stderr, "timing: a write to %s failed\n", midiHw.c_str());
+        return 1;
+    }
     cap.stop();
     if (!cap.err.empty()) { std::fprintf(stderr, "timing: capture: %s\n", cap.err.c_str()); return 1; }
 
@@ -323,12 +447,17 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     }
     const Stats g = stats(grid);
 
-    std::printf("timing: %s, %d steps @ 170 bpm, %s, %llu re-sends\n", mode.c_str(), steps,
-                reliable ? "reliable link" : (raw ? "raw (--raw)" : "raw (the ROM did not answer the probe)"),
-                static_cast<unsigned long long>(resends));
+    if (midiName)
+        std::printf("timing: %s, %d steps @ 170 bpm, through the box (%s \"%s\"%s), its re-sends on its [stats] line\n",
+                    mode.c_str(), steps, midiHw.c_str(), midiName, raw ? ", the raw build (--raw)" : "");
+    else
+        std::printf("timing: %s, %d steps @ 170 bpm, %s, %llu re-sends\n", mode.c_str(), steps,
+                    reliable ? "reliable link" : (raw ? "raw (--raw)" : "raw (the ROM did not answer the probe)"),
+                    static_cast<unsigned long long>(resends));
     std::printf("clock: %zu ALSA timestamps, fit residual %.3f ms, L6 vs host %+.1f ppm (latency includes the L6's input delay)\n",
                 cap.stamps.size(), clk.residualNs / 1e6, ppm);
-    std::printf("  voice   n    mean    p50    p95    max  jitter(sd)  missed   [ms, USB write -> sound]\n");
+    std::printf("  voice   n    mean    p50    p95    max  jitter(sd)  missed   [ms, %s write -> sound]\n",
+                midiName ? "MIDI" : "USB");
     auto row = [](const char* v, const Stats& s, std::size_t missed) {
         std::printf("  %-6s%4zu %6.2f %6.2f %6.2f %6.2f %6.2f      %4zu\n", v, s.n, s.mean, s.p50, s.p95, s.max, s.sd, missed);
     };
