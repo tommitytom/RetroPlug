@@ -81,6 +81,32 @@ TEST_CASE("menu guard: a framed window that stops moving is held and probed, and
     CHECK_FALSE(t.reprobeLink);
 }
 
+TEST_CASE("menu guard: the menu's 'k' heard while a framed window is stalled enters the menu, the hold ending in it",
+          "[n8][menu-guard]") {
+    N8MenuGuard g;
+    Stream      f;
+    f.sendAt(T0);
+    N8MenuGuard::Turn t = g.turn(T0 + 100 * kMs, &f.s, true);
+    REQUIRE(t.hold);
+    REQUIRE(t.writeProbe);
+    const std::uint8_t k = N8MenuGuard::kAnswer;
+    g.hear(&k, 1);
+    t = g.turn(T0 + 120 * kMs, &f.s, true);
+    CHECK(t.enteredMenu);
+    CHECK(t.hold);
+    CHECK_FALSE(t.reprobeLink);
+    CHECK(g.atMenu());
+    // The stall is forgotten: at the menu the cadence is the menu's, 250 ms from the probe the menu answered, and the
+    // stalled window is no longer asked about.
+    t = g.turn(T0 + 349 * kMs, &f.s, true);
+    CHECK(t.hold);
+    CHECK_FALSE(t.writeProbe);
+    t = g.turn(T0 + 350 * kMs, &f.s, true);
+    CHECK(t.hold);
+    CHECK(t.writeProbe);
+    CHECK_FALSE(t.enteredMenu);
+}
+
 TEST_CASE("menu guard: an ack heard after a stall's probe resumes the stream, and a stall is not asked about again "
           "for a second",
           "[n8][menu-guard]") {

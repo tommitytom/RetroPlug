@@ -161,9 +161,9 @@ public:
                 return t;
             }
             if (probeAtNs_ != 0 && now - probeAtNs_ >= kHoldNs && ++stallMisses_ >= kStallMisses) {
-                probeAtNs_     = 0;
-                stallMisses_   = 0;
-                t.reprobeLink  = true;
+                probeAtNs_    = 0;
+                stallMisses_  = 0;
+                t.reprobeLink = true;
                 return t;
             }
             if (probeAtNs_ == 0 || now - probeAtNs_ >= kHoldNs) probe(now, t);

@@ -475,6 +475,7 @@ void N8Link::serialLoop() {
     // job that stopped streaming, and a status read until the next disconnect must not answer "connected false, at the
     // menu" (the state a menu leaves behind, and the last thing that stream read before it stopped).
     atMenu_.store(false, std::memory_order_relaxed);
+    guard_.reset();
     // The thread is going (a disconnect, a write that failed, a job that stopped streaming): no job is taken from here
     // on, and one taken that never ran is run now with no port, so its node hears it failed rather than waiting
     // forever.

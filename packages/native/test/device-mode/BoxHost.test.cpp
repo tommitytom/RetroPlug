@@ -1247,7 +1247,8 @@ TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: mad
           "[device-mode][box][n8-wire]") {
     using rp::N8ReliableSender;
     // The box's transport keeps what goes out in storage of its own and marks each frame sent as it leaves: an emitter
-    // of five references, past the two a std::function holds without allocating.
+    // of five references, past the two a libstdc++ std::function holds without allocating (other
+    // standard libraries differ).
     std::optional<N8ReliableSender> s;
     std::array<std::uint8_t, 4096>  wire{};
     std::size_t                     wireLen = 0;
@@ -1274,6 +1275,7 @@ TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: mad
     s->poll(now, emit);
     const std::uint8_t ack[3] = {0xF5, 10, 20};  // ten arrived, and the ROM read 20: from 10 again, at once
     s->onBackChannel(ack, 3, now);
+    const std::size_t beforeResend = wireLen;
     s->poll(now, emit);
     const std::uint8_t sysex[5] = {0xF0, 0x7D, 0x42, 0x02, 0xF7};
     s->sendMessage(sysex, 5, emit);
@@ -1291,10 +1293,15 @@ TEST_CASE("the reliable link's sender allocates nothing, as the box runs it: mad
     CHECK(s->framesSent() == 59);
     CHECK(framesOut == 59 + 48 + 38);
     CHECK(s->outstanding() == 1);
-    // The re-sync, F4 <58>, ahead of the last frame (six bytes: F5 58 80 3C 00 <sum>).
+    // The re-sync, F4 <3A>, ahead of the last frame (six bytes: F5 3A 80 3C 00 <sum>).
     REQUIRE(wireLen >= 8);
     CHECK(wire[wireLen - 8] == N8ReliableSender::SYNC);
-    CHECK(wire[wireLen - 7] == 58);
+    CHECK(wire[wireLen - 7] == 0x3A);
+    // The ring kept its frames where they were written: the ack of ten re-sent from the eleventh, whose header leads
+    // what the second poll wrote.
+    REQUIRE(wireLen > beforeResend + 1);
+    CHECK(wire[beforeResend] == 0xF5);
+    CHECK(wire[beforeResend + 1] == 10);
 }
 
 namespace {

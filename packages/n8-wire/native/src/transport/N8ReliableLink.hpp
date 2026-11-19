@@ -31,8 +31,8 @@
 //
 // It allocates nothing and includes no heap or exception header, so the box's firmware links it under the device
 // build's trap on the heap, exceptions and RTTI: the window is a ring of kWindow frames held inline (about 3.4 KiB),
-// and an emitter is a template parameter, called where it is rather than wrapped in a std::function, which allocates
-// for a lambda that captures more than two references.
+// and an emitter is a template parameter, called where it is rather than wrapped in a std::function, which in
+// libstdc++ allocates for a lambda that captures more than two references (other standard libraries differ).
 
 namespace rp {
 
