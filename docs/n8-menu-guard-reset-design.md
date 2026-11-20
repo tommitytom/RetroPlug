@@ -1,5 +1,9 @@
 # The N8 menu guard after a console reset
 
+The at-menu probing described below (every 250 ms, a leave after three misses) was replaced by
+[the config watch](n8-menu-guard-config-watch-design.md), because a probe written to a busy OS was read as its MCU's
+status reply and stopped it at ERROR:40.
+
 Known-bugs batch 4's menu guard ([its design](known-bugs-batch-4-design.md) section 5) tells the N8 OS menu from a game
 by the FPGA config block's map_idx, 255 at the menu. On the real cart that holds only for a menu reached by power-on: a
 console RESET drops a game to the menu and leaves the block holding the game's mapper. This design replaces the signal

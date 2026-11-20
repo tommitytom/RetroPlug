@@ -10,7 +10,6 @@ than work.
 
 **Before merge**
 - [ ] [The N8 menu's back-channel](#the-n8-menus-back-channel)
-- [ ] [The N8 menu's residual window](#the-n8-menus-residual-window)
 - [ ] [The Launchpad real-device checklist](#the-launchpad-real-device-checklist)
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
@@ -100,32 +99,16 @@ What `feature/modularize` owes before it merges to main.
 
 ### The N8 menu's back-channel
 
-The menu guard tells a menu from a game by the menu's answer to its probe, a `k` on the back-channel outside an ack
-([spec/13](13-subsystems.md#the-everdrive-n8-bridge)), so a menu that wrote a `0x6B` unprompted would trip it with no
-reset, a game that writes one outside an ack would trip it too (and, writing it often, hold it at the menu), and a game
-that answered the probe would read as a menu. On the lab's cart the menu answered every probe, in about 20 ms, and a
-running BlipToaster ignored three ([the design](../docs/n8-menu-guard-reset-design.md) section 1). Confirm on a cart at
-its menu, with nothing streamed to it, that the back-channel stays silent between probes; that browsing the menu with
-the pad for a minute while the guard probes it shows nothing odd and no ERROR (`retroplug-n8-hwtest menuwatch`,
-`quiet` and `probe`); that a job submitted right after a
-power-cycle or a RESET to the menu is accepted, and promptly; and that the probe a raw stream carries four times a
-second costs a running BlipToaster nothing (`retroplug-n8-hwtest timing busy --raw --guard` against the same run without
-`--guard`) and stalls nothing.
-
-### The N8 menu's residual window
-
-What the link writes before the menu's `k` is heard reaches the menu
-([spec/13](13-subsystems.md#the-everdrive-n8-bridge) has the sizes and the raw-link limit measured on the cart: a RESET
-during a raw note stream usually leaves the OS at ERROR:40, a framed link streaming when the RESET comes is protected).
-Still open: the false leave's timing, how long the menu goes without answering while it loads a directory or a ROM from
-its browser (the longest gap between a probe and its `k`) against the three-miss leave's about 600 ms, and how many
-stream bytes reach it after a leave before the next probe is answered; and whether raw streams to other ROMs than
-BlipToaster behave as BlipToaster's does (the 330 to 400 ms window is the OS's, so they should, but only BlipToaster was
-run); and a RESET during a pause in a framed stream, or inside the trusted second, where the next frame or the stall's
-probe can reach the booting OS in its window (by the code; not yet run on the cart: `retroplug-n8-hwtest pausereset`, a
-sparse framed stream with the press between notes, and its loss argument for the trusted second). The menu-side checks
-run under `retroplug-n8-hwtest menuwatch` (`probe` while a person browses and loads; `stream` for the bytes a false
-leave lets in).
+The menu guard tells a menu from a game by the menu's answer to its probe, a `k` on the back-channel outside an ack,
+and at the menu writes nothing and watches the FPGA config block
+([spec/13](13-subsystems.md#the-everdrive-n8-bridge), [the config watch](../docs/n8-menu-guard-config-watch-design.md),
+whose section 1 has what the lab's cart showed: an idle menu silent and answering in 7-13 ms, browsing harmless, a
+probe during a browser start ERROR:40, the block's clear on every start). Still owed on the cart: the config watch's
+acceptance (its section 5: the block's clear timed at 10 ms on three ROM sizes, then five browser starts each of
+BlipToaster and Akumajou Densetsu under `retroplug-n8-hwtest menuguard ... follow`, framed and raw, no ERROR); a job
+submitted right after a power-cycle or a RESET to the menu, accepted and promptly; and that the probe a raw stream
+carries four times a second costs a running BlipToaster nothing (`retroplug-n8-hwtest timing busy --raw --guard`
+against the same run without `--guard`) and stalls nothing.
 
 ### The Launchpad real-device checklist
 

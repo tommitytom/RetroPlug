@@ -141,9 +141,13 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   BlipToaster drops the probe's bytes as unframed and acknowledges them `F5 <next> <next>`, which is what resumes a
   stall for a game), asking again each second that hears neither, and after two such seconds giving up the window and
   what the ring held (counted) and probing the link again (a game without the link, started from the cart's browser
-  after a reset the guard never saw, is then streamed raw); and at the menu every 250 ms whatever the link, leaving it
-  when three probes in a row go unanswered for 100 ms each (a game booted from the cart's own browser; one miss is only
-  a slow turn of the menu's), which re-runs the link probe. A `k` trips the guard whenever it is heard. A turn whose
+  after a reset the guard never saw, is then streamed raw); and at the menu never: there the guard reads the FPGA
+  config block every 20 ms instead (the first read 100 ms after entering), which the cart's MCU answers without the
+  FIFO, and leaves the menu (re-running the link probe) once the same non-zero block has held for 500 ms, and either an
+  all-zero block was read since entering or the settled block differs from the one read on entering. Every game started
+  from the cart's own browser clears the block before writing the game's, the same game started again after a RESET
+  included ([the config watch](../docs/n8-menu-guard-config-watch-design.md)); a start the reads miss leaves the guard
+  at the menu until a reconnect. A `k` trips the guard whenever it is heard. A turn whose
   probe still awaits its answer, or that has read half an ack, is not quiet for a read, and a job waits the probe out,
   so a `k` that comes within the probe's 100 ms never lands inside another reply. A job's menu probe asks the same
   question on a quiet turn (on a raw link, between two messages), and the stream's tracker books it as it books its own,
@@ -154,7 +158,7 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   so a slow menu's second `k` is not read as the first reply of the job's first command; a menu that takes longer than
   100 ms to answer that probe is taken for a game, and the job is refused as at a game (a retry works). While it says
   menu, `push` answers false and counts, the ring, the reliable window and any pending note release are discarded, and
-  nothing but the probe is written; leaving the menu re-runs the link probe, which flushes the input before its sync, as
+  nothing is written; leaving the menu re-runs the link probe, which flushes the input before its sync, as
   does the connect-time one, so only the sync's own ack turns the framed link on. Jobs still run there (the SD card is
   reachable only at the menu), and a cart node's `connected` reads 0: what it pushes there is refused, and a note-off it
   loses stays owed until a game reads connected again (a note-off to a game that never sounded that note is harmless).
@@ -165,19 +169,16 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     link's 100 ms timeout), and up to a second more after a stall's probe has heard an ack (the trusted second: a reset
     inside it streams frames and re-sends until it ends, or until the window has drained, which a lossy link's game does
     between notes (under a dense stream the second runs on), so a reset after that is probed at the 100 ms timeout). At
-    an OS that is up, only a `*` followed by a byte the menu takes as a command (a GM hi-hat, `9n 2A 73`, is `*s` and
-    starts the app) or rejects (ERROR:40, which stops the OS) does harm; a stream without `0x2A` is harmless there. The
-    OS is not harmless while it boots (the raw-link limit below). A menu that is busy and answers nothing for three
-    probes in a row (about 600 ms from the first unanswered one: a slow SD operation, a ROM load from the browser) is
-    left as if it were a game, and the raw stream and its probes go into its FIFO until a probe is answered again, with
-    the same harm. A probe before every chunk is the only full fix
-    ([spec/07](07-remaining-work.md#the-n8-menus-residual-window)). The framed hold's trigger is not a lost frame as
-    such: it is the OLDEST outstanding frame unacknowledged 100 ms after its first send. That covers a frame lost twice
-    in a row, and equally a cart whose FIFO does not run empty for 100 ms under a dense stream and so acks only then.
-    Everything behind it waits for the menu's answer or an ack: the re-send, which used to go out at once, and the new
-    chunks too. That is deliberate, since a re-send decided while the window has stopped moving is what a menu would
-    read, so a slow recovery on a lossy NTSC link is that trade and not a new fault. The hardware check the answer rests
-    on is [spec/07](07-remaining-work.md#the-n8-menus-back-channel).
+    an OS that is up and idle, a `*` followed by a byte the menu takes as a command (a GM hi-hat, `9n 2A 73`, is `*s`
+    and starts the app) does harm. While the OS works (a folder load, a game start, its boot) any byte can: it reads its
+    MCU's status replies from the FIFO the host writes (edn8-pro-pub `edio/everdrive.c`, `ed_check_status`), so a host
+    byte there is taken for one and stops it at ERROR:40 (the raw-link limit below). The framed hold's trigger is not a
+    lost frame as such: it is the OLDEST outstanding frame unacknowledged 100 ms after its first send. That covers a
+    frame lost twice in a row, and equally a cart whose FIFO does not run empty for 100 ms under a dense stream and so
+    acks only then. Everything behind it waits for the menu's answer or an ack: the re-send, which used to go out at
+    once, and the new chunks too. That is deliberate, since a re-send decided while the window has stopped moving is
+    what a menu would read, so a slow recovery on a lossy NTSC link is that trade and not a new fault. The hardware
+    check the answer rests on is [spec/07](07-remaining-work.md#the-n8-menus-back-channel).
   - **Where the guard runs.** On the app's path to a cart, `N8Link` under `N8Host`, which the cart node streams through
     in the plugin and the standalones, and on the Pico box, whose cart link (`BoxCartLink`) drives the same
     `N8MenuGuard` and `N8ReliableSender` (the `n8-wire` package's) at each main-loop drain
@@ -194,18 +195,19 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     `n8-bridge` and `n8-play` and risa's `n8-sync` write the cart FIFO without it, raw and unguarded
     ([spec/07](07-remaining-work.md#the-clis-n8-tools-stream-unframed-and-unguarded)).
   - **The raw-link limit.** A console RESET during a raw stream of notes will usually leave the N8 OS at ERROR:40: on
-    the lab's cart, a note byte landing about 330 to 400 ms into the booting OS's life breaks it (one note at 200, 300
-    or 1000 ms after the reset is clean; notes every 60 ms over 200 to 600 ms are not, over 400 to 600 ms are), and a
-    raw link cannot see the reset before the menu answers (the OS answers no probe for about its first second). The
-    guard still trips and writes nothing after, but the damage is done. The Pico box's raw build met it as
-    `ERROR:48 Mapper file not found` instead (3 RESETs of 3): the OS takes the install, then fails every start until a
-    second RESET. MIDI clock alone is safe (`F8` every 20 ms over
-    the same window is clean), and so is an idle menu taking notes. A framed link streaming when the RESET comes is
-    protected: the stall shows in 100 ms, nothing more is written, and the guard trips 1.1 s after the acks stop, with
-    the menu clean, on the PAL NES and on an NTSC Famicom alike. That is what was measured. A RESET during a pause in
-    the stream, or inside the trusted second, is not covered by it: the next frame, or the stall's probe, can then reach
-    the booting OS in its window (spec/07). A menu at ERROR:40 still answers `*t` with `k`, and a second RESET brings
-    back a clean menu. `retroplug-n8-hwtest bootwindow` measures it.
+    the lab's cart, a note byte landing about 330 to 400 ms into the booting OS's life breaks it, as the booting OS
+    reads its MCU's status from the FIFO and takes the note byte for one (one note at 200, 300 or 1000 ms after the
+    reset is clean; notes every 60 ms over 200 to 600 ms are not, over 400 to 600 ms are), and a raw link cannot see the
+    reset before the menu answers (the OS answers no probe for about its first second). The guard still trips and writes
+    nothing after, but the damage is done. The Pico box's raw build met it as `ERROR:48 Mapper file not found` instead
+    (3 RESETs of 3): the OS takes the install, then fails every start until a second RESET. MIDI clock alone is safe
+    (`F8` every 20 ms over the same window is clean), and so is an idle menu taking notes. A framed link streaming when
+    the RESET comes is protected: the stall shows in 100 ms, nothing more is written, and the guard trips 1.1 s after
+    the acks stop, with the menu clean, on the PAL NES and on an NTSC Famicom alike. That is what was measured. A RESET
+    during a pause in the stream is protected too: the next note's frames and the stall's probes reached the booting OS
+    within about 370 ms of the RESET, 6 of 6 clean (one with 10% test loss). A menu
+    at ERROR:40 still answers `*t` with `k`, and a second RESET brings back a clean menu. `retroplug-n8-hwtest
+    bootwindow` and `pausereset` measure it.
 - **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
   `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session` and `pnpm test:native n8-sdk` (`connectN8`
   over the fake N8); for the box, `retroplug-device-mode-test "[box]"` (its cart link's framed link and guard are
