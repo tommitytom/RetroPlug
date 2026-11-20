@@ -216,10 +216,12 @@ void BoxCartLink::drain(const Writer& writer, std::uint32_t nowMs) {
         discard();
         return;
     }
-    if (turn.reprobeLink || (turn.leftMenu && linkAllowed_)) {
-        // A stalled window two probes heard nothing to (a game without the link), or a game the user started from the
-        // menu: the link is probed again at the next drain, and a game with it re-syncs framed.
-        if (turn.reprobeLink) discard();
+    // The guard never turns here at the menu (the main loop disconnects the link the moment it enters, and boots the
+    // staged ROM), so it never asks for the config block and never leaves the menu: only a stalled window comes back.
+    if (turn.reprobeLink) {
+        // A stalled window two probes heard nothing to (a game without the link): the link is probed again at the next
+        // drain, and a game with it re-syncs framed.
+        discard();
         sender_ = nullptr;
         probe_ = Probe::Pending;
         return;
