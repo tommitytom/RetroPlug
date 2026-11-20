@@ -224,8 +224,29 @@ The six tasks landed as planned; follow-up passes took the reviews' findings. Wh
   `tsandevmode`, whose script-pack CPU-time deadline case failed under the parallel lanes' load (75 ms against 62.5 ms)
   and passed alone and in the serial run. `pnpm device:box` builds both variants under the link trap, and the
   `N8_LAT_TRACE=1` and `N8_BOX_LINK=0` builds link.
-- **Not yet run: the hardware acceptance** (section 7) and the latency runs (section 6), which need the rig rewired for
-  the box. Beside section 7's list, the final review adds: whether `CMD_STATUS` reads 0 after an idle RESET, a RESET on
-  the `N8_BOX_LINK=0` build, `faults.sh` (the boot, retry cap and error LED have no headless test), whether the
-  first note after a reboot is lost to BlipToaster's first-message drop, and the expansion volume written again after
-  each reboot. spec/07 keeps the entry until they pass. Nothing is pushed.
+- **The hardware acceptance** ran on the lab's NTSC Famicom on 2026-11-20 (the official Famicom N8 Pro, BlipToaster,
+  the single mixed feed on L6 channel 3; `stress.sh` and `faults.sh` gained `--ntsc` for A4's timer, 253 there):
+  - `stress.sh --ntsc`, framed: PASS, 40,000 messages at ~1,000/s and the 30 s soak with nothing lost, the power-cycle
+    recovery, latency worst 1,155 us (average ~737) to the N8's acknowledgement.
+  - Section 6's bar, against `-DN8_BOX_LINK=0`, `timing --midi` 512 steps: with no DMC, tick p50 7.52 against 7.44 ms
+    and p95 7.96 against 7.89, the grid error the same (p95 ~0.5 ms), nothing missed: met. With the DMC kicks, idle, 5
+    runs each: framed missed nothing (grid p95 0.55 to 0.65 ms, 5 to 26 re-sends a run), raw missed 1 to 6 ticks a run
+    with its grid p95 at 59 to 251 ms: met. `busy` with the kicks missed 26 to 30 ticks framed and raw alike, the
+    bassline and the kicks masking the ticks on the one mixed feed (with no DMC, none either way). The kick itself is
+    not measurable on that feed, and a stuck DMC note was not checked on its own (the sniff reads no DMC). The
+    `N8_LAT_TRACE` build: the link adds ~7 us to `push>write` and ~2 us to `write`, a back-channel read costs 3 us
+    (71 at most), `total` 706 against 696 us.
+  - RESET mid-song, framed, 3 of 3: the guard heard the menu, the ROM booted again with no upload, the song back about
+    5.7 s after the press (65 or 66 of 1024 ticks missed), framed, the expansion volume written again, an A4 after it,
+    no ERROR on screen. An idle RESET came back through `health_check`: `CMD_STATUS` does read 0 after a RESET.
+  - **RESET on the raw build: a loop, found and fixed.** The stream across the booting OS left it failing every start
+    with `ERROR:48 Mapper file not found` (3 RESETs of 3): the install answered as usual, `*s` landed on the error
+    screen, and that screen answered the guard's next probe, so the box booted again at once, for good (the boot
+    reports success, `*s` having no reply, so the retry cap never counted it). A menu back within 5 s of a boot now
+    counts that boot failed (`menu_returned`): the 20 s retry, then, after 3, a retry every 10 s that never uploads, so
+    a second RESET (which clears the error screen) brings the song back within about 15 s; on the rig the next retry
+    played. The framed build never met it: a stall holds the stream.
+  - `faults.sh --ntsc`: 8/8 rounds recovered and played (24 random power cuts), framed after each boot, 7 boots
+    abandoned and redone, no stuck menus, no recovery reboots, no uploads.
+  - Not run: the box against the desktop's framed link, which needs the N8 moved back to the PC; spec/07 keeps it.
+    Nothing is pushed.

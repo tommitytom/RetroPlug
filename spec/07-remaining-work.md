@@ -68,7 +68,7 @@ than work.
 - [ ] [A 32-bit runner in the build](#a-32-bit-runner-in-the-build)
 - [ ] [The box's stats print can stall a message](#the-boxs-stats-print-can-stall-a-message)
 - [ ] [A SysEx past 3 bytes allocates](#a-sysex-past-3-bytes-allocates)
-- [ ] [The box's framed link and menu guard are unproven on the rig](#the-boxs-framed-link-and-menu-guard-are-unproven-on-the-rig)
+- [ ] [The box against the desktop link, timed](#the-box-against-the-desktop-link-timed)
 
 **Feature gaps and SDL**
 - [ ] [Raw LSDj Keyboard sync mode](#raw-lsdj-keyboard-sync-mode)
@@ -567,24 +567,15 @@ A SysEx past 3 bytes allocates a view per message (dying with its block), and at
 allocates, so a SysEx stream makes the box collect in the MIDI path; the policy's worst block fits with 4 KB spare. ([E4
 design](../docs/modular-graph-phase-e4-design.md) section 11.8.)
 
-### The box's framed link and menu guard are unproven on the rig
+### The box against the desktop link, timed
 
-The box streams to the cart through BlipToaster's reliable link and the N8 menu guard, the desktop's, from the one
-implementation both run (`N8ReliableSender` and `N8MenuGuard`, in the `n8-wire` package;
-[BoxCartLink.hpp](../pico/n8-host/BoxCartLink.hpp), [the box's design](../docs/pico-box-framed-link-design.md)), and a
-RESET's menu boots the staged ROM again. That is held headlessly (`retroplug-device-mode-test "[box-link]"`: the link
-over FakeN8, a scripted cart and the link's ROM model behind a lossy wire) and the image links under the trap (`pnpm
-device:box`); the rig has not run it (design section 7). Once the rig is rewired for the box (the N8 in the Pico's
-socket, the debug probe, the CH345 in its jack, the NTSC Famicom): `stress.sh` passing with nothing lost and `[stats]`
-showing `link=framed` and some re-sends; a soak with the DMC kicks keeping the sniffer in sync; three RESETs mid-song
-each coming back playing (an audio capture after each), no video frame showing ERROR:40, and the press-to-sound time
-measured. And the latency runs (section 6), `retroplug-n8-hwtest timing ... --midi "<CH345 port>"` in `idle` and
-`busy`: the box framed against its raw build (`-DN8_BOX_LINK=0`) with `--no-kick` and with the DMC kicks, the box
-framed against the desktop's framed link to the same ROM, and the `N8_LAT_TRACE` build's parts of a pass (`bcread`,
-`push>write`, `write`) against the raw build's, with the `[stats]` `lat` under `stress.sh`'s soak rates. The bar, fixed
-before the runs: without DMC, framed within 1 ms of raw at p50 and 2 ms at p95, and no worse grid error; with DMC, no
-missed hit and no stuck note in 5 runs, the tail (p95, max) reported beside the box's re-sends. A miss is a finding to
-investigate before acceptance. The NTSC loss that makes the link the box's need is in the design's section 1.
+The box's framed link and menu guard passed on the lab's NTSC Famicom (2026-11-20: `stress.sh`, `faults.sh`, the
+latency runs against its raw build, RESETs mid-song and idle; [the box's README](../pico/n8-host/README.md) and
+[its design](../docs/pico-box-framed-link-design.md) section 9). One comparison of the design's section 6 was not run,
+as it needs the N8 moved back to the PC between the two: the box framed against the desktop's framed link to the same
+ROM, `retroplug-n8-hwtest timing idle 512 --no-kick --tick-ch 3 --kick-ch 6 --db -20` with and without
+`--midi "CH345 MIDI 1"`, which says what the box's path adds (the `--midi` figure carries the CH345 and the MIDI wire,
+about 1 ms).
 
 ## Feature gaps and SDL
 

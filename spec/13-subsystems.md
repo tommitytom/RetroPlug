@@ -187,15 +187,19 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
     boot's wait for the game), and the box's own Edio reads (`CMD_STATUS`, the sniff, the volume's read-back) wait for a
     quiet pass. The box's framed drain stops framing at one frame short of the window outstanding, so the sender's
     48-frame give-up cannot happen there; a write that fails on a silent cart is followed by the guard's stall probe
-    first, and BlipToaster's ack to it sets off the re-send. The rig has not run the box's
-    ([spec/07](07-remaining-work.md#the-boxs-framed-link-and-menu-guard-are-unproven-on-the-rig)). The CLI's
+    first, and BlipToaster's ack to it sets off the re-send. On the lab's NTSC Famicom (2026-11-20) it held: no tick
+    missed framed with the DMC kicks where raw missed 1 to 6 a run, framing costing under 0.1 ms at p50 and p95, and 3
+    RESETs mid-song back playing in about 5.7 s (the box's README). A menu back within 5 s of a boot is that boot
+    failing, not a new RESET, and goes to the boot's retry rather than booting again at once. The CLI's
     `n8-bridge` and `n8-play` and risa's `n8-sync` write the cart FIFO without it, raw and unguarded
     ([spec/07](07-remaining-work.md#the-clis-n8-tools-stream-unframed-and-unguarded)).
   - **The raw-link limit.** A console RESET during a raw stream of notes will usually leave the N8 OS at ERROR:40: on
     the lab's cart, a note byte landing about 330 to 400 ms into the booting OS's life breaks it (one note at 200, 300
     or 1000 ms after the reset is clean; notes every 60 ms over 200 to 600 ms are not, over 400 to 600 ms are), and a
     raw link cannot see the reset before the menu answers (the OS answers no probe for about its first second). The
-    guard still trips and writes nothing after, but the damage is done. MIDI clock alone is safe (`F8` every 20 ms over
+    guard still trips and writes nothing after, but the damage is done. The Pico box's raw build met it as
+    `ERROR:48 Mapper file not found` instead (3 RESETs of 3): the OS takes the install, then fails every start until a
+    second RESET. MIDI clock alone is safe (`F8` every 20 ms over
     the same window is clean), and so is an idle menu taking notes. A framed link streaming when the RESET comes is
     protected: the stall shows in 100 ms, nothing more is written, and the guard trips 1.1 s after the acks stop, with
     the menu clean, on the PAL NES and on an NTSC Famicom alike. That is what was measured. A RESET during a pause in

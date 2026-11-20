@@ -353,8 +353,10 @@ The box's own SysEx - `F0 7D 50 ...` (BlipToaster's are `7D 42`); acted on, neve
 
 The menu coming back is noticed by the cart link's menu guard while the box forwards (the menu's `k` to its probe, see
 RESET below), and by `CMD_STATUS` turning 0 after a game was seen while nothing streams; either boots the chosen ROM
-again. A boot that fails (or a menu that does not answer) is retried every 20 s, at most 3 times in a row; then the box
-stops with the error LED until a power-cycle or a fresh N8 mount.
+again. A boot that fails (or a menu that does not answer) is retried every 20 s; after 3 in a row the box goes on
+trying every 10 s, with the error LED, and never uploads while it does, so a fix at the console (a RESET, a
+power-cycle) is picked up within about 15 s. A menu back within 5 s of a boot is that boot failing: the N8 OS can fail
+the start itself (`ERROR:48 Mapper file not found`, below), and booting again at once would loop for good.
 
 **Tests (2026-10-30).**
 - Selection: two ROMs staged (the base build, mapper 69; the N163 build, mapper 19). A fresh box
@@ -387,15 +389,34 @@ and 100 ms later the stalled window is held and the menu asked with `F0 2A 74 F7
 second while the booting OS answers nothing; on a raw link the same probe goes out every 250 ms. The menu's `k` stops
 forwarding, drops what the link held, and runs the boot again straight from the `*t` handshake: the staged ROM
 installed with no upload (its saved CRC) and started, the boot's 4 s wait, and a fresh link probe, about 6 s from the
-press to playing. A framed stream stops writing at the stall; a raw one can still leave the booting OS at ERROR:40
-(notes landing about 330 to 400 ms after the press). `CMD_STATUS` turning 0 after a game stays the way back for a menu
-reached while nothing streams, which the guard does not ask about.
+press to playing. A framed stream stops writing at the stall. A raw one cannot: the stream across the booting OS left
+it, in 3 RESETs of 3 on the rig, failing every start with `ERROR:48 Mapper file not found` (the install answers as
+usual, then `*s` lands on the error screen, which answers `*t`). The box takes the menu back within 5 s of the boot as
+the boot failing, retries as above, and a second RESET clears the error screen, after which the next retry plays. Its
+`CMD_STATUS` does read 0 after a RESET, so `health_check`'s menu return (a menu reached while nothing streams, which
+the guard does not ask about) works: an idle RESET came back playing.
+
+**Tests on the NTSC Famicom (2026-11-20),** the official Famicom N8 Pro, BlipToaster, the single mixed audio feed on L6
+channel 3:
+- `stress.sh --ntsc`, framed: PASS. 40,000 messages unbroken at ~1,000/s and a 30 s soak, nothing lost, the power-cycle
+  recovery, latency worst 1,155 us (average ~737) to the N8's acknowledgement; `link=framed` throughout.
+- `timing --midi`, 512 steps, framed against `-DN8_BOX_LINK=0`: with no DMC, tick p50 7.52 against 7.44 ms and p95
+  7.96 against 7.89 (both include the CH345 and the MIDI wire), grid error the same (p95 ~0.5 ms), nothing missed.
+  With the DMC kicks, idle, 5 runs each: framed missed no tick (grid p95 0.55 to 0.65 ms, 5 to 26 re-sends a run); raw
+  missed 1 to 6 a run, its grid p95 59 to 251 ms. `busy` with the kicks missed 26 to 30 ticks either way: on the one
+  mixed feed the bassline and the kicks mask the ticks (with no DMC it missed none either way).
+- The `N8_LAT_TRACE` build, 40 isolated notes: the link adds ~7 us to `push>write` and ~2 us to `write`; a back-channel
+  read costs 3 us (71 at most); `total` 706 against 696 us.
+- RESET mid-song, framed, 3 of 3: the guard heard the menu, the box booted the ROM again with no upload, the song came
+  back ~5.7 s after the press (65 or 66 ticks of 1024 missed), framed, no ERROR on screen. An idle RESET came back
+  through `CMD_STATUS`. The raw build's RESET is the `ERROR:48` above.
+- `faults.sh --ntsc` (24 random power cuts, 8 rounds): 8/8 recovered and played, `link=framed` after each boot (the
+  `[stats]` line printed in the connect's own pass reads `raw` while the link probe is out), 7 boots abandoned and
+  redone, no stuck menus, no recovery reboots, no uploads.
 
 **Not yet verified on hardware:** the "never enumerated" recovery firing for a real non-enumerating
-device (the only trigger seen was the false positive above, now fixed); the guard's RESET path just described,
-and the framed link on the box (`stress.sh` and the latency runs:
-[spec/07](../../spec/07-remaining-work.md#the-boxs-framed-link-and-menu-guard-are-unproven-on-the-rig)); and the
-error LED's double blink (no boot failed or stuck while it was being sampled).
+device (the only trigger seen was the false positive above, now fixed); and the error LED's double blink (no boot
+failed or stuck while it was being sampled).
 
 ## The firmware's layout, build and link trap
 
