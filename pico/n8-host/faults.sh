@@ -4,11 +4,13 @@
 # box to recover by itself and play. Each round makes three cuts - "early" (0.3-2.5 s after power-on:
 # enumeration, the probe, *t, the install) or "late" (8-15 s: a game running) - and then, on the last
 # power-on, the box must boot the ROM on the LAST mount (a boot that began before a cut doesn't count)
-# and an A4 on ch1 must sound: Pulse1 at timer 235 with its level up, read back through the sniffer.
+# and an A4 on ch1 must sound: Pulse1 at timer 235 (253 on an NTSC console) with its level up, read back through the
+# sniffer.
 #
 #   ./faults.sh                       # 8 rounds on whatever is staged
 #   ./faults.sh --rounds 20
 #   ./faults.sh --rom a.nes --rom b.nes   # restage first (loop.sh), then soak
+#   ./faults.sh --ntsc                # an NTSC console (the Famicom): A4 is Pulse1 timer 253
 #
 # It never cuts deliberately during an upload: with the choice saved on the SD, an unchanged ROM is
 # not uploaded at all, and a card write is the one thing a badly timed cut can damage.
@@ -19,10 +21,11 @@ here=$(cd "$(dirname "$0")" && pwd)
 console=/dev/ttyDbgProbe
 log=/tmp/n8-faults-console.log
 power=/workspaces/.nes-power.sh
-rounds=8 boot_args=()
+rounds=8 boot_args=() a4=235
 while [ $# -gt 0 ]; do
 	case $1 in
 		--rounds) rounds=$2; shift ;;
+		--ntsc)   a4=253 ;;
 		--rom)    boot_args+=(--rom "$2"); shift ;;
 		*) echo "faults.sh: unknown option '$1'" >&2; exit 2 ;;
 	esac
@@ -63,7 +66,7 @@ for r in $(seq 1 "$rounds"); do
 	sleep 1
 	amidi -p "$port" -S 'B0 07 7F'; sleep 0.3                   # the fresh ROM drops its first message
 	amidi -p "$port" -S '90 45 7F'; sleep 1.2; amidi -p "$port" -S '80 45 00'; sleep 1
-	note=$(tail -n +"$mark" "$log" | grep -c 'p1=235/[1-9a-f] ')
+	note=$(tail -n +"$mark" "$log" | grep -c "p1=$a4/[1-9a-f] ")
 	stuck=$(tail -n +"$mark" "$log" | grep -c 'menu is not answering')
 	if [ $ok = 1 ] && [ "$note" -ge 1 ]; then verdict=PASS; pass=$((pass + 1)); else verdict=FAIL; fi
 	echo "round $r: booted=$ok note=$note stuck-menu=$stuck -> $verdict"

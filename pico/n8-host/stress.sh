@@ -10,6 +10,7 @@
 #   ./stress.sh --soak 120      # soak length in seconds (default 30)
 #   ./stress.sh --rate 900      # soak rate in messages/s (default 500; MIDI wire speed is ~1000)
 #   ./stress.sh --no-recover    # skip the NES power-cycle under a live stream
+#   ./stress.sh --ntsc          # an NTSC console (the Famicom): A4 is Pulse1 timer 253, not the PAL 235
 #   ./stress.sh --rom ../../../bliptoaster/build/bliptoaster.nes   # boot this ROM (staged, see loop.sh)
 #
 # Needs the CH345 USB MIDI cable's OUT in the Pico's TRS jack (see README.md).
@@ -19,7 +20,7 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 console=/dev/ttyDbgProbe
 log=/tmp/n8-stress-console.log
-boot=1 soak=30 rate=500 recover=1
+boot=1 soak=30 rate=500 recover=1 a4=235
 boot_args=()
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -27,6 +28,7 @@ while [ $# -gt 0 ]; do
 		--soak)    soak=$2; shift ;;
 		--rate)    rate=$2; shift ;;
 		--no-recover) recover=0 ;;
+		--ntsc)    a4=253 ;;
 		--rom)     boot_args+=(--rom "$2"); shift ;;
 		*) echo "stress.sh: unknown option '$1'" >&2; exit 2 ;;
 	esac
@@ -72,13 +74,13 @@ pairs() { # <n> <ch> <lo> <span>
 	echo "$out"
 }
 
-# The ROM is alive and in sync: A4 on ch1 sounds as Pulse1 timer 235, then goes silent. The ROM
+# The ROM is alive and in sync: A4 on ch1 sounds as Pulse1 timer $a4 (235 PAL, 253 NTSC), then goes silent. The ROM
 # keeps the timer at note-off and drops the volume, so the level after the slash is the test.
 reference() { # <label>
 	send '90 45 7F'; local on; on=$(sniff)
 	send '80 45 00'; local off; off=$(sniff)
-	check "$1" "ROM still in sync: A4 -> p1=235 sounding, then silent  [${on#\[sniff\] } / ${off#\[sniff\] }]" \
-		$( [[ $on =~ p1=235/[1-9a-f]\  && $off =~ p1=235/0\  ]] && echo 1 || echo 0 )
+	check "$1" "ROM still in sync: A4 -> p1=$a4 sounding, then silent  [${on#\[sniff\] } / ${off#\[sniff\] }]" \
+		$( [[ $on =~ p1=$a4/[1-9a-f]\  && $off =~ p1=$a4/0\  ]] && echo 1 || echo 0 )
 }
 
 # Send <hex>, expecting <msgs> channel-voice messages and <bytes> bytes; judge the counters.
@@ -130,7 +132,7 @@ done
 echo "== chord: A4 on ch1-ch3 + a noise hit on ch4, in one write"
 send '90 45 7F 91 45 7F 92 45 7F 93 3C 7F'; s=$(sniff)
 check chord "all four voices sounding  [${s#\[sniff\] }]" \
-	$( [[ $s =~ p1=235/[1-9a-f].*p2=[0-9]+/[1-9a-f].*tri=[0-9]+/[1-9a-f].*noise=[0-9]+/[1-9a-f] ]] && echo 1 || echo 0 )
+	$( [[ $s =~ p1=$a4/[1-9a-f].*p2=[0-9]+/[1-9a-f].*tri=[0-9]+/[1-9a-f].*noise=[0-9]+/[1-9a-f] ]] && echo 1 || echo 0 )
 send '80 45 00 81 45 00 82 45 00 83 3C 00'; s=$(sniff)
 check chord "all four released  [${s#\[sniff\] }]" \
 	$( [[ $s =~ p1=[0-9]+/0\ .*p2=[0-9]+/0\ .*tri=[0-9]+/0\ .*noise=[0-9]+/0$ ]] && echo 1 || echo 0 )

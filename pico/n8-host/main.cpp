@@ -117,10 +117,11 @@ static volatile uint32_t n8_gen  = 0;      // bumped on every N8 mount: a boot c
 static bool          boot_error  = false;   // the last menu boot failed: LED_ERROR until its retry, or the next mount
 static int           write_fail_streak = 0; // consecutive failed fifoWRs
 static int           cur_sel     = -1;      // the staged ROM the box last booted (-1 = none / unknown)
-static uint32_t      menu_stuck_until = 0; // !0: stuck menu or failed boot - no forwarding; retry then (not once
-                                           // boot_gave_up)
+static uint32_t      menu_stuck_until = 0; // !0: stuck menu or failed boot - no forwarding; retry then (20 s, then
+                                           // 10 s once boot_gave_up)
 static int           boot_fails  = 0;      // consecutive failed boots since the last mount or successful boot
-static bool          boot_gave_up = false; // BOOT_TRIES failed in a row: no more retries until a fresh mount
+static bool          boot_gave_up = false; // BOOT_TRIES failed in a row: a retry every 10 s, never an upload
+static uint32_t      booted_at_ms = 0;     // !0: when a boot reported success, until its game lasts BOOT_SETTLE_MS
 static bool          menu_answered = false; // the cart link's guard heard the menu: the next boot skips CMD_STATUS
 
 // --- The graph host ----------------------------------------------------------------------------------------------
@@ -464,24 +465,39 @@ static int boot_through_menu(boot_run &run, bool upload) {
 }
 
 // A boot that failed, or a menu that did not answer, leaves the box at a menu it could not leave: the error LED, and
-// nothing is forwarded (so the cart link never connects there) until the boot is tried again in 20 s. A retry that
-// fails again and again is not made for good, since each one may write the SD card (the upload), which a power cut
-// can damage: after BOOT_TRIES failures in a row the box stays here, with the error LED, until a fresh N8 mount (a
-// power-cycle of the box or of the N8) tries again. A failed install follows a menu that answered, so the retry goes
-// straight to '*t' (menu_answered) with no CMD_STATUS, and no MIDI into the menu; a menu that never answered is asked
-// about again.
+// nothing is forwarded (so the cart link never connects there) until the boot is tried again in 20 s. After BOOT_TRIES
+// failures in a row the box keeps trying, every 10 s, and never with an upload, since an upload writes the SD card,
+// which a power cut can damage: an N8 OS that fails every start (left at ERROR:48 by a raw stream across a RESET) is
+// cleared by a second RESET, and the next retry then boots the game. A boot that works, or a fresh N8 mount, starts the
+// count again. A failed install follows a menu that answered, so the retry goes straight to '*t' (menu_answered) with
+// no CMD_STATUS, and no MIDI into the menu; a menu that never answered is asked about again.
 #define BOOT_TRIES 3
+// How long a booted game must last before its boot counts as one that worked (and clears the count of failed ones).
+#define BOOT_SETTLE_MS 5000
 static void boot_failed(bool menu_up) {
     boot_error = true;
     menu_answered = menu_up;
-    menu_stuck_until = to_ms_since_boot(get_absolute_time()) + 20000;
     if (++boot_fails >= BOOT_TRIES) {
         boot_gave_up = true;
-        printf("[n8-host] %d boots failed in a row - not retrying (power-cycle the box or re-mount the N8)\n",
-               boot_fails);
+        menu_stuck_until = to_ms_since_boot(get_absolute_time()) + 10000;
+        printf("[n8-host] %d boots failed in a row - retrying every 10 s, with no upload (press RESET on the "
+               "console, or power-cycle it)\n", boot_fails);
     } else {
+        menu_stuck_until = to_ms_since_boot(get_absolute_time()) + 20000;
         printf("[n8-host] retrying the boot in 20 s\n");
     }
+}
+
+// The menu came back (the guard heard it, or CMD_STATUS read 0): true when that was within BOOT_SETTLE_MS of the boot
+// that should have left it, so the start itself failed and the boot is counted failed (the 20 s retry, BOOT_TRIES at
+// most), rather than run again at once: rebooting into an OS that fails every start would loop for good.
+static bool menu_returned(void) {
+    const uint32_t since = booted_at_ms ? to_ms_since_boot(get_absolute_time()) - booted_at_ms : BOOT_SETTLE_MS;
+    booted_at_ms = 0;
+    if (since >= BOOT_SETTLE_MS) return false;
+    printf("[box] the menu is back %lu ms after the boot: the start failed\n", (unsigned long)since);
+    boot_failed(true);
+    return true;
 }
 
 static void boot_rom(int status, bool menu_known) {
@@ -535,6 +551,11 @@ static void boot_rom(int status, bool menu_known) {
         } else {
             upload = true;
         }
+        if (upload && boot_gave_up) {
+            printf("[box] the boots keep failing: no upload until one works (power-cycle the console)\n");
+            boot_failed(true);
+            return;
+        }
         if (!have || st.sel != sel || st.crc != crc) {
             memcpy(st.magic, "N8PB", 4);
             st.sel = (uint8_t)sel;
@@ -550,7 +571,8 @@ static void boot_rom(int status, bool menu_known) {
 
     int result = boot_through_menu(run, upload);
     if (result == -2) { if (BOOT_GONE()) ABANDON(); boot_failed(true); return; }
-    if (result > 0 && result != 0x44 && run.rom && !upload) {   // the device's own status, not a lost link
+    // The device's own status, not a lost link (and not while the boots keep failing: no upload then).
+    if (result > 0 && result != 0x44 && run.rom && !upload && !boot_gave_up) {
         // The saved CRC said the file was on the card, but the menu could not load it - it was
         // deleted or replaced behind the box's back. Put it back and try once more.
         printf("[n8-host] install FAILED (status %d) - uploading it again\n", result);
@@ -567,7 +589,12 @@ static void boot_rom(int status, bool menu_known) {
     }
     wait_ms(4000);   // let the NES reboot into the game
     if (BOOT_GONE()) ABANDON();
-    boot_fails = 0;
+    // Not yet a boot that worked: the OS can fail the start itself (a raw stream across a RESET left it at "ERROR:48
+    // Mapper file not found" on the rig), and the menu that answers then is that error screen. The count of failed
+    // boots is cleared once the game has lasted BOOT_SETTLE_MS (the main loop), and a menu back before that is a
+    // failed boot (menu_returned).
+    booted_at_ms = to_ms_since_boot(get_absolute_time());
+    if (!booted_at_ms) booted_at_ms = 1;
     printf("[n8-host] %s booted by the Pico - no PC used.\n", run.path);
 }
 
@@ -765,10 +792,11 @@ static void health_check(void) {
     box_note_healthy();
     if (st != 0) { game_seen = true; return; }
     if (game_seen) {
-        printf("[box] the N8 is back at its menu - booting the chosen ROM\n");
         game_seen = false;
-        probed = false;   // the main loop re-runs the probe and the menu boot
         cart.setConnected(false);   // the link never spans a boot: the next connect probes and guards afresh
+        if (menu_returned()) return;   // the start failed: the 20 s retry, not a boot at once
+        printf("[box] the N8 is back at its menu - booting the chosen ROM\n");
+        probed = false;   // the main loop re-runs the probe and the menu boot
     }
 }
 
@@ -865,9 +893,11 @@ int main(void) {
             was_forwarding = false;
             cart.setConnected(false);
             game_seen = false;
-            printf("[box] the N8 menu answered the cart link's probe - booting the chosen ROM\n");
-            menu_answered = true;
-            probed = false;
+            if (!menu_returned()) {
+                printf("[box] the N8 menu answered the cart link's probe - booting the chosen ROM\n");
+                menu_answered = true;
+                probed = false;
+            }
         }
 
         if (n8_ready && !probed) {
@@ -887,13 +917,20 @@ int main(void) {
             game_seen = false;
             boot_rom(status, known);
         }
-        if (menu_stuck_until && !boot_gave_up &&
+        if (menu_stuck_until &&
             (int32_t)(to_ms_since_boot(get_absolute_time()) - menu_stuck_until) >= 0) {
             menu_stuck_until = 0;
             boot_error = false;
             probed = false;   // try the menu boot again
         }
         forward_ok = n8_ready && probed && !menu_stuck_until;
+        // A booted game that has lasted BOOT_SETTLE_MS is a boot that worked: the count of failed ones starts again.
+        if (booted_at_ms && forward_ok &&
+            to_ms_since_boot(get_absolute_time()) - booted_at_ms >= BOOT_SETTLE_MS) {
+            booted_at_ms = 0;
+            boot_fails = 0;
+            boot_gave_up = false;
+        }
         // Forwarding just became possible (after a mount, and the up-to-48 s menu boot): the ring
         // may hold seconds of MIDI from before the N8 could take it, and playing that stale burst
         // into the ROM now would only produce surprise notes. Start from a clean stream. The cart
@@ -960,6 +997,7 @@ extern "C" void tuh_cdc_mount_cb(uint8_t idx) {
         boot_error = false;   // a fresh mount gets a fresh boot
         boot_fails = 0;
         boot_gave_up = false;
+        booted_at_ms = 0;
         menu_answered = false;   // ... from its probe: what the last N8's menu answered says nothing of this one
         n8_ready = true;
         probed = false;
