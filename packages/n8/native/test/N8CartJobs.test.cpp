@@ -1481,15 +1481,9 @@ TEST_CASE("a menu episode does not leave a release waiting behind the chunks it 
         }
         REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
         REQUIRE(waitUntil([&] { return !rig.cart.connected(); }));
-        // The guard reads the menu's block as its reference after its answer window, before a start can differ from it.
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        // A game booted by hand from the cart's own browser, which is the state read back a game again.
-        {
-            std::lock_guard<std::mutex> l(rig.dev.mu);
-            rig.dev.menu   = false;
-            rig.dev.cfg[0] = 69;
-            rig.dev.cfg[2] = 0;
-        }
+        // A game booted from the cart's own browser, which is the state read back a game again. The fake clears the
+        // block while the OS loads, so the guard leaves whether its reference read lands before or during the start.
+        rig.dev.startFromBrowser(69, 300);
         // The guard leaves the menu on the config block alone: the new block, settled for half a second.
         REQUIRE(waitUntil([&] { return rig.cart.connected(); }, 5000));
         rig.host.link().setLookaheadMs(0);
@@ -1512,13 +1506,7 @@ TEST_CASE("a menu episode does not leave a release waiting behind the chunks it 
             rig.dev.menu = true;
         }
         REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));  // the guard reads the menu's block first
-        {
-            std::lock_guard<std::mutex> l(rig.dev.mu);
-            rig.dev.menu   = false;
-            rig.dev.cfg[0] = 69;
-            rig.dev.cfg[2] = 0;
-        }
+        rig.dev.startFromBrowser(69, 300);  // the block is cleared while it loads: seen however the reference read lands
         // The guard leaves the menu on the config block alone: the new block, settled for half a second.
         REQUIRE(waitUntil([&] { return rig.cart.connected(); }, 5000));
         rig.host.link().setLookaheadMs(0);
@@ -1599,12 +1587,9 @@ TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser t
     CHECK_FALSE(rig.cart.connected());  // attached, streaming nothing: what a cart node reads
 
     // A game booted by hand is streamed to, and reads connected again.
-    {
-        std::lock_guard<std::mutex> l(rig.dev.mu);
-        rig.dev.menu = false;  // the user started a game from the cart's own browser
-        rig.dev.cfg[0] = 69;   // and the guard, which writes nothing at the menu, leaves it on the config block only
-        rig.dev.cfg[2] = 0;
-    }
+    // The guard writes nothing at the menu and leaves on the config block only: the fake clears it while the OS loads,
+    // so the start is seen whether the guard's reference read lands before or during it.
+    rig.dev.startFromBrowser(69, 300);
     REQUIRE(waitUntil([&] { return rig.cart.connected(); }, 5000));
     rig.push({0x90, 0x2A, 0x73});
     REQUIRE(waitUntil([&] { return rig.dev.countContaining("90 2A 73") == 1; }));
@@ -1653,13 +1638,8 @@ TEST_CASE("leaving the menu re-probes the link, so a game the user starts by han
     rig.dev.linkRom = true;  // BlipToaster, which answers the probe
     rig.connect();           // at its menu: the probe finds nothing, and the link stays raw
     REQUIRE(waitUntil([&] { return !rig.cart.connected(); }));
-    {
-        std::lock_guard<std::mutex> l(rig.dev.mu);
-        rig.dev.menu = false;  // the user started a game from the cart's own browser
-        rig.dev.cfg[0] = 69;
-        rig.dev.cfg[2] = 0;
-    }
-    // The guard sees the config block change and settle, and leaving the menu runs the link probe again: the frames
+    rig.dev.startFromBrowser(69, 300);  // the user starts a game from the cart's own browser
+    // The guard sees the config block cleared, then settle on the game's, and leaving the menu runs the link probe again: the frames
     // start.
     REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }, 5000));
     rig.push({0x90, 0x3C, 0x7F});
@@ -1673,10 +1653,12 @@ TEST_CASE("a game started from the cart's browser while the link waits at the me
           "[n8][menu-guard]") {
     // The N8 OS takes a host byte that arrives while it starts a game for its MCU's status and stops at ERROR:40 (2 of
     // 2 on the lab's cart with the guard probing the menu). At the menu the link writes nothing and leaves on the
-    // config block: cleared by the start, then the game's.
+    // config block: the same game started again ends on the very same bytes, so it is the clear the start makes that
+    // the link sees, then the game's block.
     Rig rig;
     const bool withLink = GENERATE(true, false);
     rig.dev.linkRom = withLink;  // BlipToaster, or a game without the link
+    rig.dev.cfg[0]  = 69;        // the game that runs: the reference is its non-zero block, the start is of the same game
     rig.connectGame();
     rig.dev.resetToMenu();
     rig.push({0x90, 0x3C, 0x7F});  // a stream for the reset to meet
@@ -2063,6 +2045,7 @@ TEST_CASE("a menu is never left without a change in the config block, however la
     // At the menu the guard writes nothing: a byte arriving while the OS works is taken for its MCU status (ERROR:40).
     // However late or absent its answers, the menu is left only on the config block.
     Rig rig;
+    rig.dev.cfg[0] = 69;  // an unchanged NON-ZERO block is what must never be left
     rig.connectGame();
     rig.dev.resetToMenu();
     REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
@@ -2255,13 +2238,20 @@ TEST_CASE("a menu busy past the probe's window answers its probes together: the 
     rig.connectGame();
     rig.dev.resetToMenu();
     REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+    int  busyStarts = 0;
     const auto submitTaken = [&](const JobRequest& r, Job& job) {
         {
             std::lock_guard<std::mutex> l(rig.dev.mu);
+            busyStarts             = rig.dev.menuBusyStarts;
             rig.dev.menuBusyNextMs = 150;  // armed once: the first submission's own probe begins the stretch
         }
         for (int i = 0; i < 10; ++i) {
-            if (rig.submit(r, job)) return true;
+            if (rig.submit(r, job)) {
+                std::lock_guard<std::mutex> l(rig.dev.mu);
+                CHECK(rig.dev.menuBusyStarts == busyStarts + 1);  // the stretch began, once
+                CHECK(i >= 1);                                     // and the first submission missed its window
+                return true;
+            }
             // The fake's read answers short at once for an answer that is not due in its window, where a port's waits
             // the window out: the retry waits it here, so that it comes inside the stretch, as it would on a port.
             std::this_thread::sleep_for(std::chrono::milliseconds(100));

@@ -251,8 +251,9 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
             menuProbeAnswer_.store(menu, std::memory_order_relaxed);
             // The same answer tells the guard the cart is at its menu, and it does so before the submission that asked
             // for it can hand over a job: a pause's drain must not write the ring into a menu the probe has just seen.
-            // Only that way round: a menu whose 'k' came later than this probe's wait reads as a game here, and only
-            // the guard's own probes may re-enable the stream.
+            // Only that way round: a menu whose 'k' came later than this probe's wait reads as a game here, and the
+            // guard writes nothing at the menu and leaves it only on the config block, so a late 'k' re-enables
+            // nothing.
             if (menu == 1) link_.reportMenuState(true);
             menuProbeApplied_.store(probe, std::memory_order_release);
         }
