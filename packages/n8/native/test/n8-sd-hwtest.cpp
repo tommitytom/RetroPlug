@@ -385,7 +385,7 @@ int main(int argc, char** argv) {
         return outstanding == 0 ? 0 : 1;
     }
 
-    // The menu guard on real hardware (spec/07 "The N8 menu's residual window"): N8Host's own link, so its MenuCheck is
+    // The menu guard on real hardware (spec/07 "The N8 menu's back-channel"): N8Host's own link, so its MenuCheck is
     // the production one, streaming a short 2A03 note every 60 ms for <seconds> while a person presses the console's
     // RESET button (it keeps USB and the link up and drops the cart to its menu: the case a power-cycle cannot make).
     // Logs every change of the link's state with its time, then what was written after the guard tripped (expected: 0
@@ -574,8 +574,8 @@ int main(int argc, char** argv) {
                     lastKNs = t;
                     if (lat >= ms(rp::N8MenuGuard::kAnswerNs)) {
                         ++slow;
-                        sayAt(ms(t), "slow 'k': %.1f ms after its probe (%zu more waiting; the guard counts a miss "
-                                     "past 100 ms)", lat, pending.size());
+                        sayAt(ms(t), "slow 'k': %.1f ms after its probe (%zu more waiting; a 'k' that late is "
+                                     "slow, not lost)", lat, pending.size());
                     }
                 }
                 if (quiet) {
@@ -613,8 +613,19 @@ int main(int argc, char** argv) {
                     }
                 }
                 if (turn.readConfig) {
+                    // The guard is handed a read that came back whole, never a failed one (this file's Edio throws).
+                    bool read = false;
                     try {
                         edio.memRD(0x1800020, block, sizeof block);
+                        read = true;
+                    } catch (const std::exception& e) {
+                        if (t - lastFailNs >= 1'000'000'000) {
+                            lastFailNs = t;
+                            sayAt(ms(t), "config read failed: %s", e.what());
+                        }
+                        sp.flushInput();
+                    }
+                    if (read) {
                         if (!haveBlock || std::memcmp(block, lastBlock, sizeof block) != 0) {
                             char hex[3 * rp::N8MenuGuard::kConfigBytes + 1] = {};
                             for (std::size_t i = 0; i < sizeof block; ++i)
@@ -624,12 +635,6 @@ int main(int argc, char** argv) {
                             haveBlock = true;
                         }
                         guard.config(t, block);
-                    } catch (const std::exception& e) {
-                        if (t - lastFailNs >= 1'000'000'000) {
-                            lastFailNs = t;
-                            sayAt(ms(t), "config read failed: %s", e.what());
-                        }
-                        sp.flushInput();
                     }
                 }
                 if (turn.writeProbe) {
@@ -673,7 +678,8 @@ int main(int argc, char** argv) {
                         static_cast<unsigned long long>(lost), static_cast<unsigned long long>(unasked),
                         static_cast<unsigned long long>(acks), static_cast<unsigned long long>(otherBytes));
             std::printf("menuwatch: answer latency p50 %.1f / p99 %.1f / max %.1f ms; longest gap between two 'k's "
-                        "%.1f ms, from %.1f ms (250 healthy; the guard leaves after 3 misses, about 600 ms); "
+                        "%.1f ms, from %.1f ms (250 healthy; the guard leaves on the config block, "
+                        "after a start held for 500 ms); "
                         "leaves %llu, re-entries %llu; stream bytes %llu, worst into a left menu %llu\n",
                         pct(0.5), pct(0.99), latencies.empty() ? -1.0 : latencies.back(), longestKGapMs,
                         ms(worstKGapAtNs),
@@ -686,12 +692,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    // A console RESET while a framed stream is between notes (spec/07's residual window): a sparse stream, one 30 ms A4
-    // every <gap-ms>, through N8Link with the guard on, as the cart node streams it. A press in a gap goes unseen until
-    // the next note's frame meets no ack, so that frame, and whatever the guard writes after it (the stall's probes, a
-    // sync, a raw stream once the link is given up), reaches the booting OS. The reset lies between the last moment the
-    // window drained and the first write after it; every write from there is listed with its offset from both ends, and
-    // the stream runs on for <after-s> seconds as a song would. Then look at the screen: a clean menu or an ERROR.
+    // A console RESET while a framed stream is between notes (spec/07 "The N8 menu's back-channel"): a sparse stream,
+    // one 30 ms A4 every <gap-ms>, through N8Link with the guard on, as the cart node streams it. A press in a gap
+    // goes unseen until the next note's frame meets no ack, so that frame, and whatever the guard writes after it (the
+    // stall's probes, a sync, a raw stream once the link is given up), reaches the booting OS. The reset lies between
+    // the last moment the window drained and the first write after it; every write from there is listed with its
+    // offset from both ends, and the stream runs on for <after-s> seconds as a song would. Then look at the screen: a
+    // clean menu or an ERROR.
     // [loss-permille] drops framed bytes on the way out (setTestLossPermille), so stalls answered by an ack open the
     // trusted second, the other case spec/07 names.
     if (op == "pausereset") {
@@ -995,7 +1002,7 @@ int main(int argc, char** argv) {
     // What the N8 OS menu does with bytes it did not ask for (docs/n8-menu-guard-reset-design.md section 1): 'test'
     // sends '*t' and reports the answer ('k' is the menu); 'sysex' sends '*t' wrapped as F0 2A 74 F7, a SysEx a MIDI
     // game ignores, then reports its answer and a plain '*t' after it; 'note' sends one note-on (90 3C 40), a stray
-    // byte run of the residual window's kind, then a plain '*t'. Run at a menu; check the screen after each.
+    // byte run of the kind a stream leaks into the menu, then a plain '*t'. Run at a menu; check the screen after each.
     if (op == "menuprobe") {
         const std::string mode  = argv[2];
         const std::string mport = argc > 3 ? argv[3] : findN8Port();
