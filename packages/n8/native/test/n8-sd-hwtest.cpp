@@ -20,12 +20,12 @@
 //   retroplug-n8-hwtest write    <local-src> <sd-path> [port]  # CMD_F_FWR: write a local file to the SD card
 //   retroplug-n8-hwtest fiford   <count> [timeout-ms] [port]   # read the cart's USB back-channel (CMD_USB_WR)
 //   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
-//   retroplug-n8-hwtest menuguard <seconds> [port] [raw] [follow] # the menu guard, streaming while a person presses RESET
+//   retroplug-n8-hwtest menuguard <seconds> [port] [raw] [follow] # the menu guard, streaming while RESET is pressed
 //   retroplug-n8-hwtest menuprobe <test|sysex|note> [port] # what the N8 OS menu does with bytes it did not ask for
 //   retroplug-n8-hwtest bootwindow <delay-ms> [stream-ms] [port]  # raw notes from <delay-ms> after a RESET
-//   retroplug-n8-hwtest menuwatch <seconds> [quiet|probe|stream] [port] # the menu probed as the guard does: answers, misses
+//   retroplug-n8-hwtest menuwatch <seconds> [quiet|probe|stream] [port] # the menu probed as the guard does
 //   retroplug-n8-hwtest pausereset <gap-ms> [after-s] [loss-permille] [port] # a RESET between a framed stream's notes
-//   retroplug-n8-hwtest cfgwatch <seconds> [every-ms] [port]   # the FPGA config block, each change timed (no FIFO write)
+//   retroplug-n8-hwtest cfgwatch <seconds> [every-ms] [port]   # the FPGA config block, each change timed
 //   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
 //   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw] [--midi <port>]  # latency / jitter / load, real console
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
@@ -182,8 +182,8 @@ int main(int argc, char** argv) {
                          "usage: %s dump <rom-name> <dest.srm> [port]\n"
                          "       %s load <rom.nes> [port]\n"
                          "       %s restore <rom-name> <save.srm> [port]\n"
-                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|menuguard|menuwatch|pausereset|cfgwatch|linkdbg|"
-                         "timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
+                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|menuguard|menuwatch|"
+                         "pausereset|cfgwatch|linkdbg|timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
                          argv[0], argv[0], argv[0], argv[0]);
             return 2;
         }
@@ -474,9 +474,10 @@ int main(int argc, char** argv) {
     }
 
     // The menu guard's question put to a cart for a while, on a bare Edio with the guard's own decisions
-    // (rp::N8MenuGuard, as a raw link runs it): what the menu answers, how fast, what it says that nobody asked for, and,
-    // with `stream`, what a raw stream writes into a menu the guard left. spec/07's back-channel and residual-window
-    // checks: run it at the menu while a person browses, opens folders and loads ROMs from the cart's own browser.
+    // (rp::N8MenuGuard, as a raw link runs it): what the menu answers, how fast, what it says that nobody asked for,
+    // and, with `stream`, what a raw stream writes into a menu the guard left. spec/07's back-channel and
+    // residual-window checks: run it at the menu while a person browses, opens folders and loads ROMs from the
+    // cart's own browser.
     //   quiet:  no probe at all, nothing written; every byte the back-channel says is logged (an idle menu: none)
     //   probe:  the guard's own writes and nothing else: its probes before it enters the menu, and at the menu none,
     //           only the config block reads it asks for (the default)
@@ -499,7 +500,9 @@ int main(int argc, char** argv) {
             edio.connect();
             sp.flushInput();
             const auto   t0  = Clock::now();
-            const auto   now = [&] { return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t0).count() + 1; };
+            const auto   now = [&] {
+                return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t0).count() + 1;
+            };
             const auto   ms  = [](std::int64_t ns) { return static_cast<double>(ns) / 1e6; };
             rp::N8MenuGuard        guard;
             rp::N8MenuGuard::Scan  scan;   // the guard's own scan, run again to time each 'k' it hears
@@ -517,8 +520,9 @@ int main(int argc, char** argv) {
             std::int64_t  nextNoteNs = 150'000'000, offNs = 0, leaveNs = 0, lastKNs = 0, worstKGapAtNs = 0;
             bool          noteHeld = false;
             std::int64_t  lastProbeNs = 0;
-            std::uint64_t probes = 0, answers = 0, slow = 0, lost = 0, acks = 0, unasked = 0, otherBytes = 0, leaves = 0, enters = 0,
-                          streamBytes = 0, bytesAtLeave = 0, probesAtLeave = 0, worstLeakBytes = 0;
+            std::uint64_t probes = 0, answers = 0, slow = 0, lost = 0, acks = 0, unasked = 0, otherBytes = 0,
+                          leaves = 0, enters = 0, streamBytes = 0, bytesAtLeave = 0, probesAtLeave = 0,
+                          worstLeakBytes = 0;
             std::vector<double> latencies;
             std::uint8_t  block[rp::N8MenuGuard::kConfigBytes] = {}, lastBlock[rp::N8MenuGuard::kConfigBytes] = {};
             bool          haveBlock  = false;
@@ -538,7 +542,8 @@ int main(int argc, char** argv) {
                 for (std::size_t i = 0; i < n; ++i) {
                     const bool inAck = buf[i] == rp::N8ReliableSender::FRAME || scan.state != 0;
                     const auto heard = scan.feed(buf[i]);
-                    if (heard == rp::N8MenuGuard::Scan::Heard::Ack) ++acks;   // a game with the link: it drops the probe
+                    // A game with the link: it drops the probe.
+                    if (heard == rp::N8MenuGuard::Scan::Heard::Ack) ++acks;
                     if (heard != rp::N8MenuGuard::Scan::Heard::MenuAnswer) {
                         if (!inAck) {
                             ++otherBytes;
@@ -569,8 +574,8 @@ int main(int argc, char** argv) {
                     lastKNs = t;
                     if (lat >= ms(rp::N8MenuGuard::kAnswerNs)) {
                         ++slow;
-                        sayAt(ms(t), "slow 'k': %.1f ms after its probe (%zu more waiting; the guard counts a miss past "
-                                     "100 ms)", lat, pending.size());
+                        sayAt(ms(t), "slow 'k': %.1f ms after its probe (%zu more waiting; the guard counts a miss "
+                                     "past 100 ms)", lat, pending.size());
                     }
                 }
                 if (quiet) {
@@ -585,8 +590,8 @@ int main(int argc, char** argv) {
                     if (leaveNs) {
                         const std::uint64_t leaked = streamBytes - bytesAtLeave;
                         worstLeakBytes = std::max(worstLeakBytes, leaked);
-                        sayAt(ms(t), "AT THE MENU again, %.1f ms after the leave: %llu stream byte(s) and %llu probe(s) "
-                                     "went into it", ms(t - leaveNs), static_cast<unsigned long long>(leaked),
+                        sayAt(ms(t), "AT THE MENU again, %.1f ms after the leave: %llu stream byte(s) and %llu "
+                                     "probe(s) went into it", ms(t - leaveNs), static_cast<unsigned long long>(leaked),
                               static_cast<unsigned long long>(probes - probesAtLeave));
                         leaveNs = 0;
                     } else {
@@ -668,10 +673,10 @@ int main(int argc, char** argv) {
                         static_cast<unsigned long long>(lost), static_cast<unsigned long long>(unasked),
                         static_cast<unsigned long long>(acks), static_cast<unsigned long long>(otherBytes));
             std::printf("menuwatch: answer latency p50 %.1f / p99 %.1f / max %.1f ms; longest gap between two 'k's "
-                        "%.1f ms, from %.1f ms (250 healthy; the guard leaves after 3 misses, about 600 ms); leaves %llu, "
-                        "re-entries %llu; "
-                        "stream bytes %llu, worst into a left menu %llu\n",
-                        pct(0.5), pct(0.99), latencies.empty() ? -1.0 : latencies.back(), longestKGapMs, ms(worstKGapAtNs),
+                        "%.1f ms, from %.1f ms (250 healthy; the guard leaves after 3 misses, about 600 ms); "
+                        "leaves %llu, re-entries %llu; stream bytes %llu, worst into a left menu %llu\n",
+                        pct(0.5), pct(0.99), latencies.empty() ? -1.0 : latencies.back(), longestKGapMs,
+                        ms(worstKGapAtNs),
                         static_cast<unsigned long long>(leaves), static_cast<unsigned long long>(enters),
                         static_cast<unsigned long long>(streamBytes), static_cast<unsigned long long>(worstLeakBytes));
             return 0;
@@ -737,7 +742,8 @@ int main(int argc, char** argv) {
         std::int64_t nextOn = t0, nextOff = -1, lastDrained = t0, outstandingSince = -1, stallNs = -1, endNs = -1;
         bool         wasMenu = false, wasReliable = true, wasUp = true;
         const auto   say = [&](std::int64_t t, const char* what) {
-            std::printf("%10.1f ms  %s (connected=%d atMenu=%d reliable=%d outstanding=%llu resends=%llu)\n", ms(t), what,
+            std::printf("%10.1f ms  %s (connected=%d atMenu=%d reliable=%d outstanding=%llu "
+                        "resends=%llu)\n", ms(t), what,
                         link.isConnected(), link.atMenu(), link.reliable(),
                         static_cast<unsigned long long>(link.linkOutstanding()),
                         static_cast<unsigned long long>(link.linkResends()));
@@ -791,9 +797,10 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         host.connect(false);
 
-        // The reset lies between the last frame the cart acknowledged and the first it did not: the newest frame written
-        // before the window was seen to stop (the first unacknowledged; acks come within the 2 ms poll, so the poll
-        // itself rarely sees the window fill), and the frame before it. Every write from the last acknowledged frame on.
+        // The reset lies between the last frame the cart acknowledged and the first it did not: the newest frame
+        // written before the window was seen to stop (the first unacknowledged; acks come within the 2 ms poll, so
+        // the poll itself rarely sees the window fill), and the frame before it. Every write from the last
+        // acknowledged frame on.
         std::lock_guard<std::mutex> l(wm);
         std::int64_t firstAfter = -1;
         lastDrained             = t0;
@@ -802,8 +809,9 @@ int main(int argc, char** argv) {
             lastDrained = firstAfter < 0 ? lastDrained : firstAfter;
             firstAfter  = w.ns;
         }
-        std::printf("pausereset: the last acknowledged frame went at %.1f ms, the first unacknowledged at %.1f ms (%.1f ms "
-                    "later): the reset is in between, so that frame reached the cart at most that long after it\n",
+        std::printf("pausereset: the last acknowledged frame went at %.1f ms, the first unacknowledged at %.1f ms "
+                    "(%.1f ms later): the reset is in between, so that frame reached the cart at most that long "
+                    "after it\n",
                     ms(lastDrained), ms(firstAfter), firstAfter >= 0 ? (firstAfter - lastDrained) / 1e6 : -1.0);
         std::printf("   at (ms)   after drain  after 1st   bytes\n");
         std::size_t total = 0, frames = 0, probes = 0, syncs = 0, raw = 0;
@@ -830,9 +838,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // The FPGA config block (0x1800020, 16 bytes) read every <ms> for <seconds>, each change printed with its time: what
-    // a cart shows over USB, with nothing written to its FIFO, as the menu starts a game (map_idx and the rest). A read of
-    // the system region is the MCU's, not a DMA, and goes nowhere near the console's FIFO.
+    // The FPGA config block (0x1800020, 16 bytes) read every <ms> for <seconds>, each change printed with its time:
+    // what a cart shows over USB, with nothing written to its FIFO, as the menu starts a game (map_idx and the rest).
+    // A read of the system region is the MCU's, not a DMA, and goes nowhere near the console's FIFO.
     if (op == "cfgwatch") {
         const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
         const int         everyMs = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 50;
@@ -857,7 +865,8 @@ int main(int argc, char** argv) {
                     ++reads;
                     if (first || std::memcmp(cur, last, sizeof cur) != 0) {
                         std::printf("%10.1f ms ", ms());
-                        for (int i = 0; i < 16; ++i) std::printf(" %02X%s", cur[i], cur[i] != last[i] && !first ? "*" : "");
+                        for (int i = 0; i < 16; ++i)
+                            std::printf(" %02X%s", cur[i], cur[i] != last[i] && !first ? "*" : "");
                         std::printf("\n");
                         std::fflush(stdout);
                         std::memcpy(last, cur, sizeof cur);
