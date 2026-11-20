@@ -259,6 +259,7 @@ void N8Link::probeLink() {
     rel_.reset();
     reliable_.store(false, std::memory_order_release);
     const std::uint8_t sync[2] = { rp::N8ReliableSender::SYNC, 0 };
+    if (writeLog_) writeLog_(sync, sizeof sync, nowNs(), false);
     check(edio_->fifoWR(sync, 2));
     const std::int64_t until = nowNs() + 100'000'000;
     bool sawFrame = false;

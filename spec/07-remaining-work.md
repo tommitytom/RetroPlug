@@ -106,7 +106,8 @@ reset, a game that writes one outside an ack would trip it too (and, writing it 
 that answered the probe would read as a menu. On the lab's cart the menu answered every probe, in about 20 ms, and a
 running BlipToaster ignored three ([the design](../docs/n8-menu-guard-reset-design.md) section 1). Confirm on a cart at
 its menu, with nothing streamed to it, that the back-channel stays silent between probes; that browsing the menu with
-the pad for a minute while the guard probes it shows nothing odd and no ERROR; that a job submitted right after a
+the pad for a minute while the guard probes it shows nothing odd and no ERROR (`retroplug-n8-hwtest menuwatch`,
+`quiet` and `probe`); that a job submitted right after a
 power-cycle or a RESET to the menu is accepted, and promptly; and that the probe a raw stream carries four times a
 second costs a running BlipToaster nothing (`retroplug-n8-hwtest timing busy --raw --guard` against the same run without
 `--guard`) and stalls nothing.
@@ -121,8 +122,10 @@ its browser (the longest gap between a probe and its `k`) against the three-miss
 stream bytes reach it after a leave before the next probe is answered; and whether raw streams to other ROMs than
 BlipToaster behave as BlipToaster's does (the 330 to 400 ms window is the OS's, so they should, but only BlipToaster was
 run); and a RESET during a pause in a framed stream, or inside the trusted second, where the next frame or the stall's
-probe can reach the booting OS in its window (by the code; not yet run on the cart: `bootwindow` with the stream stopped
-before the press).
+probe can reach the booting OS in its window (by the code; not yet run on the cart: `retroplug-n8-hwtest pausereset`, a
+sparse framed stream with the press between notes, and its loss argument for the trusted second). The menu-side checks
+run under `retroplug-n8-hwtest menuwatch` (`probe` while a person browses and loads; `stream` for the bytes a false
+leave lets in).
 
 ### The Launchpad real-device checklist
 

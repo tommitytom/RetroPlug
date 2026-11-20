@@ -23,6 +23,8 @@
 //   retroplug-n8-hwtest menuguard <seconds> [port] [raw] # the menu guard, streaming while a person presses RESET
 //   retroplug-n8-hwtest menuprobe <test|sysex|note> [port] # what the N8 OS menu does with bytes it did not ask for
 //   retroplug-n8-hwtest bootwindow <delay-ms> [stream-ms] [port]  # raw notes from <delay-ms> after a RESET
+//   retroplug-n8-hwtest menuwatch <seconds> [quiet|probe|stream] [port] # the menu probed as the guard does: answers, misses
+//   retroplug-n8-hwtest pausereset <gap-ms> [after-s] [loss-permille] [port] # a RESET between a framed stream's notes
 //   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
 //   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw] [--midi <port>]  # latency / jitter / load, real console
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
@@ -40,13 +42,18 @@
 // read pulls a whole SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
 //
 // Exit 0 on success, 1 on the op's error, 2 on a usage / no-device problem.
+#include <algorithm>
+#include <cstdarg>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <iterator>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -133,6 +140,20 @@ struct N8Menu {
     rp::n8::Menu menu_;
 };
 
+// One line of a watch's log: the time on its clock, then the event.
+#if defined(__GNUC__)
+__attribute__((format(printf, 2, 3)))
+#endif
+void sayAt(double ms, const char* fmt, ...) {
+    std::printf("%10.1f ms  ", ms);
+    va_list a;
+    va_start(a, fmt);
+    std::vprintf(fmt, a);
+    va_end(a);
+    std::printf("\n");
+    std::fflush(stdout);
+}
+
 // A whole local file into a byte vector. Empty on a missing/unreadable/empty file — every caller here
 // treats "nothing to send" as an error, so the two cases don't need telling apart.
 std::vector<std::uint8_t> slurpLocal(const std::string& path) {
@@ -160,7 +181,7 @@ int main(int argc, char** argv) {
                          "usage: %s dump <rom-name> <dest.srm> [port]\n"
                          "       %s load <rom.nes> [port]\n"
                          "       %s restore <rom-name> <save.srm> [port]\n"
-                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|menuguard|linkdbg|"
+                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|menuguard|menuwatch|pausereset|linkdbg|"
                          "timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
                          argv[0], argv[0], argv[0], argv[0]);
             return 2;
@@ -448,6 +469,321 @@ int main(int argc, char** argv) {
         }
         std::printf("bootwindow: reset at %.1f ms (seen %.1f ms later); the raw note went out %.1f ms after it\n",
                     resetMs, seenMs - resetMs, noteMs - resetMs);
+        return 0;
+    }
+
+    // The menu guard's question put to a cart for a while, on a bare Edio with the guard's own decisions
+    // (rp::N8MenuGuard, as a raw link runs it): what the menu answers, how fast, what it says that nobody asked for, and,
+    // with `stream`, what a raw stream writes into a menu the guard left. spec/07's back-channel and residual-window
+    // checks: run it at the menu while a person browses, opens folders and loads ROMs from the cart's own browser.
+    //   quiet:  no probe at all, nothing written; every byte the back-channel says is logged (an idle menu: none)
+    //   probe:  the guard's probes, every 250 ms whatever it decides, nothing else written (the default)
+    //   stream: the guard as a raw link runs it, an A4 every 60 ms (no 0x2A in it) while it says the cart is no menu
+    if (op == "menuwatch") {
+        const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
+        const std::string mode    = argc > 3 ? argv[3] : "probe";
+        const std::string wport   = argc > 4 ? argv[4] : findN8Port();
+        if (seconds <= 0 || wport.empty() || (mode != "quiet" && mode != "probe" && mode != "stream")) {
+            std::fprintf(stderr, "usage: %s menuwatch <seconds> [quiet|probe|stream] [port] (no Everdrive N8 found?)\n",
+                         argv[0]);
+            return 2;
+        }
+        using Clock = std::chrono::steady_clock;
+        try {
+            SerialTransport sp(wport);
+            Edio            edio(sp);
+            edio.connect();
+            sp.flushInput();
+            const auto   t0  = Clock::now();
+            const auto   now = [&] { return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t0).count() + 1; };
+            const auto   ms  = [](std::int64_t ns) { return static_cast<double>(ns) / 1e6; };
+            rp::N8MenuGuard        guard;
+            rp::N8MenuGuard::Scan  scan;   // the guard's own scan, run again to time each 'k' it hears
+            const bool   quiet  = mode == "quiet";
+            const bool   stream = mode == "stream";
+            const std::uint8_t on[]  = {0x90, 69, 100};
+            const std::uint8_t off[] = {0x80, 69, 0};
+
+            // Each probe waits in `pending` for its 'k': the menu reads its '*t's in order and answers each, so a 'k'
+            // is the oldest waiting probe's, however late (a busy menu's answer to one probe must not be credited to
+            // the next). A 'k' with none waiting is one nobody asked for. A probe still waiting after 2 s is taken as
+            // never answered.
+            std::deque<std::int64_t> pending;
+            std::int64_t  nextNoteNs = 150'000'000, offNs = 0, leaveNs = 0, quietSinceNs = 0;
+            bool          noteHeld = false;
+            std::uint64_t probes = 0, answers = 0, slow = 0, lost = 0, acks = 0, unasked = 0, otherBytes = 0, leaves = 0, enters = 0,
+                          streamBytes = 0, bytesAtLeave = 0, probesAtLeave = 0, worstLeakBytes = 0;
+            std::vector<double> latencies;
+            double        longestSilentMs = 0;   // the longest the menu went answering nothing while probes waited
+            sayAt(ms(now()), "menuwatch: %s, %d s on %s", mode.c_str(), seconds, wport.c_str());
+            std::int64_t nextTickNs = 5'000'000'000;
+            while (now() < std::int64_t(seconds) * 1'000'000'000) {
+                std::uint8_t      buf[64];
+                const std::size_t n = sp.read(buf, sizeof buf, 0);
+                const std::int64_t t = now();
+                while (!pending.empty() && t - pending.front() >= 2'000'000'000) {
+                    ++lost;
+                    sayAt(ms(t), "LOST: the probe at %.1f ms never answered", ms(pending.front()));
+                    pending.pop_front();
+                }
+                for (std::size_t i = 0; i < n; ++i) {
+                    const bool inAck = buf[i] == rp::N8ReliableSender::FRAME || scan.state != 0;
+                    const auto heard = scan.feed(buf[i]);
+                    if (heard == rp::N8MenuGuard::Scan::Heard::Ack) ++acks;   // a game with the link: it drops the probe
+                    if (heard != rp::N8MenuGuard::Scan::Heard::MenuAnswer) {
+                        if (!inAck) {
+                            ++otherBytes;
+                            sayAt(ms(t), "heard 0x%02X (neither a 'k' nor an ack)", buf[i]);
+                        }
+                        continue;
+                    }
+                    if (pending.empty()) {
+                        ++unasked;
+                        sayAt(ms(t), "UNASKED 'k': no probe waiting");
+                        continue;
+                    }
+                    const double lat = ms(t - pending.front());
+                    pending.pop_front();
+                    ++answers;
+                    latencies.push_back(lat);
+                    if (quietSinceNs) longestSilentMs = std::max(longestSilentMs, ms(t - quietSinceNs));
+                    quietSinceNs = pending.empty() ? 0 : t;
+                    if (lat >= ms(rp::N8MenuGuard::kAnswerNs)) {
+                        ++slow;
+                        sayAt(ms(t), "slow 'k': %.1f ms after its probe (%zu more waiting; the guard counts a miss past "
+                                     "100 ms)", lat, pending.size());
+                    }
+                }
+                if (quiet) {
+                    if (n == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+                guard.hear(buf, n);
+                const rp::N8MenuGuard::Turn turn = guard.turn(t, nullptr, true);
+                if (turn.enteredMenu) {
+                    ++enters;
+                    noteHeld = false;   // as N8Link drops a pending release at the menu
+                    if (leaveNs) {
+                        const std::uint64_t leaked = streamBytes - bytesAtLeave;
+                        worstLeakBytes = std::max(worstLeakBytes, leaked);
+                        sayAt(ms(t), "AT THE MENU again, %.1f ms after the leave: %llu stream byte(s) and %llu probe(s) "
+                                     "went into it", ms(t - leaveNs), static_cast<unsigned long long>(leaked),
+                              static_cast<unsigned long long>(probes - probesAtLeave));
+                        leaveNs = 0;
+                    } else {
+                        sayAt(ms(t), "AT THE MENU (the guard's state)");
+                    }
+                }
+                if (turn.leftMenu) {
+                    ++leaves;
+                    leaveNs       = t;
+                    bytesAtLeave  = streamBytes;
+                    probesAtLeave = probes;
+                    sayAt(ms(t), "LEFT THE MENU: three probes unanswered (a game, or a busy menu: a false leave if the "
+                                 "menu is still up)");
+                    if (stream) {   // N8Link probes the link again: the input flushed, then the sync
+                        sp.flushInput();
+                        const std::uint8_t sync[2] = {rp::N8ReliableSender::SYNC, 0};
+                        edio.fifoWR(sync, sizeof sync);
+                        streamBytes += sizeof sync;
+                    }
+                }
+                if (turn.writeProbe) {
+                    edio.fifoWR(rp::N8MenuGuard::kProbe, sizeof rp::N8MenuGuard::kProbe);
+                    if (pending.empty()) quietSinceNs = t;
+                    pending.push_back(t);
+                    ++probes;
+                } else if (stream && !turn.hold && noteHeld && t >= offNs) {
+                    edio.fifoWR(off, sizeof off);
+                    streamBytes += sizeof off;
+                    noteHeld = false;
+                } else if (stream && !turn.hold && !noteHeld && t >= nextNoteNs) {
+                    edio.fifoWR(on, sizeof on);   // a 30 ms A4 every 60 ms, as menuguard streams
+                    streamBytes += sizeof on;
+                    noteHeld   = true;
+                    offNs      = t + 30'000'000;
+                    nextNoteNs = t + 60'000'000;
+                }
+                if (t >= nextTickNs) {
+                    nextTickNs += 5'000'000'000;
+                    sayAt(ms(t), "tick: %s, probes %llu, answered %llu (slow %llu), unasked 'k' %llu",
+                          guard.atMenu() ? "menu" : "no menu", static_cast<unsigned long long>(probes),
+                          static_cast<unsigned long long>(answers), static_cast<unsigned long long>(slow),
+                          static_cast<unsigned long long>(unasked));
+                }
+                if (n == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            if (noteHeld) edio.fifoWR(off, sizeof off);   // never leave the last note held
+            if (!pending.empty())
+                sayAt(ms(now()), "still waiting at the end: %zu probe(s), the oldest from %.1f ms", pending.size(),
+                      ms(pending.front()));
+            std::sort(latencies.begin(), latencies.end());
+            const auto pct = [&](double p) {
+                return latencies.empty() ? -1.0 : latencies[std::min(latencies.size() - 1,
+                                                                      static_cast<std::size_t>(p * latencies.size()))];
+            };
+            std::printf("menuwatch: %s %d s: probes %llu, answered %llu (slow %llu), never answered %llu, unasked 'k' "
+                        "%llu, acks %llu, other bytes %llu\n",
+                        mode.c_str(), seconds, static_cast<unsigned long long>(probes),
+                        static_cast<unsigned long long>(answers), static_cast<unsigned long long>(slow),
+                        static_cast<unsigned long long>(lost), static_cast<unsigned long long>(unasked),
+                        static_cast<unsigned long long>(acks), static_cast<unsigned long long>(otherBytes));
+            std::printf("menuwatch: answer latency p50 %.1f / p99 %.1f / max %.1f ms; longest silence with probes "
+                        "waiting %.1f ms (the guard leaves after 3 misses, about 600 ms); leaves %llu, re-entries %llu; "
+                        "stream bytes %llu, worst into a left menu %llu\n",
+                        pct(0.5), pct(0.99), latencies.empty() ? -1.0 : latencies.back(), longestSilentMs,
+                        static_cast<unsigned long long>(leaves), static_cast<unsigned long long>(enters),
+                        static_cast<unsigned long long>(streamBytes), static_cast<unsigned long long>(worstLeakBytes));
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "menuwatch failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // A console RESET while a framed stream is between notes (spec/07's residual window): a sparse stream, one 30 ms A4
+    // every <gap-ms>, through N8Link with the guard on, as the cart node streams it. A press in a gap goes unseen until
+    // the next note's frame meets no ack, so that frame, and whatever the guard writes after it (the stall's probes, a
+    // sync, a raw stream once the link is given up), reaches the booting OS. The reset lies between the last moment the
+    // window drained and the first write after it; every write from there is listed with its offset from both ends, and
+    // the stream runs on for <after-s> seconds as a song would. Then look at the screen: a clean menu or an ERROR.
+    // [loss-permille] drops framed bytes on the way out (setTestLossPermille), so stalls answered by an ack open the
+    // trusted second, the other case spec/07 names.
+    if (op == "pausereset") {
+        const int         gapMs   = static_cast<int>(std::strtol(argv[2], nullptr, 0));
+        const int         afterS  = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 6;
+        const int         loss    = argc > 4 ? static_cast<int>(std::strtol(argv[4], nullptr, 0)) : 0;
+        const std::string pport   = argc > 5 ? argv[5] : findN8Port();
+        if (gapMs < 60 || afterS <= 0 || pport.empty()) {
+            std::fprintf(stderr, "usage: %s pausereset <gap-ms (>=60)> [after-s] [loss-permille] [port]\n", argv[0]);
+            return 2;
+        }
+        using Clock = std::chrono::steady_clock;
+        const auto steadyNs = [] {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count();
+        };
+        struct Write {
+            std::int64_t              ns;
+            std::vector<std::uint8_t> bytes;
+            bool                      resend;
+        };
+        std::mutex         wm;
+        std::vector<Write> writes;
+        N8Host host(
+            [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); },
+            [] { return std::vector<N8PortDto>{}; }, "/tmp");
+        N8Link& link = host.link();
+        link.setWriteLog([&](const std::uint8_t* d, std::size_t n, std::int64_t ns, bool resend) {
+            std::lock_guard<std::mutex> l(wm);
+            writes.push_back({ns, {d, d + n}, resend});
+        });
+        host.setPort(pport);
+        host.connect(true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));   // the connect seed and the probe
+        if (!link.isConnected() || !link.reliable() || link.atMenu()) {
+            std::fprintf(stderr, "pausereset: needs a game with the reliable link (connected=%d reliable=%d menu=%d)\n",
+                         link.isConnected(), link.reliable(), link.atMenu());
+            return 1;
+        }
+        link.setTestLossPermille(loss);
+        const std::int64_t t0 = steadyNs();
+        const auto ms = [&](std::int64_t ns) { return static_cast<double>(ns - t0) / 1e6; };
+        std::printf("pausereset: a note every %d ms, framed%s; press RESET\n", gapMs,
+                    loss ? " with test loss" : "");
+        std::fflush(stdout);
+        const std::uint8_t on[]  = {0x90, 69, 100};
+        const std::uint8_t off[] = {0x80, 69, 0};
+        std::uint64_t prevOutstanding = 0;
+        std::int64_t nextOn = t0, nextOff = -1, lastDrained = t0, outstandingSince = -1, stallNs = -1, endNs = -1;
+        bool         wasMenu = false, wasReliable = true, wasUp = true;
+        const auto   say = [&](std::int64_t t, const char* what) {
+            std::printf("%10.1f ms  %s (connected=%d atMenu=%d reliable=%d outstanding=%llu resends=%llu)\n", ms(t), what,
+                        link.isConnected(), link.atMenu(), link.reliable(),
+                        static_cast<unsigned long long>(link.linkOutstanding()),
+                        static_cast<unsigned long long>(link.linkResends()));
+            std::fflush(stdout);
+        };
+        while (endNs < 0 || steadyNs() < endNs) {
+            const std::int64_t t = steadyNs();
+            if (t - t0 > 1'800'000'000'000LL) {   // half an hour without a press
+                std::printf("pausereset: no reset seen\n");
+                return 1;
+            }
+            if (t >= nextOn) {
+                link.push(0, on, sizeof on, 48000.0);
+                nextOff = t + 30'000'000;
+                nextOn  = t + std::int64_t(gapMs) * 1'000'000;
+            }
+            if (nextOff >= 0 && t >= nextOff) {
+                link.push(0, off, sizeof off, 48000.0);
+                nextOff = -1;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            const std::int64_t now = steadyNs();
+            if (stallNs < 0) {
+                const std::uint64_t outstanding = link.linkOutstanding();
+                if (outstanding == 0) {
+                    if (prevOutstanding > 0) lastDrained = now;   // an ack emptied the window: the cart was up then
+                    outstandingSince = -1;
+                } else if (outstandingSince < 0) {
+                    outstandingSince = now;
+                } else if (now - outstandingSince >= 100'000'000) {
+                    stallNs = outstandingSince;
+                    endNs   = now + std::int64_t(afterS) * 1'000'000'000;
+                    say(now, "acks stopped: the reset");
+                }
+                prevOutstanding = outstanding;
+            }
+            if (link.atMenu() != wasMenu) {
+                wasMenu = link.atMenu();
+                say(now, wasMenu ? "GUARD: at the menu" : "GUARD: left the menu");
+            }
+            if (link.reliable() != wasReliable) {
+                wasReliable = link.reliable();
+                say(now, wasReliable ? "link: framed" : "link: RAW (the window given up, or the link re-probed)");
+            }
+            if (link.isConnected() != wasUp) {
+                wasUp = link.isConnected();
+                say(now, wasUp ? "link up" : "link down");
+            }
+        }
+        link.push(0, off, sizeof off, 48000.0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        host.connect(false);
+
+        // The reset lies in [lastDrained, first write after it]: every write from lastDrained on, with what it is.
+        std::lock_guard<std::mutex> l(wm);
+        std::int64_t firstAfter = -1;
+        for (const Write& w : writes)
+            if (w.ns >= lastDrained) {
+                firstAfter = w.ns;
+                break;
+            }
+        std::printf("pausereset: the window last drained at %.1f ms; the first write after it at %.1f ms (%.1f ms later): "
+                    "the reset is in between, so that write reached the cart at most that long after it\n",
+                    ms(lastDrained), ms(firstAfter), firstAfter >= 0 ? (firstAfter - lastDrained) / 1e6 : -1.0);
+        std::printf("   at (ms)   after drain  after 1st   bytes\n");
+        std::size_t total = 0, frames = 0, probes = 0, syncs = 0, raw = 0;
+        for (const Write& w : writes) {
+            if (w.ns < lastDrained) continue;
+            const char* kind = "raw";
+            if (w.bytes.size() == 4 && std::equal(w.bytes.begin(), w.bytes.end(), std::begin(rp::N8MenuGuard::kProbe)))
+                kind = "probe", ++probes;
+            else if (!w.bytes.empty() && w.bytes[0] == rp::N8ReliableSender::SYNC)
+                kind = "sync", ++syncs;
+            else if (!w.bytes.empty() && w.bytes[0] == rp::N8ReliableSender::FRAME)
+                kind = w.resend ? "re-send" : "frame", ++frames;
+            else
+                ++raw;
+            total += w.bytes.size();
+            std::printf("%10.1f %12.1f %10.1f   %-7s", ms(w.ns), (w.ns - lastDrained) / 1e6, (w.ns - firstAfter) / 1e6,
+                        kind);
+            for (auto b : w.bytes) std::printf(" %02X", b);
+            std::printf("\n");
+        }
+        std::printf("pausereset: %zu byte(s) written from the drain on: %zu frame write(s), %zu probe(s), %zu sync(s), "
+                    "%zu raw write(s); guard at the menu: %s\n",
+                    total, frames, probes, syncs, raw, wasMenu ? "yes" : "NO");
         return 0;
     }
 
