@@ -20,7 +20,7 @@
 //   retroplug-n8-hwtest write    <local-src> <sd-path> [port]  # CMD_F_FWR: write a local file to the SD card
 //   retroplug-n8-hwtest fiford   <count> [timeout-ms] [port]   # read the cart's USB back-channel (CMD_USB_WR)
 //   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
-//   retroplug-n8-hwtest menuguard <seconds> [port] [raw] # the menu guard, streaming while a person presses RESET
+//   retroplug-n8-hwtest menuguard <seconds> [port] [raw] [follow] # the menu guard, streaming while a person presses RESET
 //   retroplug-n8-hwtest menuprobe <test|sysex|note> [port] # what the N8 OS menu does with bytes it did not ask for
 //   retroplug-n8-hwtest bootwindow <delay-ms> [stream-ms] [port]  # raw notes from <delay-ms> after a RESET
 //   retroplug-n8-hwtest menuwatch <seconds> [quiet|probe|stream] [port] # the menu probed as the guard does: answers, misses
@@ -478,8 +478,11 @@ int main(int argc, char** argv) {
     // with `stream`, what a raw stream writes into a menu the guard left. spec/07's back-channel and residual-window
     // checks: run it at the menu while a person browses, opens folders and loads ROMs from the cart's own browser.
     //   quiet:  no probe at all, nothing written; every byte the back-channel says is logged (an idle menu: none)
-    //   probe:  the guard's probes, every 250 ms whatever it decides, nothing else written (the default)
+    //   probe:  the guard's own writes and nothing else: its probes before it enters the menu, and at the menu none,
+    //           only the config block reads it asks for (the default)
     //   stream: the guard as a raw link runs it, an A4 every 60 ms (no 0x2A in it) while it says the cart is no menu
+    // At the menu the guard reads the FPGA config block (a turn's readConfig) and leaves on the start pattern; the
+    // block is logged whenever it changes, so a run shows a game's start clear it.
     if (op == "menuwatch") {
         const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
         const std::string mode    = argc > 3 ? argv[3] : "probe";
@@ -517,6 +520,9 @@ int main(int argc, char** argv) {
             std::uint64_t probes = 0, answers = 0, slow = 0, lost = 0, acks = 0, unasked = 0, otherBytes = 0, leaves = 0, enters = 0,
                           streamBytes = 0, bytesAtLeave = 0, probesAtLeave = 0, worstLeakBytes = 0;
             std::vector<double> latencies;
+            std::uint8_t  block[rp::N8MenuGuard::kConfigBytes] = {}, lastBlock[rp::N8MenuGuard::kConfigBytes] = {};
+            bool          haveBlock  = false;
+            std::int64_t  lastFailNs = -2'000'000'000;
             double        longestKGapMs = 0;   // the longest between two 'k's
             sayAt(ms(now()), "menuwatch: %s, %d s on %s", mode.c_str(), seconds, wport.c_str());
             std::int64_t nextTickNs = 5'000'000'000;
@@ -592,13 +598,33 @@ int main(int argc, char** argv) {
                     leaveNs       = t;
                     bytesAtLeave  = streamBytes;
                     probesAtLeave = probes;
-                    sayAt(ms(t), "LEFT THE MENU: three probes unanswered (a game, or a busy menu: a false leave if the "
-                                 "menu is still up)");
+                    sayAt(ms(t), "LEFT THE MENU: on the config block (the start pattern: a game starting, or a "
+                                 "false leave if the menu is still up)");
                     if (stream) {   // N8Link probes the link again: the input flushed, then the sync
                         sp.flushInput();
                         const std::uint8_t sync[2] = {rp::N8ReliableSender::SYNC, 0};
                         edio.fifoWR(sync, sizeof sync);
                         streamBytes += sizeof sync;
+                    }
+                }
+                if (turn.readConfig) {
+                    try {
+                        edio.memRD(0x1800020, block, sizeof block);
+                        if (!haveBlock || std::memcmp(block, lastBlock, sizeof block) != 0) {
+                            char hex[3 * rp::N8MenuGuard::kConfigBytes + 1] = {};
+                            for (std::size_t i = 0; i < sizeof block; ++i)
+                                std::snprintf(hex + 3 * i, 4, " %02X", block[i]);
+                            sayAt(ms(t), "config block:%s", hex);
+                            std::memcpy(lastBlock, block, sizeof block);
+                            haveBlock = true;
+                        }
+                        guard.config(t, block);
+                    } catch (const std::exception& e) {
+                        if (t - lastFailNs >= 1'000'000'000) {
+                            lastFailNs = t;
+                            sayAt(ms(t), "config read failed: %s", e.what());
+                        }
+                        sp.flushInput();
                     }
                 }
                 if (turn.writeProbe) {
@@ -855,10 +881,21 @@ int main(int argc, char** argv) {
 
     if (op == "menuguard") {
         const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
-        const bool        raw     = std::string(argv[argc - 1]) == "raw";
-        const std::string gport   = argc > 3 && std::string(argv[3]) != "raw" ? argv[3] : findN8Port();
+        // [raw]: hold the link raw; [follow]: stream on through the menu for the whole run, logging every change of
+        // where the cart runs and how it is streamed, rather than stopping 5 s after the guard trips (games started
+        // from the cart's own browser, the config watch's hardware check).
+        bool        raw = false, follow = false;
+        std::string gport;
+        for (int i = 3; i < argc; ++i) {
+            const std::string a = argv[i];
+            if (a == "raw") raw = true;
+            else if (a == "follow") follow = true;
+            else gport = a;
+        }
+        if (gport.empty()) gport = findN8Port();
         if (seconds <= 0 || gport.empty()) {
-            std::fprintf(stderr, "usage: %s menuguard <seconds> [port] [raw] (no Everdrive N8 found?)\n", argv[0]);
+            std::fprintf(stderr, "usage: %s menuguard <seconds> [port] [raw] [follow] (no Everdrive N8 found?)\n",
+                         argv[0]);
             return 2;
         }
         N8Host host(
@@ -891,11 +928,13 @@ int main(int argc, char** argv) {
         const std::uint8_t on[]  = {0x90, 69, 100};
         const std::uint8_t off[] = {0x80, 69, 0};
         bool          wasMenu = link.atMenu(), wasUp = link.isConnected(), stalled = false;
+        bool          wasReliable = link.reliable();
         double        stallMs = -1, tripMs = -1, lastWriteMs = 0, outstandingSince = -1;
         std::uint64_t lastBytes = link.bytesForwarded(), bytesAtTrip = 0;
         int           step = 0;
-        // Up to <seconds>, or 5 s past a trip: enough to see that nothing more is written once the guard has the menu.
-        while (ms() < seconds * 1000.0 && (tripMs < 0 || ms() < tripMs + 5000.0)) {
+        // Up to <seconds>, or (without follow) 5 s past a trip: enough to see that nothing more is written once the
+        // guard has the menu.
+        while (ms() < seconds * 1000.0 && (follow || tripMs < 0 || ms() < tripMs + 5000.0)) {
             if (step % 6 == 0) link.push(0, on, sizeof on, 48000.0);    // a 30 ms A4 every 60 ms
             if (step % 6 == 3) link.push(0, off, sizeof off, 48000.0);
             ++step;
@@ -924,6 +963,10 @@ int main(int argc, char** argv) {
                 wasUp = link.isConnected();
                 say(wasUp ? "link up" : "link down");
             }
+            if (link.reliable() != wasReliable) {
+                wasReliable = link.reliable();
+                say(wasReliable ? "link: framed" : "link: raw");
+            }
             if (step % 500 == 0) say("tick");
         }
         link.push(0, off, sizeof off, 48000.0);   // never leave the last note held behind the disconnect
@@ -937,7 +980,7 @@ int main(int argc, char** argv) {
                         tripMs, stallMs >= 0 ? tripMs - stallMs : -1.0, lastWriteMs,
                         static_cast<unsigned long long>(after));
         link.disconnect();
-        return tripMs >= 0 && after == 0 ? 0 : 1;
+        return follow ? 0 : (tripMs >= 0 && after == 0 ? 0 : 1);
     }
 
     // What the N8 OS menu does with bytes it did not ask for (docs/n8-menu-guard-reset-design.md section 1): 'test'
