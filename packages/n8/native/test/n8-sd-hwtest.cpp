@@ -475,9 +475,9 @@ int main(int argc, char** argv) {
 
     // The menu guard's question put to a cart for a while, on a bare Edio with the guard's own decisions
     // (rp::N8MenuGuard, as a raw link runs it): what the menu answers, how fast, what it says that nobody asked for,
-    // and, with `stream`, what a raw stream writes into a menu the guard left. spec/07's back-channel and
-    // residual-window checks: run it at the menu while a person browses, opens folders and loads ROMs from the
-    // cart's own browser.
+    // and, with `stream`, what a raw stream writes into a menu the guard left. Run at the menu while a person
+    // browses, opens folders and starts games from the cart's own browser (docs/n8-menu-guard-config-watch-design.md
+    // section 1 has what it showed).
     //   quiet:  no probe at all, nothing written; every byte the back-channel says is logged (an idle menu: none)
     //   probe:  the guard's own writes and nothing else: its probes before it enters the menu, and at the menu none,
     //           only the config block reads it asks for (the default)
