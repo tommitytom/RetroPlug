@@ -1506,7 +1506,8 @@ TEST_CASE("a menu episode does not leave a release waiting behind the chunks it 
             rig.dev.menu = true;
         }
         REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
-        rig.dev.startFromBrowser(69, 300);  // the block is cleared while it loads: seen however the reference read lands
+        // The block is cleared while the game loads: seen however the guard's reference read lands.
+        rig.dev.startFromBrowser(69, 300);
         // The guard leaves the menu on the config block alone: the new block, settled for half a second.
         REQUIRE(waitUntil([&] { return rig.cart.connected(); }, 5000));
         rig.host.link().setLookaheadMs(0);
@@ -1639,8 +1640,8 @@ TEST_CASE("leaving the menu re-probes the link, so a game the user starts by han
     rig.connect();           // at its menu: the probe finds nothing, and the link stays raw
     REQUIRE(waitUntil([&] { return !rig.cart.connected(); }));
     rig.dev.startFromBrowser(69, 300);  // the user starts a game from the cart's own browser
-    // The guard sees the config block cleared, then settle on the game's, and leaving the menu runs the link probe again: the frames
-    // start.
+    // The guard sees the config block cleared, then settle on the game's, and leaving the menu runs the link probe
+    // again: the frames start.
     REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }, 5000));
     rig.push({0x90, 0x3C, 0x7F});
     REQUIRE(waitUntil([&] {
@@ -1658,7 +1659,7 @@ TEST_CASE("a game started from the cart's browser while the link waits at the me
     Rig rig;
     const bool withLink = GENERATE(true, false);
     rig.dev.linkRom = withLink;  // BlipToaster, or a game without the link
-    rig.dev.cfg[0]  = 69;        // the game that runs: the reference is its non-zero block, the start is of the same game
+    rig.dev.cfg[0]  = 69;        // the reference is this game's non-zero block; the start restarts the same game
     rig.connectGame();
     rig.dev.resetToMenu();
     rig.push({0x90, 0x3C, 0x7F});  // a stream for the reset to meet
