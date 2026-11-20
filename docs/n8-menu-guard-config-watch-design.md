@@ -43,9 +43,11 @@ the worktree's `.superpowers/menucheck/`).
   handed back: the guard asks again on its cadence, and nothing else changes.
 - **The first block after entering the menu is the reference.** The entry is the `'k'` (or `report(true)`, a
   submission's probe), unchanged.
-- **Leaving:** once a block differs from the reference (an all-zero block always does, which is what makes the same
-  game's restart visible), the guard waits for the block to read the same non-zero value for `kSettleNs` (500 ms), and
-  only then answers `leftMenu`. An all-zero block restarts the wait. The wait keeps the driver's next write, the link
+- **Leaving:** the guard waits for the block to read the same non-zero value for `kSettleNs` (500 ms), an all-zero
+  block restarting the wait, and answers `leftMenu` once that settled block differs from the reference, or once an
+  all-zero block was read since entering (what makes the same game's restart visible). One garbled read (a stray byte
+  in the reply) followed by the unchanged block is therefore no start. The first read waits out the answer window
+  (`kAnswerNs`) after the entering turn, as a late `'k'` from an earlier probe could still land in its reply. The wait keeps the driver's next write, the link
   probe's sync that `leftMenu` sets off, clear of the OS's last operations before it jumps to the game.
 - **No write at the menu, ever**: `writeProbe` is never set there, and `kLeaveMisses` and the menu's miss count go. A
   start the 20 ms cadence misses (a clear shorter than a poll, never seen) leaves the guard parked at the menu: pushes
