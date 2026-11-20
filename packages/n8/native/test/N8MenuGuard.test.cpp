@@ -282,7 +282,8 @@ TEST_CASE("menu guard: the same game started again, through zeros to the identic
     CHECK(at - settledFrom >= N8MenuGuard::kSettleNs);
 }
 
-TEST_CASE("menu guard: byte 3, the master volume the host writes, says nothing about a game start", "[n8][menu-guard]") {
+TEST_CASE("menu guard: byte 3, the master volume the host writes, says nothing about a game start",
+          "[n8][menu-guard]") {
     // The cart's expansion volume lives at byte 3 of the block, and the host writes it live, at the menu too: a block
     // that differs from the reference only there never leaves, however long it holds.
     {
