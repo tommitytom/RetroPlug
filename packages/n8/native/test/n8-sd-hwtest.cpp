@@ -25,6 +25,7 @@
 //   retroplug-n8-hwtest bootwindow <delay-ms> [stream-ms] [port]  # raw notes from <delay-ms> after a RESET
 //   retroplug-n8-hwtest menuwatch <seconds> [quiet|probe|stream] [port] # the menu probed as the guard does: answers, misses
 //   retroplug-n8-hwtest pausereset <gap-ms> [after-s] [loss-permille] [port] # a RESET between a framed stream's notes
+//   retroplug-n8-hwtest cfgwatch <seconds> [every-ms] [port]   # the FPGA config block, each change timed (no FIFO write)
 //   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
 //   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw] [--midi <port>]  # latency / jitter / load, real console
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
@@ -181,7 +182,7 @@ int main(int argc, char** argv) {
                          "usage: %s dump <rom-name> <dest.srm> [port]\n"
                          "       %s load <rom.nes> [port]\n"
                          "       %s restore <rom-name> <save.srm> [port]\n"
-                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|menuguard|menuwatch|pausereset|linkdbg|"
+                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|menuguard|menuwatch|pausereset|cfgwatch|linkdbg|"
                          "timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
                          argv[0], argv[0], argv[0], argv[0]);
             return 2;
@@ -504,17 +505,19 @@ int main(int argc, char** argv) {
             const std::uint8_t on[]  = {0x90, 69, 100};
             const std::uint8_t off[] = {0x80, 69, 0};
 
-            // Each probe waits in `pending` for its 'k': the menu reads its '*t's in order and answers each, so a 'k'
-            // is the oldest waiting probe's, however late (a busy menu's answer to one probe must not be credited to
-            // the next). A 'k' with none waiting is one nobody asked for. A probe still waiting after 2 s is taken as
-            // never answered.
+            // Each probe waits in `pending` for its 'k'. A 'k' is the newest probe's while that one is unanswered (a
+            // menu that swallowed an earlier probe answers the next at once, and must not be read as answering late),
+            // else the oldest waiting one's (a busy menu answering its backlog). A 'k' with none waiting is one nobody
+            // asked for; a probe still waiting after 2 s was swallowed. The longest gap between two 'k's (250 ms on a
+            // healthy menu, which answers each probe) is the menu's longest silence, whatever the matching.
             std::deque<std::int64_t> pending;
-            std::int64_t  nextNoteNs = 150'000'000, offNs = 0, leaveNs = 0, quietSinceNs = 0;
+            std::int64_t  nextNoteNs = 150'000'000, offNs = 0, leaveNs = 0, lastKNs = 0, worstKGapAtNs = 0;
             bool          noteHeld = false;
+            std::int64_t  lastProbeNs = 0;
             std::uint64_t probes = 0, answers = 0, slow = 0, lost = 0, acks = 0, unasked = 0, otherBytes = 0, leaves = 0, enters = 0,
                           streamBytes = 0, bytesAtLeave = 0, probesAtLeave = 0, worstLeakBytes = 0;
             std::vector<double> latencies;
-            double        longestSilentMs = 0;   // the longest the menu went answering nothing while probes waited
+            double        longestKGapMs = 0;   // the longest between two 'k's
             sayAt(ms(now()), "menuwatch: %s, %d s on %s", mode.c_str(), seconds, wport.c_str());
             std::int64_t nextTickNs = 5'000'000'000;
             while (now() < std::int64_t(seconds) * 1'000'000'000) {
@@ -523,7 +526,7 @@ int main(int argc, char** argv) {
                 const std::int64_t t = now();
                 while (!pending.empty() && t - pending.front() >= 2'000'000'000) {
                     ++lost;
-                    sayAt(ms(t), "LOST: the probe at %.1f ms never answered", ms(pending.front()));
+                    sayAt(ms(t), "SWALLOWED: the probe at %.1f ms was never answered", ms(pending.front()));
                     pending.pop_front();
                 }
                 for (std::size_t i = 0; i < n; ++i) {
@@ -542,12 +545,22 @@ int main(int argc, char** argv) {
                         sayAt(ms(t), "UNASKED 'k': no probe waiting");
                         continue;
                     }
-                    const double lat = ms(t - pending.front());
-                    pending.pop_front();
+                    std::int64_t asked;
+                    if (pending.back() == lastProbeNs) {
+                        asked = pending.back();
+                        pending.pop_back();
+                    } else {
+                        asked = pending.front();
+                        pending.pop_front();
+                    }
+                    const double lat = ms(t - asked);
                     ++answers;
                     latencies.push_back(lat);
-                    if (quietSinceNs) longestSilentMs = std::max(longestSilentMs, ms(t - quietSinceNs));
-                    quietSinceNs = pending.empty() ? 0 : t;
+                    if (lastKNs && ms(t - lastKNs) > longestKGapMs) {
+                        longestKGapMs = ms(t - lastKNs);
+                        worstKGapAtNs = lastKNs;
+                    }
+                    lastKNs = t;
                     if (lat >= ms(rp::N8MenuGuard::kAnswerNs)) {
                         ++slow;
                         sayAt(ms(t), "slow 'k': %.1f ms after its probe (%zu more waiting; the guard counts a miss past "
@@ -590,8 +603,8 @@ int main(int argc, char** argv) {
                 }
                 if (turn.writeProbe) {
                     edio.fifoWR(rp::N8MenuGuard::kProbe, sizeof rp::N8MenuGuard::kProbe);
-                    if (pending.empty()) quietSinceNs = t;
                     pending.push_back(t);
+                    lastProbeNs = t;
                     ++probes;
                 } else if (stream && !turn.hold && noteHeld && t >= offNs) {
                     edio.fifoWR(off, sizeof off);
@@ -622,16 +635,17 @@ int main(int argc, char** argv) {
                 return latencies.empty() ? -1.0 : latencies[std::min(latencies.size() - 1,
                                                                       static_cast<std::size_t>(p * latencies.size()))];
             };
-            std::printf("menuwatch: %s %d s: probes %llu, answered %llu (slow %llu), never answered %llu, unasked 'k' "
+            std::printf("menuwatch: %s %d s: probes %llu, answered %llu (slow %llu), swallowed %llu, unasked 'k' "
                         "%llu, acks %llu, other bytes %llu\n",
                         mode.c_str(), seconds, static_cast<unsigned long long>(probes),
                         static_cast<unsigned long long>(answers), static_cast<unsigned long long>(slow),
                         static_cast<unsigned long long>(lost), static_cast<unsigned long long>(unasked),
                         static_cast<unsigned long long>(acks), static_cast<unsigned long long>(otherBytes));
-            std::printf("menuwatch: answer latency p50 %.1f / p99 %.1f / max %.1f ms; longest silence with probes "
-                        "waiting %.1f ms (the guard leaves after 3 misses, about 600 ms); leaves %llu, re-entries %llu; "
+            std::printf("menuwatch: answer latency p50 %.1f / p99 %.1f / max %.1f ms; longest gap between two 'k's "
+                        "%.1f ms, from %.1f ms (250 healthy; the guard leaves after 3 misses, about 600 ms); leaves %llu, "
+                        "re-entries %llu; "
                         "stream bytes %llu, worst into a left menu %llu\n",
-                        pct(0.5), pct(0.99), latencies.empty() ? -1.0 : latencies.back(), longestSilentMs,
+                        pct(0.5), pct(0.99), latencies.empty() ? -1.0 : latencies.back(), longestKGapMs, ms(worstKGapAtNs),
                         static_cast<unsigned long long>(leaves), static_cast<unsigned long long>(enters),
                         static_cast<unsigned long long>(streamBytes), static_cast<unsigned long long>(worstLeakBytes));
             return 0;
@@ -785,6 +799,55 @@ int main(int argc, char** argv) {
                     "%zu raw write(s); guard at the menu: %s\n",
                     total, frames, probes, syncs, raw, wasMenu ? "yes" : "NO");
         return 0;
+    }
+
+    // The FPGA config block (0x1800020, 16 bytes) read every <ms> for <seconds>, each change printed with its time: what
+    // a cart shows over USB, with nothing written to its FIFO, as the menu starts a game (map_idx and the rest). A read of
+    // the system region is the MCU's, not a DMA, and goes nowhere near the console's FIFO.
+    if (op == "cfgwatch") {
+        const int         seconds = static_cast<int>(std::strtol(argv[2], nullptr, 0));
+        const int         everyMs = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 50;
+        const std::string cport   = argc > 4 ? argv[4] : findN8Port();
+        if (seconds <= 0 || everyMs <= 0 || cport.empty()) {
+            std::fprintf(stderr, "usage: %s cfgwatch <seconds> [every-ms] [port]\n", argv[0]);
+            return 2;
+        }
+        try {
+            SerialTransport sp(cport);
+            Edio            edio(sp);
+            edio.connect();
+            using Clock = std::chrono::steady_clock;
+            const auto t0 = Clock::now();
+            const auto ms = [&] { return std::chrono::duration<double, std::milli>(Clock::now() - t0).count(); };
+            std::uint8_t last[16] = {}, cur[16];
+            bool         first = true;
+            unsigned     reads = 0, fails = 0;
+            while (ms() < seconds * 1000.0) {
+                try {
+                    edio.memRD(0x1800020, cur, sizeof cur);
+                    ++reads;
+                    if (first || std::memcmp(cur, last, sizeof cur) != 0) {
+                        std::printf("%10.1f ms ", ms());
+                        for (int i = 0; i < 16; ++i) std::printf(" %02X%s", cur[i], cur[i] != last[i] && !first ? "*" : "");
+                        std::printf("\n");
+                        std::fflush(stdout);
+                        std::memcpy(last, cur, sizeof cur);
+                        first = false;
+                    }
+                } catch (const std::exception& e) {
+                    ++fails;
+                    std::printf("%10.1f ms  read failed: %s\n", ms(), e.what());
+                    std::fflush(stdout);
+                    sp.flushInput();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(everyMs));
+            }
+            std::printf("cfgwatch: %u reads, %u failed\n", reads, fails);
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "cfgwatch failed: %s\n", e.what());
+            return 1;
+        }
     }
 
     if (op == "menuguard") {
