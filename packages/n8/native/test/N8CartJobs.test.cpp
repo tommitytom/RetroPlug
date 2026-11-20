@@ -9,6 +9,7 @@
 // Engine too. The jobs' records and the report interface they finish through are FakeJobs.hpp's, a host of the pack's
 // own rather than the engine's.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -1480,6 +1481,8 @@ TEST_CASE("a menu episode does not leave a release waiting behind the chunks it 
         }
         REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
         REQUIRE(waitUntil([&] { return !rig.cart.connected(); }));
+        // The guard reads the menu's block as its reference after its answer window, before a start can differ from it.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
         // A game booted by hand from the cart's own browser, which is the state read back a game again.
         {
             std::lock_guard<std::mutex> l(rig.dev.mu);
@@ -1487,7 +1490,8 @@ TEST_CASE("a menu episode does not leave a release waiting behind the chunks it 
             rig.dev.cfg[0] = 69;
             rig.dev.cfg[2] = 0;
         }
-        REQUIRE(waitUntil([&] { return rig.cart.connected(); }));
+        // The guard leaves the menu on the config block alone: the new block, settled for half a second.
+        REQUIRE(waitUntil([&] { return rig.cart.connected(); }, 5000));
         rig.host.link().setLookaheadMs(0);
         rig.push({0x90, 0x3E, 0x7F});  // one chunk written after the trip, so the ring is empty again
         REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3E 7F") == 1; }));
@@ -1508,13 +1512,15 @@ TEST_CASE("a menu episode does not leave a release waiting behind the chunks it 
             rig.dev.menu = true;
         }
         REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));  // the guard reads the menu's block first
         {
             std::lock_guard<std::mutex> l(rig.dev.mu);
             rig.dev.menu   = false;
             rig.dev.cfg[0] = 69;
             rig.dev.cfg[2] = 0;
         }
-        REQUIRE(waitUntil([&] { return rig.cart.connected(); }));
+        // The guard leaves the menu on the config block alone: the new block, settled for half a second.
+        REQUIRE(waitUntil([&] { return rig.cart.connected(); }, 5000));
         rig.host.link().setLookaheadMs(0);
         rig.push({0x90, 0x3C, 0x7F});  // the node taking over, on the key the old one held
         REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
@@ -1577,8 +1583,8 @@ TEST_CASE("a seed menu read that timed out leaves nothing for the connect-time p
 
 TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser there", "[n8][menu-guard]") {
     // The N8 menu reads the same FIFO a game reads MIDI from, so a data pair inside a message - 0x2A 0x73, say - is its
-    // '*s': start an app. The guard asks the menu where the cart runs ('*t' in a SysEx, which only the menu answers),
-    // and drops rather than streams while the answer says menu.
+    // '*s': start an app. At the menu the guard writes nothing, not even a probe, and drops rather than streams; it
+    // leaves on the config block alone, and enters it again when a probe on a stream says menu.
     Rig rig;
     rig.connect();  // at its menu: the fake's default
     // The connect-time link probe holds the serial thread for up to 100 ms, and a push waits in the ring behind it:
@@ -1596,8 +1602,10 @@ TEST_CASE("a cart at its menu is not streamed to: its FIFO is a command parser t
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
         rig.dev.menu = false;  // the user started a game from the cart's own browser
+        rig.dev.cfg[0] = 69;   // and the guard, which writes nothing at the menu, leaves it on the config block only
+        rig.dev.cfg[2] = 0;
     }
-    REQUIRE(waitUntil([&] { return rig.cart.connected(); }));
+    REQUIRE(waitUntil([&] { return rig.cart.connected(); }, 5000));
     rig.push({0x90, 0x2A, 0x73});
     REQUIRE(waitUntil([&] { return rig.dev.countContaining("90 2A 73") == 1; }));
     // And once the guard has read the menu during a stream, what is pushed goes nowhere and is counted: the cart reads
@@ -1651,13 +1659,60 @@ TEST_CASE("leaving the menu re-probes the link, so a game the user starts by han
         rig.dev.cfg[0] = 69;
         rig.dev.cfg[2] = 0;
     }
-    // The guard's next probe goes unanswered, and leaving the menu runs the link probe again: the frames start.
-    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    // The guard sees the config block change and settle, and leaving the menu runs the link probe again: the frames
+    // start.
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }, 5000));
     rig.push({0x90, 0x3C, 0x7F});
     REQUIRE(waitUntil([&] {
         std::lock_guard<std::mutex> l(rig.dev.mu);
         return rig.dev.applied.size() == 1;
     }));
+}
+
+TEST_CASE("a game started from the cart's browser while the link waits at the menu starts clean, and is streamed",
+          "[n8][menu-guard]") {
+    // The N8 OS takes a host byte that arrives while it starts a game for its MCU's status and stops at ERROR:40 (2 of
+    // 2 on the lab's cart with the guard probing the menu). At the menu the link writes nothing and leaves on the
+    // config block: cleared by the start, then the game's.
+    Rig rig;
+    const bool withLink = GENERATE(true, false);
+    rig.dev.linkRom = withLink;  // BlipToaster, or a game without the link
+    rig.connectGame();
+    rig.dev.resetToMenu();
+    rig.push({0x90, 0x3C, 0x7F});  // a stream for the reset to meet
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));  // the menu idles under the guard
+    const std::size_t writes = rig.dev.count("fifo:");
+    rig.dev.startFromBrowser(69, 400);
+    std::this_thread::sleep_for(std::chrono::milliseconds(450));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        CHECK_FALSE(rig.dev.error40);
+        CHECK_FALSE(rig.dev.menu);
+    }
+    CHECK(rig.dev.count("fifo:") == writes);  // nothing at all reached the FIFO while it started
+    // The settle is 500 ms of the same block, plus the read cadence.
+    REQUIRE(waitUntil([&] { return !rig.host.link().atMenu(); }, 5000));
+    if (withLink) {
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));  // the link probe that leaving set off
+    } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));  // the link probe's 100 ms, unanswered
+        REQUIRE_FALSE(rig.host.link().reliable());
+    }
+    std::size_t applied = 0;
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        applied = rig.dev.applied.size();
+    }
+    rig.push({0x90, 0x3E, 0x7F});
+    if (withLink) {
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == applied + 1;
+        }));
+    } else {
+        REQUIRE(waitUntil([&] { return rig.dev.countContaining("90 3E 7F") >= 1; }));  // raw, its status written
+    }
 }
 
 TEST_CASE("a job submitted under a stream into the menu is accepted, and the stream is dropped there",
@@ -2003,15 +2058,15 @@ TEST_CASE("a 'k' inside the reliable link's acks is not the menu's answer", "[n8
     }
 }
 
-TEST_CASE("a menu whose answer comes late is still the menu: one unanswered probe does not leave it",
+TEST_CASE("a menu is never left without a change in the config block, however late its answers",
           "[n8][menu-guard]") {
-    // The lab's menu answers '*t' in about 20 ms, well inside the probe's 100 ms, but a menu busy with a slow turn can
-    // miss that window now and then. Leaving the menu on one miss would stream into it until the next probe tripped the
-    // guard again: it takes three misses in a row.
+    // At the menu the guard writes nothing: a byte arriving while the OS works is taken for its MCU status (ERROR:40).
+    // However late or absent its answers, the menu is left only on the config block.
     Rig rig;
     rig.connectGame();
     rig.dev.resetToMenu();
     REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
+    const std::size_t probesAtEntry = rig.dev.countExact("fifo:F0 2A 74 F7");
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
         rig.dev.menuAnswerDelayMs = 150;  // every answer from here on comes after the probe's window
@@ -2019,13 +2074,14 @@ TEST_CASE("a menu whose answer comes late is still the menu: one unanswered prob
     const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.countExact("fifo:F0 2A 74 F7"); };
     const std::size_t before = streamed();
     bool left = false;
-    for (int i = 0; i < 300 && !left; ++i) {  // 1.5 s, six probes, each answered late
+    for (int i = 0; i < 300 && !left; ++i) {  // 1.5 s at the menu
         left = !rig.host.link().atMenu();
         rig.push({0x90, 0x3C, 0x7F});
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     CHECK_FALSE(left);
     CHECK(streamed() == before);  // no link probe (F4 00) and no note went to the menu
+    CHECK(rig.dev.countExact("fifo:F0 2A 74 F7") == probesAtEntry);
 }
 
 TEST_CASE("a framed link whose cart answers neither the menu's probe nor the link is streamed raw again, not held",
@@ -2190,28 +2246,25 @@ TEST_CASE("a submission's menu probe on a raw stream has the game's running stat
 
 TEST_CASE("a menu busy past the probe's window answers its probes together: the job reads past the extra 'k' before "
           "its first command", "[n8][menu-guard]") {
-    // The menu is busy for 150 ms from the guard's probe and then answers every probe that came meanwhile, a few
-    // milliseconds apart: the 'k' the guard's probe is owed comes in the submission's window and the submission's own
-    // in the job's, so the job's own 'k' is still to come when its first command reads its reply. The job reads past
-    // both answers before it sends a command. The stretch is armed for each guard probe in turn until a job is taken
-    // (a submission whose probe the menu misses is refused as a game).
+    // The guard writes nothing at the menu, so the stretch begins with a submission's own probe: the menu is busy for
+    // 150 ms from it, so that submission misses its 100 ms window and is refused as a game, and the menu then answers
+    // every probe that came meanwhile, a few milliseconds apart. The 'k' the refused probe is owed comes in the retry's
+    // window and the retry's own in the job's, so the job's own 'k' is still to come when its first command reads its
+    // reply. The job reads past both answers before it sends a command.
     Rig rig;
     rig.connectGame();
     rig.dev.resetToMenu();
     REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }));
     const auto submitTaken = [&](const JobRequest& r, Job& job) {
+        {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            rig.dev.menuBusyNextMs = 150;  // armed once: the first submission's own probe begins the stretch
+        }
         for (int i = 0; i < 10; ++i) {
-            int starts = 0;
-            {
-                std::lock_guard<std::mutex> l(rig.dev.mu);
-                starts                    = rig.dev.menuBusyStarts;
-                rig.dev.menuBusyNextMs = 150;
-            }
-            REQUIRE(waitUntil([&] {
-                std::lock_guard<std::mutex> l(rig.dev.mu);
-                return rig.dev.menuBusyStarts > starts;  // the guard's next probe: the stretch began with it
-            }));
             if (rig.submit(r, job)) return true;
+            // The fake's read answers short at once for an answer that is not due in its window, where a port's waits
+            // the window out: the retry waits it here, so that it comes inside the stretch, as it would on a port.
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         return false;
     };

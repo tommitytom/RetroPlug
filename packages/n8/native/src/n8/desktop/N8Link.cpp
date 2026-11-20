@@ -373,6 +373,7 @@ bool N8Link::menuHold(std::int64_t now) {
         linkOutstanding_.store(0, std::memory_order_relaxed);
         probeLink();
     }
+    if (turn.readConfig) readMenuConfig(now);
     if (turn.writeProbe) writeMenuProbe(now);
     return turn.hold;
 }
@@ -399,6 +400,24 @@ void N8Link::noteMenuProbe() {
 }
 
 bool N8Link::menuProbeAwaited(std::int64_t now) const { return guard_.probeAwaited(now); }
+
+// The guard watches the FPGA config block at the menu, where a write of ours could be read by the working OS as its
+// MCU's status (ERROR:40): a read is the MCU's to answer and never reaches the FIFO. Only on a turn quiet for a read, so
+// a late 'k' cannot land inside the reply; a turn that is not leaves the read to the guard's next cadence. The block
+// goes to the guard only when the read succeeded in full: the guard remembers an all-zero block as a start in progress,
+// so a buffer a failed or short read left zero-filled would count as one and could make it leave a menu it is still at.
+void N8Link::readMenuConfig(std::int64_t now) {
+    if (!quietForRead(now)) return;
+    std::uint8_t         block[rp::N8MenuGuard::kConfigBytes] = {};
+    const rp::n8::Status s = edio_->memRD(rp::n8::Edio::ADDR_CFG, block, sizeof block);
+    if (s.ok()) {
+        guard_.config(now, block);
+        return;
+    }
+    if (now < configFailLogAtNs_) return;
+    configFailLogAtNs_ = now + 1'000'000'000;
+    std::fprintf(stderr, "[n8link] a config read at the menu failed: %s\n", failureText(s, *edio_).c_str());
+}
 
 void N8Link::reportMenuState(bool menu) {
     // A link with no MenuCheck has no guard - a fake device's, or a case that turned it off on purpose - so there is

@@ -233,6 +233,9 @@ private:
     bool        menuHold(std::int64_t now);
     void        writeMenuProbe(std::int64_t now);              // serial thread: kMenuProbe out (the guard booked it)
     bool        menuProbeAwaited(std::int64_t now) const;     // serial thread: a probe's answer may still be coming
+    // serial thread: the guard's config read at the menu (a readConfig turn), on a turn quiet for a read; a failed read
+    // is reported at most once a second and decides nothing
+    void        readMenuConfig(std::int64_t now);
     void        enterMenu();                                    // serial thread: discard what is held, reset the link
     void        leaveMenu();                                    // serial thread: probe the link again
     void        discardRing();                                   // serial thread: drop what the ring holds, counted
@@ -316,6 +319,8 @@ private:
     // The earliest moment OnControl runs again after a throw (see the loop in streamLoop), and a wake a caller asked
     // for since the last quiet turn: the first is serial-thread state, the second is stored from any thread.
     std::int64_t               controlRetryAtNs_ = 0;
+    // serial thread: when a failed config read at the menu may be reported again
+    std::int64_t               configFailLogAtNs_ = 0;
     // The menu guard (transport/N8MenuGuard.hpp): its probe's timing, the misses, the trusted second, the back-channel
     // scan and what it heard. Serial thread, reset at each connect and disconnect; atMenu_ above is its state for
     // other threads.
