@@ -46,9 +46,10 @@ the worktree's `.superpowers/menucheck/`).
 - **Leaving:** the guard waits for the block to read the same non-zero value for `kSettleNs` (500 ms), an all-zero
   block restarting the wait, and answers `leftMenu` once that settled block differs from the reference, or once an
   all-zero block was read since entering (what makes the same game's restart visible). One garbled read (a stray byte
-  in the reply) followed by the unchanged block is therefore no start. The first read waits out the answer window
-  (`kAnswerNs`) after the entering turn, as a late `'k'` from an earlier probe could still land in its reply. The wait keeps the driver's next write, the link
-  probe's sync that `leftMenu` sets off, clear of the OS's last operations before it jumps to the game.
+  in the reply) followed by the unchanged block is therefore no start. The settle wait keeps the driver's next write,
+  the link probe's sync that `leftMenu` sets off, clear of the OS's last operations before it jumps to the game. The
+  first read waits out the answer window (`kAnswerNs`) after the entering turn, as a late `'k'` from an earlier probe
+  could still land in its reply.
 - **No write at the menu, ever**: `writeProbe` is never set there, and `kLeaveMisses` and the menu's miss count go. A
   start the 20 ms cadence misses (a clear shorter than a poll, never seen) leaves the guard parked at the menu: pushes
   drop and count, Settings > N8 says "At the N8 menu (not streaming)", and a reconnect probes afresh. A miss costs a
