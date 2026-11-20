@@ -3,8 +3,8 @@
 // probed, and probed again each second; an ack's resume and its trusted second, which a drained window ends; two
 // silent stalls asking for the link to be probed again; the menu's 'k' entering the menu, where nothing is written and
 // the config block's start pattern leaves it; a 'k' inside an ack that is not the menu's; and the state a probe from
-// outside the guard reports. The drivers' own cases are N8CartJobs.test.cpp's [menu-guard] (N8Link over FakeN8) and the device-mode binary's
-// [box-link] (the Pico box's cart link).
+// outside the guard reports. The drivers' own cases are N8CartJobs.test.cpp's [menu-guard] (N8Link over FakeN8) and the
+// device-mode binary's [box-link] (the Pico box's cart link).
 //
 // Run via `pnpm test:n8` (retroplug-n8-test).
 

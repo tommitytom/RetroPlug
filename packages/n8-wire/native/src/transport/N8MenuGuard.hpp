@@ -51,10 +51,10 @@ class N8MenuGuard {
 public:
     static constexpr std::uint8_t kProbe[4] = {0xF0, 0x2A, 0x74, 0xF7};
     static constexpr std::uint8_t kAnswer   = 0x6B;
-    // How often it asks (raw); how long the menu's answer may take before the cart
-    // is taken for a game, which ignores the probe; and how long a framed hold waits for an answer or an ack before it
-    // asks again, which is also the trusted second. The lab's menu answers in about 20 ms (27 ms the worst of 8, at a
-    // power-on menu), so the answer window has room to spare.
+    // How often it asks (raw); how long the menu's answer may take before the cart is taken for a game, which ignores
+    // the probe; and how long a framed hold waits for an answer or an ack before it asks again, which is also the
+    // trusted second. The lab's menu answers in about 20 ms (27 ms the worst of 8, at a power-on menu), so the answer
+    // window has room to spare.
     static constexpr std::int64_t kProbeNs  = 250'000'000;
     static constexpr std::int64_t kAnswerNs = 100'000'000;
     static constexpr std::int64_t kHoldNs   = 1'000'000'000;
@@ -150,9 +150,9 @@ public:
     }
 
     // Where the cart runs, as a probe outside the guard's own said it (N8Host's for a submission), or as a turn decides
-    // it: true when that is a change, which the driver then acts on as a turn's enteredMenu or leftMenu. A probe of the
-    // guard's still awaited when the menu is entered is the menu's to answer: whatever becomes of its 'k', it is not
-    // "nothing answered", which at the menu would read as a game.
+    // it: true when that is a change, which the driver then acts on as a turn's enteredMenu or leftMenu. A change drops
+    // any probe still awaited, so none is awaited once at the menu (probeAwaited() is false there), and it starts the
+    // config watch afresh: the next block read is the new reference.
     bool report(bool menu) {
         if (menu == atMenu_) return false;
         atMenu_      = menu;
