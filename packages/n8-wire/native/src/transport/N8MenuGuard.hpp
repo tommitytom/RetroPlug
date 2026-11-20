@@ -17,12 +17,13 @@
 // The decisions alone: no I/O, no clock of its own and no allocation, so the desktop's N8Link (packages/n8) and the
 // Pico box's cart link (pico/n8-host's BoxCartLink) run the one guard over their own transports. A driver hands it the
 // back-channel as it reads it (hear(), after the reliable sender's onBackChannel on a framed link), then takes the
-// turn() its stream is at, with the time (int64 nanoseconds of any monotonic clock, never 0: 0 is "no probe awaited")
-// and its sender (null on a raw link), and does what the turn says, in this order: drop what it holds when the menu
-// answered (enteredMenu); probe the link again when the menu was left (leftMenu) or a stalled window given up
-// (reprobeLink, what the stream holds and the window dropped first); write kProbe when writeProbe says; and, unless
-// the turn holds, the sender's re-sends at the same `now` and the stream's new messages. Not thread-safe: one thread
-// drives it.
+// turn() its stream is at, with the time (int64 nanoseconds of any monotonic clock, never 0: 0 is "no probe awaited",
+// and "no settle" for the config watch's settle clock) and its sender (null on a raw link), and does what the turn
+// says, in this order: drop what it holds when the menu answered (enteredMenu); probe the link again when the menu
+// was left (leftMenu) or a stalled window given up (reprobeLink, what the stream holds and the window dropped first);
+// write kProbe when writeProbe says; and, unless the turn holds, the sender's re-sends at the same `now` and the
+// stream's new messages. Where the turn holds and readConfig says, it reads the config block and hands it to config().
+// Not thread-safe: one thread drives it.
 //
 // When it asks:
 // - raw, every 250 ms between two messages, as part of the stream: no read and no wait, the answer is heard on a later
@@ -41,9 +42,11 @@
 //   edio/everdrive.c, ed_check_status), so a byte arriving while it works - a game started from its browser above all
 //   - is read as a status and stops it at ERROR:40 (measured: docs/n8-menu-guard-config-watch-design.md). The turn
 //   asks for the FPGA config block instead (readConfig, every 20 ms), which the MCU answers without the FIFO: every
-//   start from the browser clears the block, then writes the game's, so a block changed from the one read on
-//   entering (all zeros always counts), then the same non-zero block for half a second, is a game, and the menu is
-//   left (the driver probes the link again). A start the reads miss leaves the guard at the menu until a reconnect.
+//   start from the browser clears the block, then writes the game's, so a non-zero block that reads the same for
+//   half a second is a game when it differs from the one read on entering or an all-zero block was read since (the
+//   same game started again ends on the very same bytes), and the menu is left (the driver probes the link again). A
+//   single garbled read followed by the unchanged block is neither, and never leaves. A start the reads miss leaves
+//   the guard at the menu until a reconnect.
 
 namespace rp {
 
@@ -135,9 +138,8 @@ public:
         }
         bool zero = true;
         for (std::size_t i = 0; i < kConfigBytes && zero; ++i) zero = block[i] == 0;
-        if (zero || std::memcmp(block, ref_, kConfigBytes) != 0) changed_ = true;
-        if (!changed_) return;
         if (zero) {  // the OS is between clearing the block and writing the game's
+            sawZero_      = true;
             settleFromNs_ = 0;
             return;
         }
@@ -146,7 +148,12 @@ public:
             settleFromNs_ = now;
             return;
         }
-        if (now - settleFromNs_ >= kSettleNs) leaveDue_ = true;
+        // Settled: a game when the block was cleared on the way (the same game started again ends on the very same
+        // bytes) or differs from the reference (a different game). One garbled read and the unchanged block again is
+        // neither, and never leaves.
+        if (now - settleFromNs_ >= kSettleNs && (sawZero_ || std::memcmp(block, ref_, kConfigBytes) != 0)) {
+            leaveDue_ = true;
+        }
     }
 
     // Where the cart runs, as a probe outside the guard's own said it (N8Host's for a submission), or as a turn decides
@@ -160,7 +167,7 @@ public:
         stallMisses_ = 0;
         gameUntilNs_ = 0;
         haveRef_      = false;
-        changed_      = false;
+        sawZero_      = false;
         leaveDue_     = false;
         settleFromNs_ = 0;
         configDueNs_  = 0;
@@ -182,8 +189,10 @@ public:
                 t.leftMenu = report(false);
                 return t;
             }
-            // The turn that entered asks nothing more: its probe's answer may still be on its way to a read.
-            if (!t.enteredMenu && now >= configDueNs_) {
+            // The turn that entered waits out the answer window before the first read: a second 'k' from an earlier
+            // probe may still come, and a read then would take it for the reply's first byte.
+            if (t.enteredMenu) configDueNs_ = now + kAnswerNs;
+            else if (now >= configDueNs_) {
                 configDueNs_ = now + kConfigNs;
                 t.readConfig = true;
             }
@@ -245,12 +254,13 @@ private:
     std::int64_t  gameUntilNs_  = 0;
     // Stall probes in a row that heard nothing at all (the link is given up at kStallMisses).
     int           stallMisses_  = 0;
-    // The config watch at the menu: the block read on entering, whether one has differed from it since, the block a
-    // settle is timing and since when (0: none), when the next read is due, and a settle that has run its course.
+    // The config watch at the menu: the block read on entering, whether an all-zero block has been read since, the
+    // block a settle is timing and since when (0: none), when the next read is due, and a settle that has run its
+    // course.
     std::uint8_t  ref_[kConfigBytes]    = {};
     std::uint8_t  settle_[kConfigBytes] = {};
     bool          haveRef_      = false;
-    bool          changed_      = false;
+    bool          sawZero_      = false;
     bool          leaveDue_     = false;
     std::int64_t  settleFromNs_ = 0;
     std::int64_t  configDueNs_  = 0;

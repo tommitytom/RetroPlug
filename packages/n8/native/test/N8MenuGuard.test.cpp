@@ -169,6 +169,9 @@ constexpr Block kPowerOnMenu = {0xFF, 0, 0, 0, 0, 0, 0, 0x80};
 constexpr Block kZeros       = {};
 constexpr Block kVrc6Game    = {0x18, 0x65, 0x04, 0x8B, 0, 0, 0, 0x9E, 0x14};
 constexpr Block kFme7Game    = {0x45, 0x65, 0x02, 0x81, 0x01, 0, 0, 0x8E, 0x14};
+// The guard at the menu is entered on this turn, and its first read is due once the answer window has passed.
+constexpr std::int64_t kEntered   = T0 + 20 * kMs;
+constexpr std::int64_t kFirstRead = kEntered + N8MenuGuard::kAnswerNs;
 
 // A guard at the menu, entered by the menu's answer to its probe at T0.
 N8MenuGuard atMenu() {
@@ -176,7 +179,7 @@ N8MenuGuard atMenu() {
     REQUIRE(g.turn(T0, nullptr, true).writeProbe);
     const std::uint8_t k = N8MenuGuard::kAnswer;
     g.hear(&k, 1);
-    REQUIRE(g.turn(T0 + 20 * kMs, nullptr, true).enteredMenu);
+    REQUIRE(g.turn(kEntered, nullptr, true).enteredMenu);
     return g;
 }
 
@@ -187,46 +190,75 @@ N8MenuGuard::Turn read(N8MenuGuard& g, std::int64_t at, const Block& block) {
     return t;
 }
 
+// Reads `block` on the cadence until `until`, `at` left on the last read; true while no turn left the menu.
+bool stays(N8MenuGuard& g, std::int64_t& at, std::int64_t until, const Block& block) {
+    bool stayed = true;
+    while (at + N8MenuGuard::kConfigNs <= until) {
+        at += N8MenuGuard::kConfigNs;
+        stayed = !read(g, at, block).leftMenu && stayed;
+    }
+    return stayed;
+}
+
 }  // namespace
 
-TEST_CASE("menu guard: at the menu nothing is written, and the config block is asked for every 20 ms",
+TEST_CASE("menu guard: at the menu nothing is written, and the config block is asked for every kConfigNs",
           "[n8][menu-guard]") {
     N8MenuGuard g = atMenu();
-    // The turn that entered asked nothing more; from here, a read every 20 ms and never a probe, however long.
-    int reads = 0;
-    for (std::int64_t at = T0 + 21 * kMs; at < T0 + 3000 * kMs; at += 1 * kMs) {
+    // The turn that entered waits out the answer window; from there, a read per kConfigNs and never a probe.
+    std::int64_t lastRead = 0;
+    int          reads    = 0;
+    for (std::int64_t at = kEntered + 1 * kMs; at < T0 + 3000 * kMs; at += 1 * kMs) {
         const N8MenuGuard::Turn t = read(g, at, kPowerOnMenu);
         CHECK_FALSE(t.writeProbe);
         CHECK(t.hold);
         CHECK_FALSE(t.leftMenu);
-        if (t.readConfig) ++reads;
+        if (t.readConfig) {
+            if (reads == 0) CHECK(at >= kEntered + N8MenuGuard::kAnswerNs);
+            else CHECK(at - lastRead == N8MenuGuard::kConfigNs);
+            lastRead = at;
+            ++reads;
+        }
     }
-    CHECK(reads >= 140);  // 2979 ms at one per 20 ms
-    CHECK(reads <= 150);
+    CHECK(reads == (T0 + 3000 * kMs - 1 - kFirstRead) / N8MenuGuard::kConfigNs + 1);
     CHECK(g.atMenu());
 }
 
-TEST_CASE("menu guard: a different game's block leaves the menu once it has held for 500 ms", "[n8][menu-guard]") {
+TEST_CASE("menu guard: a different game's block leaves the menu once it has held for kSettleNs", "[n8][menu-guard]") {
     N8MenuGuard g = atMenu();
-    std::int64_t at = T0 + 40 * kMs;
+    std::int64_t at = kFirstRead;
     read(g, at, kPowerOnMenu);  // the reference
-    at += 20 * kMs;
+    at += N8MenuGuard::kConfigNs;
     read(g, at, kZeros);  // Start Game: the OS clears the block
-    at += 100 * kMs;
+    at += 5 * N8MenuGuard::kConfigNs;
     const std::int64_t settledFrom = at;
     N8MenuGuard::Turn t = read(g, at, kVrc6Game);  // the game's block
     CHECK_FALSE(t.leftMenu);
-    while (at < settledFrom + 480 * kMs) {
-        at += 20 * kMs;
-        t = read(g, at, kVrc6Game);
-        CHECK_FALSE(t.leftMenu);  // still settling
-    }
+    CHECK(stays(g, at, settledFrom + N8MenuGuard::kSettleNs - N8MenuGuard::kConfigNs, kVrc6Game));  // still settling
     for (int i = 0; i < 3 && !t.leftMenu; ++i) {
-        at += 20 * kMs;
+        at += N8MenuGuard::kConfigNs;
         t = read(g, at, kVrc6Game);
     }
     CHECK(t.leftMenu);
     CHECK_FALSE(t.hold);
+    CHECK_FALSE(g.atMenu());
+}
+
+TEST_CASE("menu guard: a different game's block with no clear read in between still leaves, but only once settled",
+          "[n8][menu-guard]") {
+    N8MenuGuard g = atMenu();
+    std::int64_t at = kFirstRead;
+    read(g, at, kPowerOnMenu);
+    at += N8MenuGuard::kConfigNs;
+    const std::int64_t settledFrom = at;
+    CHECK_FALSE(read(g, at, kVrc6Game).leftMenu);
+    CHECK(stays(g, at, settledFrom + N8MenuGuard::kSettleNs - 1, kVrc6Game));
+    // The read that completes the settle decides; the turn after it leaves.
+    at = settledFrom + N8MenuGuard::kSettleNs;
+    CHECK_FALSE(read(g, at, kVrc6Game).leftMenu);
+    at += N8MenuGuard::kConfigNs;
+    const N8MenuGuard::Turn t = read(g, at, kVrc6Game);
+    CHECK(t.leftMenu);
     CHECK_FALSE(g.atMenu());
 }
 
@@ -235,42 +267,54 @@ TEST_CASE("menu guard: the same game started again, through zeros to the identic
     // A RESET leaves the block at the game's config, and starting that game again ends on the very same bytes: only the
     // clear in between shows the start.
     N8MenuGuard g = atMenu();
-    std::int64_t at = T0 + 40 * kMs;
+    std::int64_t at = kFirstRead;
     read(g, at, kFme7Game);  // the reference: what the RESET left
-    at += 20 * kMs;
+    at += N8MenuGuard::kConfigNs;
     read(g, at, kZeros);
-    N8MenuGuard::Turn t;
-    for (int i = 0; i < 40 && !t.leftMenu; ++i) {
-        at += 20 * kMs;
+    at += N8MenuGuard::kConfigNs;
+    const std::int64_t settledFrom = at;  // the first read of the game's block after the clear
+    N8MenuGuard::Turn t = read(g, at, kFme7Game);
+    for (int i = 0; i < 100 && !t.leftMenu; ++i) {
+        at += N8MenuGuard::kConfigNs;
         t = read(g, at, kFme7Game);
     }
     CHECK(t.leftMenu);
-    CHECK(at - (T0 + 60 * kMs) >= 500 * kMs);
+    CHECK(at - settledFrom >= N8MenuGuard::kSettleNs);
+}
+
+TEST_CASE("menu guard: one garbled read followed by the unchanged block never leaves the menu", "[n8][menu-guard]") {
+    N8MenuGuard g = atMenu();
+    std::int64_t at = kFirstRead;
+    read(g, at, kFme7Game);  // the reference
+    Block garbled = kFme7Game;
+    garbled[1]    = 0x6B;  // a stray back-channel byte in the reply
+    at += N8MenuGuard::kConfigNs;
+    CHECK_FALSE(read(g, at, garbled).leftMenu);
+    CHECK(stays(g, at, at + 2000 * kMs, kFme7Game));
+    CHECK(g.atMenu());
 }
 
 TEST_CASE("menu guard: a block that never changes, or never settles, keeps the guard at the menu", "[n8][menu-guard]") {
     N8MenuGuard g = atMenu();
-    std::int64_t at = T0 + 40 * kMs;
+    std::int64_t at = kFirstRead;
     SECTION("unchanged") {
-        for (; at < T0 + 5000 * kMs; at += 20 * kMs) CHECK_FALSE(read(g, at, kFme7Game).leftMenu);
+        read(g, at, kFme7Game);
+        CHECK(stays(g, at, T0 + 5000 * kMs, kFme7Game));
     }
     SECTION("back to zeros inside the settle") {
         read(g, at, kPowerOnMenu);
-        at += 20 * kMs;
+        at += N8MenuGuard::kConfigNs;
         read(g, at, kZeros);
-        for (int round = 0; round < 6; ++round) {  // 400 ms of the game's block, then zeros again: never 500 steady
-            for (int i = 0; i < 20; ++i) {
-                at += 20 * kMs;
-                CHECK_FALSE(read(g, at, kVrc6Game).leftMenu);
-            }
-            at += 20 * kMs;
+        for (int round = 0; round < 6; ++round) {  // just short of kSettleNs of the game's block, then zeros again
+            CHECK(stays(g, at, at + N8MenuGuard::kSettleNs - 1, kVrc6Game));
+            at += N8MenuGuard::kConfigNs;
             CHECK_FALSE(read(g, at, kZeros).leftMenu);
         }
     }
     SECTION("a block that keeps changing") {
         read(g, at, kPowerOnMenu);
         for (int i = 0; i < 100; ++i) {
-            at += 20 * kMs;
+            at += N8MenuGuard::kConfigNs;
             CHECK_FALSE(read(g, at, i % 2 ? kVrc6Game : kFme7Game).leftMenu);
         }
     }
@@ -279,13 +323,13 @@ TEST_CASE("menu guard: a block that never changes, or never settles, keeps the g
 
 TEST_CASE("menu guard: a read never handed back changes nothing", "[n8][menu-guard]") {
     N8MenuGuard g = atMenu();
-    std::int64_t at = T0 + 40 * kMs;
+    std::int64_t at = kFirstRead;
     read(g, at, kPowerOnMenu);
-    at += 20 * kMs;
+    at += N8MenuGuard::kConfigNs;
     read(g, at, kZeros);
     // Every read from here fails: the guard asks on its cadence and decides nothing.
     for (int i = 0; i < 100; ++i) {
-        at += 20 * kMs;
+        at += N8MenuGuard::kConfigNs;
         const N8MenuGuard::Turn t = g.turn(at, nullptr, true);
         CHECK(t.readConfig);
         CHECK_FALSE(t.leftMenu);
@@ -295,15 +339,16 @@ TEST_CASE("menu guard: a read never handed back changes nothing", "[n8][menu-gua
 
 TEST_CASE("menu guard: entering the menu again starts from a fresh reference", "[n8][menu-guard]") {
     N8MenuGuard g = atMenu();
-    std::int64_t at = T0 + 40 * kMs;
+    std::int64_t at = kFirstRead;
     read(g, at, kPowerOnMenu);
-    at += 20 * kMs;
+    at += N8MenuGuard::kConfigNs;
     read(g, at, kZeros);  // a start begun...
     CHECK(g.report(false));  // ...and another probe said a game (a submission's), then the menu again
     CHECK(g.report(true));
-    // The first block after the new entry is the reference: the game's block, steady, is not a change from it.
+    // The first block after the new entry is the reference: the game's block, steady, is neither different from it nor
+    // preceded by a clear.
     for (int i = 0; i < 60; ++i) {
-        at += 20 * kMs;
+        at += N8MenuGuard::kConfigNs;
         CHECK_FALSE(read(g, at, kVrc6Game).leftMenu);
     }
     CHECK(g.atMenu());
