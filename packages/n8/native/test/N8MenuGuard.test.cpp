@@ -1,13 +1,14 @@
 // Guards the N8 menu guard's decisions (transport/N8MenuGuard.hpp, the n8-wire package's), a rule a case, driven by
 // hand with a clock of the case's own: the raw link's cadence, only between two messages; a framed stall held and
 // probed, and probed again each second; an ack's resume and its trusted second, which a drained window ends; two
-// silent stalls asking for the link to be probed again; the menu's 'k' entering the menu and three misses in a row
-// leaving it; a 'k' inside an ack that is not the menu's; and the state a probe from outside the guard reports. The
-// drivers' own cases are N8CartJobs.test.cpp's [menu-guard] (N8Link over FakeN8) and the device-mode binary's
+// silent stalls asking for the link to be probed again; the menu's 'k' entering the menu, where nothing is written and
+// the config block's start pattern leaves it; a 'k' inside an ack that is not the menu's; and the state a probe from
+// outside the guard reports. The drivers' own cases are N8CartJobs.test.cpp's [menu-guard] (N8Link over FakeN8) and the device-mode binary's
 // [box-link] (the Pico box's cart link).
 //
 // Run via `pnpm test:n8` (retroplug-n8-test).
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -96,15 +97,18 @@ TEST_CASE("menu guard: the menu's 'k' heard while a framed window is stalled ent
     CHECK(t.hold);
     CHECK_FALSE(t.reprobeLink);
     CHECK(g.atMenu());
-    // The stall is forgotten: at the menu the cadence is the menu's, 250 ms from the probe the menu answered, and the
-    // stalled window is no longer asked about.
-    t = g.turn(T0 + 349 * kMs, &f.s, true);
-    CHECK(t.hold);
-    CHECK_FALSE(t.writeProbe);
-    t = g.turn(T0 + 350 * kMs, &f.s, true);
-    CHECK(t.hold);
-    CHECK(t.writeProbe);
-    CHECK_FALSE(t.enteredMenu);
+    // The stall is forgotten: at the menu nothing is written, not a probe and not a re-send, and the stalled window is
+    // no longer asked about; the config block is read instead.
+    bool askedConfig = false;
+    for (std::int64_t at = T0 + 121 * kMs; at < T0 + 1500 * kMs; at += 5 * kMs) {
+        t = g.turn(at, &f.s, true);
+        CHECK(t.hold);
+        CHECK_FALSE(t.writeProbe);
+        CHECK_FALSE(t.enteredMenu);
+        CHECK_FALSE(t.reprobeLink);
+        askedConfig = askedConfig || t.readConfig;
+    }
+    CHECK(askedConfig);
 }
 
 TEST_CASE("menu guard: an ack heard after a stall's probe resumes the stream, and a stall is not asked about again "
@@ -157,45 +161,152 @@ TEST_CASE("menu guard: two stall probes that hear nothing at all ask for the lin
     CHECK_FALSE(g.atMenu());
 }
 
-TEST_CASE("menu guard: the menu's 'k' enters the menu, and three unanswered probes in a row leave it",
-          "[n8][menu-guard]") {
+namespace {
+
+// A config block as the FPGA hands it over USB (16 bytes at 0x1800020): map_idx first.
+using Block = std::array<std::uint8_t, N8MenuGuard::kConfigBytes>;
+constexpr Block kPowerOnMenu = {0xFF, 0, 0, 0, 0, 0, 0, 0x80};
+constexpr Block kZeros       = {};
+constexpr Block kVrc6Game    = {0x18, 0x65, 0x04, 0x8B, 0, 0, 0, 0x9E, 0x14};
+constexpr Block kFme7Game    = {0x45, 0x65, 0x02, 0x81, 0x01, 0, 0, 0x8E, 0x14};
+
+// A guard at the menu, entered by the menu's answer to its probe at T0.
+N8MenuGuard atMenu() {
     N8MenuGuard g;
     REQUIRE(g.turn(T0, nullptr, true).writeProbe);
     const std::uint8_t k = N8MenuGuard::kAnswer;
     g.hear(&k, 1);
-    N8MenuGuard::Turn t = g.turn(T0 + 20 * kMs, nullptr, true);
-    CHECK(t.enteredMenu);
-    CHECK(t.hold);
-    CHECK_FALSE(t.writeProbe);  // the cadence runs from the probe the menu answered
-    CHECK(g.atMenu());
-    t = g.turn(T0 + 250 * kMs, nullptr, true);  // at the menu, every 250 ms whatever the link
-    CHECK(t.hold);
-    CHECK(t.writeProbe);
-    CHECK_FALSE(t.enteredMenu);
-    t = g.turn(T0 + 350 * kMs, nullptr, true);  // unanswered: one miss
-    CHECK(t.hold);
-    CHECK_FALSE(t.leftMenu);
-    REQUIRE(g.turn(T0 + 500 * kMs, nullptr, true).writeProbe);
-    SECTION("three in a row: a game") {
-        CHECK_FALSE(g.turn(T0 + 600 * kMs, nullptr, true).leftMenu);  // two
-        REQUIRE(g.turn(T0 + 750 * kMs, nullptr, true).writeProbe);
-        t = g.turn(T0 + 850 * kMs, nullptr, true);  // three
-        CHECK(t.leftMenu);
-        CHECK_FALSE(t.hold);
+    REQUIRE(g.turn(T0 + 20 * kMs, nullptr, true).enteredMenu);
+    return g;
+}
+
+// The turn at `at`, the block handed back when it asked for one.
+N8MenuGuard::Turn read(N8MenuGuard& g, std::int64_t at, const Block& block) {
+    const N8MenuGuard::Turn t = g.turn(at, nullptr, true);
+    if (t.readConfig) g.config(at, block.data());
+    return t;
+}
+
+}  // namespace
+
+TEST_CASE("menu guard: at the menu nothing is written, and the config block is asked for every 20 ms",
+          "[n8][menu-guard]") {
+    N8MenuGuard g = atMenu();
+    // The turn that entered asked nothing more; from here, a read every 20 ms and never a probe, however long.
+    int reads = 0;
+    for (std::int64_t at = T0 + 21 * kMs; at < T0 + 3000 * kMs; at += 1 * kMs) {
+        const N8MenuGuard::Turn t = read(g, at, kPowerOnMenu);
         CHECK_FALSE(t.writeProbe);
-        CHECK_FALSE(g.atMenu());
-    }
-    SECTION("an answer between the misses starts the count again") {
-        g.hear(&k, 1);
-        t = g.turn(T0 + 520 * kMs, nullptr, true);
         CHECK(t.hold);
-        CHECK_FALSE(t.enteredMenu);  // already there
-        REQUIRE(g.turn(T0 + 750 * kMs, nullptr, true).writeProbe);
-        CHECK_FALSE(g.turn(T0 + 850 * kMs, nullptr, true).leftMenu);   // one
-        REQUIRE(g.turn(T0 + 1000 * kMs, nullptr, true).writeProbe);
-        CHECK_FALSE(g.turn(T0 + 1100 * kMs, nullptr, true).leftMenu);  // two
-        CHECK(g.atMenu());
+        CHECK_FALSE(t.leftMenu);
+        if (t.readConfig) ++reads;
     }
+    CHECK(reads >= 140);  // 2979 ms at one per 20 ms
+    CHECK(reads <= 150);
+    CHECK(g.atMenu());
+}
+
+TEST_CASE("menu guard: a different game's block leaves the menu once it has held for 500 ms", "[n8][menu-guard]") {
+    N8MenuGuard g = atMenu();
+    std::int64_t at = T0 + 40 * kMs;
+    read(g, at, kPowerOnMenu);  // the reference
+    at += 20 * kMs;
+    read(g, at, kZeros);  // Start Game: the OS clears the block
+    at += 100 * kMs;
+    const std::int64_t settledFrom = at;
+    N8MenuGuard::Turn t = read(g, at, kVrc6Game);  // the game's block
+    CHECK_FALSE(t.leftMenu);
+    while (at < settledFrom + 480 * kMs) {
+        at += 20 * kMs;
+        t = read(g, at, kVrc6Game);
+        CHECK_FALSE(t.leftMenu);  // still settling
+    }
+    for (int i = 0; i < 3 && !t.leftMenu; ++i) {
+        at += 20 * kMs;
+        t = read(g, at, kVrc6Game);
+    }
+    CHECK(t.leftMenu);
+    CHECK_FALSE(t.hold);
+    CHECK_FALSE(g.atMenu());
+}
+
+TEST_CASE("menu guard: the same game started again, through zeros to the identical block, leaves the menu",
+          "[n8][menu-guard]") {
+    // A RESET leaves the block at the game's config, and starting that game again ends on the very same bytes: only the
+    // clear in between shows the start.
+    N8MenuGuard g = atMenu();
+    std::int64_t at = T0 + 40 * kMs;
+    read(g, at, kFme7Game);  // the reference: what the RESET left
+    at += 20 * kMs;
+    read(g, at, kZeros);
+    N8MenuGuard::Turn t;
+    for (int i = 0; i < 40 && !t.leftMenu; ++i) {
+        at += 20 * kMs;
+        t = read(g, at, kFme7Game);
+    }
+    CHECK(t.leftMenu);
+    CHECK(at - (T0 + 60 * kMs) >= 500 * kMs);
+}
+
+TEST_CASE("menu guard: a block that never changes, or never settles, keeps the guard at the menu", "[n8][menu-guard]") {
+    N8MenuGuard g = atMenu();
+    std::int64_t at = T0 + 40 * kMs;
+    SECTION("unchanged") {
+        for (; at < T0 + 5000 * kMs; at += 20 * kMs) CHECK_FALSE(read(g, at, kFme7Game).leftMenu);
+    }
+    SECTION("back to zeros inside the settle") {
+        read(g, at, kPowerOnMenu);
+        at += 20 * kMs;
+        read(g, at, kZeros);
+        for (int round = 0; round < 6; ++round) {  // 400 ms of the game's block, then zeros again: never 500 steady
+            for (int i = 0; i < 20; ++i) {
+                at += 20 * kMs;
+                CHECK_FALSE(read(g, at, kVrc6Game).leftMenu);
+            }
+            at += 20 * kMs;
+            CHECK_FALSE(read(g, at, kZeros).leftMenu);
+        }
+    }
+    SECTION("a block that keeps changing") {
+        read(g, at, kPowerOnMenu);
+        for (int i = 0; i < 100; ++i) {
+            at += 20 * kMs;
+            CHECK_FALSE(read(g, at, i % 2 ? kVrc6Game : kFme7Game).leftMenu);
+        }
+    }
+    CHECK(g.atMenu());
+}
+
+TEST_CASE("menu guard: a read never handed back changes nothing", "[n8][menu-guard]") {
+    N8MenuGuard g = atMenu();
+    std::int64_t at = T0 + 40 * kMs;
+    read(g, at, kPowerOnMenu);
+    at += 20 * kMs;
+    read(g, at, kZeros);
+    // Every read from here fails: the guard asks on its cadence and decides nothing.
+    for (int i = 0; i < 100; ++i) {
+        at += 20 * kMs;
+        const N8MenuGuard::Turn t = g.turn(at, nullptr, true);
+        CHECK(t.readConfig);
+        CHECK_FALSE(t.leftMenu);
+    }
+    CHECK(g.atMenu());
+}
+
+TEST_CASE("menu guard: entering the menu again starts from a fresh reference", "[n8][menu-guard]") {
+    N8MenuGuard g = atMenu();
+    std::int64_t at = T0 + 40 * kMs;
+    read(g, at, kPowerOnMenu);
+    at += 20 * kMs;
+    read(g, at, kZeros);  // a start begun...
+    CHECK(g.report(false));  // ...and another probe said a game (a submission's), then the menu again
+    CHECK(g.report(true));
+    // The first block after the new entry is the reference: the game's block, steady, is not a change from it.
+    for (int i = 0; i < 60; ++i) {
+        at += 20 * kMs;
+        CHECK_FALSE(read(g, at, kVrc6Game).leftMenu);
+    }
+    CHECK(g.atMenu());
 }
 
 TEST_CASE("menu guard: a 'k' inside an ack is not the menu's answer, even split across two reads", "[n8][menu-guard]") {

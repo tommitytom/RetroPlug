@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "transport/N8ReliableLink.hpp"
 
@@ -36,9 +37,13 @@
 //   the cart's browser after a reset the guard never saw (a framed link asks only in a stall). The turn then asks for
 //   the window and what the stream held for it to go, and the link to be probed again: a game with the link re-syncs
 //   framed, any other is streamed raw.
-// - at the menu, every 250 ms whatever the link: a game the user starts from the cart's own browser answers no probe,
-//   and three left unanswered in a row leave the menu (the driver probes the link again); a single miss is a slow turn
-//   of the menu's, and leaving on it would stream into the menu until the next probe.
+// - at the menu, never. The N8 OS reads its MCU's status replies from the FIFO the host writes into (edn8-pro-pub
+//   edio/everdrive.c, ed_check_status), so a byte arriving while it works - a game started from its browser above all
+//   - is read as a status and stops it at ERROR:40 (measured: docs/n8-menu-guard-config-watch-design.md). The turn
+//   asks for the FPGA config block instead (readConfig, every 20 ms), which the MCU answers without the FIFO: every
+//   start from the browser clears the block, then writes the game's, so a block changed from the one read on
+//   entering (all zeros always counts), then the same non-zero block for half a second, is a game, and the menu is
+//   left (the driver probes the link again). A start the reads miss leaves the guard at the menu until a reconnect.
 
 namespace rp {
 
@@ -46,17 +51,20 @@ class N8MenuGuard {
 public:
     static constexpr std::uint8_t kProbe[4] = {0xF0, 0x2A, 0x74, 0xF7};
     static constexpr std::uint8_t kAnswer   = 0x6B;
-    // How often it asks (raw, and at the menu whatever the link); how long the menu's answer may take before the cart
+    // How often it asks (raw); how long the menu's answer may take before the cart
     // is taken for a game, which ignores the probe; and how long a framed hold waits for an answer or an ack before it
     // asks again, which is also the trusted second. The lab's menu answers in about 20 ms (27 ms the worst of 8, at a
     // power-on menu), so the answer window has room to spare.
     static constexpr std::int64_t kProbeNs  = 250'000'000;
     static constexpr std::int64_t kAnswerNs = 100'000'000;
     static constexpr std::int64_t kHoldNs   = 1'000'000'000;
-    // How many probes in a row the menu may leave unanswered before the cart is taken for a game (one slow turn of the
-    // menu's loop must not stream into it: about 750 ms for a game booted by hand), and how many stall probes a framed
-    // link may hear nothing at all to before it gives the window up.
-    static constexpr int kLeaveMisses = 3;
+    // How often the config block is read at the menu, how long a changed block must read the same before the menu is
+    // left (the OS is still at work when the block changes, and the link probe that leaving sets off is a FIFO write),
+    // and the block's size (16 bytes at 0x1800020).
+    static constexpr std::int64_t kConfigNs    = 20'000'000;
+    static constexpr std::int64_t kSettleNs    = 500'000'000;
+    static constexpr std::size_t  kConfigBytes = 16;
+    // How many stall probes a framed link may hear nothing at all to before it gives the window up.
     static constexpr int kStallMisses = 2;
 
     // The back-channel, a byte at a time: the menu's answer is a 'k' OUTSIDE an ack. An ack is F5 <next> <last>, both
@@ -91,9 +99,10 @@ public:
     struct Turn {
         bool hold        = false;  // nothing new, no re-send and no note release goes out on this turn
         bool writeProbe  = false;  // write kProbe now (on a raw link the turn was told it is between two messages)
+        bool readConfig  = false;  // at the menu: read the FPGA config block and hand it to config()
         bool reprobeLink = false;  // drop what the stream holds and the window, and probe the link again
         bool enteredMenu = false;  // the menu answered: drop what the stream holds, the window and any pending release
-        bool leftMenu    = false;  // the menu left three probes unanswered: a game, whose link is probed again
+        bool leftMenu    = false;  // a game started at the menu (the config block): its link is probed again
     };
 
     // Afresh, as at a connect: not at the menu, no probe awaited or due, nothing heard.
@@ -115,6 +124,31 @@ public:
         }
     }
 
+    // The config block a readConfig turn asked for (kConfigBytes), read at `now`. A read that failed is not handed
+    // back: the guard asks again on its cadence, and nothing else changes.
+    void config(std::int64_t now, const std::uint8_t* block) {
+        if (!atMenu_) return;
+        if (!haveRef_) {
+            std::memcpy(ref_, block, kConfigBytes);
+            haveRef_ = true;
+            return;
+        }
+        bool zero = true;
+        for (std::size_t i = 0; i < kConfigBytes && zero; ++i) zero = block[i] == 0;
+        if (zero || std::memcmp(block, ref_, kConfigBytes) != 0) changed_ = true;
+        if (!changed_) return;
+        if (zero) {  // the OS is between clearing the block and writing the game's
+            settleFromNs_ = 0;
+            return;
+        }
+        if (settleFromNs_ == 0 || std::memcmp(block, settle_, kConfigBytes) != 0) {
+            std::memcpy(settle_, block, kConfigBytes);
+            settleFromNs_ = now;
+            return;
+        }
+        if (now - settleFromNs_ >= kSettleNs) leaveDue_ = true;
+    }
+
     // Where the cart runs, as a probe outside the guard's own said it (N8Host's for a submission), or as a turn decides
     // it: true when that is a change, which the driver then acts on as a turn's enteredMenu or leftMenu. A probe of the
     // guard's still awaited when the menu is entered is the menu's to answer: whatever becomes of its 'k', it is not
@@ -125,7 +159,11 @@ public:
         probeAtNs_   = 0;
         stallMisses_ = 0;
         gameUntilNs_ = 0;
-        if (menu) menuMisses_ = 0;
+        haveRef_      = false;
+        changed_      = false;
+        leaveDue_     = false;
+        settleFromNs_ = 0;
+        configDueNs_  = 0;
         return true;
     }
 
@@ -137,21 +175,19 @@ public:
         if (menuAnswered_) {
             menuAnswered_ = false;
             probeAtNs_    = 0;
-            menuMisses_   = 0;
             t.enteredMenu = report(true);
         }
         if (atMenu_) {
-            if (probeAtNs_ != 0 && now - probeAtNs_ >= kAnswerNs) {
-                probeAtNs_ = 0;
-                if (++menuMisses_ >= kLeaveMisses) {
-                    menuMisses_ = 0;
-                    t.leftMenu  = report(false);
-                    t.hold      = atMenu_;
-                    return t;
-                }
+            if (leaveDue_) {
+                t.leftMenu = report(false);
+                return t;
             }
-            if (probeAtNs_ == 0 && now >= probeDueNs_) probe(now, t);
-            t.hold = true;  // nothing new goes out while it says menu
+            // The turn that entered asks nothing more: its probe's answer may still be on its way to a read.
+            if (!t.enteredMenu && now >= configDueNs_) {
+                configDueNs_ = now + kConfigNs;
+                t.readConfig = true;
+            }
+            t.hold = true;  // nothing goes out while it says menu, not even a probe
             return t;
         }
         if (sender && sender->progressOverdue(now) && now >= gameUntilNs_) {
@@ -207,10 +243,17 @@ private:
     std::int64_t  probeAtNs_    = 0;
     std::int64_t  probeDueNs_   = 0;
     std::int64_t  gameUntilNs_  = 0;
-    // Probes in a row the menu left unanswered (it is left at kLeaveMisses), and stall probes in a row that heard
-    // nothing at all (the link is given up at kStallMisses).
-    int           menuMisses_   = 0;
+    // Stall probes in a row that heard nothing at all (the link is given up at kStallMisses).
     int           stallMisses_  = 0;
+    // The config watch at the menu: the block read on entering, whether one has differed from it since, the block a
+    // settle is timing and since when (0: none), when the next read is due, and a settle that has run its course.
+    std::uint8_t  ref_[kConfigBytes]    = {};
+    std::uint8_t  settle_[kConfigBytes] = {};
+    bool          haveRef_      = false;
+    bool          changed_      = false;
+    bool          leaveDue_     = false;
+    std::int64_t  settleFromNs_ = 0;
+    std::int64_t  configDueNs_  = 0;
     // What the back-channel has said: the menu's 'k', and how many whole acks, against the count when the probe went.
     bool          menuAnswered_ = false;
     Scan          scan_;
