@@ -50,6 +50,8 @@ the worktree's `.superpowers/menucheck/`).
   the link probe's sync that `leftMenu` sets off, clear of the OS's last operations before it jumps to the game. The
   first read waits out the answer window (`kAnswerNs`) after the entering turn, as a late `'k'` from an earlier probe
   could still land in its reply.
+- **Byte 3 is ignored** in every test above (the clear, the settle compare, the reference compare): it is the cart's
+  expansion-audio master volume, which the host writes live, at the menu too, so it says nothing about a game start.
 - **No write at the menu, ever**: `writeProbe` is never set there, and `kLeaveMisses` and the menu's miss count go. A
   start the 20 ms cadence misses (a clear shorter than a poll, never seen) leaves the guard parked at the menu: pushes
   drop and count, Settings > N8 says "At the N8 menu (not streaming)", and a reconnect probes afresh. A miss costs a

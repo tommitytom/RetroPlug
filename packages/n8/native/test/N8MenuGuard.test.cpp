@@ -282,6 +282,38 @@ TEST_CASE("menu guard: the same game started again, through zeros to the identic
     CHECK(at - settledFrom >= N8MenuGuard::kSettleNs);
 }
 
+TEST_CASE("menu guard: byte 3, the master volume the host writes, says nothing about a game start", "[n8][menu-guard]") {
+    // The cart's expansion volume lives at byte 3 of the block, and the host writes it live, at the menu too: a block
+    // that differs from the reference only there never leaves, however long it holds.
+    {
+        N8MenuGuard g = atMenu();
+        std::int64_t at = kFirstRead;
+        read(g, at, kFme7Game);  // the reference
+        Block louder = kFme7Game;
+        louder[3] = 0x80;
+        at += N8MenuGuard::kConfigNs;
+        CHECK(stays(g, at, at + 2000 * kMs, louder));
+        louder[3] = 0xC8;
+        CHECK(stays(g, at, at + 2000 * kMs, louder));
+        CHECK(g.atMenu());
+    }
+    // A block that is all zero but for byte 3 is still the clear: a start whose clear left the volume alone.
+    N8MenuGuard g = atMenu();
+    std::int64_t at = kFirstRead;
+    read(g, at, kFme7Game);
+    Block clear = {};
+    clear[3] = 0x80;
+    at += N8MenuGuard::kConfigNs;
+    read(g, at, clear);
+    at += N8MenuGuard::kConfigNs;
+    N8MenuGuard::Turn t = read(g, at, kFme7Game);
+    for (int i = 0; i < 100 && !t.leftMenu; ++i) {
+        at += N8MenuGuard::kConfigNs;
+        t = read(g, at, kFme7Game);
+    }
+    CHECK(t.leftMenu);
+}
+
 TEST_CASE("menu guard: one garbled read followed by the unchanged block never leaves the menu", "[n8][menu-guard]") {
     N8MenuGuard g = atMenu();
     std::int64_t at = kFirstRead;

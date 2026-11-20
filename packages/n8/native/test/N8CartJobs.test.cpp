@@ -1634,6 +1634,42 @@ TEST_CASE("a job submitted while the ring holds a push, right after the console 
     CHECK(rig.dev.count("fifo:91 41 7F") == 0);  // the ring it held went nowhere
 }
 
+TEST_CASE("the host writing the cart's expansion volume at the menu does not read as a game start",
+          "[n8][menu-guard]") {
+    // Byte 3 of the config block is that volume, which the host writes live, at the menu too: the guard must not take
+    // the changed byte for a game, or its link probe writes into the menu.
+    Rig rig;
+    rig.dev.menu    = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0]  = 69;
+    rig.dev.cfg[2]  = 0;
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;
+    }));
+    rig.dev.resetToMenu();
+    rig.push({0x90, 0x3E, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.host.link().atMenu(); }, 3000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    int attempts;
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        attempts = rig.dev.expVolAttempts;
+    }
+    const std::size_t fifoBefore = rig.dev.count("fifo:");
+    rig.host.setExpVol(100);
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.expVolAttempts > attempts;
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    CHECK(rig.host.link().atMenu());
+    CHECK(rig.dev.count("fifo:") == fifoBefore);
+}
+
 TEST_CASE("leaving the menu re-probes the link, so a game the user starts by hand streams framed", "[n8][menu-guard]") {
     Rig rig;
     rig.dev.linkRom = true;  // BlipToaster, which answers the probe

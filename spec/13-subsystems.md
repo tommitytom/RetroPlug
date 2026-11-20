@@ -142,9 +142,10 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   stall for a game), asking again each second that hears neither, and after two such seconds giving up the window and
   what the ring held (counted) and probing the link again (a game without the link, started from the cart's browser
   after a reset the guard never saw, is then streamed raw); and at the menu never: there the guard reads the FPGA
-  config block every 20 ms instead (the first read 100 ms after entering), which the cart's MCU answers without the
-  FIFO, and leaves the menu (re-running the link probe) once the same non-zero block has held for 500 ms, and either an
-  all-zero block was read since entering or the settled block differs from the one read on entering. Every game started
+  config block every 20 ms instead (the first read 100 ms after the `k` that entered it), which the cart's MCU answers
+  without the FIFO, and leaves the menu (re-running the link probe) once the same non-zero block has held for 500 ms,
+  and either an all-zero block was read since entering or the settled block differs from the one read on entering, byte 3
+  (the cart's master volume, which the host writes) left out of every compare. Every game started
   from the cart's own browser clears the block before writing the game's, the same game started again after a RESET
   included ([the config watch](../docs/n8-menu-guard-config-watch-design.md)); a start the reads miss leaves the guard
   at the menu until a reconnect. A `k` trips the guard whenever it is heard. A turn whose

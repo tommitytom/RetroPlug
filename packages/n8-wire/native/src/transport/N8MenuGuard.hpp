@@ -67,6 +67,10 @@ public:
     static constexpr std::int64_t kConfigNs    = 20'000'000;
     static constexpr std::int64_t kSettleNs    = 500'000'000;
     static constexpr std::size_t  kConfigBytes = 16;
+    // The block's byte 3 is the cart's expansion-audio master volume, which the host writes live (a knob, a project
+    // load), at the menu too, so it says nothing about a game start. A start shows in the other bytes, the clear
+    // included, and the config watch ignores this one.
+    static constexpr std::size_t  kVolumeByte  = 3;
     // How many stall probes a framed link may hear nothing at all to before it gives the window up.
     static constexpr int kStallMisses = 2;
 
@@ -136,14 +140,12 @@ public:
             haveRef_ = true;
             return;
         }
-        bool zero = true;
-        for (std::size_t i = 0; i < kConfigBytes && zero; ++i) zero = block[i] == 0;
-        if (zero) {  // the OS is between clearing the block and writing the game's
+        if (isClear(block)) {  // the OS is between clearing the block and writing the game's
             sawZero_      = true;
             settleFromNs_ = 0;
             return;
         }
-        if (settleFromNs_ == 0 || std::memcmp(block, settle_, kConfigBytes) != 0) {
+        if (settleFromNs_ == 0 || differs(block, settle_)) {
             std::memcpy(settle_, block, kConfigBytes);
             settleFromNs_ = now;
             return;
@@ -151,7 +153,7 @@ public:
         // Settled: a game when the block was cleared on the way (the same game started again ends on the very same
         // bytes) or differs from the reference (a different game). One garbled read and the unchanged block again is
         // neither, and never leaves.
-        if (now - settleFromNs_ >= kSettleNs && (sawZero_ || std::memcmp(block, ref_, kConfigBytes) != 0)) {
+        if (now - settleFromNs_ >= kSettleNs && (sawZero_ || differs(block, ref_))) {
             leaveDue_ = true;
         }
     }
@@ -237,6 +239,20 @@ public:
     bool probeAwaited(std::int64_t now) const { return probeAtNs_ != 0 && now - probeAtNs_ < kAnswerNs; }
 
 private:
+    // The config block compared and tested for the clear with the volume byte left out.
+    static bool differs(const std::uint8_t* a, const std::uint8_t* b) {
+        for (std::size_t i = 0; i < kConfigBytes; ++i) {
+            if (i != kVolumeByte && a[i] != b[i]) return true;
+        }
+        return false;
+    }
+    static bool isClear(const std::uint8_t* block) {
+        for (std::size_t i = 0; i < kConfigBytes; ++i) {
+            if (i != kVolumeByte && block[i] != 0) return false;
+        }
+        return true;
+    }
+
     // The probe goes out on this turn: booked here, so a driver whose write then fails has the state a probe written
     // leaves (the failure ends its stream either way).
     void probe(std::int64_t now, Turn& t) {
