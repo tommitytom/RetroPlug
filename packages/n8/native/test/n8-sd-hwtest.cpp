@@ -765,16 +765,19 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         host.connect(false);
 
-        // The reset lies in [lastDrained, first write after it]: every write from lastDrained on, with what it is.
+        // The reset lies between the last frame the cart acknowledged and the first it did not: the newest frame written
+        // before the window was seen to stop (the first unacknowledged; acks come within the 2 ms poll, so the poll
+        // itself rarely sees the window fill), and the frame before it. Every write from the last acknowledged frame on.
         std::lock_guard<std::mutex> l(wm);
         std::int64_t firstAfter = -1;
-        for (const Write& w : writes)
-            if (w.ns >= lastDrained) {
-                firstAfter = w.ns;
-                break;
-            }
-        std::printf("pausereset: the window last drained at %.1f ms; the first write after it at %.1f ms (%.1f ms later): "
-                    "the reset is in between, so that write reached the cart at most that long after it\n",
+        lastDrained             = t0;
+        for (const Write& w : writes) {
+            if (w.bytes.empty() || w.bytes[0] != rp::N8ReliableSender::FRAME || w.ns > stallNs) continue;
+            lastDrained = firstAfter < 0 ? lastDrained : firstAfter;
+            firstAfter  = w.ns;
+        }
+        std::printf("pausereset: the last acknowledged frame went at %.1f ms, the first unacknowledged at %.1f ms (%.1f ms "
+                    "later): the reset is in between, so that frame reached the cart at most that long after it\n",
                     ms(lastDrained), ms(firstAfter), firstAfter >= 0 ? (firstAfter - lastDrained) / 1e6 : -1.0);
         std::printf("   at (ms)   after drain  after 1st   bytes\n");
         std::size_t total = 0, frames = 0, probes = 0, syncs = 0, raw = 0;
