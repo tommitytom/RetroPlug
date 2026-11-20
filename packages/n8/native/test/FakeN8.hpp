@@ -135,7 +135,8 @@ struct FakeN8 {
         std::lock_guard<std::mutex> l(mu);
         menu      = true;
         resetMenu = true;
-        error40   = false;  // the OS starts afresh
+        error40   = false;  // the OS starts afresh, so a browser start in flight is cancelled too
+        startingFromBrowser = false;
         resetAt   = std::chrono::steady_clock::now();
         ++consoleResets;
     }

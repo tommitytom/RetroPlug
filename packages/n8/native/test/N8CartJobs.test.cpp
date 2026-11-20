@@ -2452,10 +2452,10 @@ TEST_CASE("FakeN8: a game started from the browser clears the config block, and 
     Edio         edio(port);
     std::uint8_t cfg[16] = {};
     SECTION("a clean start") {
-        dev.startFromBrowser(24, 80);
+        dev.startFromBrowser(24, 400);
         REQUIRE(edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok());
         CHECK(cfg[0] == 0);  // cleared while the OS loads the game
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(450));
         REQUIRE(edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok());
         CHECK(cfg[0] == 24);
         std::lock_guard<std::mutex> l(dev.mu);
@@ -2463,10 +2463,10 @@ TEST_CASE("FakeN8: a game started from the browser clears the config block, and 
         CHECK_FALSE(dev.error40);
     }
     SECTION("a byte written during the start") {
-        dev.startFromBrowser(24, 80);
+        dev.startFromBrowser(24, 400);
         const std::uint8_t probe[4] = {0xF0, 0x2A, 0x74, 0xF7};
         REQUIRE(edio.fifoWR(probe, sizeof probe).ok());
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(450));
         REQUIRE(edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok());
         std::lock_guard<std::mutex> l(dev.mu);
         CHECK(dev.error40);
