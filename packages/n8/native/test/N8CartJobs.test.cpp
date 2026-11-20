@@ -2443,3 +2443,33 @@ TEST_CASE("FakeN8: a console reset drops what the game owed, and a menu in ERROR
         CHECK(port.read(b, sizeof b, 0) == 0);
     }
 }
+
+TEST_CASE("FakeN8: a game started from the browser clears the config block, and a FIFO byte during it is ERROR:40",
+          "[n8][fake]") {
+    using retroplug::test::FakeN8Port;
+    FakeN8       dev;
+    FakeN8Port   port(dev);
+    Edio         edio(port);
+    std::uint8_t cfg[16] = {};
+    SECTION("a clean start") {
+        dev.startFromBrowser(24, 80);
+        REQUIRE(edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok());
+        CHECK(cfg[0] == 0);  // cleared while the OS loads the game
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        REQUIRE(edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok());
+        CHECK(cfg[0] == 24);
+        std::lock_guard<std::mutex> l(dev.mu);
+        CHECK_FALSE(dev.menu);
+        CHECK_FALSE(dev.error40);
+    }
+    SECTION("a byte written during the start") {
+        dev.startFromBrowser(24, 80);
+        const std::uint8_t probe[4] = {0xF0, 0x2A, 0x74, 0xF7};
+        REQUIRE(edio.fifoWR(probe, sizeof probe).ok());
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        REQUIRE(edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok());
+        std::lock_guard<std::mutex> l(dev.mu);
+        CHECK(dev.error40);
+        CHECK(dev.menu);  // the game never started
+    }
+}

@@ -9,7 +9,9 @@
 // a '*t' wrapped in a SysEx is answered too, and stopping at ERROR:40 when a '*' is followed by a byte that is not a
 // command, after which it still answers '*t' and nothing else; an optional model of the booting OS after a RESET, off
 // by default: a note byte in a window about a third of a second in sends it to ERROR:40, and it can be silent for a
-// boot time), and plays BlipToaster's end of the reliable link while a game that speaks it runs (its acks late, never,
+// boot time), and a game started from the cart's own browser (startFromBrowser: the config block reads zero while the
+// OS loads it, and a FIFO byte arriving then is read as one of the OS's MCU status replies, ERROR:40, and the game
+// never starts), and plays BlipToaster's end of the reliable link while a game that speaks it runs (its acks late, never,
 // or reporting every frame damaged, when a case asks, and an ack for bytes that came unframed, as the ROM writes one).
 // Every event (a FIFO write, a battery read, a file block) lands in one ordered log.
 //
@@ -66,6 +68,13 @@ struct FakeN8 {
     int                      bootWindowFromMs = 330, bootWindowToMs = 400;
     int                      bootMs = 0;
     std::chrono::steady_clock::time_point resetAt{};  // the last resetToMenu
+    // A game started from the cart's own browser (startFromBrowser) and not yet running: the OS has cleared the config
+    // block and loads the game until startUntil, then writes the game's block and jumps to it. The OS reads its MCU's
+    // status replies from the FIFO the host writes (edn8-pro-pub edio/everdrive.c, ed_check_status), so a host byte
+    // arriving meanwhile is taken for one: ERROR:40, and the game never starts.
+    bool                                  startingFromBrowser = false;
+    std::chrono::steady_clock::time_point startUntil{};
+    std::uint16_t                         startMapIndex = 0;
     bool                     linkRom = false;       // the running game answers the reliable link (BlipToaster)
     bool                     linkDeaf = false;      // ... until it stops answering (it read no frame and acks nothing)
     int                      linkAckDelayMs = 0;    // how long the game takes to write a frame's ack back
@@ -131,6 +140,15 @@ struct FakeN8 {
         ++consoleResets;
     }
 
+    // The user picks a game in the cart's browser and presses Start Game: `startMs` of loading, then the game runs with
+    // `mapIndex` in the config block.
+    void startFromBrowser(std::uint16_t mapIndex, int startMs = 100) {
+        std::lock_guard<std::mutex> l(mu);
+        startingFromBrowser = true;
+        startUntil          = std::chrono::steady_clock::now() + std::chrono::milliseconds(startMs);
+        startMapIndex       = mapIndex;
+    }
+
     std::size_t count(const std::string& prefix) {
         std::lock_guard<std::mutex> l(mu);
         return static_cast<std::size_t>(
@@ -190,6 +208,7 @@ struct FakeN8Port : PortTransport {
         std::unique_lock<std::mutex> l(dev_.mu);
         failure_.clear();
         catchUpReset();
+        catchUpStart();
         releaseAcks(true);  // whatever the game has had time to write since the last read
         // A read that waits (a timeout) hears what falls due inside it, as a port does; one that finds nothing coming
         // answers short at once, which the fake has always done.
@@ -316,8 +335,27 @@ private:
         acks_.clear();
     }
 
+    // A browser start whose load time has passed: the game runs (its link parser fresh), or, with an error on the way,
+    // the OS stays on ERROR:40 at the menu.
+    void catchUpStart() {
+        if (!dev_.startingFromBrowser || std::chrono::steady_clock::now() < dev_.startUntil) return;
+        dev_.startingFromBrowser = false;
+        if (dev_.error40) return;
+        dev_.menu      = false;
+        dev_.resetMenu = false;
+        dev_.cfg[0]    = static_cast<std::uint8_t>(dev_.startMapIndex);
+        dev_.cfg[2]    = static_cast<std::uint8_t>((dev_.startMapIndex >> 8) << 4);
+        menu_.clear();
+        msg_.clear();
+        link_    = Idle;
+        linkOn_  = false;
+        ackOwed_ = false;
+        acks_.clear();
+    }
+
     // Consume every complete command in in_; the delay a battery read asks for, applied outside the lock.
     int parse() {
+        catchUpStart();
         catchUpReset();
         releaseAcks(false);  // ahead of any reply below: what the game owes a frame is written first
         int delay = 0;
@@ -493,6 +531,7 @@ private:
     }
     std::uint8_t peek(std::uint32_t addr) {
         if (addr >= kSrm && addr < kSrmEnd) return dev_.sram[addr - kSrm];
+        if (dev_.startingFromBrowser && addr >= kCfg && addr < kCfgEnd) return 0;  // cleared while the OS loads
         // A menu reached by power-on runs on the OS's own mapper, 255; one a reset reached reads as the game left it.
         if (dev_.menu && !dev_.resetMenu && addr == kCfg) return 0xFF;
         if (dev_.menu && !dev_.resetMenu && addr == kCfg + 2) return 0;
@@ -506,6 +545,10 @@ private:
 
     // What the cart's side of the FIFO makes of a byte: the menu's commands, or the game's reliable link.
     void fifoByte(std::uint8_t b) {
+        if (dev_.menu && dev_.startingFromBrowser) {  // taken for an MCU status reply mid-start
+            dev_.error40 = true;
+            return;
+        }
         if (dev_.menu) {
             const auto since = std::chrono::steady_clock::now() - dev_.resetAt;
             const auto sinceMs = std::chrono::duration_cast<std::chrono::milliseconds>(since).count();
