@@ -83,6 +83,7 @@ add_library(retroplug-packs STATIC
     src/host/packs/FileLock.cpp
     src/host/packs/NativeLibrary.cpp
     src/host/packs/PackTable.cpp
+    src/host/packs/PackDiscovery.cpp
     # fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line rather than in every includer. Here
     # because state.json's write needs it; the backend's HostRpcService reaches it through this library.
     src/util/FileSync.cpp)

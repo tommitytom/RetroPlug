@@ -1,0 +1,131 @@
+#include "host/packs/PackDiscovery.hpp"
+
+#include <memory>
+#include <optional>
+#include <string>
+#include <system_error>
+
+#include "graph/rp_pack.h"
+#include "host/packs/PackManifest.hpp"
+#include "host/packs/PackState.hpp"
+#include "host/packs/PackTable.hpp"
+
+namespace fs = std::filesystem;
+
+namespace rp::host::packs {
+
+namespace {
+
+// Whether `dir` lies under `root`, both canonical: a development folder that is really an installed version folder.
+bool isUnder(const fs::path& dir, const fs::path& root) {
+    std::error_code ec;
+    const fs::path d = fs::weakly_canonical(dir, ec);
+    if (ec) return false;
+    const fs::path r = fs::weakly_canonical(root, ec);
+    if (ec) return false;
+    const fs::path rel = d.lexically_relative(r);
+    return !rel.empty() && *rel.begin() != ".." && *rel.begin() != ".";
+}
+
+// The candidates of `state` (empty when it did not read, `why` then saying why, or null when that was reported
+// already) and of `devDirs`.
+PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState>& state, const std::string* why,
+                           const std::vector<fs::path>& devDirs) {
+    PackDiscovery out;
+    std::vector<std::string> ids;  // out.candidates' ids, index for index
+    if (state) {
+        for (const auto& p : state->packs) {
+            if (p.remove) continue;
+            out.candidates.push_back({roots.data / p.id / p.active, PackOrigin::Installed, false, nullptr});
+            ids.push_back(p.id);
+        }
+    } else if (!roots.data.empty() && why != nullptr) {
+        out.refused.push_back({"state.json", roots.data / "state.json", *why});
+    }
+    for (const auto& dir : devDirs) {
+        std::string why;
+        const auto manifest = readPackManifest(dir, &why, RP_API_LEVEL);  // a level mismatch still names its id
+        if (!manifest) {
+            out.refused.push_back({displayPath(dir.filename()), dir, why});
+            continue;
+        }
+        bool placed = false;
+        for (std::size_t i = 0; i < out.candidates.size(); ++i) {
+            if (ids[i] != manifest->id) continue;
+            placed = true;
+            if (out.candidates[i].origin == PackOrigin::Installed) {
+                out.candidates[i] = {dir, PackOrigin::Development, true, nullptr};
+            } else {
+                out.refused.push_back({manifest->id, dir,
+                                       "development pack " + manifest->id + " is given twice: " +
+                                           displayPath(out.candidates[i].dir) + " loads, " + displayPath(dir) +
+                                           " does not"});
+            }
+            break;
+        }
+        if (!placed) {
+            out.candidates.push_back({dir, PackOrigin::Development, false, nullptr});
+            ids.push_back(manifest->id);
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+PackDiscovery discoverPacks(const PackRoots& roots, const std::vector<fs::path>& devDirs) {
+    std::string why;
+    std::optional<PackState> state;
+    if (!roots.data.empty()) state = readPackState(roots.data, &why);
+    return discoverFrom(roots, state, &why, devDirs);
+}
+
+std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& roots,
+                                         const std::vector<fs::path>& extraDevDirs) {
+    std::vector<PackRefusal> refused;
+    std::vector<fs::path> devDirs = packPathFromEnv();
+    devDirs.insert(devDirs.end(), extraDevDirs.begin(), extraDevDirs.end());
+    PackDiscovery found;
+    {
+        // One exclusive hold for the settle, the read, the discovery and the version holds, so another launch's settle
+        // (which takes it too) cannot delete a folder this one has found and not yet held. No data root, or none on
+        // disk yet, has no installed pack and nothing to settle.
+        std::string why;
+        std::error_code ec;
+        std::optional<FileLock> hold;
+        std::optional<PackState> state;
+        bool reported = false;  // a state.json that will not read is reported once, by the settle or by the read
+        if (!roots.data.empty() && fs::exists(roots.data, ec)) {
+            hold = lockPackState(roots.data, FileLock::Mode::Exclusive, &why);
+            if (hold) {
+                if (!settlePackState(roots.data, *hold, &why)) {
+                    refused.push_back({"state.json", roots.data / "state.json", why});
+                    reported = true;
+                }
+                state = readPackState(roots.data, *hold, &why);
+            } else {
+                // A root this process cannot write: nothing to settle, and the read goes ahead without a hold.
+                state = readPackState(roots.data, &why);
+            }
+        } else {
+            state = PackState{};
+        }
+        found = discoverFrom(roots, state, reported ? nullptr : &why, devDirs);
+        for (auto& c : found.candidates) {
+            // An installed folder is held; so is a development one that lies inside the data root, which a settle
+            // can delete as readily (the candidate keeps its Development origin: the loader adopts a hold either way).
+            if (c.origin != PackOrigin::Installed && !(!roots.data.empty() && isUnder(c.dir, roots.data))) continue;
+            std::string held;
+            if (auto lock = holdVersion(c.dir, &held)) c.lock = std::make_shared<FileLock>(std::move(*lock));
+        }
+    }
+    refused.insert(refused.end(), found.refused.begin(), found.refused.end());
+    // The table records each refusal of its own; the ones this launch added are the caller's too.
+    const std::size_t before = table.refusals().size();
+    table.loadAll(found.candidates);
+    const auto all = table.refusals();
+    refused.insert(refused.end(), all.begin() + static_cast<std::ptrdiff_t>(before), all.end());
+    return refused;
+}
+
+}  // namespace rp::host::packs
