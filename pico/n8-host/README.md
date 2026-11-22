@@ -548,8 +548,10 @@ it remains an option, and it sidesteps E9 (the native PHY's pads are not affecte
 cmake -S . -B build-native -G Ninja -DRP_NATIVE_USB=ON && cmake --build build-native
 ```
 
-Native uses the Pico's own USB D+/D- pins (not GP2/GP3), so the N8 must be wired there and the
-Pico powered via VSYS - different wiring from the PIO-USB socket above.
+Native uses the Pico's own micro-USB port (not GP2/GP3), so the N8 plugs in there through an OTG
+adapter (micro-B to USB-A female), and the Pico is powered with 5 V fed into **VBUS** (pin 40),
+not VSYS: in host mode the port's VBUS is the Pico's VBUS pin, and the N8's MCU runs off it (VSYS
+alone leaves the port unpowered). Nothing else may be on the micro-USB then, or two supplies fight.
 
 Defaults to `pico2` (RP2350). Override with `-DPICO_BOARD=pico`;
 `-DPICO_PIO_USB_PATH=...` if Pico-PIO-USB lives elsewhere.

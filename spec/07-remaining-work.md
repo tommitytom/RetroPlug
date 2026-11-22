@@ -13,7 +13,6 @@ than work.
 - [ ] [The Launchpad real-device checklist](#the-launchpad-real-device-checklist)
 - [ ] [The Launchpad's Windows items on a real device](#the-launchpads-windows-items-on-a-real-device)
 - [ ] [The overlay strip placement on a real host](#the-overlay-strip-placement-on-a-real-host)
-- [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
 
 **Package split**
 - [ ] [A real component view on a host](#a-real-component-view-on-a-host)
@@ -67,6 +66,7 @@ than work.
 - [ ] [A 32-bit runner in the build](#a-32-bit-runner-in-the-build)
 - [ ] [The box's stats print can stall a message](#the-boxs-stats-print-can-stall-a-message)
 - [ ] [A SysEx past 3 bytes allocates](#a-sysex-past-3-bytes-allocates)
+- [ ] [The `RP_NATIVE_USB` box image on hardware](#the-rp_native_usb-box-image-on-hardware)
 
 **Feature gaps and SDL**
 - [ ] [Raw LSDj Keyboard sync mode](#raw-lsdj-keyboard-sync-mode)
@@ -131,12 +131,6 @@ writer. ([F3 design](../docs/modular-graph-phase-f3-design.md) sections 8 and 12
 
 F4c's overlay strip (edge E4: its z-order against the focus border and the render badge) has been seen only in the
 headless UI host. ([F4c design](../docs/modular-graph-phase-f4c-design.md) section 13.)
-
-### The `RP_NATIVE_USB` box image on hardware
-
-`RP_NATIVE_USB` has never run on hardware: the image (af36f223 at E4) is still unflashed, built under the link trap
-only. The Pico-PIO-USB image is the one the rig runs. ([E3 design](../docs/modular-graph-phase-e3-design.md) section
-12.8, [E4 design](../docs/modular-graph-phase-e4-design.md) sections 11.7 and 11.8.)
 
 ## Package split
 
@@ -549,6 +543,16 @@ every message's worst, so it is recorded, not fixed. ([E3 design](../docs/modula
 A SysEx past 3 bytes allocates a view per message (dying with its block), and at 32 bits a non-whole number read
 allocates, so a SysEx stream makes the box collect in the MIDI path; the policy's worst block fits with 4 KB spare. ([E4
 design](../docs/modular-graph-phase-e4-design.md) section 11.8.)
+
+### The `RP_NATIVE_USB` box image on hardware
+
+`RP_NATIVE_USB` has never run on hardware: the image (af36f223 at E4) is still unflashed, built under the link trap
+only. The Pico-PIO-USB image is the one the rig runs and the one accepted on hardware; the native one is an option
+nothing needs (it was a candidate fix for a FIFO write that turned out to be the probe's own SRAM read), kept for what
+it would bring: no RP2350-E9 pull-downs, no forced 120 MHz clock, about 19 KB less RAM. Running it means the N8 on the
+Pico's micro-USB through an OTG adapter and 5 V fed into VBUS ([the box's README](../pico/n8-host/README.md),
+"Native-USB toggle"). ([E3 design](../docs/modular-graph-phase-e3-design.md) section 12.8,
+[E4 design](../docs/modular-graph-phase-e4-design.md) sections 11.7 and 11.8.)
 
 ## Feature gaps and SDL
 
