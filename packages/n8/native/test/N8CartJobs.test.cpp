@@ -941,10 +941,13 @@ TEST_CASE("a submission's wake outlasts a turn the link is busy on, so a failing
         return rig.dev.expVolAttempts >= 2;
     }));
     rig.push({0x90, 0x3C, 0x7F});
-    REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
+    // The frame on the wire, which stays written: waiting for the link's outstanding count to read 1 gave a poll the
+    // 60 ms before the ack to see it in, and one whose sleep ran long missed it for good.
+    REQUIRE(waitUntil([&] { return rig.dev.countContaining("90 3C 7F") == 1; }));
     // The frame's ack is 60 ms out, so the turn the submission wakes is a busy one and the probe waits. The wake must
     // still stand when the link goes quiet: spent on the busy turn, whose write re-arms the wait, it would leave the
-    // probe a second behind it and refused at its deadline ("the cart's port failed the menu's probe").
+    // probe a second behind it and refused at its deadline ("the cart's port failed the menu's probe"). A machine that
+    // wakes this thread only after the ack submits on a quiet link, which passes without asking that.
     Job job;
     std::string why;
     const auto t0 = Clock::now();
@@ -1530,15 +1533,22 @@ TEST_CASE("a clock between a message's halves is not a message boundary", "[n8][
     // A real-time byte (0xF8 and up) may stand between any two bytes of a message without ending it, so the tracker of
     // what the cart's parser is inside must step over one. Read as a status it would look like a boundary, and a
     // leaving node's note-off written there would land inside the message as its payload.
+    using Clock = std::chrono::steady_clock;
     Rig rig;
     rig.connectGame();
+    const auto opened = Clock::now();
     rig.push({0x90, 0x3C});  // half a note-on: the parser is inside a message
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C") == 1; }));
     rig.push({0xF8});  // a clock
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F8") == 1; }));
     rig.cart.releaseNotes(heldNotes());
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    CHECK(rig.dev.count("fifo:80 3C 00") == 0);  // held: the message is not finished
+    // Held: the message is not finished. Only for the 250 ms a message may stay open (kMidMessageNs), past which its
+    // notes go anyway, for a node that died mid-message: a machine whose waits above took that long has seen that,
+    // rightly, and asks nothing here.
+    const std::size_t released = rig.dev.count("fifo:80 3C 00");
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - opened).count() < 240)
+        CHECK(released == 0);
     rig.push({0x7F});                             // its tail, which completes it
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:80 3C 00") == 1; }));
     CHECK(rig.dev.count("fifo:81 43 00") == 1);
