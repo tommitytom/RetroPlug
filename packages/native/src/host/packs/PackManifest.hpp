@@ -31,10 +31,6 @@ struct PackManifest {
     // bound to the id, so two packs' libraries never share a file name, which Windows matches a loaded module by), the
     // others a JS file inside the version folder. A kind no RetroPlug knows is refused here.
     std::map<std::string, std::string> halves;
-    // Set only by a parse given a host level (below) that this manifest's apiLevel differs from: only id and apiLevel
-    // are read then, since a manifest of another level may spell every other member in ways this host does not know.
-    bool levelMismatch = false;
-
     // The native half's library stem, or empty for a pack with no native half.
     std::string nativeHalf() const;
 };
@@ -48,14 +44,17 @@ bool isPackId(std::string_view id);
 // Whether `version` is MAJOR.MINOR.PATCH in decimal with no leading zero: it names a folder, so nothing else may.
 bool isPackVersion(std::string_view version);
 
-// `json` as a manifest, or nothing with the reason in *why (each reason starts "pack.json: "). With a non-zero
-// `hostLevel`, a manifest whose apiLevel differs is answered as soon as its size, nesting and duplicate keys have been
-// checked (those gates always run first, for safety), with levelMismatch set and only id and apiLevel filled: a pack
-// of another level is refused for its level, whatever else it has changed since this host's.
-std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why, std::uint32_t hostLevel = 0);
+// `json` as a manifest, or nothing with the reason in *why (each reason starts "pack.json: "). Given a `hostLevel`, a
+// manifest whose apiLevel differs is answered as soon as its size, nesting and duplicate keys have been checked (those
+// gates always run first, for safety), with only id and apiLevel filled (the caller sees the difference in apiLevel): a
+// pack of another level is refused for its level, whatever else it has changed since this host's, since it may spell
+// every other member in ways this host does not know. Every production caller passes RP_API_LEVEL; nullopt, which
+// gates nothing, is for a test of the shape alone, and has no default so that it is always written out.
+std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why,
+                                              std::optional<std::uint32_t> hostLevel);
 
 // <versionDir>/pack.json read and parsed; nothing, with the reason, when it cannot be read or does not parse.
 std::optional<PackManifest> readPackManifest(const std::filesystem::path& versionDir, std::string* why,
-                                             std::uint32_t hostLevel = 0);
+                                             std::optional<std::uint32_t> hostLevel);
 
 }  // namespace rp::host::packs

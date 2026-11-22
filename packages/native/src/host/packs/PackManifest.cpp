@@ -324,7 +324,8 @@ bool isPackId(std::string_view id) {
     return true;
 }
 
-std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why, std::uint32_t hostLevel) {
+std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why,
+                                              std::optional<std::uint32_t> hostLevel) {
     const ScanResult scan = DuplicateKeyScan(json).find();
     if (scan.kind == ScanResult::Kind::TooDeep) {
         refuse(why, "nested deeper than " + std::to_string(kMaxNesting) + " levels");
@@ -334,14 +335,13 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
         refuse(why, "the member \"" + echoed(scan.key) + "\" appears twice in one object");
         return std::nullopt;
     }
-    if (hostLevel != 0) {
+    if (hostLevel) {
         const auto peek = rfl::json::read<LevelPeek>(std::string(json));
         if (peek && peek->id && isPackId(*peek->id) && peek->apiLevel && *peek->apiLevel >= 0 &&
-            *peek->apiLevel <= 0xffffffffll && *peek->apiLevel != static_cast<std::int64_t>(hostLevel)) {
+            *peek->apiLevel <= 0xffffffffll && *peek->apiLevel != static_cast<std::int64_t>(*hostLevel)) {
             PackManifest m;
             m.id = *peek->id;
             m.apiLevel = static_cast<std::uint32_t>(*peek->apiLevel);
-            m.levelMismatch = true;
             return m;
         }
     }
@@ -438,7 +438,8 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
     return m;
 }
 
-std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::string* why, std::uint32_t hostLevel) {
+std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::string* why,
+                                             std::optional<std::uint32_t> hostLevel) {
     const fs::path file = versionDir / "pack.json";
     std::error_code ec;
     const auto size = fs::is_regular_file(file, ec) ? fs::file_size(file, ec) : 0;

@@ -1410,15 +1410,18 @@ gone and is refused as "replaced"), releases the lock and removes the trash; on 
 with a file open in it, it releases the lock and removes `pack.lock` and the folder, leaving them for a later settle if
 that fails. The next settle sweeps trash, emptied folders and `state.json` temporaries a crash or a racing hold left. A
 development folder takes no lock, unless it lies inside the data root, where the settle could delete it as readily as
-any other folder: `loadLaunchPacks` holds it, and refuses it if it cannot, unless the failure is a folder this process
-cannot write, which loads unheld.
+any other folder: the table (given the data root, as `processPacks()`'s is) holds it on any load, `loadLaunchPacks`
+having already taken the hold under `state.lock`, and refuses it if it cannot, unless the failure is a folder this
+process cannot write, which loads unheld.
 
 `PackDiscovery` finds the installed packs (each entry of `state.json` but a removed one, its active version) and the
 development folders: the ones a host passes, then `RETROPLUG_PACK_PATH`'s, so an explicit choice wins, the same folder
 given twice by any spelling counting once. A development pack overrides an installed one of its id, and a second
 development pack of one id is refused. `loadLaunchPacks` settles, reads, discovers and takes its version locks in one
 exclusive hold of `state.lock`, then loads with that let go, the table keeping the holds it was handed, so another
-launch's settle deletes a version folder either before this launch discovers it or not at all.
+launch's settle deletes a version folder either before this launch discovers it or not at all. Its refusals (an
+unreadable `state.json`, a development manifest that does not parse, a folder it could not hold) are recorded in the
+table as the loads' are, so `refusals()` is the one list; `loadAll` answers a report of what it loaded and refused.
 
 `PackTable` opens each pack's library once and never closes it (a refused one too: opening it ran its static
 constructors, and its installed folder stays held). A pack loads all or nothing, and is refused for, among others: its

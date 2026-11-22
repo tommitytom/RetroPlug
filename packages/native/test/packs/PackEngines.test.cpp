@@ -146,9 +146,7 @@ TEST_CASE("a pack requiring one an Engine refused is refused there too, naming t
     REQUIRE(holder.addNodePackage(rp_packfixture_package()));
     Engine other(kRate, table);
     const auto loads = table.loadAll({{fixture("packfixture")}, {fixture("packfixture-dependent")}});
-    REQUIRE(loads.size() == 2);
-    REQUIRE(loads[0].pack);
-    REQUIRE(loads[1].pack);
+    REQUIRE(loads.loaded.size() == 2);
     const std::string dependentTone =
         R"({"nodes":[{"id":"tone","type":"rp.packfixture-dependent.tone"},)"
         R"({"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],)"

@@ -130,11 +130,10 @@ TEST_CASE("a pack module exports its entry alone and imports nothing of RetroPlu
 TEST_CASE("packs load in dependency order, whatever order they are given in", "[packs-loader]") {
     PackTable table(rp::graph::productPackages());
     const auto loads = table.loadAll({{fixture("packfixture-dependent")}, {fixture("packfixture")}});
-    REQUIRE(loads.size() == 2);
-    REQUIRE(loads[0]);
-    REQUIRE(loads[1]);
-    CHECK(loads[0].pack->manifest.id == "packfixture");
-    CHECK(loads[1].pack->manifest.id == "packfixture-dependent");
+    REQUIRE(loads.loaded.size() == 2);
+    CHECK(loads.refused.empty());
+    CHECK(loads.loaded[0]->manifest.id == "packfixture");
+    CHECK(loads.loaded[1]->manifest.id == "packfixture-dependent");
     const auto order = table.loadedFrom(0);
     REQUIRE(order.size() == 2);
     CHECK(order[0]->manifest.id == "packfixture");
@@ -146,8 +145,9 @@ TEST_CASE("a pack whose requirement is not loaded is refused, naming it", "[pack
     checkRefused(table, "packfixture-dependent", "requires pack packfixture, which is not loaded");
     // Through loadAll too: it waits for a pack that never comes, then is refused.
     const auto loads = table.loadAll({{fixture("packfixture-dependent")}});
-    REQUIRE(loads.size() == 1);
-    CHECK_FALSE(loads[0]);
+    CHECK(loads.loaded.empty());
+    REQUIRE(loads.refused.size() == 1);
+    CHECK(loads.refused[0].id == "packfixture-dependent");
     CHECK(table.size() == 0);
 }
 
@@ -341,9 +341,9 @@ TEST_CASE("packs that require each other are refused as a cycle, one waiting on 
                               manifestJson("cyc-c", RP_API_LEVEL, "[\"cyc-a\"]", "\"native\": \"rp-cyc-c\""));
     PackTable table(rp::graph::productPackages());
     const auto loads = table.loadAll({{a}, {b}, {c}});
-    REQUIRE(loads.size() == 3);
-    CHECK_THAT(loads[0].error, ContainsSubstring("requires cycle"));
-    CHECK_THAT(loads[1].error, ContainsSubstring("requires cycle"));
-    CHECK_THAT(loads[2].error, ContainsSubstring("requires pack cyc-a, which is not loaded"));
+    REQUIRE(loads.refused.size() == 3);
+    CHECK_THAT(loads.refused[0].reason, ContainsSubstring("requires cycle"));
+    CHECK_THAT(loads.refused[1].reason, ContainsSubstring("requires cycle"));
+    CHECK_THAT(loads.refused[2].reason, ContainsSubstring("requires pack cyc-a, which is not loaded"));
     CHECK(table.size() == 0);
 }

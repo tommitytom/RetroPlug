@@ -293,6 +293,55 @@ TEST_CASE("a launch's own settle deletes a development folder in the data root t
     CHECK(table.find("packfixture")->lock != nullptr);
 }
 
+TEST_CASE("a table given the data root holds a development folder inside it on a direct load too",
+          "[packs-discovery]") {
+    // M4's live loads call the table directly, with no launch's discovery before them: the rule is the table's.
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    {
+        PackTable table(rp::graph::productPackages(), tmp.roots().data);
+        const PackLoad load = table.load(PackCandidate{dir, PackOrigin::Development, false, nullptr});
+        REQUIRE(load);
+        CHECK(load.pack->origin == PackOrigin::Development);
+        CHECK(load.pack->lock != nullptr);
+        CHECK(versionInUse(dir));
+    }
+    CHECK_FALSE(versionInUse(dir));
+    // A folder it cannot hold there is refused, not loaded unheld.
+    std::string why;
+    auto exclusive = FileLock::acquire(dir / kVersionLockFile, FileLock::Mode::Exclusive, false, &why);
+    REQUIRE(exclusive);
+    PackTable table(rp::graph::productPackages(), tmp.roots().data);
+    const PackLoad refused = table.load(PackCandidate{dir, PackOrigin::Development, false, nullptr});
+    CHECK_FALSE(refused);
+    CHECK_THAT(refused.error, ContainsSubstring("cannot hold its version folder"));
+    exclusive.reset();
+    // A table with no data root, and a folder outside it, take no hold.
+    PackTable none(rp::graph::productPackages());
+    const PackLoad plain = none.load(PackCandidate{dir, PackOrigin::Development, false, nullptr});
+    REQUIRE(plain);
+    CHECK(plain.pack->lock == nullptr);
+}
+
+TEST_CASE("a launch's refusals are the table's too, and an installed folder is named after its pack",
+          "[packs-discovery]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    rp::host::packs::test::install(root, "packfixture");
+    std::string why;
+    // packfixture's folder is there; packfixture-clone's is not (an entry whose folder is gone).
+    REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "", false},
+                                            {"packfixture-clone", "1.0.0", "", false}}}, &why));
+    PackTable table(rp::graph::productPackages(), root);
+    const auto refused = loadLaunchPacks(table, tmp.roots(), {tmp.path() / "nowhere"});
+    // The missing folder is reported as missing (the manifest read says so), not as a hold that failed.
+    REQUIRE(refused.size() == 2);
+    CHECK(table.refusals().size() == 2);
+    CHECK(table.refusals()[0].id == "nowhere");
+    CHECK(table.refusals()[1].id == "packfixture-clone");
+    CHECK_THAT(table.refusals()[1].reason, ContainsSubstring("cannot read"));
+}
+
 #if !defined(_WIN32)
 TEST_CASE("a launch from a data root it cannot write loads its installed packs unheld, without settling",
           "[packs-discovery]") {

@@ -15,16 +15,18 @@ enum class PackOrigin { Installed, Development };
 // A pack the loader may load: its version folder and where it was found. A candidate found by a launch carries the
 // hold on its folder the launch took while it held state.lock (loadLaunchPacks), so no other launch's settle can delete
 // the folder between its discovery and its load: an installed one, or a development one that lies inside the data
-// root. The loader takes a hold itself for an installed candidate without one, and none for a development one.
+// root. The loader takes a hold itself for such a candidate that has none (an installed one, or a development one
+// inside the data root its table was given), and none for a development folder elsewhere.
 struct PackCandidate {
     std::filesystem::path     dir;
     PackOrigin                origin = PackOrigin::Development;
     bool                      overridesInstalled = false;  // a development pack standing in for an installed one
     std::shared_ptr<FileLock> lock;                        // the hold discovery took, when it took one
+    std::string               id;  // the pack id when the finder knew it (state.json entry, dev manifest)
 };
 
 struct PackRefusal {
-    std::string           id;  // the manifest's id, or the folder's name when the manifest did not parse
+    std::string           id;  // the manifest's id, else the candidate's, else the pack's folder name (or "state.json")
     std::filesystem::path dir;
     std::string           reason;
 };

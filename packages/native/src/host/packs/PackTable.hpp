@@ -45,12 +45,21 @@ struct PackLoad {
     explicit operator bool() const { return pack != nullptr; }
 };
 
+// What loadAll did: the packs it loaded or found loaded, in load order, and the refusals it recorded, in the order
+// recorded (the table's refusals() also hold other threads' loads, which a caller of one call must not claim).
+struct LoadReport {
+    std::vector<const LoadedPack*> loaded;
+    std::vector<PackRefusal>       refused;
+};
+
 class PackTable {
 public:
     // `builtIns` are the packages every Engine of this process registers before any pack (the product's
     // rp_register_packages): a pack may not take one of their node types or package ids. They must outlive the table,
     // as a product's do. requires.packs names packs only, never a built-in package.
-    explicit PackTable(std::span<const rp_package* const> builtIns = {});
+    // `dataRoot` is the data root a process's installed packs live in (empty for none): a development folder under it
+    // is held like an installed one, or refused, whoever loads it (a launch's discovery, or a live load later).
+    explicit PackTable(std::span<const rp_package* const> builtIns = {}, std::filesystem::path dataRoot = {});
     PackTable(const PackTable&) = delete;
     PackTable& operator=(const PackTable&) = delete;
 
@@ -60,11 +69,12 @@ public:
     PackLoad load(const PackCandidate& candidate);
     PackLoad load(const std::filesystem::path& dir) { return load(PackCandidate{dir}); }
     // Several packs in dependency order: each loads once every pack its requires.packs names has, whatever order the
-    // candidates come in; one whose requirement never loads is refused naming it. Answers in the order they loaded,
-    // the refused ones last. `refused`, when given, receives the refusals this call recorded, in the order recorded:
-    // the table's own refusals() also hold other threads' loads, which a caller of one call must not claim.
-    std::vector<PackLoad> loadAll(const std::vector<PackCandidate>& candidates,
-                                  std::vector<PackRefusal>* refused = nullptr);
+    // candidates come in; one whose requirement never loads is refused naming it. The report lists the packs in the
+    // order they loaded and the refusals in the order recorded.
+    LoadReport loadAll(const std::vector<PackCandidate>& candidates);
+    // A refusal that came before any load (an unreadable state.json, a development manifest that does not parse, a
+    // folder that could not be held), so that refusals() is the one list a Settings page reads.
+    void recordRefusal(PackRefusal refusal);
 
     std::size_t                    size() const;
     const LoadedPack*              find(std::string_view id) const;
@@ -79,6 +89,7 @@ private:
                     std::shared_ptr<FileLock> hold);
 
     std::vector<const rp_package*>           builtIns_;
+    std::filesystem::path                    dataRoot_;
     mutable std::mutex                       mutex_;
     std::vector<std::unique_ptr<LoadedPack>> packs_;
     std::vector<PackRefusal>                 refusals_;

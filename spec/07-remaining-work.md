@@ -156,15 +156,12 @@ The gamepad-axis bus dispatches no app action, and the generator refuses a bindi
 
 ### Downloadable packs
 
-The loading road is part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md),
-built in five milestones ([the M1 plan](../docs/downloadable-packs-m1-plan.md)). M1 built the native half: a pack's
-native library loads at run time and registers its node types in every Engine
-([spec/02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)), and the Mesen package builds as one. No
-host loads a pack at launch yet. M2 (a pack's TS halves and the live registries), M3 (placeholders for a missing pack),
-M4 (`.rppack` archives, the CLI's pack commands, Settings > Packs) and M5 (Mesen and BlipToaster loaded as packs with
-their suites unchanged, and the plugin, Node, concurrency and sanitizer legs) are left, and so is the allocator the
-pinned C++ boundary needs on Windows (the M1 plan's design question 1). After part 1 the road is the design's parts 2 to
-6, and the authoring loop, downloads and unloading a script pack (the `Engine` has `loadScriptPack` and no unload;
+Part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md) is built in five
+milestones, and what is left of it is [the M1 plan](../docs/downloadable-packs-m1-plan.md)'s M2 (a pack's TS halves and
+the live registries), M3 (placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands, Settings >
+Packs, and a host calling `loadLaunchPacks` at launch) and M5 (Mesen and BlipToaster loaded as packs with their suites
+unchanged, and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on
+Windows (the plan's design question 1). After part 1 the road is the design's parts 2 to 6, and the authoring loop, downloads and unloading a script pack (the `Engine` has `loadScriptPack` and no unload;
 native code is never unloaded) are what downloadable packs still need (the C1 design's section 8). With them come menus
 on extensions (a downloaded pack contributing menu rows, which packages in the tree do through `defineUi`) and
 third-party controller apps: `controllerApps` registers from the product's package list, so an app from outside the tree

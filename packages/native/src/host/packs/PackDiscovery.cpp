@@ -26,8 +26,7 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
     if (state) {
         for (const auto& p : state->packs) {
             if (p.remove) continue;
-            out.candidates.push_back({roots.data / p.id / p.active, PackOrigin::Installed, false, nullptr});
-            out.ids.push_back(p.id);
+            out.candidates.push_back({roots.data / p.id / p.active, PackOrigin::Installed, false, nullptr, p.id});
         }
     } else if (!roots.data.empty() && why != nullptr) {
         out.refused.push_back({"state.json", roots.data / "state.json", *why});
@@ -46,10 +45,10 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
         }
         bool placed = false;
         for (std::size_t i = 0; i < out.candidates.size(); ++i) {
-            if (out.ids[i] != manifest->id) continue;
+            if (out.candidates[i].id != manifest->id) continue;
             placed = true;
             if (out.candidates[i].origin == PackOrigin::Installed) {
-                out.candidates[i] = {dir, PackOrigin::Development, true, nullptr};
+                out.candidates[i] = {dir, PackOrigin::Development, true, nullptr, manifest->id};
             } else {
                 out.refused.push_back({manifest->id, dir,
                                        "development pack " + manifest->id + " is given twice: " +
@@ -59,8 +58,7 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
             break;
         }
         if (!placed) {
-            out.candidates.push_back({dir, PackOrigin::Development, false, nullptr});
-            out.ids.push_back(manifest->id);
+            out.candidates.push_back({dir, PackOrigin::Development, false, nullptr, manifest->id});
         }
     }
     return out;
@@ -118,24 +116,27 @@ std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& root
             }
             std::string held;
             FileLock::Failure failure = FileLock::Failure::None;
-            if (auto lock = holdVersionBriefly(c.dir, &held, &failure)) {
+            std::error_code existsEc;
+            if (!fs::is_directory(c.dir, existsEc)) {
+                ++i;  // not there (a state.json entry whose folder is gone): the table's manifest read says so
+            } else if (auto lock = holdVersionBriefly(c.dir, &held, &failure)) {
                 c.lock = std::make_shared<FileLock>(std::move(*lock));
                 ++i;
             } else if (c.origin == PackOrigin::Development && failure != FileLock::Failure::Denied) {
                 // Inside the managed root a development folder must be held, not loaded unheld. (An installed one
                 // that is not held here is held, or refused, by the table's own bounded retry.)
-                found.refused.push_back({found.ids[i], c.dir, "cannot hold its version folder: " + held});
+                found.refused.push_back({c.id, c.dir, "cannot hold its version folder: " + held});
                 found.candidates.erase(found.candidates.begin() + static_cast<std::ptrdiff_t>(i));
-                found.ids.erase(found.ids.begin() + static_cast<std::ptrdiff_t>(i));
             } else {
                 ++i;
             }
         }
     }
     refused.insert(refused.end(), found.refused.begin(), found.refused.end());
-    std::vector<PackRefusal> loadRefused;
-    table.loadAll(found.candidates, &loadRefused);
-    refused.insert(refused.end(), loadRefused.begin(), loadRefused.end());
+    // The refusals that came before any load are the table's too, so its refusals() is the one list a page reads.
+    for (const PackRefusal& r : refused) table.recordRefusal(r);
+    const LoadReport report = table.loadAll(found.candidates);
+    refused.insert(refused.end(), report.refused.begin(), report.refused.end());
     return refused;
 }
 

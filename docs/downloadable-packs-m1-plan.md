@@ -7033,8 +7033,10 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
 16. **A development folder inside the installed root** (a `--pack` or `RETROPLUG_PACK_PATH` entry that is really
     `packs/<id>/<version>/`) would load unheld, so a settle could delete a folder with a library open from it. Resolved
     in Task 7: `loadLaunchPacks` holds any candidate whose canonical path lies under the canonical data root, inside
-    the `state.lock` section (one that cannot be held there is refused, never loaded unheld), and the pack keeps its
-    Development origin.
+    the `state.lock` section (one that cannot be held there is refused, never loaded unheld, except a Denied one in a
+    folder this process cannot write, which no settle can delete either and which loads unheld), and the pack keeps
+    its Development origin. After the final review the table enforces it too: `PackTable` takes the data root, so a
+    direct `load` of such a folder (M4's live loads) is held or refused the same way.
 
 17. **`PackTable` holds its mutex across a whole batch load** (the library opens, constructors, entries and trial
     registration), so an Engine's construction or `setGraph` (`loadedFrom`) waits for a load in progress. Fine at M1's
@@ -7043,6 +7045,37 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
 18. **A pack an Engine refuses is never retried there**: `packsSeen_` moves past it, so removing the clashing type
     (a script reload that drops it) does not admit the pack in that Engine until a new Engine is built. An Engine also
     refuses a pack whose `requires.packs` entry it refused, naming that requirement.
+
+## After the final review
+
+The final cross-cutting review changed the code below after the tasks above were written (commits `9f21fbf69` and the
+one after it). The task blocks above quote these files as the tasks left them; where a block and the file differ, the
+file wins, and these notes say how:
+
+- `PackDirs.{hpp,cpp}`: gain `normalisedDir`, `canonicalOr` and `isUnder`, which `PackTable.cpp` and `PackDiscovery.cpp`
+  had each carried a copy of.
+- `PackDiscovery.cpp`: the manifest-read local is `manifestWhy` (a local named `why` shadowed the parameter, MSVC C4457);
+  `PackCandidate` carries the pack `id`, so `PackDiscovery` has no parallel `ids` vector; a state.json entry whose
+  folder is gone is not held (the table's manifest read reports it, with no hold retried first); the launch records
+  every refusal in the table (`PackTable::recordRefusal`) as well as returning it.
+- `PackCandidate.hpp`: the `id` member, last so positional initialisers still compile.
+- `PackTable.{hpp,cpp}`: the constructor takes the data root (`processPacks()` passes `defaultPackRoots().data`) and
+  `loadLocked` holds, or refuses, a development folder under it, so a direct `load` obeys the rule `loadLaunchPacks`
+  states; `loadAll` answers a `LoadReport {loaded, refused}` and takes no out-parameter; an installed candidate refused
+  before its manifest parses is named after its pack folder; the hold-retry loop is `holdVersionBriefly`
+  (`FileLock.{hpp,cpp}`), shared with discovery.
+- `PackManifest.{hpp,cpp}`: `hostLevel` is a `std::optional<std::uint32_t>` with no default (every production caller
+  passes `RP_API_LEVEL`; `nullopt` is for a test of the shape), `levelMismatch` is gone (nothing read it), and
+  `readPackManifest` sizes its buffer from the file's size; a file that grew meanwhile is refused as changed.
+- `PackManifest.cpp`, `PackState.cpp`, `PackTable.cpp`: the reflect-cpp structs live in `detail::manifest`,
+  `detail::state` and `detail::table`.
+- `FileLock.cpp`: on Windows `sameFile` falls back to the volume serial and 64-bit index when `FileIdInfo` fails (FAT,
+  exFAT, some SMB shares) instead of answering "replaced".
+- Removed as dead: `Engine::syncPacks`'s null check of its table, and the `RP_PACK_DIR` target property in
+  `cmake/packs.cmake`.
+- The tests follow: `PackManifest.test.cpp` passes `std::nullopt`, the loader and engine cases read `LoadReport`, and
+  `PackDiscovery.test.cpp` gains a direct table load of a development folder under the root and a case for the
+  launch's refusals reaching the table (two more cases, so every full count above is two higher).
 
 ## Self-review
 

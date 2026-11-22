@@ -86,7 +86,8 @@ bool trialAdd(rp::graph::NodeRegistry& trial, const rp_package* package, std::st
 
 }  // namespace
 
-PackTable::PackTable(std::span<const rp_package* const> builtIns) : builtIns_(builtIns.begin(), builtIns.end()) {}
+PackTable::PackTable(std::span<const rp_package* const> builtIns, fs::path dataRoot)
+    : builtIns_(builtIns.begin(), builtIns.end()), dataRoot_(std::move(dataRoot)) {}
 
 std::size_t PackTable::size() const {
     std::lock_guard<std::mutex> hold(mutex_);
@@ -117,8 +118,12 @@ PackLoad PackTable::load(const PackCandidate& candidate) {
     return loadLocked(candidate);
 }
 
-std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candidates,
-                                         std::vector<PackRefusal>* refused) {
+void PackTable::recordRefusal(PackRefusal refusal) {
+    std::lock_guard<std::mutex> hold(mutex_);
+    refusals_.push_back(std::move(refusal));
+}
+
+LoadReport PackTable::loadAll(const std::vector<PackCandidate>& candidates) {
     std::lock_guard<std::mutex> hold(mutex_);
     const std::size_t refusedBefore = refusals_.size();
     std::vector<PackLoad> out;
@@ -184,14 +189,21 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
         else
             out.push_back(loadLocked(p.candidate));
     }
-    if (refused != nullptr)
-        refused->assign(refusals_.begin() + static_cast<std::ptrdiff_t>(refusedBefore), refusals_.end());
-    return out;
+    LoadReport report;
+    for (const PackLoad& load : out)
+        if (load.pack != nullptr) report.loaded.push_back(load.pack);
+    report.refused.assign(refusals_.begin() + static_cast<std::ptrdiff_t>(refusedBefore), refusals_.end());
+    return report;
 }
 
 PackLoad PackTable::refuse(const PackCandidate& candidate, std::string id, std::string reason,
                            std::shared_ptr<FileLock> hold) {
-    if (id.empty()) id = displayPath(candidate.dir.filename());
+    if (id.empty()) id = candidate.id;
+    // An installed folder is packs/<id>/<version>: before its manifest parses, its pack is named by its folder.
+    if (id.empty())
+        id = displayPath(candidate.origin == PackOrigin::Installed && candidate.dir.has_parent_path()
+                             ? candidate.dir.parent_path().filename()
+                             : candidate.dir.filename());
     // One hold per folder, however often a load of it is retried and refused.
     if (hold) folderHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
     refusals_.push_back({id, candidate.dir, reason});
@@ -203,9 +215,14 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     candidate.dir = normalisedDir(offered.dir);
     std::string why;
     // An installed folder is held before anything of it is read, and kept whatever the answer: a launch's settle must
-    // never delete a folder this process has opened a library from, loaded or refused.
+    // never delete a folder this process has opened a library from, loaded or refused. So is a development folder
+    // inside the data root, which a settle can delete as readily (it keeps its Development origin). A folder that is
+    // not there is not held: the manifest read below says so, with no retries first.
     std::shared_ptr<FileLock> hold = candidate.lock;
-    if (candidate.origin == PackOrigin::Installed && !hold) {
+    std::error_code existsEc;
+    const bool managed = candidate.origin == PackOrigin::Installed ||
+                         (!dataRoot_.empty() && isUnder(candidate.dir, dataRoot_));
+    if (managed && !hold && fs::is_directory(candidate.dir, existsEc)) {
         FileLock::Failure failure = FileLock::Failure::None;
         std::optional<FileLock> taken = holdVersionBriefly(candidate.dir, &why, &failure);
         if (taken) {

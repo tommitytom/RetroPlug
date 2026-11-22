@@ -49,7 +49,7 @@ std::string manifestWith(const std::string& member, const std::string& value) {
 
 TEST_CASE("pack.json parses whole, and each malformed member or file is refused by name", "[packs-folders]") {
     std::string why;
-    const auto good = parsePackManifest(manifestWith("", ""), &why);
+    const auto good = parsePackManifest(manifestWith("", ""), &why, std::nullopt);
     INFO(why);
     REQUIRE(good);
     CHECK(good->id == "demo");
@@ -59,7 +59,7 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
     CHECK(good->providesNodeTypes == std::vector<std::string>{"rp.demo.tone"});
 
     // The staged fixture's manifest, stamped by cmake/packs.cmake, is one too.
-    const auto staged = readPackManifest(rp::host::packs::test::fixture("packfixture"), &why);
+    const auto staged = readPackManifest(rp::host::packs::test::fixture("packfixture"), &why, std::nullopt);
     INFO(why);
     REQUIRE(staged);
     CHECK(staged->apiLevel == RP_API_LEVEL);
@@ -103,7 +103,7 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
     for (const auto& [text, reason] : refused) {
         INFO(text);
         why.clear();
-        CHECK_FALSE(parsePackManifest(text, &why));
+        CHECK_FALSE(parsePackManifest(text, &why, std::nullopt));
         CHECK_THAT(why, ContainsSubstring("pack.json: ") && ContainsSubstring(reason));
     }
 
@@ -114,7 +114,7 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
                                                 manifestWith("name", deep), "{\"x\":" + deep + "}", deep};
     for (const std::string& text : deepTexts) {
         why.clear();
-        CHECK_FALSE(parsePackManifest(text, &why));
+        CHECK_FALSE(parsePackManifest(text, &why, std::nullopt));
         CHECK_THAT(why, ContainsSubstring("pack.json: nested deeper than 32 levels"));
     }
 
@@ -124,7 +124,8 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
              {70, "nested deeper than 32 levels"}, {20, "the member \"id\" appears twice"}}) {
         why.clear();
         CHECK_FALSE(parsePackManifest(R"({"x":)" + std::string(levels, '[') + std::string(levels, ']') +
-                                          R"(,"id":"zzz","id":"demo"})", &why));
+                                          R"(,"id":"zzz","id":"demo"})",
+                                      &why, std::nullopt));
         CHECK_THAT(why, ContainsSubstring(reason));
     }
 
@@ -134,17 +135,19 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
         for (int i = 0; wide.size() < 1000000; ++i) wide += "\"k" + std::to_string(i) + "\":1,";
         wide += "\"id\":\"demo\"}";
         why.clear();
-        CHECK_FALSE(parsePackManifest(wide, &why));
+        CHECK_FALSE(parsePackManifest(wide, &why, std::nullopt));
     }
 
     // A cause from the parser is echoed longer than an input value, and neither is cut inside a UTF-8 sequence.
     why.clear();
-    CHECK_FALSE(parsePackManifest(manifestWith("version", "\"" + std::string(63, 'a') + "\xc3\xa9\xc3\xa9\""), &why));
+    CHECK_FALSE(parsePackManifest(manifestWith("version", "\"" + std::string(63, 'a') + "\xc3\xa9\xc3\xa9\""), &why,
+                                  std::nullopt));
     CHECK_THAT(why, ContainsSubstring(std::string(63, 'a') + "..."));
 
     // Hostile input is echoed escaped and bounded, never raw.
     why.clear();
-    CHECK_FALSE(parsePackManifest(manifestWith("version", "\"1\\u001b[31m" + std::string(200, 'z') + "\""), &why));
+    CHECK_FALSE(parsePackManifest(manifestWith("version", "\"1\\u001b[31m" + std::string(200, 'z') + "\""), &why,
+                                  std::nullopt));
     CHECK(why.find('\x1b') == std::string::npos);
     CHECK(why.size() < 200);
     CHECK_THAT(why, ContainsSubstring("\\x1b"));
@@ -154,7 +157,7 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
 
     // A directory named pack.json is unreadable, not an empty manifest.
     std::filesystem::create_directory(dir.path() / "pack.json");
-    CHECK_FALSE(readPackManifest(dir.path(), &why));
+    CHECK_FALSE(readPackManifest(dir.path(), &why, std::nullopt));
     CHECK_THAT(why, ContainsSubstring("cannot read"));
 
     std::filesystem::remove(dir.path() / "pack.json");
@@ -163,6 +166,6 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
         out << manifestWith("", "") << std::string(1024 * 1024 + 1, ' ');
     }
     why.clear();
-    CHECK_FALSE(readPackManifest(dir.path(), &why));
+    CHECK_FALSE(readPackManifest(dir.path(), &why, std::nullopt));
     CHECK_THAT(why, ContainsSubstring("too large"));
 }
