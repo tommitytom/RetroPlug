@@ -6663,7 +6663,7 @@ retroplug_pack(mesen)
 - [ ] **Step 5: Build and run**
 
 Run: `pnpm configure && cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 52 test cases)` on Linux (51 on macOS; on Windows 46, the PCM case
+Expected: `All tests passed (... assertions in 54 test cases)` on Linux (53 on macOS; on Windows 48, the PCM case
 among them reported skipped in Catch2's own summary). The Mesen cases print each boot's iNES lines twice (one per
 build) and pass.
 
@@ -7054,7 +7054,7 @@ file wins, and these notes say how:
 
 - `PackDirs.{hpp,cpp}`: gain `normalisedDir`, `canonicalOr` and `isUnder`, which `PackTable.cpp` and `PackDiscovery.cpp`
   had each carried a copy of.
-- `PackDiscovery.cpp`: the manifest-read local is `manifestWhy` (a local named `why` shadowed the parameter, MSVC C4457);
+- `PackDiscovery.cpp`: the manifest-read local is `manifestWhy` (a local `why` shadowed the parameter, MSVC C4457);
   `PackCandidate` carries the pack `id`, so `PackDiscovery` has no parallel `ids` vector; a state.json entry whose
   folder is gone is not held (the table's manifest read reports it, with no hold retried first); the launch records
   every refusal in the table (`PackTable::recordRefusal`) as well as returning it.
