@@ -4,9 +4,9 @@
 // 4.6). It is what the Launchpad pack's tests and the headless host's scripted Pro MK3 are built on, so it carries what
 // a device model needs and not only a recorder: the ports a machine lists, the ones that refuse, an event log, what
 // every output was sent (kept outside the port, so it survives the port's destruction), the receiver of every open
-// input, a deliver() that plays one, a send hook a scripted device answers through, a per-send delay with the counters
-// a writer-thread case waits on, and a delivery mode: inline on the caller's thread, or on a thread of its own, which
-// is what the stream's cases and the ThreadSanitizer leg need.
+// input, a deliver() that plays one, a send hook a scripted device answers through, a per-send delay or gate with the
+// counters a writer-thread case waits on, and a delivery mode: inline on the caller's thread, or on a thread of its
+// own, which is what the stream's cases and the ThreadSanitizer leg need.
 //
 // Header-only test support under native/test-support, an include root the test binaries and the headless host add and
 // no product does - the shape the n8 pack's FakeN8.hpp has, "a header a host, and only a host, compiles". It is not
@@ -106,6 +106,21 @@ public:
     // Writes in flight, so a case can wait until the writer is INSIDE the port before it times a send() against it.
     std::atomic<int> sendsStarted{0};
     std::atomic<int> sendsFinished{0};
+    // A port whose writes wait inside it until the case lets them go (holdSends, then releaseSends): the way to build a
+    // backlog behind a writer that does not cost the writes any time once it is let go. A sendDelayMs backlog costs
+    // its delay per write, and a machine whose sleeps overshoot (a loaded CI runner's 20 ms took up to 100) can spend
+    // a flush's whole deadline on a few of them.
+    void holdSends() {
+        std::lock_guard<std::mutex> lk(gateMutex_);
+        held_ = true;
+    }
+    void releaseSends() {
+        {
+            std::lock_guard<std::mutex> lk(gateMutex_);
+            held_ = false;
+        }
+        gateWake_.notify_all();
+    }
 
     // --- the fake's own answers ---------------------------------------------------------------------------------
 
@@ -205,6 +220,10 @@ public:
     void sendThrough(const std::shared_ptr<FakePortRecord>& rec, const std::uint8_t* data, std::size_t n) {
         if (!data || n == 0) return;
         sendsStarted.fetch_add(1, std::memory_order_relaxed);
+        {
+            std::unique_lock<std::mutex> lk(gateMutex_);
+            gateWake_.wait(lk, [this] { return !held_; });
+        }
         if (sendDelayMs > 0) std::this_thread::sleep_for(std::chrono::milliseconds(sendDelayMs));
         {
             std::lock_guard<std::mutex> lk(mutex_);
@@ -285,6 +304,9 @@ private:
     friend class FakePort;
 
     mutable std::mutex                       mutex_;
+    std::mutex                               gateMutex_;  // holdSends' gate, apart from mutex_: a held write waits
+    std::condition_variable                  gateWake_;
+    bool                                     held_ = false;
     std::vector<std::shared_ptr<FakePortRecord>> records_;
     std::map<std::string, FakePort*>         deliverers_;  // open inputs, for threaded delivery
 };

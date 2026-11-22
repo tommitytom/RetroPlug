@@ -124,6 +124,16 @@ bool settled(const FakeMidiBackend& backend, const int count) {
     return backend.sendsFinished.load() == count;
 }
 
+/** The same wait for the writes the port has BEGUN, which a held one (holdSends) has, with none of them finished. */
+bool settledStart(const FakeMidiBackend& backend, const int count) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (backend.sendsStarted.load() == count) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return backend.sendsStarted.load() == count;
+}
+
 }  // namespace
 
 // ---- what a selection opens ------------------------------------------------------------------------------------
@@ -970,15 +980,24 @@ TEST_CASE("a threaded stream's swap with a backlog flushes it before the port cl
     // the writer's stop are ordered to guarantee.
     Machine          machine;
     FakeMidiBackend& backend = machine.backend;
-    backend.sendDelayMs      = 20;
     backend.virtualPorts     = false;  // the hardware set's flush is the subject; the virtual send stays inline
     MidiStream stream(backend, rp::midi::OutputMode::Threaded);
     stream.setOutputs({"Synth out"});
     REQUIRE(stream.open());
+    // The backlog: the writer's first write waits inside the port with the rest queued behind it, and the port lets
+    // it go once the swap is under way. Held, not slowed by a sendDelayMs, for the reason PortWriter.test.cpp's stop
+    // case gives: a backlog of slow writes can spend the flush's deadline on a machine whose sleeps overshoot.
+    backend.holdSends();
     const std::uint8_t note[3]  = {0x90, 0x3C, 0x7F};
     constexpr int      kQueued  = 8;
     for (int i = 0; i < kQueued; ++i) stream.send(note, 3);
+    REQUIRE(settledStart(backend, 1));
+    std::thread release([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        backend.releaseSends();
+    });
     stream.setOutputs({});  // the port leaves: published away, waited out, flushed, joined, closed
+    release.join();
     CHECK(backend.sentTo("Synth out").size() == kQueued);
     CHECK(backend.sendsAfterClose() == 0);
     // The stream is still usable, and no hardware port is left to receive: the next message goes nowhere on the wire.

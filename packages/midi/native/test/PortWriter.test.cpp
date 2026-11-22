@@ -236,13 +236,24 @@ TEST_CASE("a threaded writer whose port never opened starts no thread, and stop 
 
 TEST_CASE("a stop flushes what queued before the port goes, and nothing is sent after it") {
     Rig   rig;
-    auto& backend       = rig.backend;
-    backend.sendDelayMs = 20;
+    auto& backend = rig.backend;
+    // The first write waits inside the port with the rest queued behind it, and the port lets it go once the stop is
+    // under way, so the backlog is the flush's to send. Held, not slowed: a backlog of 20 ms writes spent the flush's
+    // whole deadline (500 ms) on five of them on a macOS runner whose sleeps overshot, and the flush rightly gave the
+    // rest up. A release that comes before the stop on a stalled machine leaves the writer nothing to flush, which
+    // still passes; one that comes inside the deadline, as it does by a wide margin, has no time to run out.
+    backend.holdSends();
     auto          writer  = rig.open();
     const Bytes   note    = {0x90, 0x3C, 0x7F};
     constexpr int kQueued = 8;
     for (int i = 0; i < kQueued; ++i) REQUIRE(writer->push(note.data(), note.size()));
+    REQUIRE(eventually([&] { return backend.sendsStarted.load() == 1; }, std::chrono::milliseconds(2000)));
+    std::thread release([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        backend.releaseSends();
+    });
     writer->stop();
+    release.join();
     // Every queued message went out before the close (a dropped Note Off is a stuck note), and none after it.
     CHECK(backend.sentTo("Synth out").size() == kQueued);
     CHECK(backend.sendsAfterClose() == 0);
