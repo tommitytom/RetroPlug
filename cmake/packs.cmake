@@ -77,9 +77,10 @@ function(_retroplug_pack_check_pic module)
         if(_type STREQUAL "STATIC_LIBRARY" OR _type STREQUAL "OBJECT_LIBRARY")
             get_target_property(_pic "${_item}" POSITION_INDEPENDENT_CODE)
             if(NOT _pic)
-                message(FATAL_ERROR "retroplug_pack: ${module} links the static library ${_item}, which is not "
-                                    "position-independent: set its POSITION_INDEPENDENT_CODE ON (a pack module is a "
-                                    "shared object, and a static library linked into one must be built -fPIC)")
+                message(FATAL_ERROR "retroplug_pack_module: ${module} links the static or object library "
+                                    "${_item}, which is not position-independent: set its POSITION_INDEPENDENT_CODE "
+                                    "ON (a pack module is a shared object, and a static or object library linked "
+                                    "into one must be built -fPIC)")
             endif()
         endif()
         if(NOT _type STREQUAL "INTERFACE_LIBRARY")
@@ -184,8 +185,8 @@ function(retroplug_pack_module target)
     if(_count EQUAL 0)
         set(_body "    *count = 0;\n    return nullptr;\n")
     else()
-        set(_body "    static const rp_package* const packages[] = {\n${_calls}    };\n"
-                  "    *count = ${_count};\n    return packages;\n")
+        set(_body "    static const rp_package* const packages[] = {\n${_calls}    };\n")
+        string(APPEND _body "    *count = ${_count};\n    return packages;\n")
     endif()
     set(_entry "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}-entry.cpp")
     file(GENERATE OUTPUT "${_entry}" CONTENT
