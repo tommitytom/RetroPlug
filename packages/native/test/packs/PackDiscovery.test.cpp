@@ -256,7 +256,7 @@ TEST_CASE("a development folder inside the data root that cannot be held is refu
     PackTable table(rp::graph::productPackages());
     const auto refused = loadLaunchPacks(table, tmp.roots(), {dir});
     REQUIRE(refused.size() == 1);
-    CHECK(refused[0].id == "1.0.0");
+    CHECK(refused[0].id == "packfixture");
     CHECK_THAT(refused[0].reason, ContainsSubstring("cannot hold its version folder"));
     CHECK(table.size() == 0);
 }

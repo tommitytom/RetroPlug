@@ -41,12 +41,11 @@ fs::path normalised(const fs::path& dir) {
 PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState>& state, const std::string* why,
                            const std::vector<fs::path>& devDirs) {
     PackDiscovery out;
-    std::vector<std::string> ids;  // out.candidates' ids, index for index
     if (state) {
         for (const auto& p : state->packs) {
             if (p.remove) continue;
             out.candidates.push_back({roots.data / p.id / p.active, PackOrigin::Installed, false, nullptr});
-            ids.push_back(p.id);
+            out.ids.push_back(p.id);
         }
     } else if (!roots.data.empty() && why != nullptr) {
         out.refused.push_back({"state.json", roots.data / "state.json", *why});
@@ -66,7 +65,7 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
         }
         bool placed = false;
         for (std::size_t i = 0; i < out.candidates.size(); ++i) {
-            if (ids[i] != manifest->id) continue;
+            if (out.ids[i] != manifest->id) continue;
             placed = true;
             if (out.candidates[i].origin == PackOrigin::Installed) {
                 out.candidates[i] = {dir, PackOrigin::Development, true, nullptr};
@@ -80,7 +79,7 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
         }
         if (!placed) {
             out.candidates.push_back({dir, PackOrigin::Development, false, nullptr});
-            ids.push_back(manifest->id);
+            out.ids.push_back(manifest->id);
         }
     }
     return out;
@@ -128,27 +127,27 @@ std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& root
             state = PackState{};
         }
         found = discoverFrom(roots, state, reported ? nullptr : &why, devDirs);
-        for (auto it = found.candidates.begin(); it != found.candidates.end();) {
-            PackCandidate& c = *it;
+        for (std::size_t i = 0; i < found.candidates.size();) {
+            PackCandidate& c = found.candidates[i];
             // An installed folder is held; so is a development one that lies inside the data root, which a settle can
             // delete as readily (the candidate keeps its Development origin: the loader adopts a hold either way).
             if (c.origin != PackOrigin::Installed && !(!roots.data.empty() && isUnder(c.dir, roots.data))) {
-                ++it;
+                ++i;
                 continue;
             }
             std::string held;
             FileLock::Failure failure = FileLock::Failure::None;
             if (auto lock = holdVersionBriefly(c.dir, &held, &failure)) {
                 c.lock = std::make_shared<FileLock>(std::move(*lock));
-                ++it;
+                ++i;
             } else if (c.origin == PackOrigin::Development && failure != FileLock::Failure::Denied) {
                 // Inside the managed root a development folder must be held, not loaded unheld. (An installed one
                 // that is not held here is held, or refused, by the table's own bounded retry.)
-                found.refused.push_back(
-                    {displayPath(c.dir.filename()), c.dir, "cannot hold its version folder: " + held});
-                it = found.candidates.erase(it);
+                found.refused.push_back({found.ids[i], c.dir, "cannot hold its version folder: " + held});
+                found.candidates.erase(found.candidates.begin() + static_cast<std::ptrdiff_t>(i));
+                found.ids.erase(found.ids.begin() + static_cast<std::ptrdiff_t>(i));
             } else {
-                ++it;
+                ++i;
             }
         }
     }

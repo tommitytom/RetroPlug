@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include "host/packs/PackCandidate.hpp"
@@ -17,6 +18,7 @@ class PackTable;
 
 struct PackDiscovery {
     std::vector<PackCandidate> candidates;  // installed in state.json's order, then development in the order given
+    std::vector<std::string>   ids;         // each candidate's pack id, index for index
     std::vector<PackRefusal>   refused;     // a folder that could not be a candidate, with the reason
 };
 
@@ -27,11 +29,11 @@ PackDiscovery discoverPacks(const PackRoots& roots, const std::vector<std::files
 
 // What a host's launch does. Under one exclusive hold of state.lock: settle state.json (pending updates and removals),
 // read it, discover, and take the hold on each installed candidate's version folder and on each development one whose
-// canonical path lies inside the data root (a folder a settle could delete as readily; one that cannot be held there
-// is refused, not loaded unheld); then, with state.lock let go, load in
-// dependency order into `table`, which keeps those holds. So another launch's settle, which takes state.lock too,
-// deletes a version folder either before this launch discovers it or not at all. The development folders are
-// `extraDevDirs` followed by RETROPLUG_PACK_PATH's. Returns every refusal, discovery's and the loads'.
+// canonical path lies inside the data root (a folder a settle could delete as readily; one that cannot be held there is
+// refused, not loaded unheld); then, with state.lock let go, load in dependency order into `table`, which keeps those
+// holds. So another launch's settle, which takes state.lock too, deletes a version folder either before this launch
+// discovers it or not at all. The development folders are `extraDevDirs` followed by RETROPLUG_PACK_PATH's. Returns
+// every refusal, discovery's and the loads'.
 std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& roots,
                                          const std::vector<std::filesystem::path>& extraDevDirs);
 
