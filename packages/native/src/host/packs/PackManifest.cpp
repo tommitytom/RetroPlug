@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <unordered_set>
 
 #include <rfl.hpp>
 #include <rfl/json.hpp>
@@ -54,16 +55,24 @@ bool refuse(std::string* why, std::string reason) {
     return false;
 }
 
-// `text` as a message may echo it: non-printable bytes escaped as \xNN and the length capped, so a hostile manifest
-// cannot put control codes or a megabyte into a log line.
-std::string echoed(std::string_view text) {
-    constexpr std::size_t kMax = 64;
+// The deepest nesting of arrays and objects a manifest may have. The deepest real member is two levels down; the
+// limit exists because reflect-cpp's generic parser recurses once per level, and a deep document would overflow the
+// stack of a host that reads it at launch.
+constexpr int kMaxNesting = 32;
+
+// `text` as a message may echo it: non-printable bytes escaped as \xNN and cut to `cap` bytes (never inside a UTF-8
+// sequence), so a hostile manifest cannot put control codes or a megabyte into a log line. A value from the manifest
+// is held to 64 bytes; the text of a library's own error, which names the cause at its end, to 256.
+std::string echoed(std::string_view text, std::size_t cap = 64) {
+    bool cut = false;
+    if (text.size() > cap) {
+        std::size_t at = cap;
+        while (at > 0 && (static_cast<unsigned char>(text[at]) & 0xc0) == 0x80) --at;
+        text = text.substr(0, at);
+        cut = true;
+    }
     std::string out;
     for (const char ch : text) {
-        if (out.size() >= kMax) {
-            out += "...";
-            break;
-        }
         const auto c = static_cast<unsigned char>(ch);
         if (c < 0x20 || c == 0x7f || c == '\\' || c == '"') {
             char buf[8];
@@ -73,23 +82,31 @@ std::string echoed(std::string_view text) {
             out += ch;
         }
     }
+    if (cut) out += "...";
     return out;
 }
 
-// The first key an object repeats anywhere in `json`, or empty. yyjson (under reflect-cpp) keeps the first of a
-// repeated key and JS's JSON.parse the last, so a manifest the two readers would see differently is refused rather
-// than parsed either way. A scan of text that is not valid JSON stops quietly: the parse reports that.
+// What DuplicateKeyScan found. Anything else (valid JSON with neither, or text it cannot follow, which the parse then
+// reports) is Nothing.
+struct ScanResult {
+    enum class Kind { Nothing, Duplicate, TooDeep } kind = Kind::Nothing;
+    std::string key;  // the repeated key, for Duplicate
+};
+
+// Scans `json` for the two things refused before it is parsed: nesting past kMaxNesting levels, and a key an object
+// repeats at any depth. yyjson (under reflect-cpp) keeps the first of a repeated key and JS's JSON.parse the last, so
+// a manifest the two readers would see differently is refused rather than parsed either way. The scan recurses at
+// most kMaxNesting levels itself, and stops at the first finding.
 class DuplicateKeyScan {
 public:
     explicit DuplicateKeyScan(std::string_view s) : s_(s) {}
 
-    std::optional<std::string> find() {
+    ScanResult find() {
         value(0);
-        return dup_;
+        return result_;
     }
 
 private:
-    static constexpr int kMaxDepth = 64;
 
     void skipSpace() {
         while (at_ < s_.size() && (s_[at_] == ' ' || s_[at_] == '\t' || s_[at_] == '\n' || s_[at_] == '\r')) ++at_;
@@ -144,12 +161,16 @@ private:
 
     // One value at at_; false once the text stops being JSON this scan can follow, or a duplicate is found.
     bool value(int depth) {
-        if (depth > kMaxDepth) return false;
         skipSpace();
         if (at_ >= s_.size()) return false;
         const char c = s_[at_];
-        if (c == '{') return object(depth);
-        if (c == '[') return array(depth);
+        if (c == '{' || c == '[') {
+            if (depth + 1 > kMaxNesting) {
+                result_.kind = ScanResult::Kind::TooDeep;
+                return false;
+            }
+            return c == '{' ? object(depth + 1) : array(depth + 1);
+        }
         if (c == '"') {
             std::string ignored;
             return string(ignored);
@@ -163,7 +184,7 @@ private:
         skipSpace();
         if (at_ < s_.size() && s_[at_] == ']') return ++at_, true;
         for (;;) {
-            if (!value(depth + 1)) return false;
+            if (!value(depth)) return false;
             skipSpace();
             if (at_ >= s_.size()) return false;
             if (s_[at_] == ']') return ++at_, true;
@@ -173,22 +194,20 @@ private:
 
     bool object(int depth) {
         ++at_;
-        std::vector<std::string> keys;
+        std::unordered_set<std::string> keys;
         skipSpace();
         if (at_ < s_.size() && s_[at_] == '}') return ++at_, true;
         for (;;) {
             skipSpace();
             std::string key;
             if (!string(key)) return false;
-            for (const auto& k : keys)
-                if (k == key) {
-                    dup_ = key;
-                    return false;
-                }
-            keys.push_back(std::move(key));
+            if (!keys.insert(key).second) {
+                result_ = {ScanResult::Kind::Duplicate, std::move(key)};
+                return false;
+            }
             skipSpace();
             if (at_ >= s_.size() || s_[at_++] != ':') return false;
-            if (!value(depth + 1)) return false;
+            if (!value(depth)) return false;
             skipSpace();
             if (at_ >= s_.size()) return false;
             if (s_[at_] == '}') return ++at_, true;
@@ -198,7 +217,7 @@ private:
 
     std::string_view           s_;
     std::size_t                at_ = 0;
-    std::optional<std::string> dup_;
+    ScanResult                 result_;
 };
 
 }  // namespace
@@ -292,13 +311,18 @@ bool isPackId(std::string_view id) {
 }
 
 std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why) {
-    if (const auto dup = DuplicateKeyScan(json).find()) {
-        refuse(why, "the member \"" + echoed(*dup) + "\" appears twice in one object");
+    const ScanResult scan = DuplicateKeyScan(json).find();
+    if (scan.kind == ScanResult::Kind::TooDeep) {
+        refuse(why, "nested deeper than " + std::to_string(kMaxNesting) + " levels");
+        return std::nullopt;
+    }
+    if (scan.kind == ScanResult::Kind::Duplicate) {
+        refuse(why, "the member \"" + echoed(scan.key) + "\" appears twice in one object");
         return std::nullopt;
     }
     auto raw = rfl::json::read<RawManifest>(std::string(json));
     if (!raw) {
-        refuse(why, std::string("not a manifest: ") + echoed(raw.error().what()));
+        refuse(why, std::string("not a manifest: ") + echoed(raw.error().what(), 256));
         return std::nullopt;
     }
     PackManifest m;
@@ -401,10 +425,17 @@ std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::st
         if (why) *why = "pack.json: too large (over " + std::to_string(kMaxManifestBytes) + " bytes)";
         return std::nullopt;
     }
+    // One byte past the limit is read, so a file that grew since the size was taken is still refused, not truncated.
     std::ifstream in(file, std::ios::binary);
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (!in || in.bad()) {
+    std::string text(static_cast<std::size_t>(kMaxManifestBytes) + 1, '\0');
+    in.read(text.data(), static_cast<std::streamsize>(text.size()));
+    if (in.bad() || (in.fail() && !in.eof())) {
         if (why) *why = "pack.json: cannot read " + displayPath(file);
+        return std::nullopt;
+    }
+    text.resize(static_cast<std::size_t>(in.gcount()));
+    if (text.size() > kMaxManifestBytes) {
+        if (why) *why = "pack.json: too large (over " + std::to_string(kMaxManifestBytes) + " bytes)";
         return std::nullopt;
     }
     return parsePackManifest(text, why);

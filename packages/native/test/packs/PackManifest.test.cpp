@@ -107,6 +107,41 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
         CHECK_THAT(why, ContainsSubstring("pack.json: ") && ContainsSubstring(reason));
     }
 
+    // Nesting is refused before any parse recurses, wherever it sits and however deep: a 100k-level array under an
+    // unknown member of requires, or at the top level, must come back as a refusal, not a stack overflow.
+    const std::string deep = std::string(100000, '[') + std::string(100000, ']');
+    const std::vector<std::string> deepTexts = {manifestWith("requires", R"({"zzz":)" + deep + "}"),
+                                                manifestWith("name", deep), "{\"x\":" + deep + "}", deep};
+    for (const std::string& text : deepTexts) {
+        why.clear();
+        CHECK_FALSE(parsePackManifest(text, &why));
+        CHECK_THAT(why, ContainsSubstring("pack.json: nested deeper than 32 levels"));
+    }
+
+    // Deep nesting does not switch the duplicate check off: past the limit it is refused whole, within it the repeat
+    // after the nesting is still found.
+    for (const auto& [levels, reason] : std::vector<std::pair<int, std::string>>{
+             {70, "nested deeper than 32 levels"}, {20, "the member \"id\" appears twice"}}) {
+        why.clear();
+        CHECK_FALSE(parsePackManifest(R"({"x":)" + std::string(levels, '[') + std::string(levels, ']') +
+                                          R"(,"id":"zzz","id":"demo"})", &why));
+        CHECK_THAT(why, ContainsSubstring(reason));
+    }
+
+    // A 1 MiB object of distinct keys is refused or parsed, without a quadratic key check.
+    {
+        std::string wide = "{";
+        for (int i = 0; wide.size() < 1000000; ++i) wide += "\"k" + std::to_string(i) + "\":1,";
+        wide += "\"id\":\"demo\"}";
+        why.clear();
+        CHECK_FALSE(parsePackManifest(wide, &why));
+    }
+
+    // A cause from the parser is echoed longer than an input value, and neither is cut inside a UTF-8 sequence.
+    why.clear();
+    CHECK_FALSE(parsePackManifest(manifestWith("version", "\"" + std::string(63, 'a') + "\xc3\xa9\xc3\xa9\""), &why));
+    CHECK_THAT(why, ContainsSubstring(std::string(63, 'a') + "..."));
+
     // Hostile input is echoed escaped and bounded, never raw.
     why.clear();
     CHECK_FALSE(parsePackManifest(manifestWith("version", "\"1\\u001b[31m" + std::string(200, 'z') + "\""), &why));
