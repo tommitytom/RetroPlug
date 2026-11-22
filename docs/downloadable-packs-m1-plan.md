@@ -6290,11 +6290,16 @@ Create `packages/native/test/packs/MesenPack.test.cpp`:
 // neither, which is why the case is the NES alone; the SMS and GBA stage files there and are left to M5, where Mesen is
 // a pack and no static copy sits beside it. And it does not run on Windows: the boundary moves heap ownership both
 // ways, which the static CRT (/MT) makes two allocators there, so a pass would prove nothing until the allocator
-// decision is made (docs/downloadable-packs-m1-plan.md, Design questions).
+// decision is made (docs/downloadable-packs-m1-plan.md, Design questions). Nor does it cover retroplug-sdl, which links
+// -static-libstdc++: a pack there would carry a second C++ runtime across this boundary (Design questions 14).
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-mesen]"`.
 
 #include <catch2/catch_test_macros.hpp>
+
+#if !defined(_WIN32)
+#include <dlfcn.h>
+#endif
 
 #include <cstring>
 #include <filesystem>
@@ -6359,6 +6364,16 @@ std::vector<float> block(Engine& e, std::uint64_t at) {
     return out;
 }
 
+#if !defined(_WIN32)
+// The file the code behind a system's vtable was loaded from: a core built by the pack's own copy of the package has
+// its vtable in the module, one built by the static build has it in this binary.
+std::string vtableFile(SystemBase* core) {
+    Dl_info info{};
+    if (!core || dladdr(*reinterpret_cast<void* const*>(core), &info) == 0 || !info.dli_fname) return {};
+    return info.dli_fname;
+}
+#endif
+
 }  // namespace
 
 TEST_CASE("the Mesen package loads as a pack, its types described as its static build describes them",
@@ -6414,6 +6429,11 @@ TEST_CASE("a NES booted through the Mesen pack renders the static build's PCM an
     REQUIRE(placedBuiltIn.ok);
     REQUIRE(placedPack.ok);
     REQUIRE(fromPack.findSystem(1) != nullptr);
+    REQUIRE(builtIn.findSystem(1) != nullptr);
+    // The pack engine's core really comes from the module, and the static build's from this binary: without this a
+    // pack that registered nothing and fell back on the static types could still agree with itself.
+    CHECK(vtableFile(fromPack.findSystem(1)).find("rp-mesen") != std::string::npos);
+    CHECK(vtableFile(builtIn.findSystem(1)).find("rp-mesen") == std::string::npos);
 
     // Interleaved, block by block: each block of the pack's core against the same block of the static build's. The
     // NES is exactly silent until the first note (at 1.5 s) and sounds in every block from the one that carries it,
@@ -6452,13 +6472,14 @@ Create `packages/native/test/packs/BoundaryRules.test.cpp`:
 
 ```cpp
 // The crossing rules of the pinned C++ boundary (docs/downloadable-packs-loading-design.md section 2) that a test can
-// hold: no RTTI cast in the code that handles a pack's objects. A pack's types (a console's SystemBase subclass, its
-// capability interfaces) carry their own typeinfo, local to its module, so a dynamic_cast, dynamic_pointer_cast or
-// typeid on one of them depends on how the platform compares typeinfo across modules; the host calls them through
-// virtual functions and branches on null interface pointers instead. Any built-in package may hold a pack's object
-// (the engine, the system contract, the graph runtime, a host, a cart package beside a console pack), so the scan is
-// every package's native source and the shell's hosts, but for Mesen's, which becomes a pack and may cast its own
-// objects inside itself. Tests and vendored dependencies are not scanned: a test may cast the cores it built.
+// hold: no RTTI cast, typeid, any_cast or type_index in the code that handles a pack's objects. A pack's types (a
+// console's SystemBase subclass, its capability interfaces) carry their own typeinfo, local to its module, so a
+// dynamic_cast, dynamic_pointer_cast or typeid on one of them depends on how the platform compares typeinfo across
+// modules; the host calls them through virtual functions and branches on null interface pointers instead. Any built-in
+// package may hold a pack's object (the engine, the system contract, the graph runtime, a host, a cart package beside
+// a console pack), so the scan is every package's native source and the shell's own source and hosts, but for Mesen's,
+// which becomes a pack and may cast its own objects inside itself. Tests and vendored dependencies are not scanned: a
+// test may cast the cores it built.
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-boundary]"`.
 
@@ -6466,6 +6487,7 @@ Create `packages/native/test/packs/BoundaryRules.test.cpp`:
 
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -6473,17 +6495,22 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// The folders scanned: every packages/<name>/native/src but Mesen's, and the shell's hosts.
+// The folders scanned: every packages/<name>/native/src but Mesen's, the shell's src, and its hosts.
 std::vector<fs::path> scannedRoots(const fs::path& repo) {
     std::vector<fs::path> roots;
     for (const auto& package : fs::directory_iterator(repo / "packages")) {
         const fs::path src = package.path() / "native" / "src";
         if (package.path().filename() != "mesen" && fs::is_directory(src)) roots.push_back(src);
     }
+    roots.push_back(repo / "packages" / "native" / "src");  // the shell's own: Engine, the system table, the packs
     for (const char* host : {"plugin", "cli", "sdl", "node"})
         if (fs::is_directory(repo / "packages" / "native" / host)) roots.push_back(repo / "packages" / "native" / host);
     return roots;
 }
+
+// What reads a type's identity across modules: the casts, typeid (with or without a space), std::any_cast (which
+// compares typeinfo) and std::type_index.
+const std::regex kRttiUse(R"(dynamic_cast|dynamic_pointer_cast|typeid\s*\(|any_cast|type_index)");
 
 }  // namespace
 
@@ -6510,9 +6537,7 @@ TEST_CASE("the host's code casts no object by RTTI", "[packs-boundary]") {
             for (int n = 1; std::getline(in, line); ++n) {
                 // What a line says outside its comment: the code, not a note about why there is no cast.
                 const std::string code = line.substr(0, line.find("//"));
-                if (code.find("dynamic_cast") != std::string::npos ||
-                    code.find("dynamic_pointer_cast") != std::string::npos ||
-                    code.find("typeid(") != std::string::npos)
+                if (std::regex_search(code, kRttiUse))
                     found.push_back(it->path().string() + ":" + std::to_string(n) + ": " + line);
             }
         }
@@ -6551,8 +6576,10 @@ In its `DEFS`, after the `RP_PACKS_BUILD_DIR` line add:
              RP_REPO_ROOT="${CMAKE_SOURCE_DIR}"     # the trees BoundaryRules.test.cpp scans
 ```
 
-and replace `add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})` with
-`add_dependencies(retroplug-packs-test ${_rp_packfixture_targets} retroplug-mesen-pack)`.
+and follow `add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})` with
+`if(TARGET retroplug-mesen-pack)` / `add_dependencies(retroplug-packs-test retroplug-mesen-pack)` / `endif()` (the
+module is absent on a platform with no pack folder, which `retroplug_pack_module` now reports with a STATUS line and
+skips rather than failing the configure).
 
 - [ ] **Step 2: Run the configure to see it fail**
 
@@ -6995,7 +7022,9 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
 14. **`retroplug-sdl` links `-static-libstdc++`** (`packages/native/CMakeLists.txt`, near the SDL target): a pack
     `dlopen`ed there would run a second C++ runtime across the pinned C++ boundary (Task 10), each with its own
     allocator state and `std::string` / `std::vector` types the two sides exchange. Task 10's boundary result does not
-    cover that host; M5 either links the shared runtime there or keeps packs out of that product.
+    cover that host; M5 either links the shared runtime there or keeps packs out of that product. Linking the shared
+    runtime undoes why the host is static (the handhelds ship an older libstdc++), so a pack for that host would have to
+    be built against the device's libstdc++ floor.
 15. **Opening a library runs its static constructors before its level is checked** (`NativeLibrary.hpp`): what keeps an
     honest pack of another API level from being opened is the manifest's `apiLevel`, which the loader compares first,
     before the rest of the manifest is read. A dishonest manifest over a library of another level is caught by the entry

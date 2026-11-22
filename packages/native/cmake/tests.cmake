@@ -215,7 +215,10 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms")
 # The packs it loads are modules nothing links, built before it.
 get_property(_rp_packfixture_targets GLOBAL PROPERTY RP_PACKFIXTURE_TARGETS)
-add_dependencies(retroplug-packs-test ${_rp_packfixture_targets} retroplug-mesen-pack)
+add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})
+if(TARGET retroplug-mesen-pack)  # absent on a platform with no pack folder (cmake/packs.cmake)
+    add_dependencies(retroplug-packs-test retroplug-mesen-pack)
+endif()
 
 # What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script

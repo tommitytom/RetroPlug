@@ -16,11 +16,16 @@
 // neither, which is why the case is the NES alone; the SMS and GBA stage files there and are left to M5, where Mesen is
 // a pack and no static copy sits beside it. And it does not run on Windows: the boundary moves heap ownership both
 // ways, which the static CRT (/MT) makes two allocators there, so a pass would prove nothing until the allocator
-// decision is made (docs/downloadable-packs-m1-plan.md, Design questions).
+// decision is made (docs/downloadable-packs-m1-plan.md, Design questions). Nor does it cover retroplug-sdl, which links
+// -static-libstdc++: a pack there would carry a second C++ runtime across this boundary (Design questions 14).
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-mesen]"`.
 
 #include <catch2/catch_test_macros.hpp>
+
+#if !defined(_WIN32)
+#include <dlfcn.h>
+#endif
 
 #include <cstring>
 #include <filesystem>
@@ -85,6 +90,16 @@ std::vector<float> block(Engine& e, std::uint64_t at) {
     return out;
 }
 
+#if !defined(_WIN32)
+// The file the code behind a system's vtable was loaded from: a core built by the pack's own copy of the package has
+// its vtable in the module, one built by the static build has it in this binary.
+std::string vtableFile(SystemBase* core) {
+    Dl_info info{};
+    if (!core || dladdr(*reinterpret_cast<void* const*>(core), &info) == 0 || !info.dli_fname) return {};
+    return info.dli_fname;
+}
+#endif
+
 }  // namespace
 
 TEST_CASE("the Mesen package loads as a pack, its types described as its static build describes them",
@@ -140,6 +155,11 @@ TEST_CASE("a NES booted through the Mesen pack renders the static build's PCM an
     REQUIRE(placedBuiltIn.ok);
     REQUIRE(placedPack.ok);
     REQUIRE(fromPack.findSystem(1) != nullptr);
+    REQUIRE(builtIn.findSystem(1) != nullptr);
+    // The pack engine's core really comes from the module, and the static build's from this binary: without this a
+    // pack that registered nothing and fell back on the static types could still agree with itself.
+    CHECK(vtableFile(fromPack.findSystem(1)).find("rp-mesen") != std::string::npos);
+    CHECK(vtableFile(builtIn.findSystem(1)).find("rp-mesen") == std::string::npos);
 
     // Interleaved, block by block: each block of the pack's core against the same block of the static build's. The
     // NES is exactly silent until the first note (at 1.5 s) and sounds in every block from the one that carries it,

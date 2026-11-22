@@ -151,8 +151,9 @@ function(retroplug_pack_module target)
         message(FATAL_ERROR "retroplug_pack_module(${target}): ${M_MANIFEST} has no `halves.native` library stem")
     endif()
     if(NOT RP_PACK_PLATFORM)
-        message(FATAL_ERROR "retroplug_pack_module(${target}): this platform (${CMAKE_SYSTEM_NAME} "
-                            "${CMAKE_SYSTEM_PROCESSOR}) has no pack platform folder")
+        message(STATUS "retroplug_pack_module(${target}): this platform (${CMAKE_SYSTEM_NAME} "
+                       "${CMAKE_SYSTEM_PROCESSOR}) has no pack platform folder, so no pack is built")
+        return()
     endif()
     if(NOT M_ENTRIES AND NOT M_NO_ENTRY)
         message(FATAL_ERROR "retroplug_pack_module(${target}): ENTRIES names no package entry")
