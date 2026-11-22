@@ -19,7 +19,8 @@
 namespace rp::host::packs::test {
 
 struct DynamicSymbols {
-    // Defined, global, weak or GNU-unique, with default visibility. A GNU-unique symbol (an inline function's static,
+    // Defined, global, weak or GNU-unique, with any visibility but hidden or internal (protected counts: it is in the
+    // dynamic table for others to bind to). A GNU-unique symbol (an inline function's static,
     // a template's static member) is merged process-wide by glibc even under RTLD_LOCAL: the one way two copies'
     // statics really become one, so it counts as an export.
     std::vector<std::string> exported;
@@ -35,6 +36,7 @@ inline std::optional<DynamicSymbols> readDynamicSymbols(const std::string& file)
         return std::nullopt;
     Elf64_Ehdr eh;
     std::memcpy(&eh, bytes.data(), sizeof eh);
+    if (eh.e_shentsize < sizeof(Elf64_Shdr)) return std::nullopt;
     const auto section = [&](std::size_t i) {
         Elf64_Shdr sh;
         std::memcpy(&sh, bytes.data() + eh.e_shoff + i * eh.e_shentsize, sizeof sh);
@@ -44,6 +46,7 @@ inline std::optional<DynamicSymbols> readDynamicSymbols(const std::string& file)
     for (std::size_t i = 0; i < eh.e_shnum; ++i) {
         const Elf64_Shdr dynsym = section(i);
         if (dynsym.sh_type != SHT_DYNSYM || dynsym.sh_entsize != sizeof(Elf64_Sym)) continue;
+        if (dynsym.sh_link >= eh.e_shnum) return std::nullopt;
         const Elf64_Shdr strtab = section(dynsym.sh_link);
         if (dynsym.sh_offset + dynsym.sh_size > bytes.size() || strtab.sh_offset + strtab.sh_size > bytes.size())
             return std::nullopt;
@@ -57,7 +60,8 @@ inline std::optional<DynamicSymbols> readDynamicSymbols(const std::string& file)
             if (sym.st_shndx == SHN_UNDEF) {
                 if (bind == STB_GLOBAL) out.imported.push_back(name);
             } else if ((bind == STB_GLOBAL || bind == STB_WEAK || bind == STB_GNU_UNIQUE) &&
-                       ELF64_ST_VISIBILITY(sym.st_other) == STV_DEFAULT) {
+                       ELF64_ST_VISIBILITY(sym.st_other) != STV_HIDDEN &&
+                       ELF64_ST_VISIBILITY(sym.st_other) != STV_INTERNAL) {
                 out.exported.push_back(name);
             }
         }

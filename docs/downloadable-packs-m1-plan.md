@@ -3568,7 +3568,9 @@ git commit -m "packs: state.json under its lock, written atomically and settled 
 - Create: `packages/native/src/host/packs/NativeLibrary.hpp`, `packages/native/src/host/packs/NativeLibrary.cpp`
 - Create: `packages/native/src/host/packs/PackTable.hpp`, `packages/native/src/host/packs/PackTable.cpp`
 - Create: `packages/native/test/packs/PackLoader.test.cpp`, `packages/native/test/packs/ElfSymbols.hpp`
-- Modify: `packages/native/CMakeLists.txt`, `packages/native/cmake/tests.cmake`
+- Modify: `packages/native/CMakeLists.txt`, `packages/native/cmake/tests.cmake`,
+  `packages/native/src/host/packs/PackManifest.{hpp,cpp}` (a parse given the host's level judges a manifest of another
+  level on its level alone), `packages/node-sdk/native/src/graph/rp_pack.h` (one comment)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3596,7 +3598,8 @@ Create `packages/native/test/packs/ElfSymbols.hpp` (a module's dynamic symbols, 
 namespace rp::host::packs::test {
 
 struct DynamicSymbols {
-    // Defined, global, weak or GNU-unique, with default visibility. A GNU-unique symbol (an inline function's static,
+    // Defined, global, weak or GNU-unique, with any visibility but hidden or internal (protected counts: it is in the
+    // dynamic table for others to bind to). A GNU-unique symbol (an inline function's static,
     // a template's static member) is merged process-wide by glibc even under RTLD_LOCAL: the one way two copies'
     // statics really become one, so it counts as an export.
     std::vector<std::string> exported;
@@ -3612,6 +3615,7 @@ inline std::optional<DynamicSymbols> readDynamicSymbols(const std::string& file)
         return std::nullopt;
     Elf64_Ehdr eh;
     std::memcpy(&eh, bytes.data(), sizeof eh);
+    if (eh.e_shentsize < sizeof(Elf64_Shdr)) return std::nullopt;
     const auto section = [&](std::size_t i) {
         Elf64_Shdr sh;
         std::memcpy(&sh, bytes.data() + eh.e_shoff + i * eh.e_shentsize, sizeof sh);
@@ -3621,6 +3625,7 @@ inline std::optional<DynamicSymbols> readDynamicSymbols(const std::string& file)
     for (std::size_t i = 0; i < eh.e_shnum; ++i) {
         const Elf64_Shdr dynsym = section(i);
         if (dynsym.sh_type != SHT_DYNSYM || dynsym.sh_entsize != sizeof(Elf64_Sym)) continue;
+        if (dynsym.sh_link >= eh.e_shnum) return std::nullopt;
         const Elf64_Shdr strtab = section(dynsym.sh_link);
         if (dynsym.sh_offset + dynsym.sh_size > bytes.size() || strtab.sh_offset + strtab.sh_size > bytes.size())
             return std::nullopt;
@@ -3634,7 +3639,8 @@ inline std::optional<DynamicSymbols> readDynamicSymbols(const std::string& file)
             if (sym.st_shndx == SHN_UNDEF) {
                 if (bind == STB_GLOBAL) out.imported.push_back(name);
             } else if ((bind == STB_GLOBAL || bind == STB_WEAK || bind == STB_GNU_UNIQUE) &&
-                       ELF64_ST_VISIBILITY(sym.st_other) == STV_DEFAULT) {
+                       ELF64_ST_VISIBILITY(sym.st_other) != STV_HIDDEN &&
+                       ELF64_ST_VISIBILITY(sym.st_other) != STV_INTERNAL) {
                 out.exported.push_back(name);
             }
         }
@@ -3667,8 +3673,14 @@ Create `packages/native/test/packs/PackLoader.test.cpp`:
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
+
+#if defined(__linux__)
+#include <dlfcn.h>
+#endif
 
 #include "ElfSymbols.hpp"
 #include "PackTestSupport.hpp"
@@ -3709,6 +3721,30 @@ void checkRefused(PackTable& table, const std::string& id, const std::string& re
     CHECK(table.refusals().back().id == id);
     CHECK(table.refusals().back().reason == load.error);
 }
+
+// A pack folder holding nothing but a pack.json, for the cases that never reach a library.
+std::filesystem::path writePack(const TempDir& tmp, const std::string& id, const std::string& body) {
+    const auto dir = tmp.path() / id;
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "pack.json") << body;
+    return dir;
+}
+
+std::string manifestJson(const std::string& id, std::uint32_t level, const std::string& needs,
+                         const std::string& halves) {
+    return "{\"id\": \"" + id + "\", \"name\": \"n\", \"version\": \"1.0.0\", \"apiLevel\": " +
+           std::to_string(level) + ", \"license\": \"MIT\", \"source\": \"s\", \"requires\": {\"packs\": " +
+           needs + "}, \"provides\": {\"nodeTypes\": [\"rp." + id + ".t\"]}, \"halves\": {" + halves + "}}";
+}
+
+#if defined(__linux__)
+// Whether `file` is mapped in this process: RTLD_NOLOAD answers a handle only for a library already open.
+bool libraryIsOpen(const std::filesystem::path& file) {
+    void* handle = dlopen(file.c_str(), RTLD_NOW | RTLD_NOLOAD);
+    if (handle != nullptr) dlclose(handle);
+    return handle != nullptr;
+}
+#endif
 
 }  // namespace
 
@@ -3788,6 +3824,24 @@ TEST_CASE("a pack built for another API level is refused, saying which side is o
     checkRefused(table, "packfixture-api-older",
                  "is built for API level " + std::to_string(RP_API_LEVEL - 1) + ", and this RetroPlug is level " +
                      std::to_string(RP_API_LEVEL) + ": update the pack");
+    // A manifest of another level is judged on its level alone: whatever else it changed (a half this host has no word
+    // for, a member of another shape) must not hide the advice.
+    {
+        TempDir tmp;
+        const auto dir = writePack(tmp, "levelpack",
+                                   manifestJson("levelpack", RP_API_LEVEL + 1, "{}",
+                                                "\"native\": \"rp-levelpack\", \"web\": \"js/w.js\""));
+        const PackLoad load = table.load(dir);
+        CHECK_FALSE(load);
+        CHECK_THAT(load.error, ContainsSubstring("is built for API level " + std::to_string(RP_API_LEVEL + 1) +
+                                                 ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) +
+                                                 ": update RetroPlug"));
+        // At this level the same manifest is refused for what it is.
+        const auto same = writePack(tmp, "levelpack2",
+                                    manifestJson("levelpack2", RP_API_LEVEL, "[]",
+                                                 "\"native\": \"rp-levelpack2\", \"web\": \"js/w.js\""));
+        CHECK_THAT(table.load(same).error, ContainsSubstring("halves.web is no half this RetroPlug loads"));
+    }
     // A manifest that says this level over a library that reports another: the entry's answer is read first.
     checkRefused(table, "packfixture-api-mismatch",
                  "'s library reports API level " + std::to_string(RP_API_LEVEL + 1) + ", and this RetroPlug is level " +
@@ -3856,6 +3910,10 @@ TEST_CASE("an installed pack holds its version folder while it is loaded", "[pac
         PackTable table(rp::graph::productPackages());
         CHECK_FALSE(table.load(PackCandidate{levelDir, PackOrigin::Installed, false, nullptr}));
         CHECK_FALSE(versionInUse(levelDir));
+#if defined(__linux__)
+        CHECK_FALSE(libraryIsOpen(levelDir / "native" / std::string(currentPlatform()) /
+                                  "rp-packfixture-api-newer.so"));
+#endif
     }
 
     // An installed pack must sit in packs/<id>/<version>/: anywhere else, state.json does not describe it.
@@ -3890,6 +3948,69 @@ TEST_CASE("a second folder of a loaded pack's id is refused until the next launc
     CHECK_FALSE(second);
     CHECK_THAT(second.error, ContainsSubstring("is loaded already from"));
     CHECK(table.size() == 1);
+}
+
+TEST_CASE("an installed folder named with a trailing separator or a dot loads as the folder it is", "[packs-loader]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    PackTable table(rp::graph::productPackages());
+    const PackLoad load = table.load(PackCandidate{std::filesystem::path(dir.string() + "/"), PackOrigin::Installed,
+                                                   false, nullptr});
+    INFO(load.error);
+    REQUIRE(load);
+    CHECK(load.pack->dir == dir);
+    // The same folder spelled another way is the same load.
+    CHECK(table.load(PackCandidate{dir / ".", PackOrigin::Installed, false, nullptr}).pack == load.pack);
+    CHECK(table.size() == 1);
+}
+
+TEST_CASE("an installed folder first loaded as a development one is still held", "[packs-loader]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    {
+        PackTable table(rp::graph::productPackages());
+        const PackLoad dev = table.load(PackCandidate{dir, PackOrigin::Development, false, nullptr});
+        REQUIRE(dev);
+        CHECK_FALSE(versionInUse(dir));
+        // Its installed load answers the same pack, and the hold it took stays with the table.
+        const PackLoad installed = table.load(PackCandidate{dir, PackOrigin::Installed, false, nullptr});
+        CHECK(installed.pack == dev.pack);
+        CHECK(versionInUse(dir));
+    }
+    CHECK_FALSE(versionInUse(dir));
+}
+
+TEST_CASE("a pack refused after its library opened keeps its id: no second library of it opens", "[packs-loader]") {
+    TempDir tmp;
+    const auto first = rp::host::packs::test::install(tmp.roots().data, "packfixture-noentry");
+    PackTable table(rp::graph::productPackages());
+    CHECK_FALSE(table.load(PackCandidate{first, PackOrigin::Installed, false, nullptr}));
+    const PackLoad second = table.load(fixture("packfixture-noentry"));
+    CHECK_FALSE(second);
+    CHECK_THAT(second.error, ContainsSubstring("'s library was opened already from"));
+#if defined(__linux__)
+    // The refused copy's library is open, and the refusal says so (the staged copy is opened by other cases of this
+    // binary, so its not being open is not something a case here can show).
+    CHECK(libraryIsOpen(first / "native" / std::string(currentPlatform()) / "rp-packfixture-noentry.so"));
+#endif
+}
+
+TEST_CASE("packs that require each other are refused as a cycle, one waiting on them as waiting",
+          "[packs-loader]") {
+    TempDir tmp;
+    const auto a = writePack(tmp, "cyc-a",
+                              manifestJson("cyc-a", RP_API_LEVEL, "[\"cyc-b\"]", "\"native\": \"rp-cyc-a\""));
+    const auto b = writePack(tmp, "cyc-b",
+                              manifestJson("cyc-b", RP_API_LEVEL, "[\"cyc-a\"]", "\"native\": \"rp-cyc-b\""));
+    const auto c = writePack(tmp, "cyc-c",
+                              manifestJson("cyc-c", RP_API_LEVEL, "[\"cyc-a\"]", "\"native\": \"rp-cyc-c\""));
+    PackTable table(rp::graph::productPackages());
+    const auto loads = table.loadAll({{a}, {b}, {c}});
+    REQUIRE(loads.size() == 3);
+    CHECK_THAT(loads[0].error, ContainsSubstring("requires cycle"));
+    CHECK_THAT(loads[1].error, ContainsSubstring("requires cycle"));
+    CHECK_THAT(loads[2].error, ContainsSubstring("requires pack cyc-a, which is not loaded"));
+    CHECK(table.size() == 0);
 }
 ```
 
@@ -3964,8 +4085,10 @@ Create `packages/native/src/host/packs/NativeLibrary.hpp`:
 // its code at exit.
 namespace rp::host::packs {
 
-// The library at `file`, or null with the loader's reason in *why. Its symbols stay local to it (RTLD_LOCAL): a pack's
-// copies of what it links are its own, and nothing loaded later binds to them.
+// The library at `file` (made absolute here), or null with the loader's reason in *why. Its symbols stay local to it
+// (RTLD_LOCAL): a pack's copies of what it links are its own, and nothing loaded later binds to them. Opening a library
+// runs its static constructors before anything of it can be checked, the entry's API level included: what keeps an
+// honest pack of another level from being opened at all is the manifest's level, which the loader compares first.
 void* openLibrary(const std::filesystem::path& file, std::string* why);
 
 // The symbol `name` in `library`, or null.
@@ -3993,18 +4116,27 @@ Create `packages/native/src/host/packs/NativeLibrary.cpp`:
 namespace rp::host::packs {
 
 void* openLibrary(const std::filesystem::path& file, std::string* why) {
+    std::error_code ec;
+    const std::filesystem::path path = std::filesystem::absolute(file, ec);
+    if (ec) {
+        if (why) *why = "cannot load " + displayPath(file) + ": " + ec.message();
+        return nullptr;
+    }
 #if defined(_WIN32)
-    // The pack's own folder is searched for the DLLs it depends on, then the system's; never the current directory.
-    HMODULE module = LoadLibraryExW(file.c_str(), nullptr,
+    // The DLL's own folder is searched for the DLLs it depends on, then the application's folder, System32 and any
+    // folder added with AddDllDirectory: never PATH or the current directory.
+    HMODULE module = LoadLibraryExW(path.c_str(), nullptr,
                                     LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-    if (module == nullptr && why)
-        *why = "cannot load " + displayPath(file) + ": error " + std::to_string(GetLastError());
+    if (module == nullptr && why) {
+        const DWORD error = GetLastError();  // before anything else can change it
+        *why = "cannot load " + displayPath(path) + ": error " + std::to_string(error);
+    }
     return reinterpret_cast<void*>(module);
 #else
-    void* handle = dlopen(file.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr && why) {
         const char* error = dlerror();
-        *why = "cannot load " + displayPath(file) + ": " + (error ? error : "unknown error");
+        *why = "cannot load " + displayPath(path) + ": " + (error ? error : "unknown error");
     }
     return handle;
 #endif
@@ -4099,7 +4231,7 @@ public:
     std::vector<PackRefusal>       refusals() const;
 
 private:
-    PackLoad loadLocked(const PackCandidate& candidate);
+    PackLoad loadLocked(const PackCandidate& offered);
     PackLoad refuse(const PackCandidate& candidate, std::string id, std::string reason,
                     std::shared_ptr<FileLock> hold);
 
@@ -4107,10 +4239,13 @@ private:
     mutable std::mutex                       mutex_;
     std::vector<std::unique_ptr<LoadedPack>> packs_;
     std::vector<PackRefusal>                 refusals_;
-    // The holds on the installed folders of packs this table refused after opening their libraries, one per folder: a
-    // refused pack's library stays open (it is never closed), so its folder is held for the life of the process as a
-    // loaded one's is.
-    std::map<std::filesystem::path, std::shared_ptr<FileLock>> refusedHolds_;
+    // The holds on installed folders a LoadedPack does not carry, one per folder: a pack refused after its library
+    // opened (the library stays open, never closed, so its folder is held for the life of the process as a loaded
+    // one's is), and an installed folder whose pack this table loaded earlier as a development one.
+    std::map<std::filesystem::path, std::shared_ptr<FileLock>> folderHolds_;
+    // The folder each id's library was first opened from, loaded or refused: a second library of one id would be a
+    // second rp-<id> in the process, which Windows matches an already-loaded module by, so it never opens.
+    std::map<std::string, std::filesystem::path> openedFrom_;
 };
 
 }  // namespace rp::host::packs
@@ -4121,6 +4256,7 @@ Create `packages/native/src/host/packs/PackTable.cpp`:
 ```cpp
 #include "host/packs/PackTable.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <map>
 #include <set>
@@ -4128,8 +4264,9 @@ Create `packages/native/src/host/packs/PackTable.cpp`:
 #include <thread>
 
 #include <rfl.hpp>
-#include <rfl/json.hpp>
+#include <rfl/from_generic.hpp>
 
+#include "graph/CanonicalJson.hpp"
 #include "graph/NodeRegistry.hpp"
 #include "graph/rp_pack.h"
 #include "host/packs/NativeLibrary.hpp"
@@ -4147,7 +4284,10 @@ std::string packageIdOf(const rp_package* package) {
         std::string id;
     };
     if (package == nullptr || package->manifest_json == nullptr) return {};
-    const auto parsed = rfl::json::read<Id>(package->manifest_json);
+    // The registry's own parser, so a repeated key reads here as it reads there.
+    const auto parsed = rp::graph::parseJson(package->manifest_json).and_then([](const rfl::Generic& g) {
+        return rfl::from_generic<Id>(g);
+    });
     return parsed ? parsed->id : std::string();
 }
 
@@ -4176,6 +4316,38 @@ bool callEntry(EntryCall entry, std::uint32_t& level, std::size_t& count, const 
     } catch (...) {
         return false;
     }
+}
+
+// The scratch registry's check of one package, which calls into the pack's code (each node type's descriptor), inside
+// the same kind of handler as the entry's: an exception from the pack's C code is refused, not unwound into the host.
+// `thrown` is set when one was caught, and `at` names the node type whose descriptor threw when it can be told. (No
+// fixture variant throws from a descriptor, so this is held by reading, not by a case.)
+bool trialAdd(rp::graph::NodeRegistry& trial, const rp_package* package, std::string* why, bool& thrown,
+              std::string& at) noexcept {
+    try {
+        return trial.addPackage(package, why);
+    } catch (...) {
+        thrown = true;
+        for (std::uint32_t k = 0; package->node_types && k < package->node_type_count; ++k) {
+            const rp_node_type* type = package->node_types[k];
+            if (type == nullptr || type->descriptor == nullptr || type->id == nullptr) continue;
+            try {
+                (void)type->descriptor(type);
+            } catch (...) {
+                at = type->id;
+                break;
+            }
+        }
+        return false;
+    }
+}
+
+// `dir` as the table keys it: lexically normal and with no trailing separator, so "packs/a/1.0.0/" and
+// "packs/a/1.0.0" are one folder to the placement check and to the refusal's name.
+fs::path normalisedDir(const fs::path& dir) {
+    fs::path p = dir.lexically_normal();
+    if (!p.has_filename() && p.has_parent_path()) p = p.parent_path();
+    return p;
 }
 
 }  // namespace
@@ -4218,17 +4390,18 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
     // refuses it with the parse's reason.
     struct Pending {
         PackCandidate            candidate;
+        std::string              id;
         std::vector<std::string> needs;
     };
     std::vector<Pending> pending;
     for (const auto& c : candidates) {
         std::string why;
-        const auto manifest = readPackManifest(c.dir, &why);
+        const auto manifest = readPackManifest(c.dir, &why, RP_API_LEVEL);
         if (!manifest) {
             out.push_back(loadLocked(c));
             continue;
         }
-        pending.push_back({c, manifest->requiresPacks});
+        pending.push_back({c, manifest->id, manifest->requiresPacks});
     }
     const auto loaded = [&](const std::string& dep) {
         for (const auto& p : packs_)
@@ -4252,7 +4425,29 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
             progress = true;
         }
     }
-    for (const auto& p : pending) out.push_back(loadLocked(p.candidate));
+    // A leftover that can reach itself through the other leftovers' requirements is in a cycle, and says so; any other
+    // waits on a pack that is absent or refused, which its own load names.
+    const auto inCycle = [&](const Pending& start) {
+        std::vector<std::string> seen;
+        std::vector<std::string> todo = start.needs;
+        while (!todo.empty()) {
+            const std::string at = todo.back();
+            todo.pop_back();
+            if (at == start.id) return true;
+            if (std::find(seen.begin(), seen.end(), at) != seen.end()) continue;
+            seen.push_back(at);
+            for (const auto& q : pending)
+                if (q.id == at) todo.insert(todo.end(), q.needs.begin(), q.needs.end());
+        }
+        return false;
+    };
+    for (const auto& p : pending) {
+        if (inCycle(p))
+            out.push_back(refuse(p.candidate, p.id, "pack " + p.id + " is part of a requires cycle: it waits, through "
+                                                    "requires.packs, on itself", nullptr));
+        else
+            out.push_back(loadLocked(p.candidate));
+    }
     return out;
 }
 
@@ -4260,12 +4455,14 @@ PackLoad PackTable::refuse(const PackCandidate& candidate, std::string id, std::
                            std::shared_ptr<FileLock> hold) {
     if (id.empty()) id = displayPath(candidate.dir.filename());
     // One hold per folder, however often a load of it is retried and refused.
-    if (hold) refusedHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
+    if (hold) folderHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
     refusals_.push_back({id, candidate.dir, reason});
     return PackLoad{nullptr, std::move(reason)};
 }
 
-PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
+PackLoad PackTable::loadLocked(const PackCandidate& offered) {
+    PackCandidate candidate = offered;
+    candidate.dir = normalisedDir(offered.dir);
     std::string why;
     // An installed folder is held before anything of it is read, and kept whatever the answer: a launch's settle must
     // never delete a folder this process has opened a library from, loaded or refused.
@@ -4273,13 +4470,18 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
     if (candidate.origin == PackOrigin::Installed && !hold) {
         FileLock::Failure failure = FileLock::Failure::None;
         std::optional<FileLock> taken;
-        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold), or an
-        // access error that may be a scanner's brief handle on Windows (Denied), is tried again briefly; a folder
-        // being deleted (Replaced) is refused at once.
-        for (int attempt = 0; attempt < 5; ++attempt) {
+        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold), or on
+        // Windows an access error that may be a scanner's brief handle on the file (Denied), is tried again briefly; a
+        // folder being deleted (Replaced) is refused at once, and so is a Denied one elsewhere, where it means a
+        // folder this process cannot write and waiting changes nothing.
+        constexpr int kAttempts = 5;
+        for (int attempt = 0; attempt < kAttempts; ++attempt) {
             taken = holdVersion(candidate.dir, &why, &failure);
             if (taken || failure == FileLock::Failure::Replaced) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+#if !defined(_WIN32)
+            if (failure == FileLock::Failure::Denied) break;
+#endif
+            if (attempt + 1 < kAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         if (taken) {
             hold = std::make_shared<FileLock>(std::move(*taken));
@@ -4295,22 +4497,22 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
         return refuse(candidate, std::move(id), std::move(reason), opened ? hold : nullptr);
     };
 
-    auto manifest = readPackManifest(candidate.dir, &why);
+    auto manifest = readPackManifest(candidate.dir, &why, RP_API_LEVEL);
     if (!manifest) return refuseHere({}, why);
     const std::string& id = manifest->id;
     const std::string pack = "pack " + id;
+
+    // The manifest's API level before anything else of it is used (a manifest of another level read no further).
+    if (manifest->apiLevel != RP_API_LEVEL)
+        return refuseHere(id, pack + " is built for API level " + std::to_string(manifest->apiLevel) +
+                                  ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) + ": " +
+                                  levelAdvice(manifest->apiLevel));
 
     // An installed pack is packs/<id>/<version>/: anything else is a folder state.json does not describe.
     if (candidate.origin == PackOrigin::Installed &&
         (candidate.dir.filename() != manifest->version || candidate.dir.parent_path().filename() != id))
         return refuseHere(id, pack + " " + manifest->version + " is installed in " + displayPath(candidate.dir) +
                                   ", which is not packs/" + id + "/" + manifest->version);
-
-    // The API level before anything else of the pack is used.
-    if (manifest->apiLevel != RP_API_LEVEL)
-        return refuseHere(id, pack + " is built for API level " + std::to_string(manifest->apiLevel) +
-                                  ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) + ": " +
-                                  levelAdvice(manifest->apiLevel));
 
     // Only the native half loads in M1, and a pack loads whole or not at all.
     for (const auto& [kind, file] : manifest->halves)
@@ -4320,10 +4522,21 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
 
     for (const auto& p : packs_) {
         if (p->manifest.id != id) continue;
-        if (canonicalOr(p->dir) == canonicalOr(candidate.dir)) return PackLoad{p.get(), {}};
+        if (canonicalOr(p->dir) == canonicalOr(candidate.dir)) {
+            // An installed load of a folder first loaded as a development one: the library is open from it, so the
+            // hold this call took is kept rather than dropped with the call. (A development load of an installed
+            // folder, the other order, takes no hold: it is the caller's to ask for the folder as installed.)
+            if (hold && !p->lock) folderHolds_.emplace(canonicalOr(candidate.dir), hold);
+            return PackLoad{p.get(), {}};
+        }
         return refuseHere(id, pack + " is loaded already from " + displayPath(p->dir) +
                                   "; another copy takes effect at the next launch");
     }
+
+    // A library of this id opened before and refused: a second copy of it never opens in this process.
+    if (const auto it = openedFrom_.find(id); it != openedFrom_.end() && it->second != canonicalOr(candidate.dir))
+        return refuseHere(id, pack + "'s library was opened already from " + displayPath(it->second) +
+                                  " and refused; another copy takes effect at the next launch");
 
     // requires.packs names packs, and only packs: a built-in package is not a pack a manifest may name.
     for (const auto& dep : manifest->requiresPacks) {
@@ -4352,6 +4565,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
         if (library == nullptr) return refuseHere(id, pack + ": " + why);
         loaded->library = library;
         opened = true;
+        openedFrom_.emplace(id, canonicalOr(candidate.dir));
         auto entry = reinterpret_cast<EntryCall>(librarySymbol(library, RP_PACK_ENTRY_SYMBOL));
         if (entry == nullptr) return refuseHere(id, pack + "'s library exports no " RP_PACK_ENTRY_SYMBOL);
         std::uint32_t level = 0;
@@ -4402,7 +4616,15 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
         for (const auto& p : packs_)
             for (const rp_package* q : p->packages) trial.addPackage(q);
         for (const rp_package* p : loaded->packages) {
-            if (!trial.addPackage(p, &why)) return refuseHere(id, pack + ": " + why);
+            bool thrown = false;
+            std::string at;
+            if (!trialAdd(trial, p, &why, thrown, at)) {
+                if (thrown) {
+                    const std::string what = at.empty() ? "types were checked" : "type " + at + " was described";
+                    return refuseHere(id, pack + " threw while its node " + what);
+                }
+                return refuseHere(id, pack + ": " + why);
+            }
             loaded->packageIds.push_back(packageIdOf(p));
         }
     }
@@ -4433,15 +4655,17 @@ In `packages/native/CMakeLists.txt`, in `add_library(retroplug-packs STATIC ...)
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 24 test cases)` on Linux (23 on macOS, without the dynamic-symbol case;
-20 on Windows, without the read-only folder case too).
+Expected: `All tests passed (... assertions in 28 test cases)` on Linux (27 on macOS, without the dynamic-symbol case;
+24 on Windows, without the read-only folder case too).
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add packages/native/src/host/packs/PackCandidate.hpp packages/native/src/host/packs/NativeLibrary.hpp \
     packages/native/src/host/packs/NativeLibrary.cpp packages/native/src/host/packs/PackTable.hpp \
-    packages/native/src/host/packs/PackTable.cpp packages/native/test/packs/PackLoader.test.cpp \
+    packages/native/src/host/packs/PackTable.cpp packages/native/src/host/packs/PackManifest.hpp \
+    packages/native/src/host/packs/PackManifest.cpp packages/node-sdk/native/src/graph/rp_pack.h \
+    packages/native/test/packs/PackLoader.test.cpp packages/native/test/packs/ElfSymbols.hpp \
     packages/native/CMakeLists.txt packages/native/cmake/tests.cmake
 git commit -m "packs: the native loader, one load per library, every refusal registering nothing"
 ```
@@ -4457,7 +4681,7 @@ cmake --build build --target retroplug-packs-test -j
 build\bin\retroplug-packs-test.exe             (Windows)    build/bin/retroplug-packs-test   (macOS)
 ```
 
-Expected: `All tests passed (... assertions in 23 test cases)` on macOS and `20` on Windows. What this proves there:
+Expected: `All tests passed (... assertions in 27 test cases)` on macOS and `24` on Windows. What this proves there:
 the module's export list (an exported-symbols list on macOS, `dllexport` on Windows) and the withheld variant's;
 `LoadLibraryExW` and the `.dylib` path; on MSVC, that the throwing variant compiles under `/W4 /WX` (its throw in a C++
 helper, its directory at `/EHs`) and that the loader's handler, compiled at the tree's `/EHsc`, catches it and refuses
@@ -4731,6 +4955,7 @@ Create `packages/native/src/host/packs/PackDiscovery.cpp`:
 #include <string>
 #include <system_error>
 
+#include "graph/rp_pack.h"
 #include "host/packs/PackManifest.hpp"
 #include "host/packs/PackState.hpp"
 #include "host/packs/PackTable.hpp"
@@ -4758,7 +4983,7 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
     }
     for (const auto& dir : devDirs) {
         std::string why;
-        const auto manifest = readPackManifest(dir, &why);
+        const auto manifest = readPackManifest(dir, &why, RP_API_LEVEL);  // a level mismatch still names its id
         if (!manifest) {
             out.refused.push_back({displayPath(dir.filename()), dir, why});
             continue;
@@ -4852,7 +5077,7 @@ In `add_library(retroplug-packs STATIC ...)`, after the `src/host/packs/PackTabl
 - [ ] **Step 4: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 30 test cases)` on Linux (29 on macOS, 25 on Windows).
+Expected: `All tests passed (... assertions in 34 test cases)` on Linux (33 on macOS, 29 on Windows).
 
 - [ ] **Step 5: Commit**
 
@@ -5386,7 +5611,7 @@ void Engine::syncPacks() {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 37 test cases)` on Linux (36 on macOS, 32 on Windows), and two stderr
+Expected: `All tests passed (... assertions in 41 test cases)` on Linux (40 on macOS, 36 on Windows), and two stderr
 lines from the
 cases that refuse a pack in one Engine:
 `[engine] pack packfixture was refused here: package "rp.packfixture" is already registered` and
@@ -5478,7 +5703,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 37 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
+Expected: `All tests passed (... assertions in 41 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
 modules are instrumented:
 
 ```bash
@@ -5496,7 +5721,7 @@ cmake --build build-asan --target retroplug-packs-test -j$(nproc)
 ASAN_OPTIONS="abort_on_error=1 detect_leaks=1" build-asan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 37 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
+Expected: `All tests passed (... assertions in 41 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
 `ERROR: LeakSanitizer` line.
 
 - [ ] **Step 4: Commit**
@@ -5509,6 +5734,9 @@ git commit -m "tools: both sanitizer legs run the packs"
 ---
 
 ### Task 10: The pinned C++ boundary, tried on the Mesen package
+
+> Note (review): `retroplug-sdl` links `-static-libstdc++`; this task's result covers the hosts that link the shared
+> runtime only (Design questions 14).
 
 The feasibility task. `retroplug_pack(mesen)` builds the Mesen package's static target, `retroplug-mesen`, into a module
 with its own static copies of `retroplug-system`, the node SDK, `retroplug-n8-wire`, reflect-cpp and `deps/mesen`, all
@@ -5900,7 +6128,7 @@ retroplug_pack(mesen)
 - [ ] **Step 5: Build and run**
 
 Run: `pnpm configure && cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 40 test cases)` on Linux (39 on macOS; on Windows 35, the PCM case
+Expected: `All tests passed (... assertions in 44 test cases)` on Linux (43 on macOS; on Windows 39, the PCM case
 among them reported skipped in Catch2's own summary). The Mesen cases print each boot's iNES lines twice (one per
 build) and pass.
 
@@ -5962,7 +6190,7 @@ git commit -m "packs: the Mesen package built as a pack renders its static build
 - [ ] **Step 8: Cross-platform gate, before anything is pushed**
 
 As at the end of Task 6, on a Windows and a macOS machine, from this commit: build `retroplug-packs-test` and run it.
-Expected: on macOS `All tests passed (... assertions in 39 test cases)` (the Mesen module a `.dylib` built for the
+Expected: on macOS `All tests passed (... assertions in 43 test cases)` (the Mesen module a `.dylib` built for the
 architectures the build names: CI's `build.yml` passes `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"`); on Windows every
 case passes and the Mesen PCM case is reported skipped, with `rp-mesen.dll` built and its descriptors equal to the
 static build's. Then `pnpm test:plugin` on both (`test.bat plugin` on Windows). The user pushes only after both pass.
@@ -6251,6 +6479,18 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
     `PackTable`'s library step out of the web build, or stub them.
 12. **The `packs-host` list costs every full build a control-plane bundle** (the cp bundle target is in ALL for each
     list a product uses) and `pnpm typecheck` one more product tree.
+
+13. **Every load rebuilds a scratch registry from everything loaded before it** (`PackTable::loadLocked`'s trial), which
+    is fine at M1's handful of packs and quadratic in the pack count. Before M5 the table keeps one committed registry
+    and answers a candidate with `NodeRegistry::canAdd` against it, so a load costs only its own packages.
+14. **`retroplug-sdl` links `-static-libstdc++`** (`packages/native/CMakeLists.txt`, near the SDL target): a pack
+    `dlopen`ed there would run a second C++ runtime across the pinned C++ boundary (Task 10), each with its own
+    allocator state and `std::string` / `std::vector` types the two sides exchange. Task 10's boundary result does not
+    cover that host; M5 either links the shared runtime there or keeps packs out of that product.
+15. **Opening a library runs its static constructors before its level is checked** (`NativeLibrary.hpp`): what keeps an
+    honest pack of another API level from being opened is the manifest's `apiLevel`, which the loader compares first,
+    before the rest of the manifest is read. A dishonest manifest over a library of another level is caught by the entry
+    only after its constructors ran; that is inside the trust a pack already has (it is native code).
 
 ## Self-review
 

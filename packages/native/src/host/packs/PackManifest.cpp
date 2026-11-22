@@ -33,6 +33,11 @@ struct RawProvides {
     std::optional<std::vector<std::string>> roles;
     rfl::ExtraFields<rfl::Generic>          extra;
 };
+// Just the members the level gate reads, so a manifest of another level is judged before the rest of it is.
+struct LevelPeek {
+    std::optional<std::string>  id;
+    std::optional<std::int64_t> apiLevel;
+};
 struct RawManifest {
     std::optional<std::string>                                id;
     std::optional<std::string>                                name;
@@ -310,7 +315,7 @@ bool isPackId(std::string_view id) {
     return true;
 }
 
-std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why) {
+std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why, std::uint32_t hostLevel) {
     const ScanResult scan = DuplicateKeyScan(json).find();
     if (scan.kind == ScanResult::Kind::TooDeep) {
         refuse(why, "nested deeper than " + std::to_string(kMaxNesting) + " levels");
@@ -319,6 +324,17 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
     if (scan.kind == ScanResult::Kind::Duplicate) {
         refuse(why, "the member \"" + echoed(scan.key) + "\" appears twice in one object");
         return std::nullopt;
+    }
+    if (hostLevel != 0) {
+        const auto peek = rfl::json::read<LevelPeek>(std::string(json));
+        if (peek && peek->id && isPackId(*peek->id) && peek->apiLevel && *peek->apiLevel >= 0 &&
+            *peek->apiLevel <= 0xffffffffll && *peek->apiLevel != static_cast<std::int64_t>(hostLevel)) {
+            PackManifest m;
+            m.id = *peek->id;
+            m.apiLevel = static_cast<std::uint32_t>(*peek->apiLevel);
+            m.levelMismatch = true;
+            return m;
+        }
     }
     auto raw = rfl::json::read<RawManifest>(std::string(json));
     if (!raw) {
@@ -413,7 +429,7 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
     return m;
 }
 
-std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::string* why) {
+std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::string* why, std::uint32_t hostLevel) {
     const fs::path file = versionDir / "pack.json";
     std::error_code ec;
     const auto size = fs::is_regular_file(file, ec) ? fs::file_size(file, ec) : 0;
@@ -438,7 +454,7 @@ std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::st
         if (why) *why = "pack.json: too large (over " + std::to_string(kMaxManifestBytes) + " bytes)";
         return std::nullopt;
     }
-    return parsePackManifest(text, why);
+    return parsePackManifest(text, why, hostLevel);
 }
 
 }  // namespace rp::host::packs

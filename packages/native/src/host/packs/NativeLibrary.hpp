@@ -9,8 +9,10 @@
 // its code at exit.
 namespace rp::host::packs {
 
-// The library at `file`, or null with the loader's reason in *why. Its symbols stay local to it (RTLD_LOCAL): a pack's
-// copies of what it links are its own, and nothing loaded later binds to them.
+// The library at `file` (made absolute here), or null with the loader's reason in *why. Its symbols stay local to it
+// (RTLD_LOCAL): a pack's copies of what it links are its own, and nothing loaded later binds to them. Opening a library
+// runs its static constructors before anything of it can be checked, the entry's API level included: what keeps an
+// honest pack of another level from being opened at all is the manifest's level, which the loader compares first.
 void* openLibrary(const std::filesystem::path& file, std::string* why);
 
 // The symbol `name` in `library`, or null.

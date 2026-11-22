@@ -71,7 +71,7 @@ public:
     std::vector<PackRefusal>       refusals() const;
 
 private:
-    PackLoad loadLocked(const PackCandidate& candidate);
+    PackLoad loadLocked(const PackCandidate& offered);
     PackLoad refuse(const PackCandidate& candidate, std::string id, std::string reason,
                     std::shared_ptr<FileLock> hold);
 
@@ -79,10 +79,13 @@ private:
     mutable std::mutex                       mutex_;
     std::vector<std::unique_ptr<LoadedPack>> packs_;
     std::vector<PackRefusal>                 refusals_;
-    // The holds on the installed folders of packs this table refused after opening their libraries, one per folder: a
-    // refused pack's library stays open (it is never closed), so its folder is held for the life of the process as a
-    // loaded one's is.
-    std::map<std::filesystem::path, std::shared_ptr<FileLock>> refusedHolds_;
+    // The holds on installed folders a LoadedPack does not carry, one per folder: a pack refused after its library
+    // opened (the library stays open, never closed, so its folder is held for the life of the process as a loaded
+    // one's is), and an installed folder whose pack this table loaded earlier as a development one.
+    std::map<std::filesystem::path, std::shared_ptr<FileLock>> folderHolds_;
+    // The folder each id's library was first opened from, loaded or refused: a second library of one id would be a
+    // second rp-<id> in the process, which Windows matches an already-loaded module by, so it never opens.
+    std::map<std::string, std::filesystem::path> openedFrom_;
 };
 
 }  // namespace rp::host::packs

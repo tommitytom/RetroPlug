@@ -8,8 +8,14 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
+
+#if defined(__linux__)
+#include <dlfcn.h>
+#endif
 
 #include "ElfSymbols.hpp"
 #include "PackTestSupport.hpp"
@@ -50,6 +56,30 @@ void checkRefused(PackTable& table, const std::string& id, const std::string& re
     CHECK(table.refusals().back().id == id);
     CHECK(table.refusals().back().reason == load.error);
 }
+
+// A pack folder holding nothing but a pack.json, for the cases that never reach a library.
+std::filesystem::path writePack(const TempDir& tmp, const std::string& id, const std::string& body) {
+    const auto dir = tmp.path() / id;
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "pack.json") << body;
+    return dir;
+}
+
+std::string manifestJson(const std::string& id, std::uint32_t level, const std::string& needs,
+                         const std::string& halves) {
+    return "{\"id\": \"" + id + "\", \"name\": \"n\", \"version\": \"1.0.0\", \"apiLevel\": " +
+           std::to_string(level) + ", \"license\": \"MIT\", \"source\": \"s\", \"requires\": {\"packs\": " +
+           needs + "}, \"provides\": {\"nodeTypes\": [\"rp." + id + ".t\"]}, \"halves\": {" + halves + "}}";
+}
+
+#if defined(__linux__)
+// Whether `file` is mapped in this process: RTLD_NOLOAD answers a handle only for a library already open.
+bool libraryIsOpen(const std::filesystem::path& file) {
+    void* handle = dlopen(file.c_str(), RTLD_NOW | RTLD_NOLOAD);
+    if (handle != nullptr) dlclose(handle);
+    return handle != nullptr;
+}
+#endif
 
 }  // namespace
 
@@ -129,6 +159,24 @@ TEST_CASE("a pack built for another API level is refused, saying which side is o
     checkRefused(table, "packfixture-api-older",
                  "is built for API level " + std::to_string(RP_API_LEVEL - 1) + ", and this RetroPlug is level " +
                      std::to_string(RP_API_LEVEL) + ": update the pack");
+    // A manifest of another level is judged on its level alone: whatever else it changed (a half this host has no word
+    // for, a member of another shape) must not hide the advice.
+    {
+        TempDir tmp;
+        const auto dir = writePack(tmp, "levelpack",
+                                   manifestJson("levelpack", RP_API_LEVEL + 1, "{}",
+                                                "\"native\": \"rp-levelpack\", \"web\": \"js/w.js\""));
+        const PackLoad load = table.load(dir);
+        CHECK_FALSE(load);
+        CHECK_THAT(load.error, ContainsSubstring("is built for API level " + std::to_string(RP_API_LEVEL + 1) +
+                                                 ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) +
+                                                 ": update RetroPlug"));
+        // At this level the same manifest is refused for what it is.
+        const auto same = writePack(tmp, "levelpack2",
+                                    manifestJson("levelpack2", RP_API_LEVEL, "[]",
+                                                 "\"native\": \"rp-levelpack2\", \"web\": \"js/w.js\""));
+        CHECK_THAT(table.load(same).error, ContainsSubstring("halves.web is no half this RetroPlug loads"));
+    }
     // A manifest that says this level over a library that reports another: the entry's answer is read first.
     checkRefused(table, "packfixture-api-mismatch",
                  "'s library reports API level " + std::to_string(RP_API_LEVEL + 1) + ", and this RetroPlug is level " +
@@ -197,6 +245,10 @@ TEST_CASE("an installed pack holds its version folder while it is loaded", "[pac
         PackTable table(rp::graph::productPackages());
         CHECK_FALSE(table.load(PackCandidate{levelDir, PackOrigin::Installed, false, nullptr}));
         CHECK_FALSE(versionInUse(levelDir));
+#if defined(__linux__)
+        CHECK_FALSE(libraryIsOpen(levelDir / "native" / std::string(currentPlatform()) /
+                                  "rp-packfixture-api-newer.so"));
+#endif
     }
 
     // An installed pack must sit in packs/<id>/<version>/: anywhere else, state.json does not describe it.
@@ -231,4 +283,67 @@ TEST_CASE("a second folder of a loaded pack's id is refused until the next launc
     CHECK_FALSE(second);
     CHECK_THAT(second.error, ContainsSubstring("is loaded already from"));
     CHECK(table.size() == 1);
+}
+
+TEST_CASE("an installed folder named with a trailing separator or a dot loads as the folder it is", "[packs-loader]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    PackTable table(rp::graph::productPackages());
+    const PackLoad load = table.load(PackCandidate{std::filesystem::path(dir.string() + "/"), PackOrigin::Installed,
+                                                   false, nullptr});
+    INFO(load.error);
+    REQUIRE(load);
+    CHECK(load.pack->dir == dir);
+    // The same folder spelled another way is the same load.
+    CHECK(table.load(PackCandidate{dir / ".", PackOrigin::Installed, false, nullptr}).pack == load.pack);
+    CHECK(table.size() == 1);
+}
+
+TEST_CASE("an installed folder first loaded as a development one is still held", "[packs-loader]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    {
+        PackTable table(rp::graph::productPackages());
+        const PackLoad dev = table.load(PackCandidate{dir, PackOrigin::Development, false, nullptr});
+        REQUIRE(dev);
+        CHECK_FALSE(versionInUse(dir));
+        // Its installed load answers the same pack, and the hold it took stays with the table.
+        const PackLoad installed = table.load(PackCandidate{dir, PackOrigin::Installed, false, nullptr});
+        CHECK(installed.pack == dev.pack);
+        CHECK(versionInUse(dir));
+    }
+    CHECK_FALSE(versionInUse(dir));
+}
+
+TEST_CASE("a pack refused after its library opened keeps its id: no second library of it opens", "[packs-loader]") {
+    TempDir tmp;
+    const auto first = rp::host::packs::test::install(tmp.roots().data, "packfixture-noentry");
+    PackTable table(rp::graph::productPackages());
+    CHECK_FALSE(table.load(PackCandidate{first, PackOrigin::Installed, false, nullptr}));
+    const PackLoad second = table.load(fixture("packfixture-noentry"));
+    CHECK_FALSE(second);
+    CHECK_THAT(second.error, ContainsSubstring("'s library was opened already from"));
+#if defined(__linux__)
+    // The refused copy's library is open, and the refusal says so (the staged copy is opened by other cases of this
+    // binary, so its not being open is not something a case here can show).
+    CHECK(libraryIsOpen(first / "native" / std::string(currentPlatform()) / "rp-packfixture-noentry.so"));
+#endif
+}
+
+TEST_CASE("packs that require each other are refused as a cycle, one waiting on them as waiting",
+          "[packs-loader]") {
+    TempDir tmp;
+    const auto a = writePack(tmp, "cyc-a",
+                              manifestJson("cyc-a", RP_API_LEVEL, "[\"cyc-b\"]", "\"native\": \"rp-cyc-a\""));
+    const auto b = writePack(tmp, "cyc-b",
+                              manifestJson("cyc-b", RP_API_LEVEL, "[\"cyc-a\"]", "\"native\": \"rp-cyc-b\""));
+    const auto c = writePack(tmp, "cyc-c",
+                              manifestJson("cyc-c", RP_API_LEVEL, "[\"cyc-a\"]", "\"native\": \"rp-cyc-c\""));
+    PackTable table(rp::graph::productPackages());
+    const auto loads = table.loadAll({{a}, {b}, {c}});
+    REQUIRE(loads.size() == 3);
+    CHECK_THAT(loads[0].error, ContainsSubstring("requires cycle"));
+    CHECK_THAT(loads[1].error, ContainsSubstring("requires cycle"));
+    CHECK_THAT(loads[2].error, ContainsSubstring("requires pack cyc-a, which is not loaded"));
+    CHECK(table.size() == 0);
 }

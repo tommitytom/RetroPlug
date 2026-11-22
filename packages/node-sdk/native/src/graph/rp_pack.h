@@ -3,8 +3,10 @@
  * A pack (docs/downloadable-packs-loading-design.md section 2) is a folder a RetroPlug loads at run time; its native
  * half is one dynamic library exporting rp_pack_entry and nothing else. The entry answers the API level the library
  * was built against and the same rp_package list a built-in package's generated table holds (graph/Packages.hpp).
- * The loader reads the level first and uses nothing else from a library built at any other level, so this header's
- * shape is the one thing that may never change: a new field is a new header, not an edit to this one.
+ * The loader holds the manifest's level against the host's before it opens the library, and the entry's answer before
+ * it uses anything else of it, so this header's shape is the one thing that may never change: a new field is a new
+ * header, not an edit to this one. (Opening a library runs its static constructors whatever its level; the manifest
+ * gate is what keeps an honest pack of another level from being opened at all.)
  */
 #ifndef RP_PACK_H
 #define RP_PACK_H

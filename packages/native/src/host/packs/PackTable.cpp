@@ -1,5 +1,6 @@
 #include "host/packs/PackTable.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <map>
 #include <set>
@@ -7,8 +8,9 @@
 #include <thread>
 
 #include <rfl.hpp>
-#include <rfl/json.hpp>
+#include <rfl/from_generic.hpp>
 
+#include "graph/CanonicalJson.hpp"
 #include "graph/NodeRegistry.hpp"
 #include "graph/rp_pack.h"
 #include "host/packs/NativeLibrary.hpp"
@@ -26,7 +28,10 @@ std::string packageIdOf(const rp_package* package) {
         std::string id;
     };
     if (package == nullptr || package->manifest_json == nullptr) return {};
-    const auto parsed = rfl::json::read<Id>(package->manifest_json);
+    // The registry's own parser, so a repeated key reads here as it reads there.
+    const auto parsed = rp::graph::parseJson(package->manifest_json).and_then([](const rfl::Generic& g) {
+        return rfl::from_generic<Id>(g);
+    });
     return parsed ? parsed->id : std::string();
 }
 
@@ -55,6 +60,38 @@ bool callEntry(EntryCall entry, std::uint32_t& level, std::size_t& count, const 
     } catch (...) {
         return false;
     }
+}
+
+// The scratch registry's check of one package, which calls into the pack's code (each node type's descriptor), inside
+// the same kind of handler as the entry's: an exception from the pack's C code is refused, not unwound into the host.
+// `thrown` is set when one was caught, and `at` names the node type whose descriptor threw when it can be told. (No
+// fixture variant throws from a descriptor, so this is held by reading, not by a case.)
+bool trialAdd(rp::graph::NodeRegistry& trial, const rp_package* package, std::string* why, bool& thrown,
+              std::string& at) noexcept {
+    try {
+        return trial.addPackage(package, why);
+    } catch (...) {
+        thrown = true;
+        for (std::uint32_t k = 0; package->node_types && k < package->node_type_count; ++k) {
+            const rp_node_type* type = package->node_types[k];
+            if (type == nullptr || type->descriptor == nullptr || type->id == nullptr) continue;
+            try {
+                (void)type->descriptor(type);
+            } catch (...) {
+                at = type->id;
+                break;
+            }
+        }
+        return false;
+    }
+}
+
+// `dir` as the table keys it: lexically normal and with no trailing separator, so "packs/a/1.0.0/" and
+// "packs/a/1.0.0" are one folder to the placement check and to the refusal's name.
+fs::path normalisedDir(const fs::path& dir) {
+    fs::path p = dir.lexically_normal();
+    if (!p.has_filename() && p.has_parent_path()) p = p.parent_path();
+    return p;
 }
 
 }  // namespace
@@ -97,17 +134,18 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
     // refuses it with the parse's reason.
     struct Pending {
         PackCandidate            candidate;
+        std::string              id;
         std::vector<std::string> needs;
     };
     std::vector<Pending> pending;
     for (const auto& c : candidates) {
         std::string why;
-        const auto manifest = readPackManifest(c.dir, &why);
+        const auto manifest = readPackManifest(c.dir, &why, RP_API_LEVEL);
         if (!manifest) {
             out.push_back(loadLocked(c));
             continue;
         }
-        pending.push_back({c, manifest->requiresPacks});
+        pending.push_back({c, manifest->id, manifest->requiresPacks});
     }
     const auto loaded = [&](const std::string& dep) {
         for (const auto& p : packs_)
@@ -131,7 +169,29 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
             progress = true;
         }
     }
-    for (const auto& p : pending) out.push_back(loadLocked(p.candidate));
+    // A leftover that can reach itself through the other leftovers' requirements is in a cycle, and says so; any other
+    // waits on a pack that is absent or refused, which its own load names.
+    const auto inCycle = [&](const Pending& start) {
+        std::vector<std::string> seen;
+        std::vector<std::string> todo = start.needs;
+        while (!todo.empty()) {
+            const std::string at = todo.back();
+            todo.pop_back();
+            if (at == start.id) return true;
+            if (std::find(seen.begin(), seen.end(), at) != seen.end()) continue;
+            seen.push_back(at);
+            for (const auto& q : pending)
+                if (q.id == at) todo.insert(todo.end(), q.needs.begin(), q.needs.end());
+        }
+        return false;
+    };
+    for (const auto& p : pending) {
+        if (inCycle(p))
+            out.push_back(refuse(p.candidate, p.id, "pack " + p.id + " is part of a requires cycle: it waits, through "
+                                                    "requires.packs, on itself", nullptr));
+        else
+            out.push_back(loadLocked(p.candidate));
+    }
     return out;
 }
 
@@ -139,12 +199,14 @@ PackLoad PackTable::refuse(const PackCandidate& candidate, std::string id, std::
                            std::shared_ptr<FileLock> hold) {
     if (id.empty()) id = displayPath(candidate.dir.filename());
     // One hold per folder, however often a load of it is retried and refused.
-    if (hold) refusedHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
+    if (hold) folderHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
     refusals_.push_back({id, candidate.dir, reason});
     return PackLoad{nullptr, std::move(reason)};
 }
 
-PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
+PackLoad PackTable::loadLocked(const PackCandidate& offered) {
+    PackCandidate candidate = offered;
+    candidate.dir = normalisedDir(offered.dir);
     std::string why;
     // An installed folder is held before anything of it is read, and kept whatever the answer: a launch's settle must
     // never delete a folder this process has opened a library from, loaded or refused.
@@ -152,13 +214,18 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
     if (candidate.origin == PackOrigin::Installed && !hold) {
         FileLock::Failure failure = FileLock::Failure::None;
         std::optional<FileLock> taken;
-        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold), or an
-        // access error that may be a scanner's brief handle on Windows (Denied), is tried again briefly; a folder
-        // being deleted (Replaced) is refused at once.
-        for (int attempt = 0; attempt < 5; ++attempt) {
+        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold), or on
+        // Windows an access error that may be a scanner's brief handle on the file (Denied), is tried again briefly; a
+        // folder being deleted (Replaced) is refused at once, and so is a Denied one elsewhere, where it means a
+        // folder this process cannot write and waiting changes nothing.
+        constexpr int kAttempts = 5;
+        for (int attempt = 0; attempt < kAttempts; ++attempt) {
             taken = holdVersion(candidate.dir, &why, &failure);
             if (taken || failure == FileLock::Failure::Replaced) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+#if !defined(_WIN32)
+            if (failure == FileLock::Failure::Denied) break;
+#endif
+            if (attempt + 1 < kAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         if (taken) {
             hold = std::make_shared<FileLock>(std::move(*taken));
@@ -174,22 +241,22 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
         return refuse(candidate, std::move(id), std::move(reason), opened ? hold : nullptr);
     };
 
-    auto manifest = readPackManifest(candidate.dir, &why);
+    auto manifest = readPackManifest(candidate.dir, &why, RP_API_LEVEL);
     if (!manifest) return refuseHere({}, why);
     const std::string& id = manifest->id;
     const std::string pack = "pack " + id;
+
+    // The manifest's API level before anything else of it is used (a manifest of another level read no further).
+    if (manifest->apiLevel != RP_API_LEVEL)
+        return refuseHere(id, pack + " is built for API level " + std::to_string(manifest->apiLevel) +
+                                  ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) + ": " +
+                                  levelAdvice(manifest->apiLevel));
 
     // An installed pack is packs/<id>/<version>/: anything else is a folder state.json does not describe.
     if (candidate.origin == PackOrigin::Installed &&
         (candidate.dir.filename() != manifest->version || candidate.dir.parent_path().filename() != id))
         return refuseHere(id, pack + " " + manifest->version + " is installed in " + displayPath(candidate.dir) +
                                   ", which is not packs/" + id + "/" + manifest->version);
-
-    // The API level before anything else of the pack is used.
-    if (manifest->apiLevel != RP_API_LEVEL)
-        return refuseHere(id, pack + " is built for API level " + std::to_string(manifest->apiLevel) +
-                                  ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) + ": " +
-                                  levelAdvice(manifest->apiLevel));
 
     // Only the native half loads in M1, and a pack loads whole or not at all.
     for (const auto& [kind, file] : manifest->halves)
@@ -199,10 +266,21 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
 
     for (const auto& p : packs_) {
         if (p->manifest.id != id) continue;
-        if (canonicalOr(p->dir) == canonicalOr(candidate.dir)) return PackLoad{p.get(), {}};
+        if (canonicalOr(p->dir) == canonicalOr(candidate.dir)) {
+            // An installed load of a folder first loaded as a development one: the library is open from it, so the
+            // hold this call took is kept rather than dropped with the call. (A development load of an installed
+            // folder, the other order, takes no hold: it is the caller's to ask for the folder as installed.)
+            if (hold && !p->lock) folderHolds_.emplace(canonicalOr(candidate.dir), hold);
+            return PackLoad{p.get(), {}};
+        }
         return refuseHere(id, pack + " is loaded already from " + displayPath(p->dir) +
                                   "; another copy takes effect at the next launch");
     }
+
+    // A library of this id opened before and refused: a second copy of it never opens in this process.
+    if (const auto it = openedFrom_.find(id); it != openedFrom_.end() && it->second != canonicalOr(candidate.dir))
+        return refuseHere(id, pack + "'s library was opened already from " + displayPath(it->second) +
+                                  " and refused; another copy takes effect at the next launch");
 
     // requires.packs names packs, and only packs: a built-in package is not a pack a manifest may name.
     for (const auto& dep : manifest->requiresPacks) {
@@ -231,6 +309,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
         if (library == nullptr) return refuseHere(id, pack + ": " + why);
         loaded->library = library;
         opened = true;
+        openedFrom_.emplace(id, canonicalOr(candidate.dir));
         auto entry = reinterpret_cast<EntryCall>(librarySymbol(library, RP_PACK_ENTRY_SYMBOL));
         if (entry == nullptr) return refuseHere(id, pack + "'s library exports no " RP_PACK_ENTRY_SYMBOL);
         std::uint32_t level = 0;
@@ -281,7 +360,15 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
         for (const auto& p : packs_)
             for (const rp_package* q : p->packages) trial.addPackage(q);
         for (const rp_package* p : loaded->packages) {
-            if (!trial.addPackage(p, &why)) return refuseHere(id, pack + ": " + why);
+            bool thrown = false;
+            std::string at;
+            if (!trialAdd(trial, p, &why, thrown, at)) {
+                if (thrown) {
+                    const std::string what = at.empty() ? "types were checked" : "type " + at + " was described";
+                    return refuseHere(id, pack + " threw while its node " + what);
+                }
+                return refuseHere(id, pack + ": " + why);
+            }
             loaded->packageIds.push_back(packageIdOf(p));
         }
     }
