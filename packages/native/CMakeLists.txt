@@ -77,7 +77,8 @@ set_target_properties(retroplug-file-watcher PROPERTIES
 # registers what the table loads; it needs no product (the process's table, seeded with the product's packages, is
 # the backend's: src/host/packs/ProcessPacks.cpp), so a test of the folder model links it alone.
 add_library(retroplug-packs STATIC
-    src/host/packs/PackDirs.cpp)
+    src/host/packs/PackDirs.cpp
+    src/host/packs/PackManifest.cpp)
 target_include_directories(retroplug-packs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-packs PUBLIC retroplug-graph PRIVATE ${CMAKE_DL_LIBS})
 set_target_properties(retroplug-packs PROPERTIES
