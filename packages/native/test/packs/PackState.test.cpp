@@ -8,6 +8,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -21,6 +22,7 @@
 
 #if !defined(_WIN32)
 #include <csignal>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -41,6 +43,19 @@ std::string readText(const fs::path& file) {
     std::ifstream in(file, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
+
+// The file's identity, which a rewrite (a temporary renamed over it) changes and an untouched file keeps. A timestamp
+// would not do: it can match across two writes inside the file system's granularity.
+#if defined(_WIN32)
+std::uintmax_t fileIdentity(const fs::path& file) {
+    return static_cast<std::uintmax_t>(fs::last_write_time(file).time_since_epoch().count());
+}
+#else
+std::uintmax_t fileIdentity(const fs::path& file) {
+    struct stat st {};
+    return ::stat(file.c_str(), &st) == 0 ? static_cast<std::uintmax_t>(st.st_ino) : 0;
+}
+#endif
 
 }  // namespace
 
@@ -203,12 +218,12 @@ TEST_CASE("a launch with no state.json sweeps nothing, and a settle that changes
     CHECK_FALSE(fs::exists(root / "state.json"));  // nothing recorded, nothing written
 
     REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "", false}}}, &why));
-    const auto before = fs::last_write_time(root / "state.json");
+    const auto before = fileIdentity(root / "state.json");
     // Leftovers a crash made: a writer's temporary, and a deletion's trash.
     writeText(root / "state.json.tmp-1-0", "x");
     writeText(version.parent_path() / ".0.9.0.deleting-1-0" / "pack.json", "{}");
     REQUIRE(settlePackState(root, &why));
-    CHECK(fs::last_write_time(root / "state.json") == before);
+    CHECK(fileIdentity(root / "state.json") == before);  // a rewrite renames a new file over it: a new inode
     CHECK(fs::exists(version));
     CHECK_FALSE(fs::exists(root / "state.json.tmp-1-0"));
     CHECK_FALSE(fs::exists(version.parent_path() / ".0.9.0.deleting-1-0"));
@@ -229,6 +244,8 @@ TEST_CASE("updatePackState serialises writers across processes", "[packs-folders
     const fs::path root = tmp.roots().data;
     constexpr int kChildren = 4;
     constexpr int kEach = 50;
+    // fork in a process with other threads running copies only the calling one, and a lock or allocator another held is
+    // held forever in the child: this case relies on no other thread existing here (the sanitizer legs run it too).
     std::vector<pid_t> children;
     for (int c = 0; c < kChildren; ++c) {
         const pid_t pid = fork();
@@ -272,8 +289,20 @@ TEST_CASE("a process killed while it holds a version leaves no lock behind", "[p
     REQUIRE(writePackState(root, PackState{}, &why));
     int ready[2];
     REQUIRE(pipe(ready) == 0);
+    // fork carries the same single-threaded assumption as the case above.
     const pid_t pid = fork();
     REQUIRE(pid >= 0);
+    // Whatever fails below, the child must not outlive the case, or it would hold the lock and a pipe for good.
+    struct Reap {
+        pid_t pid;
+        bool  done = false;  // set once the case has reaped the child itself, so a recycled pid is never signalled
+        ~Reap() {
+            if (done) return;
+            kill(pid, SIGKILL);
+            int status = 0;
+            waitpid(pid, &status, 0);
+        }
+    } reap{pid};
     if (pid == 0) {
         auto held = holdVersion(version, nullptr);
         const char byte = held ? 1 : 0;
@@ -288,7 +317,9 @@ TEST_CASE("a process killed while it holds a version leaves no lock behind", "[p
     CHECK(fs::exists(version));  // held by the child, so the settle leaves it
     kill(pid, SIGKILL);
     int status = 0;
-    REQUIRE(waitpid(pid, &status, 0) == pid);
+    const pid_t waited = waitpid(pid, &status, 0);
+    reap.done = waited == pid;
+    REQUIRE(waited == pid);
     close(ready[0]);
     close(ready[1]);
     CHECK_FALSE(versionInUse(version));

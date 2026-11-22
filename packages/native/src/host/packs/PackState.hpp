@@ -21,6 +21,11 @@
 // deleted before it is recorded. An install in progress is unpacked into a '.'-prefixed folder, which a settle leaves
 // alone.
 //
+// The functions that lock state.lock themselves (every overload without a `held` parameter) must not be called while
+// this process already holds it, and not from inside a `change` callback: flock locks per open file description, so a
+// second open in the same process conflicts with the first and the call waits for itself forever. A caller that holds
+// the lock passes it to the `held` overloads, which check it is exclusive (readPackState accepts either mode).
+//
 // Every access holds <dataRoot>/state.lock: a reader shared, a writer exclusive. So a writer's rename never meets a
 // reader with the file open (which Windows refuses), two writers' read-modify-writes never interleave, and a launch
 // that settles, reads and takes its version locks in one exclusive hold (loadLaunchPacks) can never meet another

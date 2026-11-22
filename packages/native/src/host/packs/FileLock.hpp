@@ -37,9 +37,12 @@ public:
     FileLock& operator=(const FileLock&) = delete;
     ~FileLock();
 
+    Mode mode() const { return mode_; }
+
 private:
     FileLock() = default;
     void release() noexcept;
+    Mode mode_ = Mode::Shared;
 #if defined(_WIN32)
     void* handle_ = nullptr;
 #else
@@ -51,10 +54,17 @@ private:
 inline constexpr const char* kVersionLockFile = "pack.lock";
 
 // This process's hold on `versionDir`: a shared lock on its lock file, kept for the life of the process by the pack
-// table, since a loaded pack is never unloaded. Safe without the state lock: a folder a settle is deleting is renamed
-// away under the lock this takes, so a hold that races it is refused ("replaced") rather than taken on a dead folder.
-// May fail transiently while versionInUse (below) has its brief exclusive lock.
-std::optional<FileLock> holdVersion(const std::filesystem::path& versionDir, std::string* why);
+// table, since a loaded pack is never unloaded. A folder a settle is deleting is emptied under its exclusive lock, so a
+// hold that races the deletion fails to lock; one that comes after it holds an empty folder, whose manifest read
+// refuses it (on POSIX the folder is also renamed away, so a hold that opened the old lock file is refused as
+// "replaced"). What is NOT guaranteed on Windows is that the lock file is never recreated in the emptied folder
+// before the settle removes it: callers hold under state.lock where the folder must not vanish (loadLaunchPacks),
+// and a hold taken without it is only as good as the manifest read that follows. May fail transiently while
+// versionInUse (below) has its brief exclusive lock.
+// *failure says why a hold failed: Denied (a folder this process cannot write, which no settle can delete either, so
+// the caller may load it unheld), Replaced (being deleted), or Other (contended: worth a brief retry).
+std::optional<FileLock> holdVersion(const std::filesystem::path& versionDir, std::string* why,
+                                    FileLock::Failure* failure = nullptr);
 
 // Whether any process (this one included) holds `versionDir`: true when an exclusive lock cannot be taken at once. A
 // folder with no lock file is held by nobody. The probe takes the exclusive lock for an instant and lets it go, so a

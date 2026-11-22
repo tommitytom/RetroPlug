@@ -161,28 +161,36 @@ bool writeHeld(const fs::path& dataRoot, const PackState& state, std::string* wh
     return true;
 }
 
-// `dir`, a version folder no entry names any more, deleted unless a process holds it: the exclusive pack.lock is taken
-// at once or not at all. On POSIX the folder is then renamed to a trash name beside it while the lock is held, so a
-// process that opened the old lock file finds the path gone (FileLock refuses it) and none can take a folder this call
-// is emptying; the trash is removed afterwards. Windows cannot rename a folder with a file open in it, so there the
-// folder is removed under the lock: the lock file is opened with FILE_SHARE_DELETE, so its removal is pending until the
-// lock is let go and nothing can open it meanwhile, and the folder is removed again once it has gone.
+// `dir`, a version folder no entry names any more, deleted unless a process holds it. The exclusive pack.lock is taken
+// at once or not at all, and every entry but pack.lock is removed while it is held (the same on every platform, and
+// independent of how the OS treats a delete of an open file): a process that tries to hold the folder meanwhile fails
+// to lock, and one that holds it afterwards holds an empty folder whose manifest read refuses it. Then the lock file
+// and the folder go. On POSIX the folder is first renamed to a trash name beside it while the lock is held, so a
+// process that opened the old lock file finds the path gone (FileLock refuses it); if that rename fails the empty
+// folder is left for a later settle. Windows cannot rename a folder with a file open in it, so there pack.lock and the
+// folder are removed once the lock is let go, and a failure (a racer holding it) leaves them for a later settle.
 void deleteUnheld(const fs::path& dir) {
     auto lock = FileLock::acquire(dir / kVersionLockFile, FileLock::Mode::Exclusive, false, nullptr);
     if (!lock) return;  // held: left for a later launch
     std::error_code ec;
+    for (fs::directory_iterator it(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+        if (displayPath(it->path().filename()) != kVersionLockFile) {
+            std::error_code removeEc;
+            fs::remove_all(it->path(), removeEc);
+        }
 #if defined(_WIN32)
-    fs::remove_all(dir, ec);
     lock.reset();
-    fs::remove_all(dir, ec);
+    fs::remove(dir / kVersionLockFile, ec);
+    fs::remove(dir, ec);  // not remove_all: a folder something was put back in is left alone
 #else
     static std::atomic<std::uint32_t> serial{0};
     const fs::path trash =
         dir.parent_path() / ("." + displayPath(dir.filename()) + kTrashMarker + std::to_string(RP_GETPID()) + "-" +
                              std::to_string(serial.fetch_add(1)));
     fs::rename(dir, trash, ec);
+    const bool renamed = !ec;
     lock.reset();
-    fs::remove_all(ec ? dir : trash, ec);
+    if (renamed) fs::remove_all(trash, ec);
 #endif
 }
 
@@ -252,8 +260,9 @@ bool updatePackState(const fs::path& dataRoot, const std::function<bool(PackStat
     return updatePackState(dataRoot, *hold, change, why);
 }
 
-bool updatePackState(const fs::path& dataRoot, const FileLock&, const std::function<bool(PackState&)>& change,
+bool updatePackState(const fs::path& dataRoot, const FileLock& held, const std::function<bool(PackState&)>& change,
                      std::string* why) {
+    if (held.mode() != FileLock::Mode::Exclusive) return refuse(why, "state.json: state.lock is not held exclusively");
     auto state = readHeld(dataRoot, why);
     if (!state) return false;
     if (!change(*state)) return true;
@@ -266,7 +275,8 @@ bool settlePackState(const fs::path& dataRoot, std::string* why) {
     return settlePackState(dataRoot, *hold, why);
 }
 
-bool settlePackState(const fs::path& dataRoot, const FileLock&, std::string* why) {
+bool settlePackState(const fs::path& dataRoot, const FileLock& held, std::string* why) {
+    if (held.mode() != FileLock::Mode::Exclusive) return refuse(why, "state.json: state.lock is not held exclusively");
     std::error_code ec;
     // An absent state.json reads as an empty state, which would make every installed folder "unnamed" and delete it:
     // with nothing recorded there is nothing to settle, and nothing is swept.

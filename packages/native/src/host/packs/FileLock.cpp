@@ -1,5 +1,6 @@
 #include "host/packs/FileLock.hpp"
 
+#include <cstring>
 #include <system_error>
 #include <utility>
 
@@ -36,10 +37,12 @@ bool sameFile(HANDLE held, const fs::path& file) {
     HANDLE now = CreateFileW(file.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (now == INVALID_HANDLE_VALUE) return false;
-    BY_HANDLE_FILE_INFORMATION a{}, b{};
-    const bool same = GetFileInformationByHandle(held, &a) && GetFileInformationByHandle(now, &b) &&
-                      a.dwVolumeSerialNumber == b.dwVolumeSerialNumber && a.nFileIndexHigh == b.nFileIndexHigh &&
-                      a.nFileIndexLow == b.nFileIndexLow;
+    // The 128-bit id: the 64-bit index of GetFileInformationByHandle is not unique on every file system (ReFS).
+    FILE_ID_INFO a{}, b{};
+    const bool same = GetFileInformationByHandleEx(held, FileIdInfo, &a, sizeof a) &&
+                      GetFileInformationByHandleEx(now, FileIdInfo, &b, sizeof b) &&
+                      a.VolumeSerialNumber == b.VolumeSerialNumber &&
+                      std::memcmp(&a.FileId, &b.FileId, sizeof a.FileId) == 0;
     CloseHandle(now);
     return same;
 }
@@ -56,6 +59,7 @@ std::optional<FileLock> FileLock::acquire(const fs::path& file, Mode mode, bool 
                                           Failure* failure, const std::function<void()>& afterOpen) {
     if (failure) *failure = Failure::None;
     FileLock lock;
+    lock.mode_ = mode;
 #if defined(_WIN32)
     HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -118,11 +122,13 @@ FileLock::FileLock(FileLock&& other) noexcept {
     fd_ = other.fd_;
     other.fd_ = -1;
 #endif
+    mode_ = other.mode_;
 }
 
 FileLock& FileLock::operator=(FileLock&& other) noexcept {
     if (this != &other) {
         release();
+        mode_ = other.mode_;
 #if defined(_WIN32)
         handle_ = other.handle_;
         other.handle_ = nullptr;
@@ -153,8 +159,8 @@ void FileLock::release() noexcept {
 #endif
 }
 
-std::optional<FileLock> holdVersion(const fs::path& versionDir, std::string* why) {
-    return FileLock::acquire(versionDir / kVersionLockFile, FileLock::Mode::Shared, false, why);
+std::optional<FileLock> holdVersion(const fs::path& versionDir, std::string* why, FileLock::Failure* failure) {
+    return FileLock::acquire(versionDir / kVersionLockFile, FileLock::Mode::Shared, false, why, failure);
 }
 
 bool versionInUse(const fs::path& versionDir) {

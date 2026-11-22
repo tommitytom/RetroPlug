@@ -2315,6 +2315,7 @@ Create `packages/native/test/packs/PackState.test.cpp`:
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -2328,6 +2329,7 @@ Create `packages/native/test/packs/PackState.test.cpp`:
 
 #if !defined(_WIN32)
 #include <csignal>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -2348,6 +2350,19 @@ std::string readText(const fs::path& file) {
     std::ifstream in(file, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
+
+// The file's identity, which a rewrite (a temporary renamed over it) changes and an untouched file keeps. A timestamp
+// would not do: it can match across two writes inside the file system's granularity.
+#if defined(_WIN32)
+std::uintmax_t fileIdentity(const fs::path& file) {
+    return static_cast<std::uintmax_t>(fs::last_write_time(file).time_since_epoch().count());
+}
+#else
+std::uintmax_t fileIdentity(const fs::path& file) {
+    struct stat st {};
+    return ::stat(file.c_str(), &st) == 0 ? static_cast<std::uintmax_t>(st.st_ino) : 0;
+}
+#endif
 
 }  // namespace
 
@@ -2510,12 +2525,12 @@ TEST_CASE("a launch with no state.json sweeps nothing, and a settle that changes
     CHECK_FALSE(fs::exists(root / "state.json"));  // nothing recorded, nothing written
 
     REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "", false}}}, &why));
-    const auto before = fs::last_write_time(root / "state.json");
+    const auto before = fileIdentity(root / "state.json");
     // Leftovers a crash made: a writer's temporary, and a deletion's trash.
     writeText(root / "state.json.tmp-1-0", "x");
     writeText(version.parent_path() / ".0.9.0.deleting-1-0" / "pack.json", "{}");
     REQUIRE(settlePackState(root, &why));
-    CHECK(fs::last_write_time(root / "state.json") == before);
+    CHECK(fileIdentity(root / "state.json") == before);  // a rewrite renames a new file over it: a new inode
     CHECK(fs::exists(version));
     CHECK_FALSE(fs::exists(root / "state.json.tmp-1-0"));
     CHECK_FALSE(fs::exists(version.parent_path() / ".0.9.0.deleting-1-0"));
@@ -2536,6 +2551,8 @@ TEST_CASE("updatePackState serialises writers across processes", "[packs-folders
     const fs::path root = tmp.roots().data;
     constexpr int kChildren = 4;
     constexpr int kEach = 50;
+    // fork in a process with other threads running copies only the calling one, and a lock or allocator another held is
+    // held forever in the child: this case relies on no other thread existing here (the sanitizer legs run it too).
     std::vector<pid_t> children;
     for (int c = 0; c < kChildren; ++c) {
         const pid_t pid = fork();
@@ -2579,8 +2596,20 @@ TEST_CASE("a process killed while it holds a version leaves no lock behind", "[p
     REQUIRE(writePackState(root, PackState{}, &why));
     int ready[2];
     REQUIRE(pipe(ready) == 0);
+    // fork carries the same single-threaded assumption as the case above.
     const pid_t pid = fork();
     REQUIRE(pid >= 0);
+    // Whatever fails below, the child must not outlive the case, or it would hold the lock and a pipe for good.
+    struct Reap {
+        pid_t pid;
+        bool  done = false;  // set once the case has reaped the child itself, so a recycled pid is never signalled
+        ~Reap() {
+            if (done) return;
+            kill(pid, SIGKILL);
+            int status = 0;
+            waitpid(pid, &status, 0);
+        }
+    } reap{pid};
     if (pid == 0) {
         auto held = holdVersion(version, nullptr);
         const char byte = held ? 1 : 0;
@@ -2595,7 +2624,9 @@ TEST_CASE("a process killed while it holds a version leaves no lock behind", "[p
     CHECK(fs::exists(version));  // held by the child, so the settle leaves it
     kill(pid, SIGKILL);
     int status = 0;
-    REQUIRE(waitpid(pid, &status, 0) == pid);
+    const pid_t waited = waitpid(pid, &status, 0);
+    reap.done = waited == pid;
+    REQUIRE(waited == pid);
     close(ready[0]);
     close(ready[1]);
     CHECK_FALSE(versionInUse(version));
@@ -2681,9 +2712,12 @@ public:
     FileLock& operator=(const FileLock&) = delete;
     ~FileLock();
 
+    Mode mode() const { return mode_; }
+
 private:
     FileLock() = default;
     void release() noexcept;
+    Mode mode_ = Mode::Shared;
 #if defined(_WIN32)
     void* handle_ = nullptr;
 #else
@@ -2695,10 +2729,17 @@ private:
 inline constexpr const char* kVersionLockFile = "pack.lock";
 
 // This process's hold on `versionDir`: a shared lock on its lock file, kept for the life of the process by the pack
-// table, since a loaded pack is never unloaded. Safe without the state lock: a folder a settle is deleting is renamed
-// away under the lock this takes, so a hold that races it is refused ("replaced") rather than taken on a dead folder.
-// May fail transiently while versionInUse (below) has its brief exclusive lock.
-std::optional<FileLock> holdVersion(const std::filesystem::path& versionDir, std::string* why);
+// table, since a loaded pack is never unloaded. A folder a settle is deleting is emptied under its exclusive lock, so a
+// hold that races the deletion fails to lock; one that comes after it holds an empty folder, whose manifest read
+// refuses it (on POSIX the folder is also renamed away, so a hold that opened the old lock file is refused as
+// "replaced"). What is NOT guaranteed on Windows is that the lock file is never recreated in the emptied folder
+// before the settle removes it: callers hold under state.lock where the folder must not vanish (loadLaunchPacks),
+// and a hold taken without it is only as good as the manifest read that follows. May fail transiently while
+// versionInUse (below) has its brief exclusive lock.
+// *failure says why a hold failed: Denied (a folder this process cannot write, which no settle can delete either, so
+// the caller may load it unheld), Replaced (being deleted), or Other (contended: worth a brief retry).
+std::optional<FileLock> holdVersion(const std::filesystem::path& versionDir, std::string* why,
+                                    FileLock::Failure* failure = nullptr);
 
 // Whether any process (this one included) holds `versionDir`: true when an exclusive lock cannot be taken at once. A
 // folder with no lock file is held by nobody. The probe takes the exclusive lock for an instant and lets it go, so a
@@ -2713,6 +2754,7 @@ Create `packages/native/src/host/packs/FileLock.cpp`:
 ```cpp
 #include "host/packs/FileLock.hpp"
 
+#include <cstring>
 #include <system_error>
 #include <utility>
 
@@ -2749,10 +2791,12 @@ bool sameFile(HANDLE held, const fs::path& file) {
     HANDLE now = CreateFileW(file.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (now == INVALID_HANDLE_VALUE) return false;
-    BY_HANDLE_FILE_INFORMATION a{}, b{};
-    const bool same = GetFileInformationByHandle(held, &a) && GetFileInformationByHandle(now, &b) &&
-                      a.dwVolumeSerialNumber == b.dwVolumeSerialNumber && a.nFileIndexHigh == b.nFileIndexHigh &&
-                      a.nFileIndexLow == b.nFileIndexLow;
+    // The 128-bit id: the 64-bit index of GetFileInformationByHandle is not unique on every file system (ReFS).
+    FILE_ID_INFO a{}, b{};
+    const bool same = GetFileInformationByHandleEx(held, FileIdInfo, &a, sizeof a) &&
+                      GetFileInformationByHandleEx(now, FileIdInfo, &b, sizeof b) &&
+                      a.VolumeSerialNumber == b.VolumeSerialNumber &&
+                      std::memcmp(&a.FileId, &b.FileId, sizeof a.FileId) == 0;
     CloseHandle(now);
     return same;
 }
@@ -2769,6 +2813,7 @@ std::optional<FileLock> FileLock::acquire(const fs::path& file, Mode mode, bool 
                                           Failure* failure, const std::function<void()>& afterOpen) {
     if (failure) *failure = Failure::None;
     FileLock lock;
+    lock.mode_ = mode;
 #if defined(_WIN32)
     HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -2831,11 +2876,13 @@ FileLock::FileLock(FileLock&& other) noexcept {
     fd_ = other.fd_;
     other.fd_ = -1;
 #endif
+    mode_ = other.mode_;
 }
 
 FileLock& FileLock::operator=(FileLock&& other) noexcept {
     if (this != &other) {
         release();
+        mode_ = other.mode_;
 #if defined(_WIN32)
         handle_ = other.handle_;
         other.handle_ = nullptr;
@@ -2866,8 +2913,8 @@ void FileLock::release() noexcept {
 #endif
 }
 
-std::optional<FileLock> holdVersion(const fs::path& versionDir, std::string* why) {
-    return FileLock::acquire(versionDir / kVersionLockFile, FileLock::Mode::Shared, false, why);
+std::optional<FileLock> holdVersion(const fs::path& versionDir, std::string* why, FileLock::Failure* failure) {
+    return FileLock::acquire(versionDir / kVersionLockFile, FileLock::Mode::Shared, false, why, failure);
 }
 
 bool versionInUse(const fs::path& versionDir) {
@@ -3022,6 +3069,11 @@ Create `packages/native/src/host/packs/PackState.hpp`:
 // settle deletes every folder no entry names, so a folder moved in outside that hold, or recorded after it, can be
 // deleted before it is recorded. An install in progress is unpacked into a '.'-prefixed folder, which a settle leaves
 // alone.
+//
+// The functions that lock state.lock themselves (every overload without a `held` parameter) must not be called while
+// this process already holds it, and not from inside a `change` callback: flock locks per open file description, so a
+// second open in the same process conflicts with the first and the call waits for itself forever. A caller that holds
+// the lock passes it to the `held` overloads, which check it is exclusive (readPackState accepts either mode).
 //
 // Every access holds <dataRoot>/state.lock: a reader shared, a writer exclusive. So a writer's rename never meets a
 // reader with the file open (which Windows refuses), two writers' read-modify-writes never interleave, and a launch
@@ -3259,28 +3311,36 @@ bool writeHeld(const fs::path& dataRoot, const PackState& state, std::string* wh
     return true;
 }
 
-// `dir`, a version folder no entry names any more, deleted unless a process holds it: the exclusive pack.lock is taken
-// at once or not at all. On POSIX the folder is then renamed to a trash name beside it while the lock is held, so a
-// process that opened the old lock file finds the path gone (FileLock refuses it) and none can take a folder this call
-// is emptying; the trash is removed afterwards. Windows cannot rename a folder with a file open in it, so there the
-// folder is removed under the lock: the lock file is opened with FILE_SHARE_DELETE, so its removal is pending until the
-// lock is let go and nothing can open it meanwhile, and the folder is removed again once it has gone.
+// `dir`, a version folder no entry names any more, deleted unless a process holds it. The exclusive pack.lock is taken
+// at once or not at all, and every entry but pack.lock is removed while it is held (the same on every platform, and
+// independent of how the OS treats a delete of an open file): a process that tries to hold the folder meanwhile fails
+// to lock, and one that holds it afterwards holds an empty folder whose manifest read refuses it. Then the lock file
+// and the folder go. On POSIX the folder is first renamed to a trash name beside it while the lock is held, so a
+// process that opened the old lock file finds the path gone (FileLock refuses it); if that rename fails the empty
+// folder is left for a later settle. Windows cannot rename a folder with a file open in it, so there pack.lock and the
+// folder are removed once the lock is let go, and a failure (a racer holding it) leaves them for a later settle.
 void deleteUnheld(const fs::path& dir) {
     auto lock = FileLock::acquire(dir / kVersionLockFile, FileLock::Mode::Exclusive, false, nullptr);
     if (!lock) return;  // held: left for a later launch
     std::error_code ec;
+    for (fs::directory_iterator it(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+        if (displayPath(it->path().filename()) != kVersionLockFile) {
+            std::error_code removeEc;
+            fs::remove_all(it->path(), removeEc);
+        }
 #if defined(_WIN32)
-    fs::remove_all(dir, ec);
     lock.reset();
-    fs::remove_all(dir, ec);
+    fs::remove(dir / kVersionLockFile, ec);
+    fs::remove(dir, ec);  // not remove_all: a folder something was put back in is left alone
 #else
     static std::atomic<std::uint32_t> serial{0};
     const fs::path trash =
         dir.parent_path() / ("." + displayPath(dir.filename()) + kTrashMarker + std::to_string(RP_GETPID()) + "-" +
                              std::to_string(serial.fetch_add(1)));
     fs::rename(dir, trash, ec);
+    const bool renamed = !ec;
     lock.reset();
-    fs::remove_all(ec ? dir : trash, ec);
+    if (renamed) fs::remove_all(trash, ec);
 #endif
 }
 
@@ -3350,8 +3410,9 @@ bool updatePackState(const fs::path& dataRoot, const std::function<bool(PackStat
     return updatePackState(dataRoot, *hold, change, why);
 }
 
-bool updatePackState(const fs::path& dataRoot, const FileLock&, const std::function<bool(PackState&)>& change,
+bool updatePackState(const fs::path& dataRoot, const FileLock& held, const std::function<bool(PackState&)>& change,
                      std::string* why) {
+    if (held.mode() != FileLock::Mode::Exclusive) return refuse(why, "state.json: state.lock is not held exclusively");
     auto state = readHeld(dataRoot, why);
     if (!state) return false;
     if (!change(*state)) return true;
@@ -3364,7 +3425,8 @@ bool settlePackState(const fs::path& dataRoot, std::string* why) {
     return settlePackState(dataRoot, *hold, why);
 }
 
-bool settlePackState(const fs::path& dataRoot, const FileLock&, std::string* why) {
+bool settlePackState(const fs::path& dataRoot, const FileLock& held, std::string* why) {
+    if (held.mode() != FileLock::Mode::Exclusive) return refuse(why, "state.json: state.lock is not held exclusively");
     std::error_code ec;
     // An absent state.json reads as an empty state, which would make every installed folder "unnamed" and delete it:
     // with nothing recorded there is nothing to settle, and nothing is swept.
@@ -3463,7 +3525,8 @@ and in `add_library(retroplug-backend STATIC ...)` delete these two lines:
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 14 test cases)` (11 on Windows, which has no read-only folder case and no fork cases).
+Expected: `All tests passed (... assertions in 14 test cases)` (11 on Windows, which has no read-only folder case and
+no fork cases).
 
 Run: `cmake --build build --target retroplug-host -j$(nproc)`
 Expected: `[100%] Built target retroplug-host` (the backend still links `fsyncPath`).
@@ -4041,9 +4104,11 @@ Create `packages/native/src/host/packs/PackTable.cpp`:
 ```cpp
 #include "host/packs/PackTable.hpp"
 
+#include <chrono>
 #include <map>
 #include <set>
 #include <system_error>
+#include <thread>
 
 #include <rfl.hpp>
 #include <rfl/json.hpp>
@@ -4189,16 +4254,21 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
     // never delete a folder this process has opened a library from, loaded or refused.
     std::shared_ptr<FileLock> hold = candidate.lock;
     if (candidate.origin == PackOrigin::Installed && !hold) {
-        auto taken = holdVersion(candidate.dir, &why);
-        std::error_code ec;
+        FileLock::Failure failure = FileLock::Failure::None;
+        std::optional<FileLock> taken;
+        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold) is tried
+        // again briefly; a folder being deleted (Replaced) is refused at once.
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            taken = holdVersion(candidate.dir, &why, &failure);
+            if (taken || failure != FileLock::Failure::Other) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         if (taken) {
             hold = std::make_shared<FileLock>(std::move(*taken));
-        } else if (fs::exists(candidate.dir / kVersionLockFile, ec)) {
-            // Its lock is there and held exclusively: a settle is deleting the folder.
+        } else if (failure != FileLock::Failure::Denied) {
             return refuse(candidate, {}, "cannot hold its version folder: " + why, nullptr);
         }
-        // No lock file and none can be made: a folder this process cannot write, which no settle can delete either,
-        // so it loads unheld.
+        // Denied: a folder this process cannot write, which no settle can delete either, so it loads unheld.
     }
     // A refusal keeps the folder's hold only once the pack's library is open: until then nothing of the folder is
     // mapped, and the hold goes with the refusal.
