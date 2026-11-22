@@ -4652,13 +4652,139 @@ In `packages/native/CMakeLists.txt`, in `add_library(retroplug-packs STATIC ...)
     src/host/packs/PackTable.cpp
 ```
 
-- [ ] **Step 6: Run the tests**
+- [ ] **Step 6: Hold the manifest's level first**
+
+A manifest of another API level may have changed any other member (a half this host has no word for, a member of
+another shape), and it must be refused for its level, "update RetroPlug", not for whatever else it changed. Task 4's
+parser gains an optional host level: after its size, nesting and duplicate-key gates, a manifest whose `apiLevel`
+differs from it is answered with `levelMismatch` set and only `id` and `apiLevel` filled, and `PackTable` (above) passes
+`RP_API_LEVEL` and refuses such a manifest before it reads anything else. Apply these hunks to Task 4's files, and the
+`rp_pack.h` one to Task 1's header (a comment only: opening a library runs its static constructors whatever its level,
+so the manifest's level is the gate that keeps an honest pack of another level from being opened):
+
+`packages/native/src/host/packs/PackManifest.cpp`:
+
+```diff
+@@ -33,6 +33,11 @@ struct RawProvides {
+     std::optional<std::vector<std::string>> roles;
+     rfl::ExtraFields<rfl::Generic>          extra;
+ };
++// Just the members the level gate reads, so a manifest of another level is judged before the rest of it is.
++struct LevelPeek {
++    std::optional<std::string>  id;
++    std::optional<std::int64_t> apiLevel;
++};
+ struct RawManifest {
+     std::optional<std::string>                                id;
+     std::optional<std::string>                                name;
+@@ -310,7 +315,7 @@ bool isPackId(std::string_view id) {
+     return true;
+ }
+ 
+-std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why) {
++std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why, std::uint32_t hostLevel) {
+     const ScanResult scan = DuplicateKeyScan(json).find();
+     if (scan.kind == ScanResult::Kind::TooDeep) {
+         refuse(why, "nested deeper than " + std::to_string(kMaxNesting) + " levels");
+@@ -320,6 +325,17 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
+         refuse(why, "the member \"" + echoed(scan.key) + "\" appears twice in one object");
+         return std::nullopt;
+     }
++    if (hostLevel != 0) {
++        const auto peek = rfl::json::read<LevelPeek>(std::string(json));
++        if (peek && peek->id && isPackId(*peek->id) && peek->apiLevel && *peek->apiLevel >= 0 &&
++            *peek->apiLevel <= 0xffffffffll && *peek->apiLevel != static_cast<std::int64_t>(hostLevel)) {
++            PackManifest m;
++            m.id = *peek->id;
++            m.apiLevel = static_cast<std::uint32_t>(*peek->apiLevel);
++            m.levelMismatch = true;
++            return m;
++        }
++    }
+     auto raw = rfl::json::read<RawManifest>(std::string(json));
+     if (!raw) {
+         refuse(why, std::string("not a manifest: ") + echoed(raw.error().what(), 256));
+@@ -413,7 +429,7 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
+     return m;
+ }
+ 
+-std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::string* why) {
++std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::string* why, std::uint32_t hostLevel) {
+     const fs::path file = versionDir / "pack.json";
+     std::error_code ec;
+     const auto size = fs::is_regular_file(file, ec) ? fs::file_size(file, ec) : 0;
+@@ -438,7 +454,7 @@ std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::st
+         if (why) *why = "pack.json: too large (over " + std::to_string(kMaxManifestBytes) + " bytes)";
+         return std::nullopt;
+     }
+-    return parsePackManifest(text, why);
++    return parsePackManifest(text, why, hostLevel);
+ }
+ 
+ }  // namespace rp::host::packs
+```
+
+`packages/native/src/host/packs/PackManifest.hpp`:
+
+```diff
+@@ -31,6 +31,9 @@ struct PackManifest {
+     // bound to the id, so two packs' libraries never share a file name, which Windows matches a loaded module by), the
+     // others a JS file inside the version folder. A kind no RetroPlug knows is refused here.
+     std::map<std::string, std::string> halves;
++    // Set only by a parse given a host level (below) that this manifest's apiLevel differs from: only id and apiLevel
++    // are read then, since a manifest of another level may spell every other member in ways this host does not know.
++    bool levelMismatch = false;
+ 
+     // The native half's library stem, or empty for a pack with no native half.
+     std::string nativeHalf() const;
+@@ -45,10 +48,14 @@ bool isPackId(std::string_view id);
+ // Whether `version` is MAJOR.MINOR.PATCH in decimal with no leading zero: it names a folder, so nothing else may.
+ bool isPackVersion(std::string_view version);
+ 
+-// `json` as a manifest, or nothing with the reason in *why (each reason starts "pack.json: ").
+-std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why);
++// `json` as a manifest, or nothing with the reason in *why (each reason starts "pack.json: "). With a non-zero
++// `hostLevel`, a manifest whose apiLevel differs is answered as soon as its size, nesting and duplicate keys have been
++// checked (those gates always run first, for safety), with levelMismatch set and only id and apiLevel filled: a pack
++// of another level is refused for its level, whatever else it has changed since this host's.
++std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why, std::uint32_t hostLevel = 0);
+ 
+ // <versionDir>/pack.json read and parsed; nothing, with the reason, when it cannot be read or does not parse.
+-std::optional<PackManifest> readPackManifest(const std::filesystem::path& versionDir, std::string* why);
++std::optional<PackManifest> readPackManifest(const std::filesystem::path& versionDir, std::string* why,
++                                             std::uint32_t hostLevel = 0);
+ 
+ }  // namespace rp::host::packs
+```
+
+`packages/node-sdk/native/src/graph/rp_pack.h`:
+
+```diff
+@@ -3,8 +3,10 @@
+  * A pack (docs/downloadable-packs-loading-design.md section 2) is a folder a RetroPlug loads at run time; its native
+  * half is one dynamic library exporting rp_pack_entry and nothing else. The entry answers the API level the library
+  * was built against and the same rp_package list a built-in package's generated table holds (graph/Packages.hpp).
+- * The loader reads the level first and uses nothing else from a library built at any other level, so this header's
+- * shape is the one thing that may never change: a new field is a new header, not an edit to this one.
++ * The loader holds the manifest's level against the host's before it opens the library, and the entry's answer before
++ * it uses anything else of it, so this header's shape is the one thing that may never change: a new field is a new
++ * header, not an edit to this one. (Opening a library runs its static constructors whatever its level; the manifest
++ * gate is what keeps an honest pack of another level from being opened at all.)
+  */
+ #ifndef RP_PACK_H
+ #define RP_PACK_H
+```
+
+Run: `cmake --build build --target retroplug-packs-test -j$(nproc)`.
+Expected: it builds; `PackManifest.test.cpp`'s cases still pass (they pass no host level).
+
+- [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
 Expected: `All tests passed (... assertions in 28 test cases)` on Linux (27 on macOS, without the dynamic-symbol case;
 24 on Windows, without the read-only folder case too).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add packages/native/src/host/packs/PackCandidate.hpp packages/native/src/host/packs/NativeLibrary.hpp \
@@ -4670,7 +4796,7 @@ git add packages/native/src/host/packs/PackCandidate.hpp packages/native/src/hos
 git commit -m "packs: the native loader, one load per library, every refusal registering nothing"
 ```
 
-- [ ] **Step 8: Cross-platform gate, before anything is pushed**
+- [ ] **Step 9: Cross-platform gate, before anything is pushed**
 
 On a Windows machine (the CI runner's toolchain, MSVC 14.5x, in the MSVC x64 environment `build.bat` enters) and on a
 macOS one, from this commit:
@@ -4860,6 +4986,27 @@ TEST_CASE("a launch that waits on another's settle discovers what the settle lef
     CHECK(table.size() == 0);
 }
 
+TEST_CASE("a development folder inside the installed root is held like an installed one", "[packs-discovery]") {
+    // A folder offered as a development pack that is in fact packs/<id>/<version>/ of the data root: the launch holds
+    // it under state.lock, or another launch's settle could delete a folder this process has a library open from.
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    {
+        PackTable table(rp::graph::productPackages());
+        REQUIRE(loadLaunchPacks(table, tmp.roots(), {dir}).empty());
+        const LoadedPack* pack = table.find("packfixture");
+        REQUIRE(pack != nullptr);
+        CHECK(pack->origin == PackOrigin::Development);
+        CHECK(pack->lock != nullptr);
+        CHECK(versionInUse(dir));
+    }
+    CHECK_FALSE(versionInUse(dir));
+    // A development folder outside the root takes no hold: nothing settles it.
+    PackTable outside(rp::graph::productPackages());
+    REQUIRE(loadLaunchPacks(outside, tmp.roots(), {fixture("packfixture")}).empty());
+    CHECK(outside.find("packfixture")->lock == nullptr);
+}
+
 #if !defined(_WIN32)
 TEST_CASE("a launch from a data root it cannot write loads its installed packs unheld, without settling",
           "[packs-discovery]") {
@@ -4966,6 +5113,17 @@ namespace rp::host::packs {
 
 namespace {
 
+// Whether `dir` lies under `root`, both canonical: a development folder that is really an installed version folder.
+bool isUnder(const fs::path& dir, const fs::path& root) {
+    std::error_code ec;
+    const fs::path d = fs::weakly_canonical(dir, ec);
+    if (ec) return false;
+    const fs::path r = fs::weakly_canonical(root, ec);
+    if (ec) return false;
+    const fs::path rel = d.lexically_relative(r);
+    return !rel.empty() && *rel.begin() != ".." && *rel.begin() != ".";
+}
+
 // The candidates of `state` (empty when it did not read, `why` then saying why, or null when that was reported
 // already) and of `devDirs`.
 PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState>& state, const std::string* why,
@@ -5051,7 +5209,9 @@ std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& root
         }
         found = discoverFrom(roots, state, reported ? nullptr : &why, devDirs);
         for (auto& c : found.candidates) {
-            if (c.origin != PackOrigin::Installed) continue;
+            // An installed folder is held; so is a development one that lies inside the data root, which a settle
+            // can delete as readily (the candidate keeps its Development origin: the loader adopts a hold either way).
+            if (c.origin != PackOrigin::Installed && !(!roots.data.empty() && isUnder(c.dir, roots.data))) continue;
             std::string held;
             if (auto lock = holdVersion(c.dir, &held)) c.lock = std::make_shared<FileLock>(std::move(*lock));
         }
@@ -5074,12 +5234,23 @@ In `add_library(retroplug-packs STATIC ...)`, after the `src/host/packs/PackTabl
     src/host/packs/PackDiscovery.cpp
 ```
 
-- [ ] **Step 4: Run the tests**
+- [ ] **Step 4: Compile the held development folder (written after the rest of this task, never compiled)**
+
+The `isUnder` helper in `PackDiscovery.cpp`, the widened hold loop in `loadLaunchPacks`, and the test case "a
+development folder inside the installed root is held like an installed one" were added to this task after its code was
+compiled. Build them first and fix what the compiler or the case finds (the plan's text is the intent: a development
+candidate whose canonical path is under the canonical data root is held with `holdVersion` inside the `state.lock`
+section, `c.lock` set, its origin left `Development`; a development folder outside the root takes no hold).
+
+Run: `cmake --build build --target retroplug-packs-test -j$(nproc)`
+Expected: it builds.
+
+- [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 34 test cases)` on Linux (33 on macOS, 29 on Windows).
+Expected: `All tests passed (... assertions in 35 test cases)` on Linux (34 on macOS, 30 on Windows).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add packages/native/src/host/packs/PackDiscovery.hpp packages/native/src/host/packs/PackDiscovery.cpp \
@@ -5611,7 +5782,7 @@ void Engine::syncPacks() {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 41 test cases)` on Linux (40 on macOS, 36 on Windows), and two stderr
+Expected: `All tests passed (... assertions in 42 test cases)` on Linux (41 on macOS, 37 on Windows), and two stderr
 lines from the
 cases that refuse a pack in one Engine:
 `[engine] pack packfixture was refused here: package "rp.packfixture" is already registered` and
@@ -5703,7 +5874,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 41 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
+Expected: `All tests passed (... assertions in 42 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
 modules are instrumented:
 
 ```bash
@@ -5721,7 +5892,7 @@ cmake --build build-asan --target retroplug-packs-test -j$(nproc)
 ASAN_OPTIONS="abort_on_error=1 detect_leaks=1" build-asan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 41 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
+Expected: `All tests passed (... assertions in 42 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
 `ERROR: LeakSanitizer` line.
 
 - [ ] **Step 4: Commit**
@@ -6128,7 +6299,7 @@ retroplug_pack(mesen)
 - [ ] **Step 5: Build and run**
 
 Run: `pnpm configure && cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 44 test cases)` on Linux (43 on macOS; on Windows 39, the PCM case
+Expected: `All tests passed (... assertions in 45 test cases)` on Linux (44 on macOS; on Windows 40, the PCM case
 among them reported skipped in Catch2's own summary). The Mesen cases print each boot's iNES lines twice (one per
 build) and pass.
 
@@ -6190,7 +6361,7 @@ git commit -m "packs: the Mesen package built as a pack renders its static build
 - [ ] **Step 8: Cross-platform gate, before anything is pushed**
 
 As at the end of Task 6, on a Windows and a macOS machine, from this commit: build `retroplug-packs-test` and run it.
-Expected: on macOS `All tests passed (... assertions in 43 test cases)` (the Mesen module a `.dylib` built for the
+Expected: on macOS `All tests passed (... assertions in 44 test cases)` (the Mesen module a `.dylib` built for the
 architectures the build names: CI's `build.yml` passes `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"`); on Windows every
 case passes and the Mesen PCM case is reported skipped, with `rp-mesen.dll` built and its descriptors equal to the
 static build's. Then `pnpm test:plugin` on both (`test.bat plugin` on Windows). The user pushes only after both pass.
@@ -6491,6 +6662,11 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
     honest pack of another API level from being opened is the manifest's `apiLevel`, which the loader compares first,
     before the rest of the manifest is read. A dishonest manifest over a library of another level is caught by the entry
     only after its constructors ran; that is inside the trust a pack already has (it is native code).
+
+16. **A development folder inside the installed root** (a `--pack` or `RETROPLUG_PACK_PATH` entry that is really
+    `packs/<id>/<version>/`) would load unheld, so a settle could delete a folder with a library open from it. Resolved
+    in Task 7: `loadLaunchPacks` holds any candidate whose canonical path lies under the canonical data root, inside
+    the `state.lock` section, and the pack keeps its Development origin. (Task 7's code for this is not compiled yet.)
 
 ## Self-review
 
