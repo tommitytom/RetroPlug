@@ -1829,7 +1829,9 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
-namespace {
+// The structs reflect-cpp reads live in a named namespace: it converts through a fake object of each type, which Apple
+// clang refuses ("used but not defined") for a type of internal linkage.
+namespace detail {
 
 // The manifest as JSON spells it. Optional members are checked below, so a missing one is reported by name rather
 // than as reflect-cpp's generic message. Unknown top-level members are ignored: a member added at the same API level
@@ -1859,6 +1861,12 @@ struct RawManifest {
     std::optional<RawProvides>                                provides;
     std::optional<std::map<std::string, std::string>>         halves;
 };
+
+}  // namespace detail
+
+using namespace detail;
+
+namespace {
 
 // The largest pack.json read: a manifest is a few hundred bytes, and the file comes from a folder anyone can write.
 constexpr std::uintmax_t kMaxManifestBytes = 1024 * 1024;
@@ -3261,7 +3269,9 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
-namespace {
+// Named, not anonymous: reflect-cpp's conversion through a fake object of the type is refused by Apple clang for a type
+// of internal linkage.
+namespace detail {
 
 struct RawVersion {
     std::uint32_t version = 0;
@@ -3276,6 +3286,12 @@ struct RawState {
     std::uint32_t         version = kPackStateVersion;
     std::vector<RawEntry> packs;
 };
+
+}  // namespace detail
+
+using namespace detail;
+
+namespace {
 
 // A folder being deleted is renamed to `.<version>` + this + `<pid>-<n>`; a crash can leave one for the next settle.
 constexpr const char* kTrashMarker = ".deleting-";
@@ -4350,13 +4366,19 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
+// Named, not anonymous (nor local to the function): reflect-cpp converts through a fake object of the type, which Apple
+// clang refuses for a type without external linkage.
+namespace detail {
+struct PackageId {
+    std::string id;
+};
+}  // namespace detail
+
 namespace {
 
 // An rp_package's id, from its manifest JSON; empty when it has none (the registry refuses such a package anyway).
 std::string packageIdOf(const rp_package* package) {
-    struct Id {
-        std::string id;
-    };
+    using Id = detail::PackageId;
     if (package == nullptr || package->manifest_json == nullptr) return {};
     // The registry's own parser, so a repeated key reads here as it reads there.
     const auto parsed = rp::graph::parseJson(package->manifest_json).and_then([](const rfl::Generic& g) {

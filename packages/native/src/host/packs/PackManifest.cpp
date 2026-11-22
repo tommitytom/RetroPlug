@@ -14,7 +14,9 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
-namespace {
+// The structs reflect-cpp reads live in a named namespace: it converts through a fake object of each type, which Apple
+// clang refuses ("used but not defined") for a type of internal linkage.
+namespace detail {
 
 // The manifest as JSON spells it. Optional members are checked below, so a missing one is reported by name rather
 // than as reflect-cpp's generic message. Unknown top-level members are ignored: a member added at the same API level
@@ -49,6 +51,12 @@ struct RawManifest {
     std::optional<RawProvides>                                provides;
     std::optional<std::map<std::string, std::string>>         halves;
 };
+
+}  // namespace detail
+
+using namespace detail;
+
+namespace {
 
 // The largest pack.json read: a manifest is a few hundred bytes, and the file comes from a folder anyone can write.
 constexpr std::uintmax_t kMaxManifestBytes = 1024 * 1024;

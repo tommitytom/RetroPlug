@@ -20,13 +20,19 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
+// Named, not anonymous (nor local to the function): reflect-cpp converts through a fake object of the type, which Apple
+// clang refuses for a type without external linkage.
+namespace detail {
+struct PackageId {
+    std::string id;
+};
+}  // namespace detail
+
 namespace {
 
 // An rp_package's id, from its manifest JSON; empty when it has none (the registry refuses such a package anyway).
 std::string packageIdOf(const rp_package* package) {
-    struct Id {
-        std::string id;
-    };
+    using Id = detail::PackageId;
     if (package == nullptr || package->manifest_json == nullptr) return {};
     // The registry's own parser, so a repeated key reads here as it reads there.
     const auto parsed = rp::graph::parseJson(package->manifest_json).and_then([](const rfl::Generic& g) {

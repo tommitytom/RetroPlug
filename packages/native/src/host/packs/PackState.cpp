@@ -31,7 +31,9 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
-namespace {
+// Named, not anonymous: reflect-cpp's conversion through a fake object of the type is refused by Apple clang for a type
+// of internal linkage.
+namespace detail {
 
 struct RawVersion {
     std::uint32_t version = 0;
@@ -46,6 +48,12 @@ struct RawState {
     std::uint32_t         version = kPackStateVersion;
     std::vector<RawEntry> packs;
 };
+
+}  // namespace detail
+
+using namespace detail;
+
+namespace {
 
 // A folder being deleted is renamed to `.<version>` + this + `<pid>-<n>`; a crash can leave one for the next settle.
 constexpr const char* kTrashMarker = ".deleting-";
