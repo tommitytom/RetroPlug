@@ -1383,30 +1383,35 @@ the server's names are global and a repeat replaces without a word. The N8 port 
 ### Packs: a package's native half loaded at run time
 
 A pack ([downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md) sections 1 and 2) is a
-version folder: `pack.json`, and a native library per platform under `native/<platform>/` (`linux-x64`,
-`linux-arm64`, `macos-universal`, `windows-x64`). The library exports one C function,
-[`rp_pack_entry`](../packages/node-sdk/native/src/graph/rp_pack.h), which answers the API level it was built against
-and the same `rp_package` list a product's generated table holds. `RP_API_LEVEL` is one integer, bumped by hand in any
+version folder: `pack.json`, and a native library per platform under `native/<platform>/` (`linux-x64`, `linux-arm64`,
+`macos-universal`, `windows-x64`). The library exports one C function,
+[`rp_pack_entry`](../packages/node-sdk/native/src/graph/rp_pack.h), which answers the API level it was built against and
+the same `rp_package` list a product's generated table holds. `RP_API_LEVEL` is one integer, bumped by hand in any
 commit that breaks packs (the C ABI, `SystemBase` and the contract headers, the TS contract modules). A pack at any
 other level is refused, saying which side is out of date: the loader reads the manifest's level first, before the rest
-of the manifest is parsed (a manifest of another level may spell its other members in ways this host does not know),
-and then the entry's, which is read only after the library's static constructors ran.
+of the manifest is parsed (a manifest of another level may spell its other members in ways this host does not know), and
+then the entry's, which is read only after the library's static constructors ran.
 
 `retroplug-packs` ([src/host/packs](../packages/native/src/host/packs)) is the folder model and the loader, linked by
-every desktop host through `retroplug-backend`. `PackDirs` names the roots (the user's data directory for the packs
-and `state.json`, the cache directory for the bytecode M2 compiles; `RETROPLUG_PACKS_DIR` and
-`RETROPLUG_PACKS_CACHE_DIR` override them, and every function takes the roots, so a test hands it a temporary folder).
-`PackManifest` parses and checks `pack.json` (a library is always `rp-<id>`); before the parse it refuses a file over
-1 MiB, nesting deeper than 32 levels and a duplicate key. `PackState` reads `state.json` (its version first, so a
-newer one is refused and never overwritten) under a shared hold of `state.lock` and writes it under an exclusive one,
-through a temporary file and a rename, and settles pending updates and removals at a launch. `FileLock` is the shared
-`pack.lock` a process holds in each installed version folder it opened, loaded or refused, for the life of the process
-(`holdVersion`, and `holdVersionBriefly`, which retries a contended or scanner-held file for a bounded while). A settle
-deletes a version folder only while it holds that lock exclusively, taken at once or not at all: it renames the folder
-to a `.`-prefixed trash name (so a process that opened the old lock file finds the path gone and is refused as
-"replaced"), empties it and removes it, and the next settle sweeps any trash a crash left. A development folder takes no
-lock, unless it lies inside the data root, where the settle could delete it as readily as any other folder:
-`loadLaunchPacks` holds it, and refuses it if it cannot.
+every desktop host through `retroplug-backend`. `PackDirs` names the roots (the user's data directory for the packs and
+`state.json`, the cache directory for the bytecode M2 compiles; `RETROPLUG_PACKS_DIR` and `RETROPLUG_PACKS_CACHE_DIR`
+override them, and every function takes the roots, so a test hands it a temporary folder). `PackManifest` parses and
+checks `pack.json` (a library is always `rp-<id>`); before the parse it refuses a file over 1 MiB, nesting deeper than
+32 levels and a duplicate key. `PackState` reads `state.json` (its version first, so a newer one is refused and never
+overwritten) under a shared hold of `state.lock` and writes it under an exclusive one, through a temporary file and a
+rename, and settles pending updates and removals at a launch. `FileLock` is the general advisory lock (`flock` on POSIX,
+`LockFileEx` on Windows, per open file), which takes `state.lock` and each pack's `pack.lock`: a process holds
+`pack.lock` shared in each installed version folder it opened, loaded or refused, for the life of the process
+(`holdVersion`, and `holdVersionBriefly`, which retries a contended or scanner-held file for a bounded while); a refused
+pack's folder stays held only if its library was opened. A settle deletes a version folder only while it holds that lock
+exclusively, taken at once or not at all. With it held it removes `pack.json` first, then everything but `pack.lock`. On
+POSIX it then renames the folder to a `.`-prefixed trash name (so a process that opened the old lock file finds the path
+gone and is refused as "replaced"), releases the lock and removes the trash; on Windows, which cannot rename a folder
+with a file open in it, it releases the lock and removes `pack.lock` and the folder, leaving them for a later settle if
+that fails. The next settle sweeps trash, emptied folders and `state.json` temporaries a crash or a racing hold left. A
+development folder takes no lock, unless it lies inside the data root, where the settle could delete it as readily as
+any other folder: `loadLaunchPacks` holds it, and refuses it if it cannot, unless the failure is a folder this process
+cannot write, which loads unheld.
 
 `PackDiscovery` finds the installed packs (each entry of `state.json` but a removed one, its active version) and the
 development folders: the ones a host passes, then `RETROPLUG_PACK_PATH`'s, so an explicit choice wins, the same folder
@@ -1416,14 +1421,17 @@ exclusive hold of `state.lock`, then loads with that let go, the table keeping t
 launch's settle deletes a version folder either before this launch discovers it or not at all.
 
 `PackTable` opens each pack's library once and never closes it (a refused one too: opening it ran its static
-constructors, and its installed folder stays held). A pack loads all or nothing, and is refused for: its API level, a
-half other than the native one (M1 loads no TS half), a missing library or entry, an entry that throws (caught on the
-host's side of the entry), a node type its `provides.nodeTypes` does not declare or a declared one it does not register,
-one a built-in package or an earlier pack holds, a `requires.packs` (packs only) not loaded, or anything the
-`NodeRegistry` refuses on a scratch registry holding what every Engine holds before it. `loadAll` loads in dependency
-order, whatever order the candidates come in, and names a cycle. `processPacks()` is the process's table, seeded with
-the product's packages and empty until a host loads into it (no host does at launch yet: a native half alone has
-nothing the app places until M2's TS halves).
+constructors, and its installed folder stays held). A pack loads all or nothing, and is refused for, among others: its
+API level, a half other than the native one (M1 loads no TS half), an installed folder that is not
+`packs/<id>/<version>`, a second folder of an id already loaded, a second copy of the library of an id whose first was
+opened and refused, no library for this platform, a missing library or entry, an entry that throws (caught on the host's
+side of the entry) or returns no package or a null one, a node type its `provides.nodeTypes` does not declare or a
+declared one it does not register, one a built-in package or an earlier pack holds, a `requires.packs` (packs only) not
+loaded, an installed folder that cannot be held, or anything the `NodeRegistry` refuses on a scratch registry holding
+the product's packages and the packs before it (the script node types are not in it: each Engine checks those).
+`loadAll` loads in dependency order, whatever order the candidates come in, and names a cycle. `processPacks()` is the
+process's table, seeded with the product's packages and empty until a host loads into it (no host does at launch yet: a
+native half alone has nothing the app places until M2's TS halves).
 
 Every `Engine` registers its table's packs after the product's packages and the built-in script pack, in load order,
 which is dependency order. A pack loaded later joins each Engine on its control thread, the thread `loadScriptPack`
@@ -1434,19 +1442,19 @@ Engine that already holds one of a pack's ids (a script node's, or a test's `add
 there alone (`refusedPacks()`), and so a pack requiring one it refused; a refusal is not retried in that Engine (a new
 Engine judges afresh). The offline pool keeps its fixed `core` and `dsp` subset and registers no pack.
 
-`retroplug_pack(<package>)` ([cmake/packs.cmake](../cmake/packs.cmake)), called from a package's own CMakeLists,
-builds its desktop entries as a MODULE (`retroplug-<package>-pack`, built by name) from its static targets and a
-generated entry, staged at `build/packs/<id>/<version>/`. The module keeps every symbol but the entry to itself (a
-version script on Linux, an exported-symbols list on macOS, `dllexport` on Windows) and Linux links it
-`--no-undefined`, so a pack imports nothing from RetroPlug and its copies of node-sdk, system, reflect-cpp and its core
-never bind to the host's (`[packs-mesen]` reads the Mesen module's dynamic symbols on Linux). The boundary between a
-pack's systems and the engine is C++ (`SystemBase`), pinned by the toolchain and the API level, and heap ownership
-crosses it (a build request's vectors, a refusal's string, a core the engine deletes through its virtual destructor), so
-it needs one allocator shared by host and pack, which Windows' static CRT does not give: that decision is open
-([downloadable-packs-m1-plan.md](../docs/downloadable-packs-m1-plan.md), Design questions), and the Mesen PCM case skips
-there. The host casts nothing by RTTI (`[packs-boundary]` scans every package's native source but Mesen's, and the
-shell's own source and hosts), and `[packs-mesen]` boots a NES through the Mesen package built as a pack beside its
-static build and holds the two to the same PCM and work RAM, bit for bit, on Linux and macOS.
+`retroplug_pack(<package>)` ([cmake/packs.cmake](../cmake/packs.cmake)), called from a package's own CMakeLists, builds
+its desktop entries as a MODULE (`retroplug-<package>-pack`, built by name) from its static targets and a generated
+entry, staged at `build/packs/<id>/<version>/`. The module keeps every symbol but the entry to itself (a version script
+on Linux, an exported-symbols list on macOS, `dllexport` on Windows) and Linux links it `--no-undefined`, so a pack
+imports nothing from RetroPlug and its copies of node-sdk, system, reflect-cpp and its core never bind to the host's
+(`[packs-loader]` and `[packs-mesen]` read the modules' dynamic symbols on Linux). The boundary between a pack's systems
+and the engine is C++ (`SystemBase`), pinned by the toolchain and the API level, and heap ownership crosses it (a build
+request's vectors, a refusal's string, a core the engine deletes through its virtual destructor), so it needs one
+allocator shared by host and pack, which Windows' static CRT does not give: that decision is open
+([downloadable-packs-m1-plan.md](../docs/downloadable-packs-m1-plan.md#design-questions-this-plan-found), question 1),
+and the Mesen PCM case skips there. The host casts nothing by RTTI (`[packs-boundary]` scans every package's native
+source but Mesen's, and the shell's own source and hosts), and `[packs-mesen]` boots a NES through the Mesen package
+built as a pack beside its static build and holds the two to the same PCM and work RAM, bit for bit, on Linux and macOS.
 
 ### Kit reproducibility
 

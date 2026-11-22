@@ -156,20 +156,22 @@ The gamepad-axis bus dispatches no app action, and the generator refuses a bindi
 
 ### Downloadable packs
 
-M1 built the native half: a pack's native library loads at run time and registers its node types in every
-Engine ([spec/02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time), part 1 of
-[downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md)), and the Mesen package builds as
-one. No host loads a pack at launch, a pack's TypeScript halves, placeholders for a missing pack, archives and the CLI's
-pack commands are that design's M2 to M5, and the allocator the pinned C++ boundary needs on Windows is undecided (its
-Design questions, [downloadable-packs-m1-plan.md](../docs/downloadable-packs-m1-plan.md)). The authoring loop, downloads
-and unloading a pack (the `Engine` has `loadScriptPack` and no unload) are what downloadable packs still need (the C1
-design's section 8). With them
-come menus on extensions (a downloaded pack contributing menu rows, which packages in the tree do through `defineUi`)
-and third-party controller apps: `controllerApps` registers from the product's package list, so an app from outside the
-tree waits for this road. And a provider cannot be downloaded either, since it is reached only through the
-generated static table, and which of a pack's facet methods a product mounts is not yet scoped. Whether a downloaded
-pack's bytecode is stripped is the format's to say: a pack compiled from source keeps its debug information, about a
-quarter more memory than stripped code. ([C1 design](../docs/modular-graph-phase-c1-design.md) sections 8, 12 and 13,
+The loading road is part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md),
+built in five milestones ([the M1 plan](../docs/downloadable-packs-m1-plan.md)). M1 built the native half: a pack's
+native library loads at run time and registers its node types in every Engine
+([spec/02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)), and the Mesen package builds as one. No
+host loads a pack at launch yet. M2 (a pack's TS halves and the live registries), M3 (placeholders for a missing pack),
+M4 (`.rppack` archives, the CLI's pack commands, Settings > Packs) and M5 (Mesen and BlipToaster loaded as packs with
+their suites unchanged, and the plugin, Node, concurrency and sanitizer legs) are left, and so is the allocator the
+pinned C++ boundary needs on Windows (the M1 plan's design question 1). After part 1 the road is the design's parts 2 to
+6, and the authoring loop, downloads and unloading a script pack (the `Engine` has `loadScriptPack` and no unload;
+native code is never unloaded) are what downloadable packs still need (the C1 design's section 8). With them come menus
+on extensions (a downloaded pack contributing menu rows, which packages in the tree do through `defineUi`) and
+third-party controller apps: `controllerApps` registers from the product's package list, so an app from outside the tree
+waits for this road. And a provider cannot be downloaded either, since it is reached only through the generated static
+table, and which of a pack's facet methods a product mounts is not yet scoped. Whether a downloaded pack's bytecode is
+stripped is the format's to say: a pack compiled from source keeps its debug information, about a quarter more memory
+than stripped code. ([C1 design](../docs/modular-graph-phase-c1-design.md) sections 8, 12 and 13,
 [E1](../docs/modular-graph-phase-e1-design.md) section 10, [E2](../docs/modular-graph-phase-e2-design.md) section 13.8,
 [F3](../docs/modular-graph-phase-f3-design.md) section 11, [F5a](../docs/modular-graph-phase-f5a-design.md) section 12.)
 

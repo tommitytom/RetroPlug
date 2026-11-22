@@ -187,7 +187,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/fixture ${CMAKE_BINARY_D
 # model on a temporary root, the loader's every refusal against the fixture pack's variants (test/packs/fixture), a pack
 # reaching a running Engine, two Engines sharing one load, a live load while an audio thread renders (its
 # ThreadSanitizer run is tools/run-sanitizer.sh thread's), and the Mesen package built as a pack and booted beside its
-# static build. Its product is the packs-host list, the desktop's without mesen and bliptoaster, so rp.mesen.* reaches
+# static build. Its product is the packs-host list, the plugin's without mesen and bliptoaster, so rp.mesen.* reaches
 # its engines only from the pack; it links the static retroplug-mesen too, which no engine of its registers until a
 # case hands it over (Engine::addNodePackage), so the two builds render side by side in one process.
 retroplug_add_test_binary(

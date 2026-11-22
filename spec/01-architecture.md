@@ -454,7 +454,7 @@ blob with `exportPlan` and the loader), `core` (the `rp.core` nodes), `dsp` (the
 `n8` (the N8 pack), `launchpad` (the control surface's nodes and its desktop transport), `device-io`
 (`rp.device.midi-in`, the box's host MIDI) and `devtest` (test nodes the device check and the exporter register and no
 product lists); `packages/native`'s manifest lists the types not yet carved (`sameboy`, `mesen` and `host_io`). Each
-product (the plugin, `retroplug-host`, the CLI, the SDL standalone, the Node addon and four test binaries) declares its
+product (the plugin, `retroplug-host`, the CLI, the SDL standalone, the Node addon and five test binaries) declares its
 packages with `retroplug_product()` and gets a generated `rp_register_packages()` that the Engine reads in place of a
 hard-coded loop; a golden holds each product's registered type ids, and a configure-time check refuses a binary that
 links the engine without being a product.
