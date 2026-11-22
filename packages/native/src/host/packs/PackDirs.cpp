@@ -1,6 +1,7 @@
 #include "host/packs/PackDirs.hpp"
 
 #include <cstdlib>
+#include <system_error>
 
 namespace fs = std::filesystem;
 
@@ -123,6 +124,28 @@ std::string displayPath(const fs::path& p) {
 #else
     return p.string();
 #endif
+}
+
+fs::path normalisedDir(const fs::path& dir) {
+    fs::path p = dir.lexically_normal();
+    if (!p.has_filename() && p.has_parent_path()) p = p.parent_path();
+    return p;
+}
+
+fs::path canonicalOr(const fs::path& p) {
+    std::error_code ec;
+    fs::path c = fs::weakly_canonical(p, ec);
+    return ec ? p : c;
+}
+
+bool isUnder(const fs::path& dir, const fs::path& root) {
+    std::error_code ec;
+    const fs::path d = fs::weakly_canonical(dir, ec);
+    if (ec) return false;
+    const fs::path r = fs::weakly_canonical(root, ec);
+    if (ec) return false;
+    const fs::path rel = d.lexically_relative(r);
+    return !rel.empty() && *rel.begin() != ".." && *rel.begin() != ".";
 }
 
 std::vector<fs::path> packPathFromEnv() {

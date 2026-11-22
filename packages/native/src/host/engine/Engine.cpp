@@ -638,7 +638,6 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
 void Engine::setScriptCallDeadline(std::chrono::milliseconds limit) { graph_->script.setCallDeadline(limit); }
 
 void Engine::syncPacks() {
-    if (packs_ == nullptr) return;
     rp::graph::NodeRegistry& registry = graph_->registry;
     for (const rp::host::packs::LoadedPack* pack : packs_->loadedFrom(packsSeen_)) {
         ++packsSeen_;

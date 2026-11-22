@@ -16,11 +16,12 @@
 #include "host/packs/PackCandidate.hpp"
 #include "host/packs/PackManifest.hpp"
 
-// The packs a process has loaded (docs/downloadable-packs-loading-design.md section 2): each pack's library opened
-// once and never closed, its manifest, and the rp_packages its entry returned. Every Engine in the process reads one
-// table (host/packs/ProcessPacks.hpp), so a plugin's instances, its render jobs and the standalone share each load. An
-// Engine takes what the table holds when it is built, then each pack loaded since at its next setGraph
-// (Engine::syncPacks), on its own control thread: the table never reaches into an Engine.
+// The packs a process has loaded (docs/downloadable-packs-loading-design.md section 2): each pack's library opened once
+// and never closed, its manifest, and the rp_packages its entry returned. Every Engine in the process reads one table
+// (host/packs/ProcessPacks.hpp), so a plugin's instances, its engine jobs (renders, which build an Engine) and the
+// standalone share each load; the offline pool's graph jobs build a bare registry of the core and DSP packages and
+// register no pack. An Engine takes what the table holds when it is built, then each pack loaded since at its next
+// setGraph (Engine::syncPacks), on its own control thread: the table never reaches into an Engine.
 //
 // The table is append-only and its packs are immutable once appended, so a pointer it hands out is valid for the
 // table's life. Loads are serialised by one mutex, which loadedFrom takes too: any thread may load while Engines read.

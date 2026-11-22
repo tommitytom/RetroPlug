@@ -1,11 +1,9 @@
 #include "host/packs/PackTable.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <map>
 #include <set>
 #include <system_error>
-#include <thread>
 
 #include <rfl.hpp>
 #include <rfl/from_generic.hpp>
@@ -22,17 +20,17 @@ namespace rp::host::packs {
 
 // Named, not anonymous (nor local to the function): reflect-cpp converts through a fake object of the type, which Apple
 // clang refuses for a type without external linkage.
-namespace detail {
+namespace detail::table {
 struct PackageId {
     std::string id;
 };
-}  // namespace detail
+}  // namespace detail::table
 
 namespace {
 
 // An rp_package's id, from its manifest JSON; empty when it has none (the registry refuses such a package anyway).
 std::string packageIdOf(const rp_package* package) {
-    using Id = detail::PackageId;
+    using Id = detail::table::PackageId;
     if (package == nullptr || package->manifest_json == nullptr) return {};
     // The registry's own parser, so a repeated key reads here as it reads there.
     const auto parsed = rp::graph::parseJson(package->manifest_json).and_then([](const rfl::Generic& g) {
@@ -44,12 +42,6 @@ std::string packageIdOf(const rp_package* package) {
 // Which side is out of date, for a level that is not this host's.
 std::string levelAdvice(std::uint32_t level) {
     return level > RP_API_LEVEL ? "update RetroPlug" : "update the pack";
-}
-
-fs::path canonicalOr(const fs::path& p) {
-    std::error_code ec;
-    fs::path c = fs::weakly_canonical(p, ec);
-    return ec ? p : c;
 }
 
 // The entry, called inside a handler. The entry must not throw (it is C), and one that does is refused rather than let
@@ -90,14 +82,6 @@ bool trialAdd(rp::graph::NodeRegistry& trial, const rp_package* package, std::st
         }
         return false;
     }
-}
-
-// `dir` as the table keys it: lexically normal and with no trailing separator, so "packs/a/1.0.0/" and
-// "packs/a/1.0.0" are one folder to the placement check and to the refusal's name.
-fs::path normalisedDir(const fs::path& dir) {
-    fs::path p = dir.lexically_normal();
-    if (!p.has_filename() && p.has_parent_path()) p = p.parent_path();
-    return p;
 }
 
 }  // namespace

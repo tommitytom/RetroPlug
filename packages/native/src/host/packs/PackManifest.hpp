@@ -39,7 +39,7 @@ struct PackManifest {
     std::string nativeHalf() const;
 };
 
-// The kinds of half this host knows, in the order the loader loads them.
+// The kinds of half this host knows (the members halves may name). M1 loads the native one only.
 const std::vector<std::string>& knownHalves();
 
 // Whether `id` is a plain pack id: 1 to 64 characters, [a-z][a-z0-9-]*.

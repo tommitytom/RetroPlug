@@ -33,7 +33,7 @@ namespace rp::host::packs {
 
 // Named, not anonymous: reflect-cpp's conversion through a fake object of the type is refused by Apple clang for a type
 // of internal linkage.
-namespace detail {
+namespace detail::state {
 
 struct RawVersion {
     std::uint32_t version = 0;
@@ -49,9 +49,9 @@ struct RawState {
     std::vector<RawEntry> packs;
 };
 
-}  // namespace detail
+}  // namespace detail::state
 
-using namespace detail;
+using namespace detail::state;
 
 namespace {
 

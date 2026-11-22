@@ -224,8 +224,7 @@ ${_body}}
         RUNTIME_OUTPUT_DIRECTORY "$<1:${_dir}/native/${RP_PACK_PLATFORM}>"
         C_VISIBILITY_PRESET hidden
         CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON
-        RP_PACK_DIR "${_dir}")
+        VISIBILITY_INLINES_HIDDEN ON)
     if(APPLE)
         set(_exports "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.exports")
         file(CONFIGURE OUTPUT "${_exports}" CONTENT "_${_name}\n")

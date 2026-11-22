@@ -7,6 +7,7 @@
 #include <system_error>
 
 #include "graph/rp_pack.h"
+#include "host/packs/PackDirs.hpp"
 #include "host/packs/PackManifest.hpp"
 #include "host/packs/PackState.hpp"
 #include "host/packs/PackTable.hpp"
@@ -16,25 +17,6 @@ namespace fs = std::filesystem;
 namespace rp::host::packs {
 
 namespace {
-
-// Whether `dir` lies under `root`, both canonical: a development folder that is really an installed version folder.
-bool isUnder(const fs::path& dir, const fs::path& root) {
-    std::error_code ec;
-    const fs::path d = fs::weakly_canonical(dir, ec);
-    if (ec) return false;
-    const fs::path r = fs::weakly_canonical(root, ec);
-    if (ec) return false;
-    const fs::path rel = d.lexically_relative(r);
-    return !rel.empty() && *rel.begin() != ".." && *rel.begin() != ".";
-}
-
-// `dir` as PackTable keys it (lexically normal, no trailing separator), so a spelling of a folder never reads as
-// another one and a refusal never carries an empty name.
-fs::path normalised(const fs::path& dir) {
-    fs::path p = dir.lexically_normal();
-    if (!p.has_filename() && p.has_parent_path()) p = p.parent_path();
-    return p;
-}
 
 // The candidates of `state` (empty when it did not read, `why` then saying why, or null when that was reported
 // already) and of `devDirs`.
@@ -52,15 +34,14 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
     }
     std::vector<fs::path> given;  // each development folder's canonical path, to drop the same one given twice
     for (const auto& offered : devDirs) {
-        const fs::path dir = normalised(offered);
-        std::error_code canonEc;
-        const fs::path real = fs::weakly_canonical(dir, canonEc);
-        if (std::find(given.begin(), given.end(), canonEc ? dir : real) != given.end()) continue;
-        given.push_back(canonEc ? dir : real);
-        std::string why;
-        const auto manifest = readPackManifest(dir, &why, RP_API_LEVEL);  // a level mismatch still names its id
+        const fs::path dir = normalisedDir(offered);
+        const fs::path real = canonicalOr(dir);
+        if (std::find(given.begin(), given.end(), real) != given.end()) continue;
+        given.push_back(real);
+        std::string manifestWhy;
+        const auto manifest = readPackManifest(dir, &manifestWhy, RP_API_LEVEL);  // a level mismatch still names its id
         if (!manifest) {
-            out.refused.push_back({displayPath(dir.filename()), dir, why});
+            out.refused.push_back({displayPath(dir.filename()), dir, manifestWhy});
             continue;
         }
         bool placed = false;

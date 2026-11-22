@@ -43,6 +43,17 @@ std::vector<std::filesystem::path> splitPackPath(std::wstring_view value);
 // splitPackPath(RETROPLUG_PACK_PATH), or nothing when it is unset.
 std::vector<std::filesystem::path> packPathFromEnv();
 
+// `dir` as the loader keys a folder: lexically normal and with no trailing separator, so "packs/a/1.0.0/" and
+// "packs/a/1.0.0" are one folder to a placement check, a duplicate check and a refusal's name.
+std::filesystem::path normalisedDir(const std::filesystem::path& dir);
+
+// `p` with symlinks and ".." resolved as far as it exists, or `p` itself when that fails: a folder's identity.
+std::filesystem::path canonicalOr(const std::filesystem::path& p);
+
+// Whether `dir` lies strictly under `root`, both canonical (a symlink into the root counts, a sibling that only shares
+// the name's prefix does not): a development folder that is really a folder the data root manages.
+bool isUnder(const std::filesystem::path& dir, const std::filesystem::path& root);
+
 // `p` as UTF-8 for a message or a comparison with an id. Never throws: on Windows path::string() converts through the
 // ANSI code page and throws for a name outside it, which a refusal's message must not do.
 std::string displayPath(const std::filesystem::path& p);

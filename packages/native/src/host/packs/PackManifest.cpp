@@ -1,5 +1,6 @@
 #include "host/packs/PackManifest.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -16,7 +17,7 @@ namespace rp::host::packs {
 
 // The structs reflect-cpp reads live in a named namespace: it converts through a fake object of each type, which Apple
 // clang refuses ("used but not defined") for a type of internal linkage.
-namespace detail {
+namespace detail::manifest {
 
 // The manifest as JSON spells it. Optional members are checked below, so a missing one is reported by name rather
 // than as reflect-cpp's generic message. Unknown top-level members are ignored: a member added at the same API level
@@ -52,9 +53,9 @@ struct RawManifest {
     std::optional<std::map<std::string, std::string>>         halves;
 };
 
-}  // namespace detail
+}  // namespace detail::manifest
 
-using namespace detail;
+using namespace detail::manifest;
 
 namespace {
 
@@ -449,15 +450,21 @@ std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::st
         if (why) *why = "pack.json: too large (over " + std::to_string(kMaxManifestBytes) + " bytes)";
         return std::nullopt;
     }
-    // One byte past the limit is read, so a file that grew since the size was taken is still refused, not truncated.
+    // One byte past the size taken is read, so a file that grew since is refused, not truncated and parsed.
     std::ifstream in(file, std::ios::binary);
-    std::string text(static_cast<std::size_t>(kMaxManifestBytes) + 1, '\0');
+    std::string text(static_cast<std::size_t>(std::min<std::uintmax_t>(size, kMaxManifestBytes)) + 1, '\0');
     in.read(text.data(), static_cast<std::streamsize>(text.size()));
     if (in.bad() || (in.fail() && !in.eof())) {
         if (why) *why = "pack.json: cannot read " + displayPath(file);
         return std::nullopt;
     }
+    const bool full = static_cast<std::size_t>(in.gcount()) == text.size();
+    const bool grew = full && in.peek() != std::char_traits<char>::eof();
     text.resize(static_cast<std::size_t>(in.gcount()));
+    if (grew && text.size() <= kMaxManifestBytes) {
+        if (why) *why = "pack.json: it changed while it was read";
+        return std::nullopt;
+    }
     if (text.size() > kMaxManifestBytes) {
         if (why) *why = "pack.json: too large (over " + std::to_string(kMaxManifestBytes) + " bytes)";
         return std::nullopt;

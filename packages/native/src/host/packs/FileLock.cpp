@@ -13,7 +13,6 @@
 #include <windows.h>
 #else
 #include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -41,10 +40,19 @@ bool sameFile(HANDLE held, const fs::path& file) {
     if (now == INVALID_HANDLE_VALUE) return false;
     // The 128-bit id: the 64-bit index of GetFileInformationByHandle is not unique on every file system (ReFS).
     FILE_ID_INFO a{}, b{};
-    const bool same = GetFileInformationByHandleEx(held, FileIdInfo, &a, sizeof a) &&
-                      GetFileInformationByHandleEx(now, FileIdInfo, &b, sizeof b) &&
-                      a.VolumeSerialNumber == b.VolumeSerialNumber &&
-                      std::memcmp(&a.FileId, &b.FileId, sizeof a.FileId) == 0;
+    bool same = false;
+    if (GetFileInformationByHandleEx(held, FileIdInfo, &a, sizeof a) &&
+        GetFileInformationByHandleEx(now, FileIdInfo, &b, sizeof b)) {
+        same = a.VolumeSerialNumber == b.VolumeSerialNumber &&
+               std::memcmp(&a.FileId, &b.FileId, sizeof a.FileId) == 0;
+    } else {
+        // A file system with no 128-bit id (FAT, exFAT, some SMB shares) still has the volume serial and the 64-bit
+        // index, which are unique there: falling back keeps a hold on such a folder from reading as "replaced".
+        BY_HANDLE_FILE_INFORMATION x{}, y{};
+        same = GetFileInformationByHandle(held, &x) && GetFileInformationByHandle(now, &y) &&
+               x.dwVolumeSerialNumber == y.dwVolumeSerialNumber && x.nFileIndexHigh == y.nFileIndexHigh &&
+               x.nFileIndexLow == y.nFileIndexLow;
+    }
     CloseHandle(now);
     return same;
 }
