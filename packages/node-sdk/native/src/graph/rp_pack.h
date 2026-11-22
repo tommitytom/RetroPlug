@@ -22,15 +22,17 @@ extern "C" {
  * the contract headers, the TS contract modules). A pack records the level it was built against, in its pack.json and
  * from its entry, and is refused at any other. cmake/packs.cmake reads this line to stamp a pack's pack.json, and M2's
  * TS halves read it the same way (the generator, packages/retroplug/scripts/lib/packages.mjs, writing it into a
- * generated module), so it stays a plain decimal on a line of its own and there is one source for both languages. */
+ * generated module), so it stays a plain decimal with a `u` suffix on a line of its own (both readers parse that line)
+ * and there is one source for both languages. */
 #define RP_API_LEVEL 1u
 
 /* The symbol a pack's library exports (an rp_pack_entry_fn). */
 #define RP_PACK_ENTRY_SYMBOL "rp_pack_entry"
 
 /* [control] Writes the level the library was built against to *api_level and the package count to *count, and returns
- * the packages, valid for the life of the process (a pack's library is never unloaded). It must not throw: no
- * exception crosses this entry. */
+ * the packages, valid for the life of the process (a pack's library is never unloaded). The loader always passes
+ * non-NULL api_level and count; the entry writes both. When it returns NULL or *count is 0 the pack offers nothing and
+ * the returned pointer is not read. It must not throw: no exception crosses this entry. */
 typedef const rp_package* const* (*rp_pack_entry_fn)(uint32_t* api_level, size_t* count);
 RP_EXPORT const rp_package* const* rp_pack_entry(uint32_t* api_level, size_t* count);
 
