@@ -139,6 +139,9 @@ message(STATUS "dpf.js framework: ${DPFJS_PATH}")
 # Mesen: deps/mesen/CMakeLists.txt).
 add_subdirectory("${DPFJS_PATH}" dpfjs)
 
+# reflect-cpp (from rpcpp) carries a tracked patch for MSVC 14.52; needs the source dir CPM just set.
+include("${CMAKE_SOURCE_DIR}/cmake/reflectcpp-patch.cmake")
+
 # --- The UI's monospaced faces. lv_conf.h sets every LV_FONT_MONTSERRAT_* to 0, so LVGL
 # compiled none of its own font objects; these supply those same seven symbol names built
 # from DejaVu Sans Mono (tools/gen-mono-fonts.sh regenerates them).

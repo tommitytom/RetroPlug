@@ -1,0 +1,279 @@
+diff --git a/include/rfl/field_names_t.hpp b/include/rfl/field_names_t.hpp
+index c30ddc58..23c4aa34 100644
+--- a/include/rfl/field_names_t.hpp
++++ b/include/rfl/field_names_t.hpp
+@@ -3,6 +3,7 @@
+ 
+ #include <functional>
+ #include <type_traits>
++#include <utility>
+ 
+ #include "internal/get_field_names.hpp"
+ 
+@@ -13,8 +14,7 @@ namespace rfl {
+ /// for iteration, validation, or other metaprogramming tasks.
+ /// @tparam T The struct type to extract field names from
+ template <class T>
+-using field_names_t = typename std::invoke_result<
+-    decltype(internal::get_field_names<std::remove_cvref_t<T>>)>::type;
++using field_names_t = decltype(internal::get_field_names<std::remove_cvref_t<T>>());
+ 
+ }  // namespace rfl
+ 
+diff --git a/include/rfl/internal/Field.hpp b/include/rfl/internal/Field.hpp
+index 186b12f0..b615b608 100644
+--- a/include/rfl/internal/Field.hpp
++++ b/include/rfl/internal/Field.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_INTERNAL_FIELD_TUPLE_T_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "copy_to_field_tuple.hpp"
+ 
+@@ -10,7 +11,7 @@ namespace internal {
+ 
+ template <class T>
+ using field_tuple_t =
+-    typename std::invoke_result<decltype(copy_to_field_tuple<T>), T>::type;
++    decltype(copy_to_field_tuple<T>(std::declval<T>()));
+ 
+ }
+ }  // namespace rfl
+diff --git a/include/rfl/internal/field_tuple_t.hpp b/include/rfl/internal/field_tuple_t.hpp
+index bf0e473d..2153209a 100644
+--- a/include/rfl/internal/field_tuple_t.hpp
++++ b/include/rfl/internal/field_tuple_t.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_INTERNAL_FIELD_TUPLE_T_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "copy_to_field_tuple.hpp"
+ 
+@@ -9,7 +10,7 @@ namespace rfl::internal {
+ 
+ template <class T>
+ using field_tuple_t =
+-    typename std::invoke_result<decltype(copy_to_field_tuple<T>), T>::type;
++    decltype(copy_to_field_tuple<T>(std::declval<T>()));
+ 
+ }  // namespace rfl::internal
+ 
+diff --git a/include/rfl/internal/flattened_ptr_tuple_t.hpp b/include/rfl/internal/flattened_ptr_tuple_t.hpp
+index 9c8a3f3c..11d601a1 100644
+--- a/include/rfl/internal/flattened_ptr_tuple_t.hpp
++++ b/include/rfl/internal/flattened_ptr_tuple_t.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_INTERNAL_FLATTENED_PTR_TUPLE_T_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "to_flattened_ptr_tuple.hpp"
+ 
+@@ -10,7 +11,7 @@ namespace internal {
+ 
+ template <class T>
+ using flattened_ptr_tuple_t =
+-    typename std::invoke_result<decltype(to_flattened_ptr_tuple<T>), T>::type;
++    decltype(to_flattened_ptr_tuple<T>(std::declval<T>()));
+ 
+ }  // namespace internal
+ }  // namespace rfl
+diff --git a/include/rfl/internal/move_from_named_tuple.hpp b/include/rfl/internal/move_from_named_tuple.hpp
+index 617bcb16..b27ed173 100644
+--- a/include/rfl/internal/move_from_named_tuple.hpp
++++ b/include/rfl/internal/move_from_named_tuple.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_MOVE_FROM_NAMED_TUPLE_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "../Tuple.hpp"
+ #include "../named_tuple_t.hpp"
+@@ -20,8 +21,7 @@ auto make_ptr_fields(PtrNamedTupleType& _n) {
+     using T = std::remove_cvref_t<std::remove_pointer_t<typename Field::Type>>;
+     if constexpr (is_named_tuple_v<T>) {
+       using SubPtrNamedTupleType =
+-          typename std::invoke_result<decltype(nt_to_ptr_named_tuple<T>),
+-                                      T>::type;
++          decltype(nt_to_ptr_named_tuple<T>(std::declval<T>()));
+       return SubPtrNamedTupleType(_n).fields();
+     } else if constexpr (is_flatten_field<Field>::value) {
+       using SubPtrFieldTupleType = std::remove_cvref_t<ptr_field_tuple_t<T>>;
+diff --git a/include/rfl/internal/nth_element_t.hpp b/include/rfl/internal/nth_element_t.hpp
+index 016a121f..9982334d 100644
+--- a/include/rfl/internal/nth_element_t.hpp
++++ b/include/rfl/internal/nth_element_t.hpp
+@@ -1,6 +1,8 @@
+ #ifndef RFL_INTERNAL_NTH_ELEMENT_T_HPP_
+ #define RFL_INTERNAL_NTH_ELEMENT_T_HPP_
+ 
++#include <utility>
++
+ #include "nth_element.hpp"
+ 
+ namespace rfl::internal {
+@@ -19,8 +21,8 @@ struct TypeWrapper {
+ 
+ template <int N, class... Ts>
+ using nth_element_t =
+-    typename std::invoke_result_t<decltype(nth_element<N, TypeWrapper<Ts>...>),
+-                                  TypeWrapper<Ts>...>::Type;
++    typename decltype(nth_element<N, TypeWrapper<Ts>...>(
++        std::declval<TypeWrapper<Ts>>()...))::Type;
+ 
+ #endif
+ 
+diff --git a/include/rfl/internal/processed_t.hpp b/include/rfl/internal/processed_t.hpp
+index 1e6250c5..76c3d2e8 100644
+--- a/include/rfl/internal/processed_t.hpp
++++ b/include/rfl/internal/processed_t.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_INTERNAL_PROCESSED_T_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "../Processors.hpp"
+ #include "ptr_named_tuple_t.hpp"
+@@ -16,9 +17,9 @@ template <class StructType, class... Ps>
+ struct Processed<StructType, Processors<Ps...>> {
+   using PtrNamedTupleType = ptr_named_tuple_t<StructType>;
+   using type = typename remove_ptrs_nt<
+-      std::invoke_result_t<decltype(Processors<Ps...>::template process<
+-                                    StructType, PtrNamedTupleType>),
+-                           PtrNamedTupleType>>::NamedTupleType;
++      decltype(Processors<Ps...>::template process<
++               StructType, PtrNamedTupleType>(
++          std::declval<PtrNamedTupleType>()))>::NamedTupleType;
+ };
+ 
+ template <class StructType, class ProcessorsType>
+diff --git a/include/rfl/internal/ptr_named_tuple_t.hpp b/include/rfl/internal/ptr_named_tuple_t.hpp
+index e1b95808..626f79dc 100644
+--- a/include/rfl/internal/ptr_named_tuple_t.hpp
++++ b/include/rfl/internal/ptr_named_tuple_t.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_INTERNAL_PTR_FIELD_TUPLE_T_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "to_ptr_named_tuple.hpp"
+ 
+@@ -9,7 +10,7 @@ namespace rfl::internal {
+ 
+ template <class T>
+ using ptr_named_tuple_t =
+-    std::invoke_result_t<decltype(to_ptr_named_tuple<T>), T>;
++    decltype(to_ptr_named_tuple<T>(std::declval<T>()));
+ 
+ }  // namespace rfl::internal
+ 
+diff --git a/include/rfl/internal/tag_t.hpp b/include/rfl/internal/tag_t.hpp
+index 4ce5e0d1..bc0bf7d0 100644
+--- a/include/rfl/internal/tag_t.hpp
++++ b/include/rfl/internal/tag_t.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_INTERNAL_TAG_T_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "StringLiteral.hpp"
+ #include "make_tag.hpp"
+@@ -9,7 +10,7 @@
+ namespace rfl::internal {
+ 
+ template <internal::StringLiteral _discriminator, class T>
+-using tag_t = std::invoke_result_t<decltype(make_tag<_discriminator, T>), T>;
++using tag_t = decltype(make_tag<_discriminator, T>(std::declval<T>()));
+ 
+ }  // namespace rfl::internal
+ 
+diff --git a/include/rfl/parsing/ParserTaggedUnion.hpp b/include/rfl/parsing/ParserTaggedUnion.hpp
+index 2cd2dc97..b665b8b2 100644
+--- a/include/rfl/parsing/ParserTaggedUnion.hpp
++++ b/include/rfl/parsing/ParserTaggedUnion.hpp
+@@ -4,6 +4,7 @@
+ #include <map>
+ #include <sstream>
+ #include <type_traits>
++#include <utility>
+ 
+ #include "../Result.hpp"
+ #include "../TaggedUnion.hpp"
+@@ -127,8 +128,8 @@ struct ParserTaggedUnion<R, W, TaggedUnion<_discriminator, AlternativeTypes...>,
+       return Parser<R, W, Variant<AlternativeTypes...>,
+                     ProcessorsType>::to_schema(_definitions);
+     } else {
+-      using VariantType = std::variant<std::invoke_result_t<
+-          decltype(wrap_if_necessary<AlternativeTypes>), AlternativeTypes>...>;
++      using VariantType = std::variant<decltype(wrap_if_necessary<AlternativeTypes>(
++          std::declval<AlternativeTypes>()))...>;
+       return Parser<R, W, VariantType, ProcessorsType>::to_schema(_definitions);
+     }
+   }
+@@ -191,8 +192,8 @@ struct ParserTaggedUnion<R, W, TaggedUnion<_discriminator, AlternativeTypes...>,
+         return Error(stream.str());
+       };
+ 
+-      using T = tagged_union_wrapper_no_ptr_t<std::invoke_result_t<
+-          decltype(wrap_if_necessary<AlternativeType>), AlternativeType>>;
++      using T = tagged_union_wrapper_no_ptr_t<decltype(wrap_if_necessary<AlternativeType>(
++          std::declval<AlternativeType>()))>;
+ 
+       *_result = Parser<R, W, T, ProcessorsType>::read(_r, _var)
+                      .transform(get_fields)
+diff --git a/include/rfl/parsing/VariantAlternativeWrapper.hpp b/include/rfl/parsing/VariantAlternativeWrapper.hpp
+index 208589c2..69079d68 100644
+--- a/include/rfl/parsing/VariantAlternativeWrapper.hpp
++++ b/include/rfl/parsing/VariantAlternativeWrapper.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_PARSING_VARIANTALTERNATIVEWRAPPER_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "../Field.hpp"
+ #include "../Literal.hpp"
+@@ -44,8 +45,7 @@ consteval auto make_tag() {
+ }
+ 
+ template <class T, bool _remove_namespaces = true>
+-using tag_t = std::invoke_result_t<
+-    decltype(make_tag<std::remove_cvref_t<std::remove_pointer_t<T>>, _remove_namespaces>)>;
++using tag_t = decltype(make_tag<std::remove_cvref_t<std::remove_pointer_t<T>>, _remove_namespaces>());
+ 
+ }  // namespace vaw
+ 
+diff --git a/include/rfl/view_t.hpp b/include/rfl/view_t.hpp
+index c1c7569d..6587a4f4 100644
+--- a/include/rfl/view_t.hpp
++++ b/include/rfl/view_t.hpp
+@@ -2,6 +2,7 @@
+ #define RFL_VIEW_T_HPP_
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "Processors.hpp"
+ #include "internal/ptr_named_tuple_t.hpp"
+@@ -11,9 +12,9 @@ namespace rfl {
+ /// Generates the named tuple that would be the result of to_view
+ template <class T, class... Ps>
+ using view_t =
+-    std::invoke_result_t<decltype(Processors<Ps...>::template process<
+-                                  T, internal::ptr_named_tuple_t<T>>),
+-                         internal::ptr_named_tuple_t<T>>;
++    decltype(Processors<Ps...>::template process<
++             T, internal::ptr_named_tuple_t<T>>(
++        std::declval<internal::ptr_named_tuple_t<T>>()));
+ 
+ }  // namespace rfl
+ 

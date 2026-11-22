@@ -1198,6 +1198,10 @@ node packages/retroplug/scripts/run-native-tests.mjs dsp-lifecycle
   expected. The parent repo tracks only the pinned submodule pointer, so the patched files are committed nowhere: never
   reset, stash or commit them, or bump the pointer to absorb them. A bump that invalidates either patch fails loudly at
   configure. The fix is to regenerate the patch.
+- **reflect-cpp carries a tracked patch for MSVC 14.52.** `cmake/reflectcpp-patch.cmake` applies
+  `cmake/patches/reflectcpp-msvc-auto-decltype.patch` to the CPM checkout (`reflectcpp_SOURCE_DIR`) the way the SameBoy
+  patches are (idempotent); it rewrites `invoke_result_t<decltype(auto_fn<...>), A>` aliases to `decltype(fn(declval))`.
+  A pin bump in rpcpp that breaks it fails the configure: regenerate the patch.
 - **`deps/mesen` is vendored, and its fixes are marked.** The tree is SourMesen/Mesen2 at `b9fa69d` with no `.git`
   of its own, so a fix is a plain source change carrying a `RetroPlug:` comment (`//`, or `/* */` where the file is
   C-style): 46 files carry one (`grep -rl RetroPlug: deps/mesen`). An upstream merge re-applies them over the new
