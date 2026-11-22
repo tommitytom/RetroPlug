@@ -183,6 +183,25 @@ retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/named/rp_product_p
 # The fixture pack and its broken variants (test/packs/fixture): modules nothing links, staged under build/packs/.
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/fixture ${CMAKE_BINARY_DIR}/packs-fixture EXCLUDE_FROM_ALL)
 
+# The packs (docs/downloadable-packs-loading-design.md sections 1 and 2, docs/downloadable-packs-m1-plan.md): the folder
+# model on a temporary root, the loader's every refusal against the fixture pack's variants (test/packs/fixture), a pack
+# reaching a running Engine, two Engines sharing one load, a live load while an audio thread renders (its
+# ThreadSanitizer run is tools/run-sanitizer.sh thread's), and the Mesen package built as a pack and booted beside its
+# static build. Its product is the packs-host list, the desktop's without mesen and bliptoaster, so rp.mesen.* reaches
+# its engines only from the pack; it links the static retroplug-mesen too, which no engine of its registers until a
+# case hands it over (Engine::addNodePackage), so the two builds render side by side in one process.
+retroplug_add_test_binary(
+    NAME     retroplug-packs-test
+    SOURCES  test/packs/PackRoots.test.cpp         # the data and cache roots, the platform folder, the pack path
+    LIBS     retroplug-backend                     # Engine, the process's pack table, the folder model
+    PACKAGES ${RP_PRODUCT_PACKAGES_packs-host}
+    DEFS     RP_PACKS_BUILD_DIR="${RP_PACKS_DIR}"
+             RP_PACK_PLATFORM_CMAKE="${RP_PACK_PLATFORM}"
+             RP_API_LEVEL_CMAKE=${RP_API_LEVEL}u)
+# The packs it loads are modules nothing links, built before it.
+get_property(_rp_packfixture_targets GLOBAL PROPERTY RP_PACKFIXTURE_TARGETS)
+add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})
+
 # What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
 # mode by cmake/check-manifest.cmake) with its own reason, so a rule that stopped firing fails the configure rather than

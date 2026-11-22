@@ -71,6 +71,20 @@ set_target_properties(retroplug-file-watcher PROPERTIES
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON)
 
+# retroplug-packs: the pack folder model and the native loader (docs/downloadable-packs-loading-design.md sections 1 and
+# 2): the per-platform data and cache roots, pack.json, state.json, the version locks, the development pack path, and
+# the table that opens each pack's library once. Every desktop host links it through retroplug-backend, whose Engine
+# registers what the table loads; it needs no product (the process's table, seeded with the product's packages, is
+# the backend's: src/host/packs/ProcessPacks.cpp), so a test of the folder model links it alone.
+add_library(retroplug-packs STATIC
+    src/host/packs/PackDirs.cpp)
+target_include_directories(retroplug-packs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(retroplug-packs PUBLIC retroplug-graph PRIVATE ${CMAKE_DL_LIBS})
+set_target_properties(retroplug-packs PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)  # linked into the shared plugin module, through the backend
+
 # retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/ScriptHost. Includes + links are PUBLIC so consumers inherit them.
@@ -116,6 +130,7 @@ target_link_libraries(retroplug-backend PUBLIC
     # (retroplug_product), and the engine reaches their node types through its generated rp_register_packages().
     retroplug-host-io
     retroplug-graph     # the graph executor, planner and GraphHost the engine runs on (packages/graph-runtime)
+    retroplug-packs     # the loaded packs every engine registers after the product's own (src/host/packs)
     # The core and DSP packages: the offline job pool registers its fixed subset of them itself (OfflineJobs.cpp),
     # where the engine registers the product's list (rp_register_packages, graph/Packages.hpp).
     retroplug-core-nodes

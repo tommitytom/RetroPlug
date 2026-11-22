@@ -68,7 +68,13 @@ if(MSVC)
         # builds of the packages it lists (packages/graph-runtime).
         retroplug-graph-exec-device retroplug-export-plan retroplug-export-plan-device
         # The MicroQuickJS script host, its device-mode build and its runner (packages/graph-runtime).
-        retroplug-mqjs-host retroplug-mqjs-host-device retroplug-mqjs-run)
+        retroplug-mqjs-host retroplug-mqjs-host-device retroplug-mqjs-run
+        # The pack folder model and loader (src/host/packs), its test and the fixture pack's static library; the pack
+        # modules themselves are added below, as cmake/packs.cmake records them.
+        retroplug-packs retroplug-packs-test retroplug-packfixture-nodes)
+    # And every pack module (cmake/packs.cmake's retroplug_pack_module): the fixture's variants and a package's pack.
+    get_property(_rp_pack_modules GLOBAL PROPERTY RP_PACK_TARGETS)
+    list(APPEND _rp_werror_targets ${_rp_pack_modules})
     # And each device entry's device-mode compile (cmake/packages.cmake's _retroplug_device_check).
     get_property(_rp_device_checks GLOBAL PROPERTY RP_DEVICE_CHECK_TARGETS)
     list(APPEND _rp_werror_targets ${_rp_device_checks})
