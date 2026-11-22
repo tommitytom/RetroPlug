@@ -173,6 +173,9 @@ void deleteUnheld(const fs::path& dir) {
     auto lock = FileLock::acquire(dir / kVersionLockFile, FileLock::Mode::Exclusive, false, nullptr);
     if (!lock) return;  // held: left for a later launch
     std::error_code ec;
+    // The manifest first, so one is present only in a complete folder and a walk cut short leaves one the manifest
+    // read refuses.
+    fs::remove(dir / "pack.json", ec);
     for (fs::directory_iterator it(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
         if (displayPath(it->path().filename()) != kVersionLockFile) {
             std::error_code removeEc;

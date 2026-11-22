@@ -19,7 +19,9 @@
 // (the updatePackState overload that takes the hold) within ONE exclusive hold of state.lock (lockPackState). A
 // settle deletes every folder no entry names, so a folder moved in outside that hold, or recorded after it, can be
 // deleted before it is recorded. An install in progress is unpacked into a '.'-prefixed folder, which a settle leaves
-// alone.
+// alone. A settle that could not finish deleting a version (a racing hold) can leave an emptied packs/<id>/<version>/
+// holding only pack.lock: it blocks a reinstall of that version until a settle sweeps it, so the installer settles (or
+// clears it) before it moves a folder into place.
 //
 // The functions that lock state.lock themselves (every overload without a `held` parameter) must not be called while
 // this process already holds it, and not from inside a `change` callback: flock locks per open file description, so a

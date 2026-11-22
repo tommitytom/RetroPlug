@@ -2327,6 +2327,12 @@ Create `packages/native/test/packs/PackState.test.cpp`:
 #include "host/packs/FileLock.hpp"
 #include "host/packs/PackState.hpp"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #if !defined(_WIN32)
 #include <csignal>
 #include <sys/stat.h>
@@ -2354,13 +2360,19 @@ std::string readText(const fs::path& file) {
 // The file's identity, which a rewrite (a temporary renamed over it) changes and an untouched file keeps. A timestamp
 // would not do: it can match across two writes inside the file system's granularity.
 #if defined(_WIN32)
-std::uintmax_t fileIdentity(const fs::path& file) {
-    return static_cast<std::uintmax_t>(fs::last_write_time(file).time_since_epoch().count());
+std::string fileIdentity(const fs::path& file) {
+    HANDLE h = CreateFileW(file.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return {};
+    FILE_ID_INFO id{};
+    const bool ok = GetFileInformationByHandleEx(h, FileIdInfo, &id, sizeof id) != 0;
+    CloseHandle(h);
+    return ok ? std::string(reinterpret_cast<const char*>(&id), sizeof id) : std::string();
 }
 #else
-std::uintmax_t fileIdentity(const fs::path& file) {
+std::string fileIdentity(const fs::path& file) {
     struct stat st {};
-    return ::stat(file.c_str(), &st) == 0 ? static_cast<std::uintmax_t>(st.st_ino) : 0;
+    return ::stat(file.c_str(), &st) == 0 ? std::to_string(st.st_ino) : std::string();
 }
 #endif
 
@@ -3068,7 +3080,9 @@ Create `packages/native/src/host/packs/PackState.hpp`:
 // (the updatePackState overload that takes the hold) within ONE exclusive hold of state.lock (lockPackState). A
 // settle deletes every folder no entry names, so a folder moved in outside that hold, or recorded after it, can be
 // deleted before it is recorded. An install in progress is unpacked into a '.'-prefixed folder, which a settle leaves
-// alone.
+// alone. A settle that could not finish deleting a version (a racing hold) can leave an emptied packs/<id>/<version>/
+// holding only pack.lock: it blocks a reinstall of that version until a settle sweeps it, so the installer settles (or
+// clears it) before it moves a folder into place.
 //
 // The functions that lock state.lock themselves (every overload without a `held` parameter) must not be called while
 // this process already holds it, and not from inside a `change` callback: flock locks per open file description, so a
@@ -3323,6 +3337,9 @@ void deleteUnheld(const fs::path& dir) {
     auto lock = FileLock::acquire(dir / kVersionLockFile, FileLock::Mode::Exclusive, false, nullptr);
     if (!lock) return;  // held: left for a later launch
     std::error_code ec;
+    // The manifest first, so one is present only in a complete folder and a walk cut short leaves one the manifest
+    // read refuses.
+    fs::remove(dir / "pack.json", ec);
     for (fs::directory_iterator it(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
         if (displayPath(it->path().filename()) != kVersionLockFile) {
             std::error_code removeEc;
@@ -4256,11 +4273,12 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
     if (candidate.origin == PackOrigin::Installed && !hold) {
         FileLock::Failure failure = FileLock::Failure::None;
         std::optional<FileLock> taken;
-        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold) is tried
-        // again briefly; a folder being deleted (Replaced) is refused at once.
+        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold), or an
+        // access error that may be a scanner's brief handle on Windows (Denied), is tried again briefly; a folder
+        // being deleted (Replaced) is refused at once.
         for (int attempt = 0; attempt < 5; ++attempt) {
             taken = holdVersion(candidate.dir, &why, &failure);
-            if (taken || failure != FileLock::Failure::Other) break;
+            if (taken || failure == FileLock::Failure::Replaced) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         if (taken) {
