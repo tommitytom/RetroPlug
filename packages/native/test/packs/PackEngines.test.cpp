@@ -140,6 +140,68 @@ TEST_CASE("a pack of two packages whose second clashes in an Engine registers ne
     CHECK(firstSample(other) == 0.25f);  // the tone's default level
 }
 
+TEST_CASE("a pack requiring one an Engine refused is refused there too, naming the requirement", "[packs-engines]") {
+    PackTable table(rp::graph::productPackages());
+    Engine holder(kRate, table);
+    REQUIRE(holder.addNodePackage(rp_packfixture_package()));
+    Engine other(kRate, table);
+    const auto loads = table.loadAll({{fixture("packfixture")}, {fixture("packfixture-dependent")}});
+    REQUIRE(loads.size() == 2);
+    REQUIRE(loads[0].pack);
+    REQUIRE(loads[1].pack);
+    const std::string dependentTone =
+        R"({"nodes":[{"id":"tone","type":"rp.packfixture-dependent.tone"},)"
+        R"({"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],)"
+        R"("wires":[{"from":"tone.out","to":"out.out.1-2"}]})";
+    CHECK_FALSE(holder.setGraph(rp::host::test::graphRequest(dependentTone, {})).ok);
+    CHECK(holder.refusedPacks() == std::vector<std::string>{"packfixture", "packfixture-dependent"});
+    CHECK(holder.packsRegistered() == 0);
+    REQUIRE(other.setGraph(rp::host::test::graphRequest(dependentTone, {})).ok);
+    CHECK(other.refusedPacks().empty());
+    CHECK(other.packsRegistered() == 2);
+}
+
+TEST_CASE("a script reload refused at its replan leaves the registry sound beside a pack that clashed with the "
+          "generation it drops",
+          "[packs-engines]") {
+    // test.clash's first version holds test.clash.tone, so the loaded scriptclash pack is refused in this Engine. The
+    // second drops that type, and the running document places it, so the replan is refused and the swap undone: with
+    // loaded packs synced inside that window, the pack would have taken the type the undo needs.
+    const auto script = [](bool withTone) {
+        return std::string(R"JS(
+globalThis.__rp_scriptNodes = globalThis.__rp_scriptNodes || [];
+var ports = [{ id: "out", dir: "out", kind: "events" }];
+var layout = { ports: ports, params: [] };
+function node(id) {
+  return {
+    id: id,
+    descriptor: function () { return { id: id, ports: ports, params: [], settings: { type: "object" } }; },
+    parseSettings: function (raw) { return raw === undefined ? {} : raw; },
+    layout: function () { return layout; },
+    create: function () { return { process: function () {} }; },
+    reshapes: false,
+    faultOnThrow: false,
+  };
+}
+)JS") + (withTone ? "globalThis.__rp_scriptNodes.push(node('test.clash.tone'));\n"
+                  : "globalThis.__rp_scriptNodes.push(node('test.clash.other'));\n");
+    };
+    PackTable table(rp::graph::productPackages());
+    Engine e(kRate, table);
+    const auto first = e.loadScriptPack("test.clash", script(true));
+    INFO(first.error);
+    REQUIRE(first.ok);
+    const std::string placeTone = R"({"nodes":[{"id":"t","type":"test.clash.tone"}],"wires":[]})";
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(placeTone, {})).ok);
+    REQUIRE(table.load(fixture("packfixture-scriptclash")));
+    const auto reload = e.loadScriptPack("test.clash", script(false));
+    INFO(reload.error);
+    CHECK_FALSE(reload.ok);
+    CHECK(e.refusedPacks() == std::vector<std::string>{"packfixture-scriptclash"});
+    // The old generation is still the registry's: the same document plans again.
+    CHECK(e.setGraph(rp::host::test::graphRequest(placeTone, {})).ok);
+}
+
 TEST_CASE("an Engine built with no table of its own reads the process's", "[packs-engines]") {
     // The one case that loads into the process's table, which outlives it: every later default-built engine in this
     // binary sees the fixture, and no other case builds one.

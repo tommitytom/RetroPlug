@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-scriptclash",
+  "name": "Pack fixture (packfixture-scriptclash)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "test.clash.tone",
+      "test.clash.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-scriptclash"
+  }
+}

@@ -68,6 +68,8 @@ _rp_fixture_variant(packfixture-api-mismatch ARGS ENTRY_API_LEVEL ${_rp_level_ne
 _rp_fixture_variant(packfixture-undeclared DEFINES RP_PACKFIXTURE_EXTRA_TYPE)
 _rp_fixture_variant(packfixture-duplicate DEFINES RP_PACKFIXTURE_TONE_ID="rp.core.add")
 _rp_fixture_variant(packfixture-clone PREFIX rp.packfixture)
+# Types in the namespace of a script pack ("test.clash"), which a script reload can hold and drop (PackEngines).
+_rp_fixture_variant(packfixture-scriptclash PREFIX test.clash)
 _rp_fixture_variant(packfixture-noentry ARGS NO_ENTRY)
 _rp_fixture_variant(packfixture-overdeclared)
 add_subdirectory(throws)

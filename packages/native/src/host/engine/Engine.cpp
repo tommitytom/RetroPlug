@@ -375,7 +375,14 @@ void Engine::destroySystem(SystemBase* core) {
     delete core;
 }
 
-Engine::GraphResult Engine::setGraph(const GraphRequest& request) { return publishGraph(request, false); }
+Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
+    // A pack loaded since the last plan joins the registry before this one is made, on this thread, which is the only
+    // one that reads the registry: its node types exist from this setGraph on. Not in publishGraph, which a script
+    // reload's replan also runs: a pack registered between the reload's swap and its possible undo could take a type
+    // the old generation held, and the undo would then fail with the registry pointing at a package already freed.
+    syncPacks();
+    return publishGraph(request, false);
+}
 
 Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool replan) {
     GraphResult out;
@@ -386,9 +393,6 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     // The cores of plans the audio thread has handed back are freed first, so the checks below see them gone.
     graph_->host->reclaim();
     graph_->script.reclaim();
-    // A pack loaded since the last plan joins the registry before this one is made, on this thread, which is the only
-    // one that reads the registry: its node types exist from this setGraph on.
-    syncPacks();
     auto doc = rp::graph::parseGraphDocument(request.document);
     if (!doc) return refuse("", "document", std::string("not a graph document: ") + doc.error().what());
 
@@ -565,6 +569,8 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
     // earlier reloads replaced once blocks have released their nodes.
     graph_->host->reclaim();
     script.reclaim();
+    // Loaded packs join before the swap below, so a reload's replan and its undo see one registry (see setGraph).
+    syncPacks();
     // The id first: a refused one is refused whatever its source says, and costs no compile.
     if (!script.canLoadPack(id, &out.error)) return out;
     const auto bytecode = dsp::compileToBytecode(source, rp::host::ScriptHost::kStackBytes, &out.error);
@@ -642,7 +648,16 @@ void Engine::syncPacks() {
         // addNodePackage), which canAdd sees, and a clash anywhere keeps the whole pack out.
         std::string why;
         bool fits = true;
-        for (const rp_package* p : pack->packages) fits = fits && registry.canAdd(p, &why);
+        // A pack whose requirement was refused here has nothing to stand on: it is refused too, naming the requirement.
+        for (const std::string& need : pack->manifest.requiresPacks) {
+            if (std::find(packsRefused_.begin(), packsRefused_.end(), need) != packsRefused_.end()) {
+                why = "required pack " + need + " was refused in this engine";
+                fits = false;
+                break;
+            }
+        }
+        for (const rp_package* p : pack->packages)
+            fits = fits && registry.canAdd(p, &why);
         if (!fits) {
             std::fprintf(stderr, "[engine] pack %s was refused here: %s\n", pack->manifest.id.c_str(), why.c_str());
             packsRefused_.push_back(pack->manifest.id);

@@ -139,10 +139,10 @@ Created:
 | `packages/native/src/host/packs/PackTable.{hpp,cpp}` | the loader: the table, its refusals, dependency order |
 | `packages/native/src/host/packs/PackDiscovery.{hpp,cpp}` | which folders a launch loads, and the launch itself |
 | `packages/native/src/host/packs/ProcessPacks.{hpp,cpp}` | the process's table (a backend source) |
-| `packages/native/test/packs/fixture/CMakeLists.txt` | the fixture pack and its thirteen variants |
+| `packages/native/test/packs/fixture/CMakeLists.txt` | the fixture pack and its fourteen variants |
 | `packages/native/test/packs/fixture/FixtureNodes.cpp` | `rp.packfixture.tone` and `.gain` on the node SDK |
 | `packages/native/test/packs/fixture/FixtureSecond.cpp` | the same source again, the pair variant's second package |
-| `packages/native/test/packs/fixture/manifests/*.json` | the fourteen `pack.json` templates |
+| `packages/native/test/packs/fixture/manifests/*.json` | the fifteen `pack.json` templates |
 | `packages/native/test/packs/PackTestSupport.hpp` | `TempDir` (with its sweep), `fixture()`, `install()`, `ScopedEnv` |
 | `packages/native/test/packs/ElfSymbols.hpp` | a module's dynamic exports and imports, read from its file (Linux) |
 | `packages/native/test/packs/Pack{Roots,Manifest,State,Loader,Discovery,Engines}.test.cpp` | the cases, by layer |
@@ -305,7 +305,8 @@ git commit -m "node-sdk: the API level and rp_pack_entry, a pack library's one e
 
 `cmake/packs.cmake` reads the level and the platform for CMake and defines `retroplug_pack_module()`: a MODULE built
 from static targets and a generated entry, every symbol local but the entry's, staged at `build/packs/<id>/<version>/`.
-The fixture pack and its thirteen variants (one more good one, the dependent, and twelve broken in one way each) are
+The fixture pack and its fourteen variants (two more good ones, the dependent and the script-clash one, and twelve
+broken in one way each) are
 its first users. Static libraries linked into a module must be
 position-independent: every package library already is (`retroplug_package_library` sets it) and so is every vendored
 library a package links (the plugin, a shared module, links them all), so the function checks the link closure at
@@ -316,7 +317,7 @@ configure and refuses one that is not, naming it.
 - Create: `packages/native/test/packs/fixture/FixtureNodes.cpp`, `packages/native/test/packs/fixture/FixtureSecond.cpp`
 - Create: `packages/native/test/packs/fixture/CMakeLists.txt`
 - Create: `packages/native/test/packs/fixture/throws/CMakeLists.txt`, `.../fixture/throws/FixtureThrows.cpp`
-- Create: `packages/native/test/packs/fixture/manifests/*.json` (fourteen, by the script in Step 4)
+- Create: `packages/native/test/packs/fixture/manifests/*.json` (fifteen, by the script in Step 4)
 - Modify: `CMakeLists.txt:310` (include the new file)
 - Modify: `packages/native/cmake/tests.cmake` (add the fixture's directory)
 
@@ -700,7 +701,7 @@ Create `packages/native/test/packs/fixture/FixtureSecond.cpp` (the pair variant'
 #include "FixtureNodes.cpp"
 ```
 
-- [ ] **Step 4: Write the fourteen manifest templates**
+- [ ] **Step 4: Write the fifteen manifest templates**
 
 Run this from the repository root; it writes each manifest as `json.dumps(indent=2)` formats it:
 
@@ -721,6 +722,7 @@ VARIANTS = {
                                   "rp.packfixture-overdeclared.missing"], [], {}),
     "packfixture-duplicate": (["rp.core.add", "rp.packfixture-duplicate.gain"], [], {}),
     "packfixture-clone": (["rp.packfixture.tone", "rp.packfixture.gain"], [], {}),
+    "packfixture-scriptclash": (["test.clash.tone", "test.clash.gain"], [], {}),
     "packfixture-noplatform": (["rp.packfixture-noplatform.tone", "rp.packfixture-noplatform.gain"], [], {}),
     "packfixture-noentry": (["rp.packfixture-noentry.tone", "rp.packfixture-noentry.gain"], [], {}),
     "packfixture-throws": (["rp.packfixture-throws.tone", "rp.packfixture-throws.gain"], [], {}),
@@ -744,7 +746,7 @@ for pack_id, (types, needs, halves) in VARIANTS.items():
 EOF
 ```
 
-Expected: fourteen files in `packages/native/test/packs/fixture/manifests/`. None carries `apiLevel`: the configure
+Expected: fifteen files in `packages/native/test/packs/fixture/manifests/`. None carries `apiLevel`: the configure
 stamps it.
 
 - [ ] **Step 5: Write the fixture's CMakeLists**
@@ -769,6 +771,7 @@ Create `packages/native/test/packs/fixture/CMakeLists.txt`:
 #   packfixture-tshalf        a manifest with a TS half beside its native one, which M1 does not load
 #   packfixture-duplicate     registers rp.core.add, a built-in's type
 #   packfixture-clone         registers the good pack's two types under another package id
+#   packfixture-scriptclash   types in a script pack's namespace (test.clash), for a script reload to hold and drop
 #   packfixture-noplatform    a manifest with no library for any platform
 #   packfixture-noentry       a library that exports no rp_pack_entry
 
@@ -822,6 +825,8 @@ _rp_fixture_variant(packfixture-api-mismatch ARGS ENTRY_API_LEVEL ${_rp_level_ne
 _rp_fixture_variant(packfixture-undeclared DEFINES RP_PACKFIXTURE_EXTRA_TYPE)
 _rp_fixture_variant(packfixture-duplicate DEFINES RP_PACKFIXTURE_TONE_ID="rp.core.add")
 _rp_fixture_variant(packfixture-clone PREFIX rp.packfixture)
+# Types in the namespace of a script pack ("test.clash"), which a script reload can hold and drop (PackEngines).
+_rp_fixture_variant(packfixture-scriptclash PREFIX test.clash)
 _rp_fixture_variant(packfixture-noentry ARGS NO_ENTRY)
 _rp_fixture_variant(packfixture-overdeclared)
 add_subdirectory(throws)
@@ -892,7 +897,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/fixture ${CMAKE_BINARY_D
 - [ ] **Step 7: Configure and build the modules**
 
 Run: `pnpm configure`
-Expected: ends with `-- Build files have been written to: .../build`, and `ls build/packs` lists the fourteen
+Expected: ends with `-- Build files have been written to: .../build`, and `ls build/packs` lists the fifteen
 fixture ids.
 
 Run:
@@ -5660,6 +5665,68 @@ TEST_CASE("a pack of two packages whose second clashes in an Engine registers ne
     CHECK(firstSample(other) == 0.25f);  // the tone's default level
 }
 
+TEST_CASE("a pack requiring one an Engine refused is refused there too, naming the requirement", "[packs-engines]") {
+    PackTable table(rp::graph::productPackages());
+    Engine holder(kRate, table);
+    REQUIRE(holder.addNodePackage(rp_packfixture_package()));
+    Engine other(kRate, table);
+    const auto loads = table.loadAll({{fixture("packfixture")}, {fixture("packfixture-dependent")}});
+    REQUIRE(loads.size() == 2);
+    REQUIRE(loads[0].pack);
+    REQUIRE(loads[1].pack);
+    const std::string dependentTone =
+        R"({"nodes":[{"id":"tone","type":"rp.packfixture-dependent.tone"},)"
+        R"({"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],)"
+        R"("wires":[{"from":"tone.out","to":"out.out.1-2"}]})";
+    CHECK_FALSE(holder.setGraph(rp::host::test::graphRequest(dependentTone, {})).ok);
+    CHECK(holder.refusedPacks() == std::vector<std::string>{"packfixture", "packfixture-dependent"});
+    CHECK(holder.packsRegistered() == 0);
+    REQUIRE(other.setGraph(rp::host::test::graphRequest(dependentTone, {})).ok);
+    CHECK(other.refusedPacks().empty());
+    CHECK(other.packsRegistered() == 2);
+}
+
+TEST_CASE("a script reload refused at its replan leaves the registry sound beside a pack that clashed with the "
+          "generation it drops",
+          "[packs-engines]") {
+    // test.clash's first version holds test.clash.tone, so the loaded scriptclash pack is refused in this Engine. The
+    // second drops that type, and the running document places it, so the replan is refused and the swap undone: with
+    // loaded packs synced inside that window, the pack would have taken the type the undo needs.
+    const auto script = [](bool withTone) {
+        return std::string(R"JS(
+globalThis.__rp_scriptNodes = globalThis.__rp_scriptNodes || [];
+var ports = [{ id: "out", dir: "out", kind: "events" }];
+var layout = { ports: ports, params: [] };
+function node(id) {
+  return {
+    id: id,
+    descriptor: function () { return { id: id, ports: ports, params: [], settings: { type: "object" } }; },
+    parseSettings: function (raw) { return raw === undefined ? {} : raw; },
+    layout: function () { return layout; },
+    create: function () { return { process: function () {} }; },
+    reshapes: false,
+    faultOnThrow: false,
+  };
+}
+)JS") + (withTone ? "globalThis.__rp_scriptNodes.push(node('test.clash.tone'));\n"
+                  : "globalThis.__rp_scriptNodes.push(node('test.clash.other'));\n");
+    };
+    PackTable table(rp::graph::productPackages());
+    Engine e(kRate, table);
+    const auto first = e.loadScriptPack("test.clash", script(true));
+    INFO(first.error);
+    REQUIRE(first.ok);
+    const std::string placeTone = R"({"nodes":[{"id":"t","type":"test.clash.tone"}],"wires":[]})";
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(placeTone, {})).ok);
+    REQUIRE(table.load(fixture("packfixture-scriptclash")));
+    const auto reload = e.loadScriptPack("test.clash", script(false));
+    INFO(reload.error);
+    CHECK_FALSE(reload.ok);
+    CHECK(e.refusedPacks() == std::vector<std::string>{"packfixture-scriptclash"});
+    // The old generation is still the registry's: the same document plans again.
+    CHECK(e.setGraph(rp::host::test::graphRequest(placeTone, {})).ok);
+}
+
 TEST_CASE("an Engine built with no table of its own reads the process's", "[packs-engines]") {
     // The one case that loads into the process's table, which outlives it: every later default-built engine in this
     // binary sees the fixture, and no other case builds one.
@@ -5962,23 +6029,41 @@ with
     syncPacks();
 ```
 
-replace (in `Engine::publishGraph`)
+replace
+
+```cpp
+Engine::GraphResult Engine::setGraph(const GraphRequest& request) { return publishGraph(request, false); }
+```
+
+with
+
+```cpp
+Engine::GraphResult Engine::setGraph(const GraphRequest& request) {
+    // A pack loaded since the last plan joins the registry before this one is made, on this thread, which is the only
+    // one that reads the registry: its node types exist from this setGraph on. Not in publishGraph, which a script
+    // reload's replan also runs: a pack registered between the reload's swap and its possible undo could take a type
+    // the old generation held, and the undo would then fail with the registry pointing at a package already freed.
+    syncPacks();
+    return publishGraph(request, false);
+}
+```
+
+and replace (in `Engine::loadScriptPack`)
 
 ```cpp
     graph_->host->reclaim();
-    graph_->script.reclaim();
-    auto doc = rp::graph::parseGraphDocument(request.document);
+    script.reclaim();
+    // The id first: a refused one is refused whatever its source says, and costs no compile.
 ```
 
 with
 
 ```cpp
     graph_->host->reclaim();
-    graph_->script.reclaim();
-    // A pack loaded since the last plan joins the registry before this one is made, on this thread, which is the only
-    // one that reads the registry: its node types exist from this setGraph on.
+    script.reclaim();
+    // Loaded packs join before the swap below, so a reload's replan and its undo see one registry (see setGraph).
     syncPacks();
-    auto doc = rp::graph::parseGraphDocument(request.document);
+    // The id first: a refused one is refused whatever its source says, and costs no compile.
 ```
 
 and replace
@@ -6003,7 +6088,16 @@ void Engine::syncPacks() {
         // addNodePackage), which canAdd sees, and a clash anywhere keeps the whole pack out.
         std::string why;
         bool fits = true;
-        for (const rp_package* p : pack->packages) fits = fits && registry.canAdd(p, &why);
+        // A pack whose requirement was refused here has nothing to stand on: it is refused too, naming the requirement.
+        for (const std::string& need : pack->manifest.requiresPacks) {
+            if (std::find(packsRefused_.begin(), packsRefused_.end(), need) != packsRefused_.end()) {
+                why = "required pack " + need + " was refused in this engine";
+                fits = false;
+                break;
+            }
+        }
+        for (const rp_package* p : pack->packages)
+            fits = fits && registry.canAdd(p, &why);
         if (!fits) {
             std::fprintf(stderr, "[engine] pack %s was refused here: %s\n", pack->manifest.id.c_str(), why.c_str());
             packsRefused_.push_back(pack->manifest.id);
@@ -6022,7 +6116,7 @@ void Engine::syncPacks() {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 47 test cases)` on Linux (46 on macOS, 41 on Windows), and two stderr
+Expected: `All tests passed (... assertions in 49 test cases)` on Linux (48 on macOS, 43 on Windows), and two stderr
 lines from the
 cases that refuse a pack in one Engine:
 `[engine] pack packfixture was refused here: package "rp.packfixture" is already registered` and
@@ -6114,7 +6208,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 47 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
+Expected: `All tests passed (... assertions in 49 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
 modules are instrumented:
 
 ```bash
@@ -6132,7 +6226,7 @@ cmake --build build-asan --target retroplug-packs-test -j$(nproc)
 ASAN_OPTIONS="abort_on_error=1 detect_leaks=1" build-asan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 47 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
+Expected: `All tests passed (... assertions in 49 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
 `ERROR: LeakSanitizer` line.
 
 - [ ] **Step 4: Commit**
@@ -6673,7 +6767,8 @@ Every `Engine` registers its table's packs after the product's packages and the 
 which is dependency order; a pack loaded later joins each Engine at its next `setGraph`, on its control thread, the
 thread `loadScriptPack` changes the registry on (`Engine::syncPacks`), every package of the pack checked
 (`NodeRegistry::canAdd`) before the first is added. An Engine that already holds one of a pack's ids (a script
-node's, or a test's `addNodePackage`) refuses that pack whole, there alone (`refusedPacks()`). The offline pool keeps
+node's, or a test's `addNodePackage`) refuses that pack whole, there alone (`refusedPacks()`), and so a pack
+requiring one it refused; a refusal is not retried in that Engine (a new Engine judges afresh). The offline pool keeps
 its fixed `core` and `dsp` subset and registers no pack.
 
 `retroplug_pack(<package>)` ([cmake/packs.cmake](../cmake/packs.cmake)), called from a package's own CMakeLists,
@@ -6909,6 +7004,14 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
     the `state.lock` section (one that cannot be held there is refused, never loaded unheld), and the pack keeps its
     Development origin.
 
+17. **`PackTable` holds its mutex across a whole batch load** (the library opens, constructors, entries and trial
+    registration), so an Engine's construction or `setGraph` (`loadedFrom`) waits for a load in progress. Fine at M1's
+    handful of packs; for M4's live installs hold the mutex only to append, or publish an atomic count over stable
+    storage.
+18. **A pack an Engine refuses is never retried there**: `packsSeen_` moves past it, so removing the clashing type
+    (a script reload that drops it) does not admit the pack in that Engine until a new Engine is built. An Engine also
+    refuses a pack whose `requires.packs` entry it refused, naming that requirement.
+
 ## Self-review
 
 **Spec coverage** (the brief's eight items, and the review's findings):
@@ -6930,7 +7033,7 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
    host naming a pack, and `test:plugin` and `test:native` at the task's end (Task 8).
 5. CMake: `retroplug_pack_module` and `retroplug_pack`, MODULE, hidden but the entry (a non-empty export list on every
    platform), static deps private, the staging, the PIC check and its reasoning (Tasks 2 and 10).
-6. The fixture pack and thirteen variants: wrong level both ways and a lying entry, a throwing entry, provides
+6. The fixture pack and fourteen variants: wrong level both ways and a lying entry, a throwing entry, provides
    mismatched both ways, duplicates against a built-in and against a pack, two packages in one library, a TS half, no
    platform library, no entry, an unmet dependency (Task 2, exercised in Tasks 6 and 8).
 7. Tests: the folder model, each refusal, a live add, two Engines, a TSAN- and ASAN-clean run including a live add under
