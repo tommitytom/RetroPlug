@@ -46,8 +46,8 @@ difference can diff against it, but this plan's text is the source of truth.
 `pnpm test:plugin`, which CI runs on macOS and Windows. Nothing here was compiled there, so two steps (the end of
 Task 6 and the end of Task 10) build and run the test binary on a Windows and a macOS machine before anything is
 pushed; a failure there is fixed in the task it belongs to, not deferred. The Windows and macOS code paths this plan
-already writes for (wide paths, `LoadLibraryExW`, `LockFileEx`, a non-empty exported-symbols list, the entry's
-handler under `/EHsc`, folders a loaded DLL keeps) are the ones those gates prove.
+already writes for (wide paths, `LoadLibraryExW`, `LockFileEx`, a non-empty exported-symbols list, the throwing
+variant at `/EHs` and the loader's handler at `/EHsc`, folders a loaded DLL keeps) are the ones those gates prove.
 
 ## Decisions this plan makes
 
@@ -77,11 +77,15 @@ lists them for review with the gaps the design leaves.
 - **`state.json` is `{"version": 1, "packs": [{"id", "active", "pending"?, "remove"?}]}`.** Its `version` is read on
   its own first, so a newer one is refused as newer (a newer schema need not parse) and never overwritten (the repo's
   config rule). Every access holds `packs/state.lock`: a reader shared, a writer exclusive, so a writer's rename never
-  meets a reader with the file open (which Windows refuses) and two read-modify-writes never interleave. Writes go to a
-  temporary file named by the pid and a counter, flushed (`rp::fsyncPath`, which moves into `retroplug-packs` and
+  meets a reader with the file open (which Windows refuses) and two read-modify-writes never interleave. A root this
+  process cannot write has no lock to take and nothing can write there: it is read, and its installed folders loaded,
+  unheld. The waits are unbounded, which the holds' brevity makes safe; a process stopped while it holds the lock (a
+  debugger, SIGSTOP) blocks other launches until it runs again, which is documented rather than timed out. Writes go
+  to a temporary file named by the pid and a counter, flushed (`rp::fsyncPath`, which moves into `retroplug-packs` and
   gains a wide-path overload) and renamed over the file.
 - **The version lock is `pack.lock`, a shared `flock` / `LockFileEx` lock held for the life of the process** in each
-  installed version folder a process opened, loaded or refused (a refused pack's library may be mapped). The OS drops it
+  installed version folder whose library a process opened, loaded or refused (one hold per folder, however often a
+  refused load is retried), and in no folder it refused before opening anything. The OS drops it
   when the process ends, however it ends, so a crash leaves no stale lock. A settle deletes a folder only while it holds
   that lock exclusively, taken at once or not at all. Development folders take no lock.
 - **A launch settles, discovers and takes its version locks in one exclusive hold of `state.lock`**
@@ -105,7 +109,9 @@ lists them for review with the gaps the design leaves.
   `bliptoaster`.** M1 needs no audio backend, MIDI port or Launchpad, so the test binary links none of PortAudio, SDL
   audio or RtMidi; M5 adds the list its product needs. The test binary also links `retroplug-mesen` statically,
   unregistered, and hands it to one Engine through `addNodePackage`, so the pack and the static build render
-  interleaved in one process: any static the two copies shared would show as a difference.
+  interleaved in one process and their output is compared block for block. Whether the two copies share a static is
+  not that comparison's to say: the module's dynamic symbols are (one export, no GNU-unique symbol, no RetroPlug
+  import), read from its file in a test.
 
 ## Commands used throughout
 
@@ -307,6 +313,7 @@ configure and refuses one that is not, naming it.
 - Create: `cmake/packs.cmake`
 - Create: `packages/native/test/packs/fixture/FixtureNodes.cpp`, `packages/native/test/packs/fixture/FixtureSecond.cpp`
 - Create: `packages/native/test/packs/fixture/CMakeLists.txt`
+- Create: `packages/native/test/packs/fixture/throws/CMakeLists.txt`, `.../fixture/throws/FixtureThrows.cpp`
 - Create: `packages/native/test/packs/fixture/manifests/*.json` (fourteen, by the script in Step 4)
 - Modify: `CMakeLists.txt:310` (include the new file)
 - Modify: `packages/native/cmake/tests.cmake` (add the fixture's directory)
@@ -417,8 +424,9 @@ endfunction()
 # LIBS with an entry returning ENTRIES' rp_packages in order and reporting ENTRY_API_LEVEL (API_LEVEL by default).
 # EXCLUDE_FROM_ALL: what loads a pack depends on its target. The fixture pack's broken variants use the rest:
 # NO_ENTRY builds a module whose one export is rp_pack_entry_withheld (an exported-symbols list is never empty, which
-# macOS's linker would refuse), THROWING_ENTRY one whose entry throws, and NO_LIBRARY stages the manifest alone,
-# defining no target.
+# macOS's linker would refuse); THROWING_ENTRY one whose entry first calls rp_pack_entry_prelude(), a C++ function the
+# variant's SOURCES define (and throw from: a throw written in the extern "C", dllexport'ed entry itself is MSVC's
+# C4297); and NO_LIBRARY stages the manifest alone, defining no target.
 function(retroplug_pack_module target)
     cmake_parse_arguments(M "NO_ENTRY;THROWING_ENTRY;NO_LIBRARY" "MANIFEST;API_LEVEL;ENTRY_API_LEVEL"
                           "LIBS;SOURCES;DEFINES;ENTRIES" ${ARGN})
@@ -480,20 +488,20 @@ function(retroplug_pack_module target)
         set(_linkage "RP_EXPORT ")
     endif()
     set(_throw "")
-    set(_includes "#include \"graph/rp_pack.h\"")
+    set(_prelude "")
     if(M_THROWING_ENTRY)
-        # Behind a test the compiler cannot fold, so the rest of the body stays reachable (MSVC's C4702 is an error
-        # under /WX).
-        set(_throw "    if (api_level != nullptr) throw std::runtime_error(\"this pack's entry throws\");\n")
-        set(_includes "#include <stdexcept>\n\n${_includes}")
+        # Defined in another translation unit, so the compiler cannot see that it always throws: the rest of the body
+        # stays reachable (MSVC's C4702 is an error under /WX).
+        set(_prelude "void rp_pack_entry_prelude();\n")
+        set(_throw "    rp_pack_entry_prelude();\n")
     endif()
     set(_entry "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}-entry.cpp")
     file(GENERATE OUTPUT "${_entry}" CONTENT
 "// Generated by retroplug_pack_module(${target}) in cmake/packs.cmake from ${M_MANIFEST}. Do not edit.
 
-${_includes}
+#include \"graph/rp_pack.h\"
 
-${_decls}
+${_decls}${_prelude}
 extern \"C\" ${_linkage}const rp_package* const* ${_name}(uint32_t* api_level, size_t* count) {
 ${_throw}    *api_level = ${M_ENTRY_API_LEVEL}u;
     static const rp_package* const packages[] = {
@@ -737,7 +745,7 @@ Create `packages/native/test/packs/fixture/CMakeLists.txt`:
 #   packfixture-api-mismatch  its pack.json says this level, its library reports the next: refused by the entry
 #   packfixture-undeclared    registers a third type its provides.nodeTypes leaves out
 #   packfixture-overdeclared  declares a third type in provides.nodeTypes that its library does not register
-#   packfixture-throws        a library whose entry throws
+#   packfixture-throws        a library whose entry throws (throws/: its own directory, for MSVC's /EHs)
 #   packfixture-pair          two packages from one library (FixtureSecond.cpp), the second taking the good pack's types
 #   packfixture-tshalf        a manifest with a TS half beside its native one, which M1 does not load
 #   packfixture-duplicate     registers rp.core.add, a built-in's type
@@ -759,16 +767,17 @@ retroplug_pack_module(retroplug-packfixture-pack
     ENTRIES  rp_packfixture_package)
 
 # A variant: the fixture source compiled straight into its module, its types (PREFIX) and its package (PACKAGE) named
-# after the variant unless it says otherwise. PAIR adds FixtureSecond.cpp's package after the first.
+# after the variant unless it says otherwise. PAIR adds FixtureSecond.cpp's package after the first; SOURCES adds files
+# of the variant's own.
 function(_rp_fixture_variant id)
-    cmake_parse_arguments(V "PAIR" "PREFIX;PACKAGE" "DEFINES;ARGS" ${ARGN})
+    cmake_parse_arguments(V "PAIR" "PREFIX;PACKAGE" "DEFINES;ARGS;SOURCES" ${ARGN})
     if(NOT V_PREFIX)
         set(V_PREFIX "rp.${id}")
     endif()
     if(NOT V_PACKAGE)
         set(V_PACKAGE "rp.${id}")
     endif()
-    set(_sources ${_rp_fixture_source})
+    set(_sources ${_rp_fixture_source} ${V_SOURCES})
     set(_entries rp_packfixture_package)
     if(V_PAIR)
         list(APPEND _sources ${_rp_fixture_dir}/FixtureSecond.cpp)
@@ -796,7 +805,7 @@ _rp_fixture_variant(packfixture-duplicate DEFINES RP_PACKFIXTURE_TONE_ID="rp.cor
 _rp_fixture_variant(packfixture-clone PREFIX rp.packfixture)
 _rp_fixture_variant(packfixture-noentry ARGS NO_ENTRY)
 _rp_fixture_variant(packfixture-overdeclared)
-_rp_fixture_variant(packfixture-throws ARGS THROWING_ENTRY)
+add_subdirectory(throws)
 _rp_fixture_variant(packfixture-pair PAIR)
 # The manifests alone: retroplug_pack_module defines no target for them.
 retroplug_pack_module(retroplug-packfixture-noplatform-pack
@@ -805,6 +814,38 @@ retroplug_pack_module(retroplug-packfixture-noplatform-pack
 retroplug_pack_module(retroplug-packfixture-tshalf-pack
     MANIFEST ${_rp_fixture_dir}/manifests/packfixture-tshalf.json
     NO_LIBRARY)
+```
+
+The throwing variant lives in a directory of its own, so MSVC compiles it with `/EHs` (the entry is then not assumed
+never to throw, and the exception unwinds through it to the loader); its throw is in a C++ function the generated
+`extern "C"` entry calls, since a throw written in an `extern "C"` `dllexport` function is MSVC's C4297, an error under
+`/WX`. Create `packages/native/test/packs/fixture/throws/CMakeLists.txt`:
+
+```cmake
+# The throwing variant, packfixture-throws, in a directory of its own (the parent's _rp_fixture_variant does the rest).
+# Its generated extern "C" entry calls FixtureThrows.cpp's prelude, which throws. MSVC compiles this directory with
+# /EHs rather than the tree's /EHsc, so the entry is not assumed never to throw and the exception unwinds through it
+# to the loader's handler: a per-source /EHs would be a second /EH option on one command line, D9025, which cannot be
+# suppressed, and a directory's CMAKE_CXX_FLAGS is its own.
+if(MSVC)
+    string(REPLACE "/EHsc" "/EHs" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+endif()
+_rp_fixture_variant(packfixture-throws SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/FixtureThrows.cpp ARGS THROWING_ENTRY)
+```
+
+Create `packages/native/test/packs/fixture/throws/FixtureThrows.cpp`:
+
+```cpp
+// The throwing variant's prelude (throws/CMakeLists.txt): the C++ function its generated extern "C" entry calls first
+// (cmake/packs.cmake's THROWING_ENTRY). The throw is the fixture's whole point: the loader must catch it on its side of
+// the C entry and refuse the pack. It is thrown here, with C++ linkage, because a throw written in an extern "C"
+// dllexport'ed function is MSVC's C4297.
+
+#include <stdexcept>
+
+void rp_pack_entry_prelude();
+
+void rp_pack_entry_prelude() { throw std::runtime_error("this pack's entry throws"); }
 ```
 
 - [ ] **Step 6: Add the fixture to the tests**
@@ -860,7 +901,8 @@ Expected: `pack.json` alone, then `  "apiLevel" : 2,` (one past `RP_API_LEVEL`).
 ```bash
 git add cmake/packs.cmake CMakeLists.txt packages/native/cmake/tests.cmake \
     packages/native/test/packs/fixture/CMakeLists.txt packages/native/test/packs/fixture/FixtureNodes.cpp \
-    packages/native/test/packs/fixture/FixtureSecond.cpp packages/native/test/packs/fixture/manifests
+    packages/native/test/packs/fixture/FixtureSecond.cpp packages/native/test/packs/fixture/throws \
+    packages/native/test/packs/fixture/manifests
 git commit -m "cmake: retroplug_pack_module builds a pack module, and the fixture pack with its broken variants"
 ```
 
@@ -1922,6 +1964,10 @@ Create `packages/native/test/packs/PackState.test.cpp`:
 #include "host/packs/FileLock.hpp"
 #include "host/packs/PackState.hpp"
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 using Catch::Matchers::ContainsSubstring;
 using namespace rp::host::packs;
@@ -2058,6 +2104,27 @@ TEST_CASE("a launch settles state.json: pending versions switch, removals go, un
     REQUIRE(settlePackState(root, &why));
     CHECK_FALSE(fs::exists(heldC));
 }
+
+#if !defined(_WIN32)
+TEST_CASE("a data root this process cannot write is read without a lock", "[packs-folders]") {
+    // A read-only profile or a shared install: no state.lock can be made there, and nothing can write state.json
+    // there either, so the read goes ahead unheld rather than failing.
+    if (geteuid() == 0) SKIP("root writes through any permission, so a read-only folder cannot be made");
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    std::string why;
+    REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "", false}}}, &why));
+    fs::remove(root / kStateLockFile);
+    fs::permissions(root, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write,
+                    fs::perm_options::remove);
+    const auto state = readPackState(root, &why);
+    fs::permissions(root, fs::perms::owner_write, fs::perm_options::add);  // so the TempDir can go
+    INFO(why);
+    REQUIRE(state);
+    CHECK(state->find("packfixture") != nullptr);
+    CHECK_FALSE(fs::exists(root / kStateLockFile));
+}
+#endif
 ```
 
 In `retroplug-packs-test`'s `SOURCES`, after the `PackManifest.test.cpp` line add:
@@ -2365,7 +2432,9 @@ Create `packages/native/src/host/packs/PackState.hpp`:
 // Every access holds <dataRoot>/state.lock: a reader shared, a writer exclusive. So a writer's rename never meets a
 // reader with the file open (which Windows refuses), two writers' read-modify-writes never interleave, and a launch
 // that settles, reads and takes its version locks in one exclusive hold (loadLaunchPacks) can never meet another
-// launch's settle deleting the version it is about to load.
+// launch's settle deleting the version it is about to load. The waits are unbounded, which the holds' brevity makes
+// safe (a read, a write, a settle): a process that ends, however it ends, drops its lock, but one stopped while it
+// holds it (a debugger's breakpoint, SIGSTOP) blocks every launch's start until it runs again.
 namespace rp::host::packs {
 
 inline constexpr std::uint32_t kPackStateVersion = 1;
@@ -2389,7 +2458,9 @@ struct PackState {
 // folder or the lock file cannot be made.
 std::optional<FileLock> lockPackState(const std::filesystem::path& dataRoot, FileLock::Mode mode, std::string* why);
 
-// <dataRoot>/state.json under a shared hold, or an empty state when there is none. Nothing, with the reason in *why,
+// <dataRoot>/state.json under a shared hold, or an empty state when there is none; without a hold when state.lock
+// cannot be made (a root this process cannot write, which nothing can write state.json in either). Nothing, with the
+// reason in *why,
 // for a file whose version is newer than kPackStateVersion (read before the rest, since a newer schema need not
 // parse as this one), that does not parse, or that holds an entry that is not well formed: such a file is left as it
 // is.
@@ -2587,8 +2658,9 @@ std::optional<FileLock> lockPackState(const fs::path& dataRoot, FileLock::Mode m
 std::optional<PackState> readPackState(const fs::path& dataRoot, std::string* why) {
     std::error_code ec;
     if (!fs::exists(dataRoot, ec)) return PackState{};
-    auto hold = lockPackState(dataRoot, FileLock::Mode::Shared, why);
-    if (!hold) return std::nullopt;
+    // A root this process cannot write (a read-only profile, a shared install) has no state.lock to take, and nothing
+    // can write state.json there either, so the read goes ahead without one.
+    auto hold = FileLock::acquire(dataRoot / kStateLockFile, FileLock::Mode::Shared, true, nullptr);
     return readHeld(dataRoot, why);
 }
 
@@ -2690,7 +2762,7 @@ and in `add_library(retroplug-backend STATIC ...)` delete these two lines:
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 8 test cases)`.
+Expected: `All tests passed (... assertions in 9 test cases)` (8 on Windows, which has no read-only folder case).
 
 Run: `cmake --build build --target retroplug-host -j$(nproc)`
 Expected: `[100%] Built target retroplug-host` (the backend still links `fsyncPath`).
@@ -2743,7 +2815,10 @@ Create `packages/native/test/packs/ElfSymbols.hpp` (a module's dynamic symbols, 
 namespace rp::host::packs::test {
 
 struct DynamicSymbols {
-    std::vector<std::string> exported;  // defined, global or weak, with default visibility
+    // Defined, global, weak or GNU-unique, with default visibility. A GNU-unique symbol (an inline function's static,
+    // a template's static member) is merged process-wide by glibc even under RTLD_LOCAL: the one way two copies'
+    // statics really become one, so it counts as an export.
+    std::vector<std::string> exported;
     std::vector<std::string> imported;  // undefined, global (a weak undefined one is optional and left out)
 };
 
@@ -2777,7 +2852,8 @@ inline std::optional<DynamicSymbols> readDynamicSymbols(const std::string& file)
             const unsigned bind = ELF64_ST_BIND(sym.st_info);
             if (sym.st_shndx == SHN_UNDEF) {
                 if (bind == STB_GLOBAL) out.imported.push_back(name);
-            } else if ((bind == STB_GLOBAL || bind == STB_WEAK) && ELF64_ST_VISIBILITY(sym.st_other) == STV_DEFAULT) {
+            } else if ((bind == STB_GLOBAL || bind == STB_WEAK || bind == STB_GNU_UNIQUE) &&
+                       ELF64_ST_VISIBILITY(sym.st_other) == STV_DEFAULT) {
                 out.exported.push_back(name);
             }
         }
@@ -2946,7 +3022,8 @@ TEST_CASE("a pack whose library is missing or exports no entry is refused", "[pa
     // An entry that throws is refused, the exception caught on this side of the C entry.
     checkRefused(table, "packfixture-throws", "'s rp_pack_entry threw");
     // A TS half beside the native one: M1 loads none, and a pack never loads in part.
-    checkRefused(table, "packfixture-tshalf", "has a app half (js/app.js), which this RetroPlug does not load yet");
+    checkRefused(table, "packfixture-tshalf",
+                 "has a TS half, halves.app (js/app.js), which this RetroPlug does not load yet");
 }
 
 TEST_CASE("a pack that registers what it does not declare, or what is registered already, is refused",
@@ -2987,8 +3064,18 @@ TEST_CASE("an installed pack holds its version folder while it is loaded", "[pac
         PackTable table(rp::graph::productPackages());
         CHECK_FALSE(table.load(PackCandidate{refusedDir, PackOrigin::Installed, false, nullptr}));
         CHECK(versionInUse(refusedDir));
+        // Retried, it is refused again and its folder still held (one hold per folder, kept by the table).
+        CHECK_FALSE(table.load(PackCandidate{refusedDir, PackOrigin::Installed, false, nullptr}));
+        CHECK(versionInUse(refusedDir));
     }
     CHECK_FALSE(versionInUse(refusedDir));
+    // One refused before its library opens keeps no hold: nothing of its folder is mapped.
+    const auto levelDir = rp::host::packs::test::install(tmp.roots().data, "packfixture-api-newer");
+    {
+        PackTable table(rp::graph::productPackages());
+        CHECK_FALSE(table.load(PackCandidate{levelDir, PackOrigin::Installed, false, nullptr}));
+        CHECK_FALSE(versionInUse(levelDir));
+    }
 
     // An installed pack must sit in packs/<id>/<version>/: anywhere else, state.json does not describe it.
     const auto stray = rp::host::packs::test::install(tmp.roots().data, "packfixture", "9.9.9");
@@ -3162,6 +3249,7 @@ Create `packages/native/src/host/packs/PackTable.hpp`:
 
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -3238,9 +3326,10 @@ private:
     mutable std::mutex                       mutex_;
     std::vector<std::unique_ptr<LoadedPack>> packs_;
     std::vector<PackRefusal>                 refusals_;
-    // The holds on the installed folders of packs this table refused: a refused pack's library may be open (it is
-    // never closed), so its folder is held for the life of the process as a loaded one's is.
-    std::vector<std::shared_ptr<FileLock>>   refusedHolds_;
+    // The holds on the installed folders of packs this table refused after opening their libraries, one per folder: a
+    // refused pack's library stays open (it is never closed), so its folder is held for the life of the process as a
+    // loaded one's is.
+    std::map<std::filesystem::path, std::shared_ptr<FileLock>> refusedHolds_;
 };
 
 }  // namespace rp::host::packs
@@ -3290,10 +3379,11 @@ fs::path canonicalOr(const fs::path& p) {
     return ec ? p : c;
 }
 
-// The entry, called through a pointer type of C++ language linkage and inside a handler. The entry must not throw (it
-// is C), and one that does is refused rather than let unwind into the host; MSVC's /EHsc lets the compiler assume a
-// function declared extern "C" never throws and drop the handler around a call to it, which calling through this type,
-// declared outside any extern "C", does not let it assume. The throwing fixture variant holds it on every platform.
+// The entry, called inside a handler. The entry must not throw (it is C), and one that does is refused rather than let
+// unwind into the host. The call goes through a pointer whose type is declared outside any extern "C", which keeps the
+// handler on compilers that tie /EHsc-style assumptions to language linkage; MSVC does not put linkage in a function's
+// type, so there the handler rests on the call being through a pointer, which it cannot assume never throws. The
+// throwing fixture variant holds it on Linux in the packs test, and the Windows gate (the plan's Task 6) on MSVC.
 using EntryCall = const rp_package* const* (*)(std::uint32_t*, std::size_t*);
 
 bool callEntry(EntryCall entry, std::uint32_t& level, std::size_t& count, const rp_package* const*& list) noexcept {
@@ -3386,7 +3476,8 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
 PackLoad PackTable::refuse(const PackCandidate& candidate, std::string id, std::string reason,
                            std::shared_ptr<FileLock> hold) {
     if (id.empty()) id = displayPath(candidate.dir.filename());
-    if (hold) refusedHolds_.push_back(std::move(hold));
+    // One hold per folder, however often a load of it is retried and refused.
+    if (hold) refusedHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
     refusals_.push_back({id, candidate.dir, reason});
     return PackLoad{nullptr, std::move(reason)};
 }
@@ -3398,11 +3489,21 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
     std::shared_ptr<FileLock> hold = candidate.lock;
     if (candidate.origin == PackOrigin::Installed && !hold) {
         auto taken = holdVersion(candidate.dir, &why);
-        if (!taken) return refuse(candidate, {}, "cannot hold its version folder: " + why, nullptr);
-        hold = std::make_shared<FileLock>(std::move(*taken));
+        std::error_code ec;
+        if (taken) {
+            hold = std::make_shared<FileLock>(std::move(*taken));
+        } else if (fs::exists(candidate.dir / kVersionLockFile, ec)) {
+            // Its lock is there and held exclusively: a settle is deleting the folder.
+            return refuse(candidate, {}, "cannot hold its version folder: " + why, nullptr);
+        }
+        // No lock file and none can be made: a folder this process cannot write, which no settle can delete either,
+        // so it loads unheld.
     }
+    // A refusal keeps the folder's hold only once the pack's library is open: until then nothing of the folder is
+    // mapped, and the hold goes with the refusal.
+    bool opened = false;
     const auto refuseHere = [&](std::string id, std::string reason) {
-        return refuse(candidate, std::move(id), std::move(reason), hold);
+        return refuse(candidate, std::move(id), std::move(reason), opened ? hold : nullptr);
     };
 
     auto manifest = readPackManifest(candidate.dir, &why);
@@ -3425,7 +3526,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
     // Only the native half loads in M1, and a pack loads whole or not at all.
     for (const auto& [kind, file] : manifest->halves)
         if (kind != "native")
-            return refuseHere(id, pack + " has a " + kind + " half (" + file +
+            return refuseHere(id, pack + " has a TS half, halves." + kind + " (" + file +
                                       "), which this RetroPlug does not load yet; a pack loads whole or not at all");
 
     for (const auto& p : packs_) {
@@ -3461,6 +3562,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& candidate) {
         void* library = openLibrary(file, &why);
         if (library == nullptr) return refuseHere(id, pack + ": " + why);
         loaded->library = library;
+        opened = true;
         auto entry = reinterpret_cast<EntryCall>(librarySymbol(library, RP_PACK_ENTRY_SYMBOL));
         if (entry == nullptr) return refuseHere(id, pack + "'s library exports no " RP_PACK_ENTRY_SYMBOL);
         std::uint32_t level = 0;
@@ -3542,8 +3644,8 @@ In `packages/native/CMakeLists.txt`, in `add_library(retroplug-packs STATIC ...)
 - [ ] **Step 6: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 18 test cases)` on Linux (17 elsewhere: the dynamic-symbol case is
-Linux's).
+Expected: `All tests passed (... assertions in 19 test cases)` on Linux (18 on macOS, without the dynamic-symbol case;
+17 on Windows, without the read-only folder case too).
 
 - [ ] **Step 7: Commit**
 
@@ -3566,11 +3668,13 @@ cmake --build build --target retroplug-packs-test -j
 build\bin\retroplug-packs-test.exe             (Windows)    build/bin/retroplug-packs-test   (macOS)
 ```
 
-Expected on both: `All tests passed (... assertions in 17 test cases)`. What this proves there: the module's export
-list (an exported-symbols list on macOS, `dllexport` on Windows) and the withheld variant's; `LoadLibraryExW` and the
-`.dylib` path; the throwing entry refused under `/EHsc` (the call through a C++-linkage pointer); `LockFileEx` and wide
-paths. A failure is fixed in this task's files before Task 7. On Windows a `TempDir` that held a loaded DLL is left
-behind and swept by the next run's first `TempDir` (its process gone), which a second run shows.
+Expected: `All tests passed (... assertions in 18 test cases)` on macOS and `17` on Windows. What this proves there:
+the module's export list (an exported-symbols list on macOS, `dllexport` on Windows) and the withheld variant's;
+`LoadLibraryExW` and the `.dylib` path; on MSVC, that the throwing variant compiles under `/W4 /WX` (its throw in a C++
+helper, its directory at `/EHs`) and that the loader's handler, compiled at the tree's `/EHsc`, catches it and refuses
+the pack (Linux is the only place the plan has run that case); `LockFileEx` and wide paths. A failure is fixed in
+this task's files before Task 7. On Windows a `TempDir` that held a loaded DLL is left behind and swept by the next
+run's first `TempDir` (its process gone), which a second run shows.
 
 ---
 
@@ -3609,6 +3713,10 @@ Create `packages/native/test/packs/PackDiscovery.test.cpp`:
 #include "host/packs/PackDiscovery.hpp"
 #include "host/packs/PackState.hpp"
 #include "host/packs/PackTable.hpp"
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 using Catch::Matchers::ContainsSubstring;
@@ -3738,6 +3846,39 @@ TEST_CASE("a launch that waits on another's settle discovers what the settle lef
     CHECK(refused.empty());
     CHECK(table.size() == 0);
 }
+
+#if !defined(_WIN32)
+TEST_CASE("a launch from a data root it cannot write loads its installed packs unheld, without settling",
+          "[packs-discovery]") {
+    if (geteuid() == 0) SKIP("root writes through any permission, so a read-only folder cannot be made");
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    const auto installed = rp::host::packs::test::install(root, "packfixture");
+    std::string why;
+    REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "", false}}}, &why));
+    fs::remove(root / kStateLockFile);
+    const auto readOnly = fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write;
+    for (const fs::path& dir : {root, installed}) fs::permissions(dir, readOnly, fs::perm_options::remove);
+    PackTable table(rp::graph::productPackages());
+    const auto refused = loadLaunchPacks(table, tmp.roots(), {});
+    for (const fs::path& dir : {root, installed}) fs::permissions(dir, fs::perms::owner_write, fs::perm_options::add);
+    CHECK(refused.empty());
+    REQUIRE(table.find("packfixture") != nullptr);
+    CHECK(table.find("packfixture")->lock == nullptr);
+}
+#endif
+
+TEST_CASE("a launch reports a state.json that will not read once", "[packs-discovery]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    fs::create_directories(root);
+    std::ofstream(root / "state.json", std::ios::binary) << "not json";
+    PackTable table(rp::graph::productPackages());
+    const auto refused = loadLaunchPacks(table, tmp.roots(), {});
+    REQUIRE(refused.size() == 1);
+    CHECK(refused[0].id == "state.json");
+    CHECK(table.size() == 0);
+}
 ```
 
 In `retroplug-packs-test`'s `SOURCES`, after the `PackLoader.test.cpp` line add:
@@ -3811,8 +3952,9 @@ namespace rp::host::packs {
 
 namespace {
 
-// The candidates of `state` (null when it did not read, `why` saying why) and of `devDirs`.
-PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState>& state, const std::string& why,
+// The candidates of `state` (empty when it did not read, `why` then saying why, or null when that was reported
+// already) and of `devDirs`.
+PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState>& state, const std::string* why,
                            const std::vector<fs::path>& devDirs) {
     PackDiscovery out;
     std::vector<std::string> ids;  // out.candidates' ids, index for index
@@ -3822,8 +3964,8 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
             out.candidates.push_back({roots.data / p.id / p.active, PackOrigin::Installed, false, nullptr});
             ids.push_back(p.id);
         }
-    } else if (!roots.data.empty()) {
-        out.refused.push_back({"state.json", roots.data / "state.json", why});
+    } else if (!roots.data.empty() && why != nullptr) {
+        out.refused.push_back({"state.json", roots.data / "state.json", *why});
     }
     for (const auto& dir : devDirs) {
         std::string why;
@@ -3860,7 +4002,7 @@ PackDiscovery discoverPacks(const PackRoots& roots, const std::vector<fs::path>&
     std::string why;
     std::optional<PackState> state;
     if (!roots.data.empty()) state = readPackState(roots.data, &why);
-    return discoverFrom(roots, state, why, devDirs);
+    return discoverFrom(roots, state, &why, devDirs);
 }
 
 std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& roots,
@@ -3877,15 +4019,23 @@ std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& root
         std::error_code ec;
         std::optional<FileLock> hold;
         std::optional<PackState> state;
+        bool reported = false;  // a state.json that will not read is reported once, by the settle or by the read
         if (!roots.data.empty() && fs::exists(roots.data, ec)) {
             hold = lockPackState(roots.data, FileLock::Mode::Exclusive, &why);
-            if (hold && !settlePackState(roots.data, *hold, &why))
-                refused.push_back({"state.json", roots.data / "state.json", why});
-            if (hold) state = readPackState(roots.data, *hold, &why);
+            if (hold) {
+                if (!settlePackState(roots.data, *hold, &why)) {
+                    refused.push_back({"state.json", roots.data / "state.json", why});
+                    reported = true;
+                }
+                state = readPackState(roots.data, *hold, &why);
+            } else {
+                // A root this process cannot write: nothing to settle, and the read goes ahead without a hold.
+                state = readPackState(roots.data, &why);
+            }
         } else {
             state = PackState{};
         }
-        found = discoverFrom(roots, state, why, devDirs);
+        found = discoverFrom(roots, state, reported ? nullptr : &why, devDirs);
         for (auto& c : found.candidates) {
             if (c.origin != PackOrigin::Installed) continue;
             std::string held;
@@ -3913,7 +4063,7 @@ In `add_library(retroplug-packs STATIC ...)`, after the `src/host/packs/PackTabl
 - [ ] **Step 4: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 22 test cases)` on Linux (21 elsewhere).
+Expected: `All tests passed (... assertions in 25 test cases)` on Linux (24 on macOS, 22 on Windows).
 
 - [ ] **Step 5: Commit**
 
@@ -4447,7 +4597,8 @@ void Engine::syncPacks() {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 29 test cases)` on Linux (28 elsewhere), and two stderr lines from the
+Expected: `All tests passed (... assertions in 32 test cases)` on Linux (31 on macOS, 29 on Windows), and two stderr
+lines from the
 cases that refuse a pack in one Engine:
 `[engine] pack packfixture was refused here: package "rp.packfixture" is already registered` and
 `[engine] pack packfixture-pair was refused here: node type "rp.packfixture.tone" is already registered`.
@@ -4538,7 +4689,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 29 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
+Expected: `All tests passed (... assertions in 32 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
 modules are instrumented:
 
 ```bash
@@ -4556,7 +4707,7 @@ cmake --build build-asan --target retroplug-packs-test -j$(nproc)
 ASAN_OPTIONS="abort_on_error=1 detect_leaks=1" build-asan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 29 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
+Expected: `All tests passed (... assertions in 32 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
 `ERROR: LeakSanitizer` line.
 
 - [ ] **Step 4: Commit**
@@ -4960,8 +5111,9 @@ retroplug_pack(mesen)
 - [ ] **Step 5: Build and run**
 
 Run: `pnpm configure && cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 32 test cases)` on Linux (31 on macOS; on Windows the PCM case is
-reported skipped). The Mesen cases print each boot's iNES lines twice (one per build) and pass.
+Expected: `All tests passed (... assertions in 35 test cases)` on Linux (34 on macOS; on Windows 32, the PCM case
+among them reported skipped in Catch2's own summary). The Mesen cases print each boot's iNES lines twice (one per
+build) and pass.
 
 The first Mesen case reads the same from the file; `nm` is the look by hand:
 
@@ -4981,9 +5133,11 @@ imports nothing from RetroPlug.
 
 Nothing to run: this is what the reviewer checks the step's results against, and what a later failure means.
 
-- **A symbol the module did not keep to itself** (a copy of a static shared with the host's, a vtable or typeinfo
-  bound to the other copy): the interleaved case's first differing block, or a crash in it. The `nm` check of Step 5
-  names an export; `--no-undefined` fails the link of a module that imports a RetroPlug symbol, naming it.
+- **A symbol the module did not keep to itself** (an export beside the entry, a GNU-unique static glibc would merge
+  with the host's copy, an import of a RetroPlug symbol): the first Mesen case's dynamic-symbol read names it on
+  Linux, and `--no-undefined` fails the link of a module that imports one. The interleaved PCM case is no detector
+  of a shared static: it shows the two copies' output agrees, and would differ only if a merged static changed what
+  a core computes.
 - **RTTI across the boundary:** `[packs-boundary]` lists the line. The fix is the host's: call through a virtual or a
   null-checked capability, as `SystemBase` does today.
 - **A static the host sets and the pack reads** (none today: determinism is the environment, read by each copy): the
@@ -5004,7 +5158,8 @@ Nothing to run: this is what the reviewer checks the step's results against, and
   share one allocator: true on Linux and macOS (one libstdc++ or libc++, one malloc, and no pack may replace the global
   `operator new`), not under Windows' static CRT. Until Design questions (1) is decided the PCM case `SKIP`s on Windows:
   a Release run there would usually pass, since the static CRT has allocated from the process heap since VS2012, and
-  that pass would prove nothing.
+  that pass would prove nothing. The skip is counted in Catch2's summary only: `run-plugin-tests.mjs` reads the exit
+  code, and `skip-baseline.json` ratchets the TS suites' skips, not a Catch2 binary's.
 
 - [ ] **Step 7: Commit**
 
@@ -5018,7 +5173,7 @@ git commit -m "packs: the Mesen package built as a pack renders its static build
 - [ ] **Step 8: Cross-platform gate, before anything is pushed**
 
 As at the end of Task 6, on a Windows and a macOS machine, from this commit: build `retroplug-packs-test` and run it.
-Expected: on macOS `All tests passed (... assertions in 31 test cases)` (the Mesen module a `.dylib` built for the
+Expected: on macOS `All tests passed (... assertions in 34 test cases)` (the Mesen module a `.dylib` built for the
 architectures the build names: CI's `build.yml` passes `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"`); on Windows every
 case passes and the Mesen PCM case is reported skipped, with `rp-mesen.dll` built and its descriptors equal to the
 static build's. Then `pnpm test:plugin` on both (`test.bat plugin` on Windows). The user pushes only after both pass.
@@ -5079,13 +5234,13 @@ discovers and takes its version locks in one exclusive hold of `state.lock`, so 
 a folder between this one's discovery and its load.
 
 `PackTable` opens each pack's library once and never closes it (a refused one too: opening it ran its static
-constructors). A pack loads all or nothing: refused for its API level, a half other than the native one (M1 loads no
-TS half), a missing library or entry, an entry that throws (caught through a call of C++ linkage, which MSVC's
-`/EHsc` honours), a node type its `provides.nodeTypes` does not declare or a declared one it does not register, one a
-built-in package or an earlier pack holds, a `requires.packs` (packs only) not yet loaded, or anything the
-`NodeRegistry` refuses on a scratch registry holding what every Engine holds before it. `processPacks()` is the
-process's table, seeded with the product's packages and empty until a host loads into it (no host does at launch yet:
-a native half alone has nothing the app places until M2's TS halves).
+constructors). A pack loads all or nothing: refused for its API level, a half other than the native one (M1 loads no TS
+half), a missing library or entry, an entry that throws (caught on the host's side of the entry: run on Linux, and on
+MSVC by the plan's Windows gate), a node type its `provides.nodeTypes` does not declare or a declared one it does not
+register, one a built-in package or an earlier pack holds, a `requires.packs` (packs only) not yet loaded, or anything
+the `NodeRegistry` refuses on a scratch registry holding what every Engine holds before it. `processPacks()` is the
+process's table, seeded with the product's packages and empty until a host loads into it (no host does at launch yet: a
+native half alone has nothing the app places until M2's TS halves).
 Every `Engine` registers its table's packs after the product's packages and the built-in script pack, in load order,
 which is dependency order; a pack loaded later joins each Engine at its next `setGraph`, on its control thread, the
 thread `loadScriptPack` changes the registry on (`Engine::syncPacks`), every package of the pack checked
