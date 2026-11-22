@@ -166,13 +166,14 @@ TEST_CASE("a script reload refused at its replan leaves the registry sound besid
           "[packs-engines]") {
     // test.clash's first version holds test.clash.tone, so the loaded scriptclash pack is refused in this Engine. The
     // second drops that type, and the running document places it, so the replan is refused and the swap undone: with
-    // loaded packs synced inside that window, the pack would have taken the type the undo needs.
+    // loaded packs synced inside that window, the pack would have taken the type the undo needs. The
+    // pack's tone has an audio output, so the replan is refused whichever tone the registry finds, and the undo runs.
     const auto script = [](bool withTone) {
         return std::string(R"JS(
 globalThis.__rp_scriptNodes = globalThis.__rp_scriptNodes || [];
-var ports = [{ id: "out", dir: "out", kind: "events" }];
-var layout = { ports: ports, params: [] };
-function node(id) {
+function node(id, dir) {
+  var ports = [{ id: dir, dir: dir, kind: "events" }];
+  var layout = { ports: ports, params: [] };
   return {
     id: id,
     descriptor: function () { return { id: id, ports: ports, params: [], settings: { type: "object" } }; },
@@ -183,15 +184,17 @@ function node(id) {
     faultOnThrow: false,
   };
 }
-)JS") + (withTone ? "globalThis.__rp_scriptNodes.push(node('test.clash.tone'));\n"
-                  : "globalThis.__rp_scriptNodes.push(node('test.clash.other'));\n");
+)JS") + "globalThis.__rp_scriptNodes.push(node('test.clash.sink', 'in'));\n" +
+               (withTone ? "globalThis.__rp_scriptNodes.push(node('test.clash.tone', 'out'));\n" : "");
     };
     PackTable table(rp::graph::productPackages());
     Engine e(kRate, table);
     const auto first = e.loadScriptPack("test.clash", script(true));
     INFO(first.error);
     REQUIRE(first.ok);
-    const std::string placeTone = R"({"nodes":[{"id":"t","type":"test.clash.tone"}],"wires":[]})";
+    const std::string placeTone = R"({"nodes":[{"id":"t","type":"test.clash.tone"},)"
+        R"({"id":"s","type":"test.clash.sink"}],)"
+        R"("wires":[{"from":"t.out","to":"s.in"}]})";
     REQUIRE(e.setGraph(rp::host::test::graphRequest(placeTone, {})).ok);
     REQUIRE(table.load(fixture("packfixture-scriptclash")));
     const auto reload = e.loadScriptPack("test.clash", script(false));

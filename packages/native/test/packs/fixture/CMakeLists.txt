@@ -15,6 +15,7 @@
 #   packfixture-tshalf        a manifest with a TS half beside its native one, which M1 does not load
 #   packfixture-duplicate     registers rp.core.add, a built-in's type
 #   packfixture-clone         registers the good pack's two types under another package id
+#   packfixture-scriptclash   types in a script pack's namespace (test.clash), for a script reload to hold and drop
 #   packfixture-noplatform    a manifest with no library for any platform
 #   packfixture-noentry       a library that exports no rp_pack_entry
 
