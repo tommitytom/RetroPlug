@@ -1,6 +1,7 @@
 #include "host/packs/FileLock.hpp"
 
 #include <system_error>
+#include <utility>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -12,6 +13,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -21,42 +23,89 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
-std::optional<FileLock> FileLock::acquire(const fs::path& file, Mode mode, bool wait, std::string* why) {
+namespace {
+
+void fail(std::string* why, FileLock::Failure* failure, FileLock::Failure kind, std::string reason) {
+    if (why) *why = std::move(reason);
+    if (failure) *failure = kind;
+}
+
+#if defined(_WIN32)
+bool sameFile(HANDLE held, const fs::path& file) {
+    // A fresh open of the path, to compare what it names now with what is held.
+    HANDLE now = CreateFileW(file.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (now == INVALID_HANDLE_VALUE) return false;
+    BY_HANDLE_FILE_INFORMATION a{}, b{};
+    const bool same = GetFileInformationByHandle(held, &a) && GetFileInformationByHandle(now, &b) &&
+                      a.dwVolumeSerialNumber == b.dwVolumeSerialNumber && a.nFileIndexHigh == b.nFileIndexHigh &&
+                      a.nFileIndexLow == b.nFileIndexLow;
+    CloseHandle(now);
+    return same;
+}
+#else
+bool sameFile(int held, const fs::path& file) {
+    struct stat a {}, b {};
+    return ::fstat(held, &a) == 0 && ::stat(file.c_str(), &b) == 0 && a.st_dev == b.st_dev && a.st_ino == b.st_ino;
+}
+#endif
+
+}  // namespace
+
+std::optional<FileLock> FileLock::acquire(const fs::path& file, Mode mode, bool wait, std::string* why,
+                                          Failure* failure, const std::function<void()>& afterOpen) {
+    if (failure) *failure = Failure::None;
     FileLock lock;
 #if defined(_WIN32)
-    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ | GENERIC_WRITE,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
-        if (why) *why = "cannot open " + displayPath(file) + ": error " + std::to_string(GetLastError());
+        const DWORD error = GetLastError();
+        fail(why, failure,
+             error == ERROR_ACCESS_DENIED || error == ERROR_WRITE_PROTECT ? Failure::Denied : Failure::Other,
+             "cannot open " + displayPath(file) + ": error " + std::to_string(error));
         return std::nullopt;
     }
+    lock.handle_ = h;  // released by the destructor on every return below
+    if (afterOpen) afterOpen();
     DWORD flags = mode == Mode::Exclusive ? LOCKFILE_EXCLUSIVE_LOCK : 0;
     if (!wait) flags |= LOCKFILE_FAIL_IMMEDIATELY;
     OVERLAPPED at{};
     if (!LockFileEx(h, flags, 0, 1, 0, &at)) {
-        if (why) *why = "cannot lock " + displayPath(file) + ": error " + std::to_string(GetLastError());
-        CloseHandle(h);
+        fail(why, failure, Failure::Other,
+             "cannot lock " + displayPath(file) + ": error " + std::to_string(GetLastError()));
         return std::nullopt;
     }
-    lock.handle_ = h;
+    if (!sameFile(h, file)) {
+        fail(why, failure, Failure::Replaced,
+             displayPath(file) + " was replaced while it was locked: the folder is being deleted");
+        return std::nullopt;
+    }
 #else
-    const int fd = ::open(file.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    const int fd = ::open(file.c_str(), O_RDONLY | O_CREAT | O_CLOEXEC, 0644);
     if (fd < 0) {
-        if (why) *why = "cannot open " + displayPath(file) + ": " + std::strerror(errno);
+        const int error = errno;
+        fail(why, failure,
+             error == EACCES || error == EROFS || error == EPERM ? Failure::Denied : Failure::Other,
+             "cannot open " + displayPath(file) + ": " + std::strerror(error));
         return std::nullopt;
     }
+    lock.fd_ = fd;  // released by the destructor on every return below
+    if (afterOpen) afterOpen();
     int op = mode == Mode::Exclusive ? LOCK_EX : LOCK_SH;
     if (!wait) op |= LOCK_NB;
     int rc = 0;
     do rc = ::flock(fd, op);
     while (rc != 0 && errno == EINTR);
     if (rc != 0) {
-        if (why) *why = "cannot lock " + displayPath(file) + ": " + std::strerror(errno);
-        ::close(fd);
+        fail(why, failure, Failure::Other, "cannot lock " + displayPath(file) + ": " + std::strerror(errno));
         return std::nullopt;
     }
-    lock.fd_ = fd;
+    if (!sameFile(fd, file)) {
+        fail(why, failure, Failure::Replaced,
+             displayPath(file) + " was replaced while it was locked: the folder is being deleted");
+        return std::nullopt;
+    }
 #endif
     return lock;
 }

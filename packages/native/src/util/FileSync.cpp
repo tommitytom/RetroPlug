@@ -47,4 +47,20 @@ bool fsyncPath(const std::filesystem::path& path) {
 #endif
 }
 
+bool fsyncDirectory(const std::filesystem::path& dir) {
+#if defined(_WIN32)
+    (void)dir;
+    return true;
+#else
+    const int fd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY);
+    if (fd < 0) return false;
+    int rc;
+    do {
+        rc = ::fsync(fd);
+    } while (rc != 0 && errno == EINTR);
+    ::close(fd);
+    return rc == 0;
+#endif
+}
+
 } // namespace rp

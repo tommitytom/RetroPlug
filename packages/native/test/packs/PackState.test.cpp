@@ -20,6 +20,8 @@
 #include "host/packs/PackState.hpp"
 
 #if !defined(_WIN32)
+#include <csignal>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -87,26 +89,35 @@ TEST_CASE("state.json round-trips, is replaced atomically, and a newer one is le
 
 TEST_CASE("updatePackState serialises writers: every change lands", "[packs-folders]") {
     // Each thread takes the exclusive lock on its own open of state.lock, as a second process would, so none of the
-    // read-modify-writes overwrites another's.
+    // read-modify-writes overwrites another's. Catch's assertions are not thread safe, so each thread records its
+    // outcomes and the checks run here.
     TempDir tmp;
     const fs::path root = tmp.roots().data;
+    constexpr int kThreads = 8;
+    constexpr int kEach = 25;
+    std::vector<std::string> failures(kThreads);
     std::vector<std::thread> writers;
-    for (int i = 0; i < 8; ++i)
-        writers.emplace_back([&root, i] {
-            std::string why;
-            updatePackState(
-                root,
-                [i](PackState& s) {
-                    s.packs.push_back({"pack-" + std::to_string(i), "1.0.0", "", false});
-                    return true;
-                },
-                &why);
+    for (int i = 0; i < kThreads; ++i)
+        writers.emplace_back([&root, &failures, i] {
+            for (int j = 0; j < kEach; ++j) {
+                std::string why;
+                const std::string id = "pack-" + std::to_string(i) + "-" + std::to_string(j);
+                const bool ok = updatePackState(
+                    root,
+                    [&id](PackState& s) {
+                        s.packs.push_back({id, "1.0.0", "", false});
+                        return true;
+                    },
+                    &why);
+                if (!ok || !why.empty()) failures[static_cast<std::size_t>(i)] += id + ": " + why + "; ";
+            }
         });
     for (auto& t : writers) t.join();
+    for (const auto& f : failures) CHECK(f.empty());
     std::string why;
     const auto state = readPackState(root, &why);
     REQUIRE(state);
-    CHECK(state->packs.size() == 8);
+    CHECK(state->packs.size() == static_cast<std::size_t>(kThreads * kEach));
 }
 
 TEST_CASE("a version folder is in use while a process holds it", "[packs-folders]") {
@@ -159,6 +170,132 @@ TEST_CASE("a launch settles state.json: pending versions switch, removals go, un
     REQUIRE(settlePackState(root, &why));
     CHECK_FALSE(fs::exists(heldC));
 }
+
+TEST_CASE("a lock on a file that was replaced while it was taken is refused", "[packs-folders]") {
+    // The settle deletes a version folder while it holds the exclusive lock; a hold that opened the lock file before
+    // that must not "hold" a file that is no longer the folder's.
+    TempDir tmp;
+    const fs::path version = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    const fs::path lockFile = version / kVersionLockFile;
+    std::string why;
+    FileLock::Failure failure = FileLock::Failure::None;
+    auto held = FileLock::acquire(
+        lockFile, FileLock::Mode::Shared, true, &why, &failure, [&] {
+            std::error_code ec;
+            fs::remove(lockFile, ec);
+            std::ofstream(lockFile) << "";
+        });
+    CHECK_FALSE(held);
+    CHECK(failure == FileLock::Failure::Replaced);
+    CHECK_THAT(why, ContainsSubstring("being deleted"));
+    // The next hold, on the file now there, is ordinary.
+    CHECK(holdVersion(version, &why));
+}
+
+TEST_CASE("a launch with no state.json sweeps nothing, and a settle that changes nothing writes nothing",
+          "[packs-folders]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    const fs::path version = rp::host::packs::test::install(root, "packfixture");
+    std::string why;
+    REQUIRE(settlePackState(root, &why));
+    CHECK(fs::exists(version));
+    CHECK_FALSE(fs::exists(root / "state.json"));  // nothing recorded, nothing written
+
+    REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "", false}}}, &why));
+    const auto before = fs::last_write_time(root / "state.json");
+    // Leftovers a crash made: a writer's temporary, and a deletion's trash.
+    writeText(root / "state.json.tmp-1-0", "x");
+    writeText(version.parent_path() / ".0.9.0.deleting-1-0" / "pack.json", "{}");
+    REQUIRE(settlePackState(root, &why));
+    CHECK(fs::last_write_time(root / "state.json") == before);
+    CHECK(fs::exists(version));
+    CHECK_FALSE(fs::exists(root / "state.json.tmp-1-0"));
+    CHECK_FALSE(fs::exists(version.parent_path() / ".0.9.0.deleting-1-0"));
+}
+
+TEST_CASE("state.json version 0 is malformed", "[packs-folders]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    writeText(root / "state.json", R"({"version": 0, "packs": []})");
+    std::string why;
+    CHECK_FALSE(readPackState(root, &why));
+    CHECK_THAT(why, ContainsSubstring("is not a version"));
+}
+
+#if !defined(_WIN32)
+TEST_CASE("updatePackState serialises writers across processes", "[packs-folders]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    constexpr int kChildren = 4;
+    constexpr int kEach = 50;
+    std::vector<pid_t> children;
+    for (int c = 0; c < kChildren; ++c) {
+        const pid_t pid = fork();
+        REQUIRE(pid >= 0);
+        if (pid == 0) {
+            // The child only calls what it needs and leaves with _exit, never touching the parent's Catch state.
+            int bad = 0;
+            for (int j = 0; j < kEach; ++j) {
+                std::string why;
+                const std::string id = "child-" + std::to_string(c) + "-" + std::to_string(j);
+                const bool ok = updatePackState(
+                    root,
+                    [&id](PackState& s) {
+                        s.packs.push_back({id, "1.0.0", "", false});
+                        return true;
+                    },
+                    &why);
+                if (!ok) ++bad;
+            }
+            _exit(bad == 0 ? 0 : 1);
+        }
+        children.push_back(pid);
+    }
+    for (const pid_t pid : children) {
+        int status = 0;
+        REQUIRE(waitpid(pid, &status, 0) == pid);
+        CHECK((WIFEXITED(status) && WEXITSTATUS(status) == 0));
+    }
+    std::string why;
+    const auto state = readPackState(root, &why);
+    INFO(why);
+    REQUIRE(state);
+    CHECK(state->packs.size() == static_cast<std::size_t>(kChildren * kEach));
+}
+
+TEST_CASE("a process killed while it holds a version leaves no lock behind", "[packs-folders]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    const fs::path version = rp::host::packs::test::install(root, "packfixture");
+    std::string why;
+    REQUIRE(writePackState(root, PackState{}, &why));
+    int ready[2];
+    REQUIRE(pipe(ready) == 0);
+    const pid_t pid = fork();
+    REQUIRE(pid >= 0);
+    if (pid == 0) {
+        auto held = holdVersion(version, nullptr);
+        const char byte = held ? 1 : 0;
+        (void)!write(ready[1], &byte, 1);
+        for (;;) pause();
+    }
+    char byte = 0;
+    REQUIRE(read(ready[0], &byte, 1) == 1);
+    REQUIRE(byte == 1);
+    CHECK(versionInUse(version));
+    REQUIRE(settlePackState(root, &why));
+    CHECK(fs::exists(version));  // held by the child, so the settle leaves it
+    kill(pid, SIGKILL);
+    int status = 0;
+    REQUIRE(waitpid(pid, &status, 0) == pid);
+    close(ready[0]);
+    close(ready[1]);
+    CHECK_FALSE(versionInUse(version));
+    REQUIRE(settlePackState(root, &why));
+    CHECK_FALSE(fs::exists(version));
+}
+#endif
 
 #if !defined(_WIN32)
 TEST_CASE("a data root this process cannot write is read without a lock", "[packs-folders]") {

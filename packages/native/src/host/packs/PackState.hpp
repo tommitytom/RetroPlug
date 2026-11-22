@@ -11,7 +11,15 @@
 
 // packs/state.json (docs/downloadable-packs-loading-design.md section 1): the installed packs, the version of each
 // that loads, and what waits for the next launch. Versioned raw JSON like every config root: a newer stamp is refused
-// and never overwritten (AGENTS.md, Config migrations), and it keeps only its latest schema.
+// and never overwritten (AGENTS.md, Config migrations), and it keeps only its latest schema. Members this version does
+// not know are not kept when it rewrites the file, so ANY change to the file's shape bumps kPackStateVersion (and adds
+// a migration), an additive one included.
+//
+// The install contract (M4's installer): a version folder is moved into place under packs/<id>/<version>/ and recorded
+// (the updatePackState overload that takes the hold) within ONE exclusive hold of state.lock (lockPackState). A
+// settle deletes every folder no entry names, so a folder moved in outside that hold, or recorded after it, can be
+// deleted before it is recorded. An install in progress is unpacked into a '.'-prefixed folder, which a settle leaves
+// alone.
 //
 // Every access holds <dataRoot>/state.lock: a reader shared, a writer exclusive. So a writer's rename never meets a
 // reader with the file open (which Windows refuses), two writers' read-modify-writes never interleave, and a launch
@@ -44,10 +52,10 @@ std::optional<FileLock> lockPackState(const std::filesystem::path& dataRoot, Fil
 
 // <dataRoot>/state.json under a shared hold, or an empty state when there is none; without a hold when state.lock
 // cannot be made (a root this process cannot write, which nothing can write state.json in either). Nothing, with the
-// reason in *why,
-// for a file whose version is newer than kPackStateVersion (read before the rest, since a newer schema need not
-// parse as this one), that does not parse, or that holds an entry that is not well formed: such a file is left as it
-// is.
+// reason in *why, for a file whose version is newer than kPackStateVersion (read before the rest, since a newer
+// schema need not parse as this one), that does not parse, or that holds an entry that is not well formed: such a file
+// is left as it is. The unlocked read happens only when the lock file cannot be made for want of permission; any other
+// failure to lock is a refusal.
 std::optional<PackState> readPackState(const std::filesystem::path& dataRoot, std::string* why);
 
 // `state` written to <dataRoot>/state.json under an exclusive hold, atomically: to a temporary file beside it, flushed
@@ -61,8 +69,19 @@ bool updatePackState(const std::filesystem::path& dataRoot, const std::function<
 
 // What a launch does before it loads, under one exclusive hold: each pending version becomes active, each pending
 // removal drops its entry, and every version folder no entry names any more is deleted, unless a process holds it.
-// A folder is deleted while this call holds its pack.lock exclusively, so no process can take it in between.
+// A folder is deleted while this call holds its pack.lock exclusively: it is renamed to a '.'-prefixed trash name in
+// the same pack folder (so a process that opened the old lock file finds the path gone and is refused), then removed;
+// trash a crash left behind, and state.json temporaries, are swept by the next settle. A state.json that does not exist
+// is settled to nothing and sweeps nothing: an absent file must not read as "no pack is installed" and delete them
+// all. state.json is rewritten only when the settle changed it. A directory listing that fails is reported through
+// *why after the rest has been done (the state is already settled).
 bool settlePackState(const std::filesystem::path& dataRoot, std::string* why);
+
+// updatePackState for a caller that already holds state.lock exclusively (`held`): the folder move and the record in
+// one hold, which the plain overload, taking its own lock, cannot do (two locks on one file conflict, in one process
+// too).
+bool updatePackState(const std::filesystem::path& dataRoot, const FileLock& held,
+                     const std::function<bool(PackState&)>& change, std::string* why);
 
 // The read and the settle for a caller that already holds state.lock exclusively (`held`, from lockPackState): a
 // launch, which settles, reads and takes its version locks in that one hold.
