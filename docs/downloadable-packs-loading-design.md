@@ -42,15 +42,23 @@ the app's realm; it can be layered on later for untrusted packs).
 
 ## 1. The pack on disk
 
-**Where packs live.** A `packs/` folder in the per-user directory RetroPlug keeps its config in
-(`HostRpcService::configDir`), so the plugin, the standalone and the CLI share one set:
-`$XDG_CONFIG_HOME/retroplug/packs` on Linux, `~/Library/Application Support/RetroPlug/packs` on macOS,
-`%APPDATA%\RetroPlug\packs` on Windows.
+**Where packs live.** In a per-user data directory, so the plugin, the standalone and the CLI share one set. Packs are
+installed data, not configuration, and the bytecode compiled from their bundles is a cache that can always be rebuilt,
+so each goes where its platform keeps that kind of file (not in the config directory, `HostRpcService::configDir`,
+which keeps the user's settings, the Development packs list among them):
+
+| | Packs and `state.json` | Bytecode cache |
+|---|---|---|
+| Linux | `$XDG_DATA_HOME/retroplug/packs` (`~/.local/share/retroplug/packs`) | `$XDG_CACHE_HOME/retroplug/packs` (`~/.cache/retroplug/packs`) |
+| macOS | `~/Library/Application Support/RetroPlug/packs` | `~/Library/Caches/RetroPlug/packs` |
+| Windows | `%LOCALAPPDATA%\RetroPlug\packs` | `%LOCALAPPDATA%\RetroPlug\cache\packs` |
+
+Windows takes the local profile, not the roaming `%APPDATA%`: a domain network copies the roaming profile between
+machines at each logon, and a pack's native libraries are large and machine-specific.
 
 ```
 packs/
   state.json              the installed packs, each one's active version, pending updates and removals
-  cache/                  bytecode compiled from the packs' bundles, per QuickJS version
   mesen/
     1.2.0/                one folder per version
       pack.json
@@ -137,8 +145,8 @@ pack with a native half and no library for this platform is refused, naming the 
 `ui.js`, `cli.js`, `script.js`), leaving every `@retroplug/*` import and the host modules (`react`,
 `react/jsx-runtime`, `lvgljs`, `lvgljs-ui`, `retroplug-cli`) external, so a pack never carries its own copy of the
 contract. Bundles are JavaScript source, not bytecode: source runs on txiki's QuickJS, the web's QuickJS and Node alike.
-The host compiles a bundle to bytecode at load and caches it in `packs/cache/`, keyed by the pack, its version and the
-QuickJS version.
+The host compiles a bundle to bytecode at load and keeps it in the bytecode cache (section 1), keyed by the pack, its
+version and the QuickJS version.
 
 **How the imports resolve.** Each runtime serves the contract modules by their specifiers:
 
