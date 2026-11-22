@@ -1,0 +1,23 @@
+{
+  "id": "packfixture-overdeclared",
+  "name": "Pack fixture (packfixture-overdeclared)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-overdeclared.tone",
+      "rp.packfixture-overdeclared.gain",
+      "rp.packfixture-overdeclared.missing"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-overdeclared"
+  }
+}

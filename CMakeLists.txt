@@ -308,6 +308,8 @@ retroplug_silence_dep_warnings(Catch2 Catch2WithMain)
 # --- the workspace packages (cmake/packages.cmake, docs/modular-graph-phase-e1-design.md section 4): each reads its
 # manifest from its package.json and adds its native/ tree.
 include(cmake/packages.cmake)
+# A package's native half built as a pack too (retroplug_pack), staged under build/packs/.
+include(cmake/packs.cmake)
 # The shape every native test binary shares (see the file for why), for packages/native's and the packs' alike.
 include(cmake/test-binary.cmake)
 

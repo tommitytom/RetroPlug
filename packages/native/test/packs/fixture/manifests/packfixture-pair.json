@@ -1,0 +1,24 @@
+{
+  "id": "packfixture-pair",
+  "name": "Pack fixture (packfixture-pair)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-pair.tone",
+      "rp.packfixture-pair.gain",
+      "rp.packfixture.tone",
+      "rp.packfixture.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-pair"
+  }
+}

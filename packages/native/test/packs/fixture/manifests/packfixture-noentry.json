@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-noentry",
+  "name": "Pack fixture (packfixture-noentry)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-noentry.tone",
+      "rp.packfixture-noentry.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-noentry"
+  }
+}

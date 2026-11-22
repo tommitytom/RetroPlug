@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-duplicate",
+  "name": "Pack fixture (packfixture-duplicate)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.core.add",
+      "rp.packfixture-duplicate.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-duplicate"
+  }
+}

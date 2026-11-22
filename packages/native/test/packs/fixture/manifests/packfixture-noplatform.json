@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-noplatform",
+  "name": "Pack fixture (packfixture-noplatform)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-noplatform.tone",
+      "rp.packfixture-noplatform.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-noplatform"
+  }
+}

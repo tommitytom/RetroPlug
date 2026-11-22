@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-api-newer",
+  "name": "Pack fixture (packfixture-api-newer)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-api-newer.tone",
+      "rp.packfixture-api-newer.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-api-newer"
+  }
+}

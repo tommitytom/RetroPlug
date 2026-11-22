@@ -180,6 +180,9 @@ retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/named/rp_product_p
                            "packages/native/cmake/tests.cmake (a header naming the launchpad provider)"
                            launchpad)
 
+# The fixture pack and its broken variants (test/packs/fixture): modules nothing links, staged under build/packs/.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/fixture ${CMAKE_BINARY_DIR}/packs-fixture)
+
 # What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
 # mode by cmake/check-manifest.cmake) with its own reason, so a rule that stopped firing fails the configure rather than

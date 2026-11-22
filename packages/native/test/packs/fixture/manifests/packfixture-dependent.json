@@ -1,0 +1,24 @@
+{
+  "id": "packfixture-dependent",
+  "name": "Pack fixture (packfixture-dependent)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [
+      "packfixture"
+    ],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-dependent.tone",
+      "rp.packfixture-dependent.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-dependent"
+  }
+}

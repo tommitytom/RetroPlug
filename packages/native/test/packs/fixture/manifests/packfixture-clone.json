@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-clone",
+  "name": "Pack fixture (packfixture-clone)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture.tone",
+      "rp.packfixture.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-clone"
+  }
+}

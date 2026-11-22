@@ -1,0 +1,23 @@
+{
+  "id": "packfixture-tshalf",
+  "name": "Pack fixture (packfixture-tshalf)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-tshalf.tone",
+      "rp.packfixture-tshalf.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-tshalf",
+    "app": "js/app.js"
+  }
+}

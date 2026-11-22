@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-throws",
+  "name": "Pack fixture (packfixture-throws)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-throws.tone",
+      "rp.packfixture-throws.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-throws"
+  }
+}

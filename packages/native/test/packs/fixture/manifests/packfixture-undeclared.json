@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-undeclared",
+  "name": "Pack fixture (packfixture-undeclared)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-undeclared.tone",
+      "rp.packfixture-undeclared.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-undeclared"
+  }
+}

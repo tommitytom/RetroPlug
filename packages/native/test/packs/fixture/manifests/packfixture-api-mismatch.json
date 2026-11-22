@@ -1,0 +1,22 @@
+{
+  "id": "packfixture-api-mismatch",
+  "name": "Pack fixture (packfixture-api-mismatch)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-api-mismatch.tone",
+      "rp.packfixture-api-mismatch.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-api-mismatch"
+  }
+}
