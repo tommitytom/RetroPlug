@@ -143,11 +143,11 @@ struct FakeN8 {
 
     // The user picks a game in the cart's browser and presses Start Game: `startMs` of loading, then the game runs with
     // `mapIndex` in the config block.
-    void startFromBrowser(std::uint16_t mapIndex, int startMs = 100) {
+    void startFromBrowser(std::uint16_t browserMapIndex, int startMs = 100) {
         std::lock_guard<std::mutex> l(mu);
         startingFromBrowser = true;
         startUntil          = std::chrono::steady_clock::now() + std::chrono::milliseconds(startMs);
-        startMapIndex       = mapIndex;
+        startMapIndex       = browserMapIndex;
     }
 
     std::size_t count(const std::string& prefix) {

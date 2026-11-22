@@ -117,7 +117,9 @@ TEST_CASE("reliable link: an ack frees the window; an ack naming a sent frame re
         wire.insert(wire.end(), d, d + n);
         if (seq >= 0) s.onSent(seq, 0);
     };
-    for (std::uint8_t n : { 60, 62, 64 }) s.send(noteOn(0, n, 100).data(), 3, emit);
+    for (const std::uint8_t n : std::initializer_list<std::uint8_t>{ 60, 62, 64 }) {
+        s.send(noteOn(0, n, 100).data(), 3, emit);
+    }
     REQUIRE(s.outstanding() == 3);
 
     const Bytes ack1 = { 0xF5, 1, 2 };   // frame 0 arrived; 1 did not - the ROM read 2 (and dropped it behind the gap)
@@ -160,7 +162,9 @@ TEST_CASE("reliable link: a ROM that lost track (rebooted) is re-synced to the o
         wire.insert(wire.end(), d, d + n);
         if (seq >= 0) s.onSent(seq, 0);
     };
-    for (std::uint8_t n : { 60, 62 }) s.send(noteOn(0, n, 100).data(), 3, emit);
+    for (const std::uint8_t n : std::initializer_list<std::uint8_t>{ 60, 62 }) {
+        s.send(noteOn(0, n, 100).data(), 3, emit);
+    }
     const Bytes ack = { 0xF5, 90, 89 };   // a number we never sent
     s.onBackChannel(ack.data(), ack.size(), 10);
     wire.clear();
