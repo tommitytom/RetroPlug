@@ -156,8 +156,14 @@ The gamepad-axis bus dispatches no app action, and the generator refuses a bindi
 
 ### Downloadable packs
 
-Every pack is built in. The authoring loop, the pack format and downloads, a pack's UI half and unloading a pack (the
-`Engine` has `loadScriptPack` and no unload) are what downloadable packs need (the C1 design's section 8). With them
+M1 built the native half: a pack's native library loads at run time and registers its node types in every
+Engine ([spec/02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time), part 1 of
+[downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md)), and the Mesen package builds as
+one. No host loads a pack at launch, a pack's TypeScript halves, placeholders for a missing pack, archives and the CLI's
+pack commands are that design's M2 to M5, and the allocator the pinned C++ boundary needs on Windows is undecided (its
+Design questions, [downloadable-packs-m1-plan.md](../docs/downloadable-packs-m1-plan.md)). The authoring loop, downloads
+and unloading a pack (the `Engine` has `loadScriptPack` and no unload) are what downloadable packs still need (the C1
+design's section 8). With them
 come menus on extensions (a downloaded pack contributing menu rows, which packages in the tree do through `defineUi`)
 and third-party controller apps: `controllerApps` registers from the product's package list, so an app from outside the
 tree waits for this road. And a provider cannot be downloaded either, since it is reached only through the

@@ -4,8 +4,8 @@
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
 # --- native test binaries ---------------------------------------------------------------------------
-# Sixteen Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING), which
-# `pnpm test:plugin` builds and runs: nine here and the seven the packages declare (retroplug-sameboy-test and
+# Seventeen Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING), which
+# `pnpm test:plugin` builds and runs: ten here and the seven the packages declare (retroplug-sameboy-test and
 # retroplug-mesen-test in the console packages, retroplug-midi-test, retroplug-audio-host-test and
 # retroplug-launchpad-test in theirs, and the N8 pack's retroplug-n8-test and retroplug-serial-test, which
 # `pnpm test:n8` runs alone). The N8 pack's third, a harness that needs a real console on a USB port, is in no suite.
