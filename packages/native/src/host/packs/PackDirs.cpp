@@ -23,6 +23,26 @@ fs::path envPath(const char* name) {
 #endif
 }
 
+// `value` split at `separator`, empty entries dropped: one loop for the narrow and the wide path list.
+template <typename Char>
+std::vector<fs::path> splitAt(std::basic_string_view<Char> value, Char separator) {
+    std::vector<fs::path> out;
+    std::size_t at = 0;
+    while (at <= value.size()) {
+        std::size_t end = value.find(separator, at);
+        if (end == std::basic_string_view<Char>::npos) end = value.size();
+        if (end > at) out.emplace_back(std::basic_string<Char>(value.substr(at, end - at)));
+        at = end + 1;
+    }
+    return out;
+}
+
+// An XDG base directory, empty when it is unset or relative: the XDG spec says a relative one is invalid and ignored.
+[[maybe_unused]] fs::path xdgPath(const char* name) {
+    fs::path p = envPath(name);
+    return p.is_absolute() ? p : fs::path();
+}
+
 }  // namespace
 
 PackRoots defaultPackRoots() {
@@ -43,12 +63,12 @@ PackRoots defaultPackRoots() {
 #else
     const fs::path home = envPath("HOME");
     if (roots.data.empty()) {
-        const fs::path xdg = envPath("XDG_DATA_HOME");
+        const fs::path xdg = xdgPath("XDG_DATA_HOME");
         if (!xdg.empty()) roots.data = xdg / "retroplug" / "packs";
         else if (!home.empty()) roots.data = home / ".local" / "share" / "retroplug" / "packs";
     }
     if (roots.cache.empty()) {
-        const fs::path xdg = envPath("XDG_CACHE_HOME");
+        const fs::path xdg = xdgPath("XDG_CACHE_HOME");
         if (!xdg.empty()) roots.cache = xdg / "retroplug" / "packs";
         else if (!home.empty()) roots.cache = home / ".cache" / "retroplug" / "packs";
     }
@@ -82,20 +102,15 @@ std::string libraryFileName(std::string_view name) {
 
 std::vector<fs::path> splitPackPath(std::string_view value) {
 #if defined(_WIN32)
-    constexpr char kSeparator = ';';
+    return splitAt<char>(value, ';');
 #else
-    constexpr char kSeparator = ':';
+    return splitAt<char>(value, ':');
 #endif
-    std::vector<fs::path> out;
-    std::size_t at = 0;
-    while (at <= value.size()) {
-        std::size_t end = value.find(kSeparator, at);
-        if (end == std::string_view::npos) end = value.size();
-        if (end > at) out.emplace_back(std::string(value.substr(at, end - at)));
-        at = end + 1;
-    }
-    return out;
 }
+
+#if defined(_WIN32)
+std::vector<fs::path> splitPackPath(std::wstring_view value) { return splitAt<wchar_t>(value, L';'); }
+#endif
 
 std::string displayPath(const fs::path& p) {
 #if defined(_WIN32)
@@ -114,16 +129,7 @@ std::vector<fs::path> packPathFromEnv() {
     const fs::path value = envPath("RETROPLUG_PACK_PATH");
     if (value.empty()) return {};
 #if defined(_WIN32)
-    const std::wstring wide = value.native();
-    std::vector<fs::path> out;
-    std::size_t at = 0;
-    while (at <= wide.size()) {
-        std::size_t end = wide.find(L';', at);
-        if (end == std::wstring::npos) end = wide.size();
-        if (end > at) out.emplace_back(wide.substr(at, end - at));
-        at = end + 1;
-    }
-    return out;
+    return splitPackPath(std::wstring_view(value.native()));
 #else
     return splitPackPath(value.string());
 #endif

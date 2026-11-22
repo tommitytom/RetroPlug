@@ -35,6 +35,10 @@ std::string libraryFileName(std::string_view name);
 // The folders a RETROPLUG_PACK_PATH value names, in order: separated by ';' on Windows and ':' elsewhere, as PATH is,
 // with empty entries dropped.
 std::vector<std::filesystem::path> splitPackPath(std::string_view value);
+#if defined(_WIN32)
+// The same split of the wide form packPathFromEnv reads, so a profile path outside the ANSI code page survives.
+std::vector<std::filesystem::path> splitPackPath(std::wstring_view value);
+#endif
 
 // splitPackPath(RETROPLUG_PACK_PATH), or nothing when it is unset.
 std::vector<std::filesystem::path> packPathFromEnv();

@@ -46,6 +46,14 @@ TEST_CASE("the pack roots follow the platform's convention, and the overrides wi
         CHECK(roots.data == fs::path("/home/me/.local/share/retroplug/packs"));
         CHECK(roots.cache == fs::path("/home/me/.cache/retroplug/packs"));
     }
+    {
+        // A relative base directory is invalid under the XDG spec and ignored.
+        const ScopedEnv xdgData("XDG_DATA_HOME", "relative/data");
+        const ScopedEnv xdgCache("XDG_CACHE_HOME", "relative/cache");
+        const PackRoots roots = defaultPackRoots();
+        CHECK(roots.data == fs::path("/home/me/.local/share/retroplug/packs"));
+        CHECK(roots.cache == fs::path("/home/me/.cache/retroplug/packs"));
+    }
     const ScopedEnv xdgData("XDG_DATA_HOME", "/xdg/data");
     const ScopedEnv xdgCache("XDG_CACHE_HOME", "/xdg/cache");
     const PackRoots roots = defaultPackRoots();
@@ -74,6 +82,18 @@ TEST_CASE("RETROPLUG_PACK_PATH splits as PATH does", "[packs-folders]") {
     CHECK(dirs[0] == fs::path("/a"));
     CHECK(dirs[1] == fs::path("/b c"));
 #endif
+    // The environment's value goes through the same splitter, wide on Windows.
+#if defined(_WIN32)
+    const ScopedEnv fromEnv("RETROPLUG_PACK_PATH", "C:\\a;;C:\\b c;");
+    const fs::path first = "C:\\a", second = "C:\\b c";
+#else
+    const ScopedEnv fromEnv("RETROPLUG_PACK_PATH", "/a::/b c:");
+    const fs::path first = "/a", second = "/b c";
+#endif
+    const auto fromVar = packPathFromEnv();
+    REQUIRE(fromVar.size() == 2);
+    CHECK(fromVar[0] == first);
+    CHECK(fromVar[1] == second);
     const ScopedEnv unset("RETROPLUG_PACK_PATH", std::nullopt);
     CHECK(packPathFromEnv().empty());
 }
