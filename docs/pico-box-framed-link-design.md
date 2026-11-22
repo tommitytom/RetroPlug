@@ -248,5 +248,7 @@ The six tasks landed as planned; follow-up passes took the reviews' findings. Wh
     played. The framed build never met it: a stall holds the stream.
   - `faults.sh --ntsc`: 8/8 rounds recovered and played (24 random power cuts), framed after each boot, 7 boots
     abandoned and redone, no stuck menus, no recovery reboots, no uploads.
-  - Not run: the box against the desktop's framed link, which needs the N8 moved back to the PC; spec/07 keeps it.
-    Nothing is pushed.
+  - The box against the desktop's framed link, run on 2026-11-22 with the N8 back on the PC (`timing idle 512
+    --no-kick --tick-ch 3 --kick-ch 6 --db -20`, 3 runs): the desktop's tick p50 6.00 to 6.01 ms and p95 6.31 to 6.32,
+    grid p95 0.31 to 0.32, nothing missed, no re-sends; against the box's 7.52 and 7.96, its path adds about 1.5 ms,
+    of which the CH345 and the MIDI wire are about 1 ms. Nothing is pushed.

@@ -135,7 +135,8 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
   open holds the probe back however long it stays open, and a frame never leaves one open): on a raw link every 250 ms,
   with no read and no wait (the answer is heard on a later turn's back-channel read), which relies on a game's MIDI
   parser ending running status at the `F0`, as MIDI's rule is (one that skipped the `F0` would hear note 42 at velocity
-  116 four times a second); on a framed link only once the window has STOPPED MOVING (the oldest frame unacknowledged
+  116 four times a second; on the lab's Famicom a busy BlipToaster's ticks land the same with the probe as without, 3
+  runs each, 2026-11-22); on a framed link only once the window has STOPPED MOVING (the oldest frame unacknowledged
   past the link's own 100 ms timeout, which is the console reset), holding new frames and re-sends until a `k` (the
   menu) or an ack (a game whose acks are lost or damaged, which streams on and is not asked again for a second: a framed
   BlipToaster drops the probe's bytes as unframed and acknowledges them `F5 <next> <next>`, which is what resumes a

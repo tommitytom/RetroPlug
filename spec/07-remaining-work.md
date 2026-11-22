@@ -67,7 +67,6 @@ than work.
 - [ ] [A 32-bit runner in the build](#a-32-bit-runner-in-the-build)
 - [ ] [The box's stats print can stall a message](#the-boxs-stats-print-can-stall-a-message)
 - [ ] [A SysEx past 3 bytes allocates](#a-sysex-past-3-bytes-allocates)
-- [ ] [The box against the desktop link, timed](#the-box-against-the-desktop-link-timed)
 
 **Feature gaps and SDL**
 - [ ] [Raw LSDj Keyboard sync mode](#raw-lsdj-keyboard-sync-mode)
@@ -105,10 +104,8 @@ and at the menu writes nothing and watches the FPGA config block
 whose section 1 has what the lab's cart showed: an idle menu silent and answering in 7-13 ms, browsing harmless, a
 probe during a browser start ERROR:40, the block's clear on every start). Still owed on the cart: the config watch's
 acceptance (its section 5: the block's clear timed at 10 ms on three ROM sizes, then five browser starts each of
-BlipToaster and Akumajou Densetsu under `retroplug-n8-hwtest menuguard ... follow`, framed and raw, no ERROR); a job
-submitted right after a power-cycle or a RESET to the menu, accepted and promptly; and that the probe a raw stream
-carries four times a second costs a running BlipToaster nothing (`retroplug-n8-hwtest timing busy --raw --guard`
-against the same run without `--guard`) and stalls nothing.
+BlipToaster and Akumajou Densetsu under `retroplug-n8-hwtest menuguard ... follow`, framed and raw, no ERROR); and a
+job submitted right after a power-cycle or a RESET to the menu, accepted and promptly.
 
 ### The Launchpad real-device checklist
 
@@ -552,16 +549,6 @@ every message's worst, so it is recorded, not fixed. ([E3 design](../docs/modula
 A SysEx past 3 bytes allocates a view per message (dying with its block), and at 32 bits a non-whole number read
 allocates, so a SysEx stream makes the box collect in the MIDI path; the policy's worst block fits with 4 KB spare. ([E4
 design](../docs/modular-graph-phase-e4-design.md) section 11.8.)
-
-### The box against the desktop link, timed
-
-The box's framed link and menu guard passed on the lab's NTSC Famicom (2026-11-20: `stress.sh`, `faults.sh`, the
-latency runs against its raw build, RESETs mid-song and idle; [the box's README](../pico/n8-host/README.md) and
-[its design](../docs/pico-box-framed-link-design.md) section 9). One comparison of the design's section 6 was not run,
-as it needs the N8 moved back to the PC between the two: the box framed against the desktop's framed link to the same
-ROM, `retroplug-n8-hwtest timing idle 512 --no-kick --tick-ch 3 --kick-ch 6 --db -20` with and without
-`--midi "CH345 MIDI 1"`, which says what the box's path adds (the `--midi` figure carries the CH345 and the MIDI wire,
-about 1 ms).
 
 ## Feature gaps and SDL
 

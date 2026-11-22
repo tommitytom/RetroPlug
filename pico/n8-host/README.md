@@ -402,6 +402,8 @@ channel 3:
   recovery, latency worst 1,155 us (average ~737) to the N8's acknowledgement; `link=framed` throughout.
 - `timing --midi`, 512 steps, framed against `-DN8_BOX_LINK=0`: with no DMC, tick p50 7.52 against 7.44 ms and p95
   7.96 against 7.89 (both include the CH345 and the MIDI wire), grid error the same (p95 ~0.5 ms), nothing missed.
+  The desktop's framed link to the same cart (2026-11-22, the N8 on the PC, 3 runs): p50 6.00 ms, p95 6.31, so the
+  box's path adds about 1.5 ms, about 1 ms of it the CH345 and the MIDI wire.
   With the DMC kicks, idle, 5 runs each: framed missed no tick (grid p95 0.55 to 0.65 ms, 5 to 26 re-sends a run); raw
   missed 1 to 6 a run, its grid p95 59 to 251 ms. `busy` with the kicks missed 26 to 30 ticks either way: on the one
   mixed feed the bassline and the kicks mask the ticks (with no DMC it missed none either way).
