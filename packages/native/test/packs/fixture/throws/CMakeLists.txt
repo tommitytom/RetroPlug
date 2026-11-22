@@ -5,5 +5,9 @@
 # suppressed, and a directory's CMAKE_CXX_FLAGS is its own.
 if(MSVC)
     string(REPLACE "/EHsc" "/EHs" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    # The variant's point is an entry that may throw: without /EHs it would quietly stop being one.
+    if(NOT CMAKE_CXX_FLAGS MATCHES "/EHs([ ]|$)")
+        message(FATAL_ERROR "packfixture-throws: CMAKE_CXX_FLAGS has no /EHs (${CMAKE_CXX_FLAGS})")
+    endif()
 endif()
 _rp_fixture_variant(packfixture-throws SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/FixtureThrows.cpp ARGS THROWING_ENTRY)
