@@ -96,5 +96,16 @@ if [ "$san" = thread ]; then
     fi
 fi
 
+# The packs, in both modes: a pack loaded on one thread while another plans and a third renders (thread), and the
+# loader's libraries, held folders and the Mesen pack's two copies in one process (address). The pack modules (the
+# fixture's and the Mesen package's) are instrumented with the rest, since the sanitizer flags are global.
+echo "==> building retroplug-packs-test (instrumented)"
+cmake --build "$builddir" -j"$(nproc)" --target retroplug-packs-test
+echo "==> running the packs under $san sanitizer"
+if ! "$repo/$builddir/bin/retroplug-packs-test"; then
+    echo "!! retroplug-packs-test failed under $san sanitizer" >&2
+    rc=1
+fi
+
 [ "$rc" -eq 0 ] && echo "==> host passed under $san sanitizer"
 exit "$rc"
