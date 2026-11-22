@@ -91,8 +91,12 @@ async function runOutsideRepo(): Promise<{ run: Run | null; err: string }> {
     "    entry: fs.existsSync(path.join(work, 'out/ts-stripper-entry.mjs')), before, after: snap() };",
     "  process.stdout.write(JSON.stringify(run));",
     // The scratch tree is this run's, and a run leaves nothing behind: the parent has what it needs in the JSON above.
-    "  fs.rmSync(work, { recursive: true, force: true });",
-    "}).catch((e) => { try { fs.rmSync(work, { recursive: true, force: true }); } catch {}",
+    // Windows refuses to remove the process's working directory (EBUSY), so the run leaves it first; the retries cover
+    // a scanner's brief handle on a file inside it.
+    "  process.chdir(os.tmpdir());",
+    "  fs.rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });",
+    "}).catch((e) => { try { process.chdir(os.tmpdir());",
+    "  fs.rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {}",
     "  process.stderr.write(String((e && e.stack) || e)); process.exit(1); });",
   ].join("");
   const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
