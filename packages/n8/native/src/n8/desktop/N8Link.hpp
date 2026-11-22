@@ -249,7 +249,7 @@ private:
     // serial thread: where the BYTE stream the cart is reading stands, so a release never goes between a status and its
     // data (see atMessageBoundary). wireDataBytes is one message's data bytes from its status.
     void        noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t now, bool streamed);
-    static std::size_t wireDataBytes(std::uint8_t status);
+    static int wireDataBytes(std::uint8_t status);
     bool        atMessageBoundary(std::int64_t now) const;
     // serial thread: no message open on the wire at all, with no time bound: where the guard's probe may go, since a
     // probe that waits for a long-open message costs only its delay (atMessageBoundary lets a release through after

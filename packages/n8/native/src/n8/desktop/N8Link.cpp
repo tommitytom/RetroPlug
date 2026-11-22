@@ -729,7 +729,7 @@ void N8Link::noteWireBytes(const std::uint8_t* data, std::size_t n, std::int64_t
 // One complete MIDI message's data bytes, from its status: 2 for most channel messages, 1 for programme and channel
 // pressure, and 0 for the System Common ones that carry none (a real-time byte is one on its own, and F0 is the SysEx
 // open this tracker follows instead; noteWireBytes steps over real-time bytes, so none of them arrives here).
-std::size_t N8Link::wireDataBytes(std::uint8_t status) {
+int N8Link::wireDataBytes(std::uint8_t status) {
     switch (status & 0xF0) {
         case 0x80: case 0x90: case 0xA0: case 0xB0: case 0xE0: return 2;
         case 0xC0: case 0xD0: return 1;
