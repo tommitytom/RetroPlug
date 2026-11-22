@@ -317,6 +317,7 @@ TEST_CASE("N8CartLink: a control write that keeps failing is retried about once 
     host.link().setLinkAllowed(false);
     N8CartLink link(host);
     link.setExpansionVolume(64);
+    const auto connectedAt = std::chrono::steady_clock::now();
     REQUIRE(host.link().connect("fake"));
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
     int attempts;
@@ -324,10 +325,13 @@ TEST_CASE("N8CartLink: a control write that keeps failing is retried about once 
         std::lock_guard<std::mutex> l(dev.mu);
         attempts = dev.expVolAttempts;
     }
+    const auto waited =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - connectedAt).count();
     // Two in 400 ms: the connect-time one, then the serial thread's first turn. The rest of the second waits, so a
-    // wedged-but-open port cannot take the link's turns (and its config reads) from the MIDI stream.
+    // wedged-but-open port cannot take the link's turns (and its config reads) from the MIDI stream. The bound counts
+    // the time actually waited: a sleep that ran past a second (a loaded runner's can) has seen a retry a second.
     CHECK(attempts >= 1);
-    CHECK(attempts <= 2);
+    CHECK(attempts <= 2 + waited / 1000);
     CHECK(link.connected());
     // And it is a pause, not a stop: the next attempt comes about a second after the failure it followed.
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));

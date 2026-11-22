@@ -1708,7 +1708,15 @@ TEST_CASE("a game started from the cart's browser while the link waits at the me
     std::this_thread::sleep_for(std::chrono::milliseconds(300));  // the menu idles under the guard
     const std::size_t writes = rig.dev.count("fifo:");
     rig.dev.startFromBrowser(69, 400);
-    std::this_thread::sleep_for(std::chrono::milliseconds(450));
+    // Until the start has ended, one way or the other. The fake ends it at the first port call past its 400 ms, which
+    // is the serial thread's next turn, so a fixed 450 ms sleep could look before that turn came (a stalled serial
+    // thread) or long after it (an overshooting sleep, by which time the link had left the menu and written the game
+    // its link probe, which is right). The config watch leaves no sooner than 500 ms after this, so the count below
+    // is read before the link has anything of its own to write.
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return !rig.dev.menu || rig.dev.error40;
+    }));
     {
         std::lock_guard<std::mutex> l(rig.dev.mu);
         CHECK_FALSE(rig.dev.error40);
@@ -1969,7 +1977,9 @@ TEST_CASE("FakeN8: the boot model is off by default, and a boot time keeps the m
         dev.resetToMenu();
         REQUIRE(edio.fifoWR(note, sizeof note).ok());
         CHECK_FALSE(dev.error40);
-        std::this_thread::sleep_for(std::chrono::milliseconds(350));
+        // 365 ms into the boot, the middle of its 330 to 400 ms window: the reset moved back rather than a sleep, which
+        // a machine whose sleeps overshoot by 50 ms carries past the window's end.
+        dev.resetAt -= std::chrono::milliseconds(365);
         REQUIRE(edio.fifoWR(note, sizeof note).ok());
         CHECK(dev.error40);
     }
@@ -2205,13 +2215,19 @@ TEST_CASE("a framed game that is slow or damaged resumes on its ack, and is aske
             rig.dev.linkDamaged = true;
         }
         rig.push({0x90, 0x3E, 0x7F});
+        const auto damagedAt = std::chrono::steady_clock::now();
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         const std::uint64_t resends = rig.host.link().linkResends();
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         CHECK(rig.host.link().linkResends() > resends);  // the re-sends go on: the stall resumed on the probe's ack
         CHECK_FALSE(rig.host.link().atMenu());
         CHECK(rig.cart.connected());
-        CHECK(rig.dev.countExact("fifo:F0 2A 74 F7") <= 3);  // a probe a second, not one a re-send
+        // A probe a second, not one a re-send: three in the 1.5 s the case means to wait, and one more for each second
+        // a sleep that ran long added.
+        const std::size_t probes = rig.dev.countExact("fifo:F0 2A 74 F7");
+        const auto        waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - damagedAt).count();
+        CHECK(probes <= static_cast<std::size_t>(2 + waited / 1000));
     }
 }
 
