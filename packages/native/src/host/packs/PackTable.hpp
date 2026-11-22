@@ -34,7 +34,7 @@ struct LoadedPack {
     std::vector<const rp_package*> packages;  // what rp_pack_entry returned, in its order; empty with no native half
     std::vector<std::string>       packageIds;  // each package's manifest id, index for index
     void*                          library = nullptr;  // never closed
-    std::shared_ptr<FileLock>      lock;               // an installed pack's hold on its version folder
+    std::shared_ptr<FileLock>      lock;  // the hold on its version folder: installed, or development in the data root
 };
 
 // A load's answer: the pack, or null with the reason.
@@ -60,8 +60,10 @@ public:
     PackLoad load(const std::filesystem::path& dir) { return load(PackCandidate{dir}); }
     // Several packs in dependency order: each loads once every pack its requires.packs names has, whatever order the
     // candidates come in; one whose requirement never loads is refused naming it. Answers in the order they loaded,
-    // the refused ones last.
-    std::vector<PackLoad> loadAll(const std::vector<PackCandidate>& candidates);
+    // the refused ones last. `refused`, when given, receives the refusals this call recorded, in the order recorded:
+    // the table's own refusals() also hold other threads' loads, which a caller of one call must not claim.
+    std::vector<PackLoad> loadAll(const std::vector<PackCandidate>& candidates,
+                                  std::vector<PackRefusal>* refused = nullptr);
 
     std::size_t                    size() const;
     const LoadedPack*              find(std::string_view id) const;

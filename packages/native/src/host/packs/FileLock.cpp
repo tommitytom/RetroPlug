@@ -1,7 +1,9 @@
 #include "host/packs/FileLock.hpp"
 
+#include <chrono>
 #include <cstring>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #if defined(_WIN32)
@@ -161,6 +163,22 @@ void FileLock::release() noexcept {
 
 std::optional<FileLock> holdVersion(const fs::path& versionDir, std::string* why, FileLock::Failure* failure) {
     return FileLock::acquire(versionDir / kVersionLockFile, FileLock::Mode::Shared, false, why, failure);
+}
+
+std::optional<FileLock> holdVersionBriefly(const fs::path& versionDir, std::string* why, FileLock::Failure* failure) {
+    constexpr int kAttempts = 5;
+    FileLock::Failure cause = FileLock::Failure::None;
+    std::optional<FileLock> taken;
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        taken = holdVersion(versionDir, why, &cause);
+        if (taken || cause == FileLock::Failure::Replaced) break;
+#if !defined(_WIN32)
+        if (cause == FileLock::Failure::Denied) break;
+#endif
+        if (attempt + 1 < kAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (failure != nullptr) *failure = taken ? FileLock::Failure::None : cause;
+    return taken;
 }
 
 bool versionInUse(const fs::path& versionDir) {

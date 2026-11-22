@@ -303,8 +303,12 @@ bool settlePackState(const fs::path& dataRoot, const FileLock& held, std::string
         if (!p.pending.empty()) {
             // A pending version whose folder is gone (a half-finished install cleaned away) is forgotten, and the
             // active one keeps loading.
-            if (fs::exists(dataRoot / p.id / p.pending / "pack.json", ec)) p.active = p.pending;
-            p.pending.clear();
+            // A manifest that cannot be looked for (an unreadable folder) is not a gone one: the pending version stays
+            // for a launch that can read it.
+            std::error_code lookEc;
+            const bool present = fs::exists(dataRoot / p.id / p.pending / "pack.json", lookEc);
+            if (present) p.active = p.pending;
+            if (present || !lookEc) p.pending.clear();
         }
         kept.push_back(p);
     }

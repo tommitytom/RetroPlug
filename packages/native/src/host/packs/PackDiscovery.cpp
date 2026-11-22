@@ -1,5 +1,6 @@
 #include "host/packs/PackDiscovery.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,6 +28,14 @@ bool isUnder(const fs::path& dir, const fs::path& root) {
     return !rel.empty() && *rel.begin() != ".." && *rel.begin() != ".";
 }
 
+// `dir` as PackTable keys it (lexically normal, no trailing separator), so a spelling of a folder never reads as
+// another one and a refusal never carries an empty name.
+fs::path normalised(const fs::path& dir) {
+    fs::path p = dir.lexically_normal();
+    if (!p.has_filename() && p.has_parent_path()) p = p.parent_path();
+    return p;
+}
+
 // The candidates of `state` (empty when it did not read, `why` then saying why, or null when that was reported
 // already) and of `devDirs`.
 PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState>& state, const std::string* why,
@@ -42,7 +51,13 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
     } else if (!roots.data.empty() && why != nullptr) {
         out.refused.push_back({"state.json", roots.data / "state.json", *why});
     }
-    for (const auto& dir : devDirs) {
+    std::vector<fs::path> given;  // each development folder's canonical path, to drop the same one given twice
+    for (const auto& offered : devDirs) {
+        const fs::path dir = normalised(offered);
+        std::error_code canonEc;
+        const fs::path real = fs::weakly_canonical(dir, canonEc);
+        if (std::find(given.begin(), given.end(), canonEc ? dir : real) != given.end()) continue;
+        given.push_back(canonEc ? dir : real);
         std::string why;
         const auto manifest = readPackManifest(dir, &why, RP_API_LEVEL);  // a level mismatch still names its id
         if (!manifest) {
@@ -83,8 +98,10 @@ PackDiscovery discoverPacks(const PackRoots& roots, const std::vector<fs::path>&
 std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& roots,
                                          const std::vector<fs::path>& extraDevDirs) {
     std::vector<PackRefusal> refused;
-    std::vector<fs::path> devDirs = packPathFromEnv();
-    devDirs.insert(devDirs.end(), extraDevDirs.begin(), extraDevDirs.end());
+    // The explicit folders first: an id given twice loads the first, so a host's --pack beats the environment.
+    std::vector<fs::path> devDirs = extraDevDirs;
+    const std::vector<fs::path> fromEnv = packPathFromEnv();
+    devDirs.insert(devDirs.end(), fromEnv.begin(), fromEnv.end());
     PackDiscovery found;
     {
         // One exclusive hold for the settle, the read, the discovery and the version holds, so another launch's settle
@@ -111,20 +128,34 @@ std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& root
             state = PackState{};
         }
         found = discoverFrom(roots, state, reported ? nullptr : &why, devDirs);
-        for (auto& c : found.candidates) {
-            // An installed folder is held; so is a development one that lies inside the data root, which a settle
-            // can delete as readily (the candidate keeps its Development origin: the loader adopts a hold either way).
-            if (c.origin != PackOrigin::Installed && !(!roots.data.empty() && isUnder(c.dir, roots.data))) continue;
+        for (auto it = found.candidates.begin(); it != found.candidates.end();) {
+            PackCandidate& c = *it;
+            // An installed folder is held; so is a development one that lies inside the data root, which a settle can
+            // delete as readily (the candidate keeps its Development origin: the loader adopts a hold either way).
+            if (c.origin != PackOrigin::Installed && !(!roots.data.empty() && isUnder(c.dir, roots.data))) {
+                ++it;
+                continue;
+            }
             std::string held;
-            if (auto lock = holdVersion(c.dir, &held)) c.lock = std::make_shared<FileLock>(std::move(*lock));
+            FileLock::Failure failure = FileLock::Failure::None;
+            if (auto lock = holdVersionBriefly(c.dir, &held, &failure)) {
+                c.lock = std::make_shared<FileLock>(std::move(*lock));
+                ++it;
+            } else if (c.origin == PackOrigin::Development && failure != FileLock::Failure::Denied) {
+                // Inside the managed root a development folder must be held, not loaded unheld. (An installed one
+                // that is not held here is held, or refused, by the table's own bounded retry.)
+                found.refused.push_back(
+                    {displayPath(c.dir.filename()), c.dir, "cannot hold its version folder: " + held});
+                it = found.candidates.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
     refused.insert(refused.end(), found.refused.begin(), found.refused.end());
-    // The table records each refusal of its own; the ones this launch added are the caller's too.
-    const std::size_t before = table.refusals().size();
-    table.loadAll(found.candidates);
-    const auto all = table.refusals();
-    refused.insert(refused.end(), all.begin() + static_cast<std::ptrdiff_t>(before), all.end());
+    std::vector<PackRefusal> loadRefused;
+    table.loadAll(found.candidates, &loadRefused);
+    refused.insert(refused.end(), loadRefused.begin(), loadRefused.end());
     return refused;
 }
 

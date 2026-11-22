@@ -52,20 +52,53 @@ TEST_CASE("a launch loads each installed pack's active version, and a developmen
 
     // The staged build folder of the same id stands in for the installed one, in its place.
     const fs::path dev = rp::host::packs::test::fixture("packfixture");
-    const auto overridden = discoverPacks(tmp.roots(), {dev, dev});
+    const auto overridden = discoverPacks(tmp.roots(), {dev});
     REQUIRE(overridden.candidates.size() == 2);
     CHECK(overridden.candidates[0].dir == dev);
     CHECK(overridden.candidates[0].origin == PackOrigin::Development);
     CHECK(overridden.candidates[0].overridesInstalled);
-    // The same id given twice as a development pack: the first loads, the second is refused.
-    REQUIRE(overridden.refused.size() == 1);
-    CHECK_THAT(overridden.refused[0].reason, ContainsSubstring("is given twice"));
+    CHECK(overridden.refused.empty());
+
+    // The same folder reached twice (a spelling of it, as RETROPLUG_PACK_PATH and an explicit --pack may give it) is
+    // one candidate and no refusal.
+    const auto same = discoverPacks(tmp.roots(), {dev, fs::path(dev.string() + "/"), dev / "." / ""});
+    CHECK(same.candidates.size() == 2);
+    CHECK(same.refused.empty());
+
+    // Two different folders of one id: the first loads, the second is refused.
+    const fs::path other = tmp.path() / "other-copy";
+    fs::copy(dev, other, fs::copy_options::recursive);
+    const auto twice = discoverPacks(tmp.roots(), {dev, other});
+    CHECK(twice.candidates.size() == 2);
+    REQUIRE(twice.refused.size() == 1);
+    CHECK(twice.refused[0].dir == other);
+    CHECK_THAT(twice.refused[0].reason, ContainsSubstring("is given twice"));
 
     // A development folder with no readable manifest is refused, and nothing else changes.
     const auto broken = discoverPacks(tmp.roots(), {tmp.path() / "nowhere"});
     CHECK(broken.candidates.size() == 2);
     REQUIRE(broken.refused.size() == 1);
     CHECK_THAT(broken.refused[0].reason, ContainsSubstring("cannot read"));
+    // A trailing separator does not leave the refusal with an empty name.
+    const auto slashed = discoverPacks(tmp.roots(), {(tmp.path() / "nowhere").string() + "/"});
+    REQUIRE(slashed.refused.size() == 1);
+    CHECK(slashed.refused[0].id == "nowhere");
+}
+
+TEST_CASE("a folder a host passes beats the same id from RETROPLUG_PACK_PATH", "[packs-discovery]") {
+    TempDir tmp;
+    const fs::path fromEnv = tmp.path() / "from-env";
+    const fs::path explicitDir = tmp.path() / "explicit";
+    fs::copy(fixture("packfixture"), fromEnv, fs::copy_options::recursive);
+    fs::copy(fixture("packfixture"), explicitDir, fs::copy_options::recursive);
+    const rp::host::packs::test::ScopedEnv path("RETROPLUG_PACK_PATH", fromEnv.string());
+    PackTable table(rp::graph::productPackages());
+    const auto refused = loadLaunchPacks(table, tmp.roots(), {explicitDir});
+    REQUIRE(table.find("packfixture") != nullptr);
+    CHECK(table.find("packfixture")->dir == explicitDir);
+    REQUIRE(refused.size() == 1);
+    CHECK(refused[0].dir == fromEnv);
+    CHECK_THAT(refused[0].reason, ContainsSubstring("is given twice"));
 }
 
 TEST_CASE("a launch settles state.json, then loads the installed and the development packs in dependency order",
@@ -161,8 +194,19 @@ TEST_CASE("a development folder inside the installed root is held like an instal
     TempDir tmp;
     const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
     {
+        // Another launch holds state.lock: this one waits, so it holds nothing yet, and takes the version hold only
+        // once it has the lock (the table never takes a hold for a development candidate, so the hold is discovery's).
+        std::string why;
+        auto other = lockPackState(tmp.roots().data, FileLock::Mode::Exclusive, &why);
+        REQUIRE(other);
         PackTable table(rp::graph::productPackages());
-        REQUIRE(loadLaunchPacks(table, tmp.roots(), {dir}).empty());
+        std::vector<PackRefusal> refused;
+        std::thread launch([&] { refused = loadLaunchPacks(table, tmp.roots(), {dir}); });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        CHECK_FALSE(versionInUse(dir));
+        other.reset();
+        launch.join();
+        CHECK(refused.empty());
         const LoadedPack* pack = table.find("packfixture");
         REQUIRE(pack != nullptr);
         CHECK(pack->origin == PackOrigin::Development);
@@ -174,6 +218,79 @@ TEST_CASE("a development folder inside the installed root is held like an instal
     PackTable outside(rp::graph::productPackages());
     REQUIRE(loadLaunchPacks(outside, tmp.roots(), {fixture("packfixture")}).empty());
     CHECK(outside.find("packfixture")->lock == nullptr);
+}
+
+TEST_CASE("which development folders count as inside the data root", "[packs-discovery]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    const auto heldBy = [&](const fs::path& dev) {
+        PackTable table(rp::graph::productPackages());
+        REQUIRE(loadLaunchPacks(table, tmp.roots(), {dev}).empty());
+        REQUIRE(table.find("packfixture") != nullptr);
+        return table.find("packfixture")->lock != nullptr;
+    };
+    // A trailing separator and a "." step are the same folder.
+    CHECK(heldBy(fs::path(dir.string() + "/")));
+    CHECK(heldBy(dir / "." / ""));
+    // A sibling whose name only starts with the data root's ("data2") is not inside it.
+    const fs::path sibling = tmp.path() / "data2";
+    const auto elsewhere = rp::host::packs::test::install(sibling, "packfixture");
+    CHECK_FALSE(heldBy(elsewhere));
+#if !defined(_WIN32)
+    // A symlink outside the root that resolves into it is inside it.
+    const fs::path link = tmp.path() / "link-to-installed";
+    fs::create_symlink(dir, link);
+    CHECK(heldBy(link));
+#endif
+}
+
+TEST_CASE("a development folder inside the data root that cannot be held is refused, not loaded unheld",
+          "[packs-discovery]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    // Another process holds the folder exclusively (a settle deleting it), so a shared hold fails however often it is
+    // tried.
+    std::string why;
+    auto exclusive = FileLock::acquire(dir / kVersionLockFile, FileLock::Mode::Exclusive, false, &why);
+    REQUIRE(exclusive);
+    PackTable table(rp::graph::productPackages());
+    const auto refused = loadLaunchPacks(table, tmp.roots(), {dir});
+    REQUIRE(refused.size() == 1);
+    CHECK(refused[0].id == "1.0.0");
+    CHECK_THAT(refused[0].reason, ContainsSubstring("cannot hold its version folder"));
+    CHECK(table.size() == 0);
+}
+
+TEST_CASE("a launch's own settle deletes a development folder in the data root that state.json does not name",
+          "[packs-discovery]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    rp::host::packs::test::install(root, "packfixture-clone");
+    const auto stray = rp::host::packs::test::install(root, "packfixture");
+    std::string why;
+    REQUIRE(writePackState(root, PackState{{{"packfixture-clone", "1.0.0", "", false}}}, &why));
+    {
+        PackTable table(rp::graph::productPackages());
+        const auto refused = loadLaunchPacks(table, tmp.roots(), {stray});
+        REQUIRE(refused.size() == 1);
+        CHECK_THAT(refused[0].reason, ContainsSubstring("cannot read"));
+        CHECK_FALSE(fs::exists(stray / "pack.json"));
+        CHECK(table.find("packfixture") == nullptr);
+        CHECK(table.find("packfixture-clone") != nullptr);
+    }
+    // Named by state.json (the clone's entry swapped for it: the two register the same node types), the same folder
+    // is kept and loaded, held as an installed one is.
+    const auto named = rp::host::packs::test::install(root, "packfixture");
+    const auto name = [](PackState& s) {
+        s.packs = {{"packfixture", "1.0.0", "", false}};
+        return true;
+    };
+    REQUIRE(updatePackState(root, name, &why));
+    PackTable table(rp::graph::productPackages());
+    REQUIRE(loadLaunchPacks(table, tmp.roots(), {named}).empty());
+    REQUIRE(table.find("packfixture") != nullptr);
+    CHECK(table.find("packfixture")->origin == PackOrigin::Development);
+    CHECK(table.find("packfixture")->lock != nullptr);
 }
 
 #if !defined(_WIN32)

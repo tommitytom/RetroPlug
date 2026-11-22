@@ -81,7 +81,10 @@ bool updatePackState(const std::filesystem::path& dataRoot, const std::function<
 // trash a crash left behind, and state.json temporaries, are swept by the next settle. A state.json that does not exist
 // is settled to nothing and sweeps nothing: an absent file must not read as "no pack is installed" and delete them
 // all. state.json is rewritten only when the settle changed it. A directory listing that fails is reported through
-// *why after the rest has been done (the state is already settled).
+// *why after the rest has been done (the state is already settled). A folder inside the data root that state.json does
+// not name (an installed-looking one a user copied there, or a development folder that happens to live there) is the
+// settle's to delete, like any other. A pending version whose manifest cannot be looked for (an unreadable folder, as
+// against a gone one) stays pending.
 bool settlePackState(const std::filesystem::path& dataRoot, std::string* why);
 
 // updatePackState for a caller that already holds state.lock exclusively (`held`): the folder move and the record in

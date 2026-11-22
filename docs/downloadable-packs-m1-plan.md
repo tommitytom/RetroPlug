@@ -2676,6 +2676,32 @@ TEST_CASE("a data root this process cannot write is read without a lock", "[pack
     CHECK(state->find("packfixture") != nullptr);
     CHECK_FALSE(fs::exists(root / kStateLockFile));
 }
+
+TEST_CASE("a settle keeps a pending version it cannot look for, and promotes it once it can", "[packs-folders]") {
+    if (geteuid() == 0) SKIP("root reads through any permission, so an unreadable folder cannot be made");
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    rp::host::packs::test::install(root, "packfixture", "1.0.0");
+    rp::host::packs::test::install(root, "packfixture", "1.1.0");
+    std::string why;
+    REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "1.1.0", false}}}, &why));
+    // The pack's folder cannot be searched: that the manifest is not there is not known, so the pending version is not
+    // forgotten (the listing failure is reported, as it is for any folder the settle cannot read).
+    const fs::path packDir = root / "packfixture";
+    fs::permissions(packDir, fs::perms::owner_all, fs::perm_options::remove);
+    const bool unreadable = settlePackState(root, &why);
+    fs::permissions(packDir, fs::perms::owner_all, fs::perm_options::add);
+    CHECK_FALSE(unreadable);
+    auto state = readPackState(root, &why);
+    REQUIRE(state);
+    CHECK(state->find("packfixture")->active == "1.0.0");
+    CHECK(state->find("packfixture")->pending == "1.1.0");
+    REQUIRE(settlePackState(root, &why));
+    state = readPackState(root, &why);
+    REQUIRE(state);
+    CHECK(state->find("packfixture")->active == "1.1.0");
+    CHECK(state->find("packfixture")->pending.empty());
+}
 #endif
 ```
 
@@ -2763,6 +2789,13 @@ inline constexpr const char* kVersionLockFile = "pack.lock";
 std::optional<FileLock> holdVersion(const std::filesystem::path& versionDir, std::string* why,
                                     FileLock::Failure* failure = nullptr);
 
+// holdVersion, tried again briefly while the failure is only contention (versionInUse's instant of an exclusive lock,
+// a settle's hold) or, on Windows, an access error that may be a scanner's brief handle on the file (Denied): the one
+// bounded loop the table and a launch's discovery share. A folder being deleted (Replaced) is refused at once, and so
+// is a Denied one elsewhere, where it means a folder this process cannot write and waiting changes nothing.
+std::optional<FileLock> holdVersionBriefly(const std::filesystem::path& versionDir, std::string* why,
+                                           FileLock::Failure* failure);
+
 // Whether any process (this one included) holds `versionDir`: true when an exclusive lock cannot be taken at once. A
 // folder with no lock file is held by nobody. The probe takes the exclusive lock for an instant and lets it go, so a
 // holdVersion that lands in that instant fails once; callers retry or treat it as in use.
@@ -2776,8 +2809,10 @@ Create `packages/native/src/host/packs/FileLock.cpp`:
 ```cpp
 #include "host/packs/FileLock.hpp"
 
+#include <chrono>
 #include <cstring>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #if defined(_WIN32)
@@ -2937,6 +2972,22 @@ void FileLock::release() noexcept {
 
 std::optional<FileLock> holdVersion(const fs::path& versionDir, std::string* why, FileLock::Failure* failure) {
     return FileLock::acquire(versionDir / kVersionLockFile, FileLock::Mode::Shared, false, why, failure);
+}
+
+std::optional<FileLock> holdVersionBriefly(const fs::path& versionDir, std::string* why, FileLock::Failure* failure) {
+    constexpr int kAttempts = 5;
+    FileLock::Failure cause = FileLock::Failure::None;
+    std::optional<FileLock> taken;
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        taken = holdVersion(versionDir, why, &cause);
+        if (taken || cause == FileLock::Failure::Replaced) break;
+#if !defined(_WIN32)
+        if (cause == FileLock::Failure::Denied) break;
+#endif
+        if (attempt + 1 < kAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (failure != nullptr) *failure = taken ? FileLock::Failure::None : cause;
+    return taken;
 }
 
 bool versionInUse(const fs::path& versionDir) {
@@ -3152,7 +3203,10 @@ bool updatePackState(const std::filesystem::path& dataRoot, const std::function<
 // trash a crash left behind, and state.json temporaries, are swept by the next settle. A state.json that does not exist
 // is settled to nothing and sweeps nothing: an absent file must not read as "no pack is installed" and delete them
 // all. state.json is rewritten only when the settle changed it. A directory listing that fails is reported through
-// *why after the rest has been done (the state is already settled).
+// *why after the rest has been done (the state is already settled). A folder inside the data root that state.json does
+// not name (an installed-looking one a user copied there, or a development folder that happens to live there) is the
+// settle's to delete, like any other. A pending version whose manifest cannot be looked for (an unreadable folder, as
+// against a gone one) stays pending.
 bool settlePackState(const std::filesystem::path& dataRoot, std::string* why);
 
 // updatePackState for a caller that already holds state.lock exclusively (`held`): the folder move and the record in
@@ -3477,8 +3531,12 @@ bool settlePackState(const fs::path& dataRoot, const FileLock& held, std::string
         if (!p.pending.empty()) {
             // A pending version whose folder is gone (a half-finished install cleaned away) is forgotten, and the
             // active one keeps loading.
-            if (fs::exists(dataRoot / p.id / p.pending / "pack.json", ec)) p.active = p.pending;
-            p.pending.clear();
+            // A manifest that cannot be looked for (an unreadable folder) is not a gone one: the pending version stays
+            // for a launch that can read it.
+            std::error_code lookEc;
+            const bool present = fs::exists(dataRoot / p.id / p.pending / "pack.json", lookEc);
+            if (present) p.active = p.pending;
+            if (present || !lookEc) p.pending.clear();
         }
         kept.push_back(p);
     }
@@ -3553,7 +3611,7 @@ and in `add_library(retroplug-backend STATIC ...)` delete these two lines:
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 14 test cases)` (11 on Windows, which has no read-only folder case and
+Expected: `All tests passed (... assertions in 15 test cases)` (11 on Windows, which has no read-only folder case and
 no fork cases).
 
 Run: `cmake --build build --target retroplug-host -j$(nproc)`
@@ -4061,14 +4119,15 @@ namespace rp::host::packs {
 
 enum class PackOrigin { Installed, Development };
 
-// A pack the loader may load: its version folder and where it was found. An installed one found by a launch carries
-// the hold on its folder the launch took while it held state.lock (loadLaunchPacks), so no other launch's settle can
-// delete the folder between its discovery and its load; the loader takes one itself for a candidate without.
+// A pack the loader may load: its version folder and where it was found. A candidate found by a launch carries the
+// hold on its folder the launch took while it held state.lock (loadLaunchPacks), so no other launch's settle can delete
+// the folder between its discovery and its load: an installed one, or a development one that lies inside the data
+// root. The loader takes a hold itself for an installed candidate without one, and none for a development one.
 struct PackCandidate {
     std::filesystem::path     dir;
     PackOrigin                origin = PackOrigin::Development;
     bool                      overridesInstalled = false;  // a development pack standing in for an installed one
-    std::shared_ptr<FileLock> lock;                        // an installed folder's hold, when discovery took it
+    std::shared_ptr<FileLock> lock;                        // the hold discovery took, when it took one
 };
 
 struct PackRefusal {
@@ -4205,7 +4264,7 @@ struct LoadedPack {
     std::vector<const rp_package*> packages;  // what rp_pack_entry returned, in its order; empty with no native half
     std::vector<std::string>       packageIds;  // each package's manifest id, index for index
     void*                          library = nullptr;  // never closed
-    std::shared_ptr<FileLock>      lock;               // an installed pack's hold on its version folder
+    std::shared_ptr<FileLock>      lock;  // the hold on its version folder: installed, or development in the data root
 };
 
 // A load's answer: the pack, or null with the reason.
@@ -4231,8 +4290,10 @@ public:
     PackLoad load(const std::filesystem::path& dir) { return load(PackCandidate{dir}); }
     // Several packs in dependency order: each loads once every pack its requires.packs names has, whatever order the
     // candidates come in; one whose requirement never loads is refused naming it. Answers in the order they loaded,
-    // the refused ones last.
-    std::vector<PackLoad> loadAll(const std::vector<PackCandidate>& candidates);
+    // the refused ones last. `refused`, when given, receives the refusals this call recorded, in the order recorded:
+    // the table's own refusals() also hold other threads' loads, which a caller of one call must not claim.
+    std::vector<PackLoad> loadAll(const std::vector<PackCandidate>& candidates,
+                                  std::vector<PackRefusal>* refused = nullptr);
 
     std::size_t                    size() const;
     const LoadedPack*              find(std::string_view id) const;
@@ -4394,8 +4455,10 @@ PackLoad PackTable::load(const PackCandidate& candidate) {
     return loadLocked(candidate);
 }
 
-std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candidates) {
+std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candidates,
+                                         std::vector<PackRefusal>* refused) {
     std::lock_guard<std::mutex> hold(mutex_);
+    const std::size_t refusedBefore = refusals_.size();
     std::vector<PackLoad> out;
     // Each candidate's requirements, read once; one whose manifest does not parse is loaded straight away, which
     // refuses it with the parse's reason.
@@ -4459,6 +4522,8 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
         else
             out.push_back(loadLocked(p.candidate));
     }
+    if (refused != nullptr)
+        refused->assign(refusals_.begin() + static_cast<std::ptrdiff_t>(refusedBefore), refusals_.end());
     return out;
 }
 
@@ -4480,20 +4545,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     std::shared_ptr<FileLock> hold = candidate.lock;
     if (candidate.origin == PackOrigin::Installed && !hold) {
         FileLock::Failure failure = FileLock::Failure::None;
-        std::optional<FileLock> taken;
-        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold), or on
-        // Windows an access error that may be a scanner's brief handle on the file (Denied), is tried again briefly; a
-        // folder being deleted (Replaced) is refused at once, and so is a Denied one elsewhere, where it means a
-        // folder this process cannot write and waiting changes nothing.
-        constexpr int kAttempts = 5;
-        for (int attempt = 0; attempt < kAttempts; ++attempt) {
-            taken = holdVersion(candidate.dir, &why, &failure);
-            if (taken || failure == FileLock::Failure::Replaced) break;
-#if !defined(_WIN32)
-            if (failure == FileLock::Failure::Denied) break;
-#endif
-            if (attempt + 1 < kAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        std::optional<FileLock> taken = holdVersionBriefly(candidate.dir, &why, &failure);
         if (taken) {
             hold = std::make_shared<FileLock>(std::move(*taken));
         } else if (failure != FileLock::Failure::Denied) {
@@ -4792,7 +4844,7 @@ Expected: it builds; `PackManifest.test.cpp`'s cases still pass (they pass no ho
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 28 test cases)` on Linux (27 on macOS, without the dynamic-symbol case;
+Expected: `All tests passed (... assertions in 29 test cases)` on Linux (28 on macOS, without the dynamic-symbol case;
 24 on Windows, without the read-only folder case too).
 
 - [ ] **Step 8: Commit**
@@ -4818,7 +4870,7 @@ cmake --build build --target retroplug-packs-test -j
 build\bin\retroplug-packs-test.exe             (Windows)    build/bin/retroplug-packs-test   (macOS)
 ```
 
-Expected: `All tests passed (... assertions in 27 test cases)` on macOS and `24` on Windows. What this proves there:
+Expected: `All tests passed (... assertions in 28 test cases)` on macOS and `24` on Windows. What this proves there:
 the module's export list (an exported-symbols list on macOS, `dllexport` on Windows) and the withheld variant's;
 `LoadLibraryExW` and the `.dylib` path; on MSVC, that the throwing variant compiles under `/W4 /WX` (its throw in a C++
 helper, its directory at `/EHs`) and that the loader's handler, compiled at the tree's `/EHsc`, catches it and refuses
@@ -4894,20 +4946,53 @@ TEST_CASE("a launch loads each installed pack's active version, and a developmen
 
     // The staged build folder of the same id stands in for the installed one, in its place.
     const fs::path dev = rp::host::packs::test::fixture("packfixture");
-    const auto overridden = discoverPacks(tmp.roots(), {dev, dev});
+    const auto overridden = discoverPacks(tmp.roots(), {dev});
     REQUIRE(overridden.candidates.size() == 2);
     CHECK(overridden.candidates[0].dir == dev);
     CHECK(overridden.candidates[0].origin == PackOrigin::Development);
     CHECK(overridden.candidates[0].overridesInstalled);
-    // The same id given twice as a development pack: the first loads, the second is refused.
-    REQUIRE(overridden.refused.size() == 1);
-    CHECK_THAT(overridden.refused[0].reason, ContainsSubstring("is given twice"));
+    CHECK(overridden.refused.empty());
+
+    // The same folder reached twice (a spelling of it, as RETROPLUG_PACK_PATH and an explicit --pack may give it) is
+    // one candidate and no refusal.
+    const auto same = discoverPacks(tmp.roots(), {dev, fs::path(dev.string() + "/"), dev / "." / ""});
+    CHECK(same.candidates.size() == 2);
+    CHECK(same.refused.empty());
+
+    // Two different folders of one id: the first loads, the second is refused.
+    const fs::path other = tmp.path() / "other-copy";
+    fs::copy(dev, other, fs::copy_options::recursive);
+    const auto twice = discoverPacks(tmp.roots(), {dev, other});
+    CHECK(twice.candidates.size() == 2);
+    REQUIRE(twice.refused.size() == 1);
+    CHECK(twice.refused[0].dir == other);
+    CHECK_THAT(twice.refused[0].reason, ContainsSubstring("is given twice"));
 
     // A development folder with no readable manifest is refused, and nothing else changes.
     const auto broken = discoverPacks(tmp.roots(), {tmp.path() / "nowhere"});
     CHECK(broken.candidates.size() == 2);
     REQUIRE(broken.refused.size() == 1);
     CHECK_THAT(broken.refused[0].reason, ContainsSubstring("cannot read"));
+    // A trailing separator does not leave the refusal with an empty name.
+    const auto slashed = discoverPacks(tmp.roots(), {(tmp.path() / "nowhere").string() + "/"});
+    REQUIRE(slashed.refused.size() == 1);
+    CHECK(slashed.refused[0].id == "nowhere");
+}
+
+TEST_CASE("a folder a host passes beats the same id from RETROPLUG_PACK_PATH", "[packs-discovery]") {
+    TempDir tmp;
+    const fs::path fromEnv = tmp.path() / "from-env";
+    const fs::path explicitDir = tmp.path() / "explicit";
+    fs::copy(fixture("packfixture"), fromEnv, fs::copy_options::recursive);
+    fs::copy(fixture("packfixture"), explicitDir, fs::copy_options::recursive);
+    const rp::host::packs::test::ScopedEnv path("RETROPLUG_PACK_PATH", fromEnv.string());
+    PackTable table(rp::graph::productPackages());
+    const auto refused = loadLaunchPacks(table, tmp.roots(), {explicitDir});
+    REQUIRE(table.find("packfixture") != nullptr);
+    CHECK(table.find("packfixture")->dir == explicitDir);
+    REQUIRE(refused.size() == 1);
+    CHECK(refused[0].dir == fromEnv);
+    CHECK_THAT(refused[0].reason, ContainsSubstring("is given twice"));
 }
 
 TEST_CASE("a launch settles state.json, then loads the installed and the development packs in dependency order",
@@ -5003,8 +5088,19 @@ TEST_CASE("a development folder inside the installed root is held like an instal
     TempDir tmp;
     const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
     {
+        // Another launch holds state.lock: this one waits, so it holds nothing yet, and takes the version hold only
+        // once it has the lock (the table never takes a hold for a development candidate, so the hold is discovery's).
+        std::string why;
+        auto other = lockPackState(tmp.roots().data, FileLock::Mode::Exclusive, &why);
+        REQUIRE(other);
         PackTable table(rp::graph::productPackages());
-        REQUIRE(loadLaunchPacks(table, tmp.roots(), {dir}).empty());
+        std::vector<PackRefusal> refused;
+        std::thread launch([&] { refused = loadLaunchPacks(table, tmp.roots(), {dir}); });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        CHECK_FALSE(versionInUse(dir));
+        other.reset();
+        launch.join();
+        CHECK(refused.empty());
         const LoadedPack* pack = table.find("packfixture");
         REQUIRE(pack != nullptr);
         CHECK(pack->origin == PackOrigin::Development);
@@ -5016,6 +5112,79 @@ TEST_CASE("a development folder inside the installed root is held like an instal
     PackTable outside(rp::graph::productPackages());
     REQUIRE(loadLaunchPacks(outside, tmp.roots(), {fixture("packfixture")}).empty());
     CHECK(outside.find("packfixture")->lock == nullptr);
+}
+
+TEST_CASE("which development folders count as inside the data root", "[packs-discovery]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    const auto heldBy = [&](const fs::path& dev) {
+        PackTable table(rp::graph::productPackages());
+        REQUIRE(loadLaunchPacks(table, tmp.roots(), {dev}).empty());
+        REQUIRE(table.find("packfixture") != nullptr);
+        return table.find("packfixture")->lock != nullptr;
+    };
+    // A trailing separator and a "." step are the same folder.
+    CHECK(heldBy(fs::path(dir.string() + "/")));
+    CHECK(heldBy(dir / "." / ""));
+    // A sibling whose name only starts with the data root's ("data2") is not inside it.
+    const fs::path sibling = tmp.path() / "data2";
+    const auto elsewhere = rp::host::packs::test::install(sibling, "packfixture");
+    CHECK_FALSE(heldBy(elsewhere));
+#if !defined(_WIN32)
+    // A symlink outside the root that resolves into it is inside it.
+    const fs::path link = tmp.path() / "link-to-installed";
+    fs::create_symlink(dir, link);
+    CHECK(heldBy(link));
+#endif
+}
+
+TEST_CASE("a development folder inside the data root that cannot be held is refused, not loaded unheld",
+          "[packs-discovery]") {
+    TempDir tmp;
+    const auto dir = rp::host::packs::test::install(tmp.roots().data, "packfixture");
+    // Another process holds the folder exclusively (a settle deleting it), so a shared hold fails however often it is
+    // tried.
+    std::string why;
+    auto exclusive = FileLock::acquire(dir / kVersionLockFile, FileLock::Mode::Exclusive, false, &why);
+    REQUIRE(exclusive);
+    PackTable table(rp::graph::productPackages());
+    const auto refused = loadLaunchPacks(table, tmp.roots(), {dir});
+    REQUIRE(refused.size() == 1);
+    CHECK(refused[0].id == "1.0.0");
+    CHECK_THAT(refused[0].reason, ContainsSubstring("cannot hold its version folder"));
+    CHECK(table.size() == 0);
+}
+
+TEST_CASE("a launch's own settle deletes a development folder in the data root that state.json does not name",
+          "[packs-discovery]") {
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    rp::host::packs::test::install(root, "packfixture-clone");
+    const auto stray = rp::host::packs::test::install(root, "packfixture");
+    std::string why;
+    REQUIRE(writePackState(root, PackState{{{"packfixture-clone", "1.0.0", "", false}}}, &why));
+    {
+        PackTable table(rp::graph::productPackages());
+        const auto refused = loadLaunchPacks(table, tmp.roots(), {stray});
+        REQUIRE(refused.size() == 1);
+        CHECK_THAT(refused[0].reason, ContainsSubstring("cannot read"));
+        CHECK_FALSE(fs::exists(stray / "pack.json"));
+        CHECK(table.find("packfixture") == nullptr);
+        CHECK(table.find("packfixture-clone") != nullptr);
+    }
+    // Named by state.json (the clone's entry swapped for it: the two register the same node types), the same folder
+    // is kept and loaded, held as an installed one is.
+    const auto named = rp::host::packs::test::install(root, "packfixture");
+    const auto name = [](PackState& s) {
+        s.packs = {{"packfixture", "1.0.0", "", false}};
+        return true;
+    };
+    REQUIRE(updatePackState(root, name, &why));
+    PackTable table(rp::graph::productPackages());
+    REQUIRE(loadLaunchPacks(table, tmp.roots(), {named}).empty());
+    REQUIRE(table.find("packfixture") != nullptr);
+    CHECK(table.find("packfixture")->origin == PackOrigin::Development);
+    CHECK(table.find("packfixture")->lock != nullptr);
 }
 
 #if !defined(_WIN32)
@@ -5077,8 +5246,10 @@ Create `packages/native/src/host/packs/PackDiscovery.hpp`:
 #include "host/packs/PackDirs.hpp"
 
 // Which packs a launch loads (docs/downloadable-packs-loading-design.md section 1): each installed pack's active
-// version, from state.json, and every development pack folder, RETROPLUG_PACK_PATH's and the ones a host passes (the
-// CLI's --pack and Settings' Development packs, M4). A development pack overrides an installed one with the same id.
+// version, from state.json, and every development pack folder, the ones a host passes (the CLI's --pack and Settings'
+// Development packs, M4) and then RETROPLUG_PACK_PATH's, so an explicit choice beats the environment. A development
+// pack overrides an installed one with the same id. A folder inside the data root is the launch's settle's to delete
+// unless state.json names it (PackState.hpp), development or not.
 namespace rp::host::packs {
 
 class PackTable;
@@ -5088,15 +5259,18 @@ struct PackDiscovery {
     std::vector<PackRefusal>   refused;     // a folder that could not be a candidate, with the reason
 };
 
-// The candidates under `roots` and in `devDirs` (in order; a later folder of an id already given is refused). A
-// state.json that does not read (corrupt, or a newer RetroPlug's) loads no installed pack and is reported once.
+// The candidates under `roots` and in `devDirs` (in order; a later folder of an id already given is refused, and the
+// same folder given twice, by whatever spelling, is one candidate and no refusal). A state.json that does not read
+// (corrupt, or a newer RetroPlug's) loads no installed pack and is reported once.
 PackDiscovery discoverPacks(const PackRoots& roots, const std::vector<std::filesystem::path>& devDirs);
 
 // What a host's launch does. Under one exclusive hold of state.lock: settle state.json (pending updates and removals),
-// read it, discover, and take the hold on each installed candidate's version folder; then, with state.lock let go,
-// load in dependency order into `table`, which keeps those holds. So another launch's settle, which takes state.lock
-// too, deletes a version folder either before this launch discovers it or not at all. The development folders are
-// RETROPLUG_PACK_PATH's followed by `extraDevDirs`. Returns every refusal, discovery's and the loads'.
+// read it, discover, and take the hold on each installed candidate's version folder and on each development one whose
+// canonical path lies inside the data root (a folder a settle could delete as readily; one that cannot be held there
+// is refused, not loaded unheld); then, with state.lock let go, load in
+// dependency order into `table`, which keeps those holds. So another launch's settle, which takes state.lock too,
+// deletes a version folder either before this launch discovers it or not at all. The development folders are
+// `extraDevDirs` followed by RETROPLUG_PACK_PATH's. Returns every refusal, discovery's and the loads'.
 std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& roots,
                                          const std::vector<std::filesystem::path>& extraDevDirs);
 
@@ -5108,6 +5282,7 @@ Create `packages/native/src/host/packs/PackDiscovery.cpp`:
 ```cpp
 #include "host/packs/PackDiscovery.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -5135,6 +5310,14 @@ bool isUnder(const fs::path& dir, const fs::path& root) {
     return !rel.empty() && *rel.begin() != ".." && *rel.begin() != ".";
 }
 
+// `dir` as PackTable keys it (lexically normal, no trailing separator), so a spelling of a folder never reads as
+// another one and a refusal never carries an empty name.
+fs::path normalised(const fs::path& dir) {
+    fs::path p = dir.lexically_normal();
+    if (!p.has_filename() && p.has_parent_path()) p = p.parent_path();
+    return p;
+}
+
 // The candidates of `state` (empty when it did not read, `why` then saying why, or null when that was reported
 // already) and of `devDirs`.
 PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState>& state, const std::string* why,
@@ -5150,7 +5333,13 @@ PackDiscovery discoverFrom(const PackRoots& roots, const std::optional<PackState
     } else if (!roots.data.empty() && why != nullptr) {
         out.refused.push_back({"state.json", roots.data / "state.json", *why});
     }
-    for (const auto& dir : devDirs) {
+    std::vector<fs::path> given;  // each development folder's canonical path, to drop the same one given twice
+    for (const auto& offered : devDirs) {
+        const fs::path dir = normalised(offered);
+        std::error_code canonEc;
+        const fs::path real = fs::weakly_canonical(dir, canonEc);
+        if (std::find(given.begin(), given.end(), canonEc ? dir : real) != given.end()) continue;
+        given.push_back(canonEc ? dir : real);
         std::string why;
         const auto manifest = readPackManifest(dir, &why, RP_API_LEVEL);  // a level mismatch still names its id
         if (!manifest) {
@@ -5191,8 +5380,10 @@ PackDiscovery discoverPacks(const PackRoots& roots, const std::vector<fs::path>&
 std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& roots,
                                          const std::vector<fs::path>& extraDevDirs) {
     std::vector<PackRefusal> refused;
-    std::vector<fs::path> devDirs = packPathFromEnv();
-    devDirs.insert(devDirs.end(), extraDevDirs.begin(), extraDevDirs.end());
+    // The explicit folders first: an id given twice loads the first, so a host's --pack beats the environment.
+    std::vector<fs::path> devDirs = extraDevDirs;
+    const std::vector<fs::path> fromEnv = packPathFromEnv();
+    devDirs.insert(devDirs.end(), fromEnv.begin(), fromEnv.end());
     PackDiscovery found;
     {
         // One exclusive hold for the settle, the read, the discovery and the version holds, so another launch's settle
@@ -5219,20 +5410,34 @@ std::vector<PackRefusal> loadLaunchPacks(PackTable& table, const PackRoots& root
             state = PackState{};
         }
         found = discoverFrom(roots, state, reported ? nullptr : &why, devDirs);
-        for (auto& c : found.candidates) {
-            // An installed folder is held; so is a development one that lies inside the data root, which a settle
-            // can delete as readily (the candidate keeps its Development origin: the loader adopts a hold either way).
-            if (c.origin != PackOrigin::Installed && !(!roots.data.empty() && isUnder(c.dir, roots.data))) continue;
+        for (auto it = found.candidates.begin(); it != found.candidates.end();) {
+            PackCandidate& c = *it;
+            // An installed folder is held; so is a development one that lies inside the data root, which a settle can
+            // delete as readily (the candidate keeps its Development origin: the loader adopts a hold either way).
+            if (c.origin != PackOrigin::Installed && !(!roots.data.empty() && isUnder(c.dir, roots.data))) {
+                ++it;
+                continue;
+            }
             std::string held;
-            if (auto lock = holdVersion(c.dir, &held)) c.lock = std::make_shared<FileLock>(std::move(*lock));
+            FileLock::Failure failure = FileLock::Failure::None;
+            if (auto lock = holdVersionBriefly(c.dir, &held, &failure)) {
+                c.lock = std::make_shared<FileLock>(std::move(*lock));
+                ++it;
+            } else if (c.origin == PackOrigin::Development && failure != FileLock::Failure::Denied) {
+                // Inside the managed root a development folder must be held, not loaded unheld. (An installed one
+                // that is not held here is held, or refused, by the table's own bounded retry.)
+                found.refused.push_back(
+                    {displayPath(c.dir.filename()), c.dir, "cannot hold its version folder: " + held});
+                it = found.candidates.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
     refused.insert(refused.end(), found.refused.begin(), found.refused.end());
-    // The table records each refusal of its own; the ones this launch added are the caller's too.
-    const std::size_t before = table.refusals().size();
-    table.loadAll(found.candidates);
-    const auto all = table.refusals();
-    refused.insert(refused.end(), all.begin() + static_cast<std::ptrdiff_t>(before), all.end());
+    std::vector<PackRefusal> loadRefused;
+    table.loadAll(found.candidates, &loadRefused);
+    refused.insert(refused.end(), loadRefused.begin(), loadRefused.end());
     return refused;
 }
 
@@ -5245,13 +5450,12 @@ In `add_library(retroplug-packs STATIC ...)`, after the `src/host/packs/PackTabl
     src/host/packs/PackDiscovery.cpp
 ```
 
-- [ ] **Step 4: Compile the held development folder (written after the rest of this task, never compiled)**
+- [ ] **Step 4: Build the held development folder**
 
-The `isUnder` helper in `PackDiscovery.cpp`, the widened hold loop in `loadLaunchPacks`, and the test case "a
-development folder inside the installed root is held like an installed one" were added to this task after its code was
-compiled. Build them first and fix what the compiler or the case finds (the plan's text is the intent: a development
-candidate whose canonical path is under the canonical data root is held with `holdVersion` inside the `state.lock`
-section, `c.lock` set, its origin left `Development`; a development folder outside the root takes no hold).
+The `isUnder` helper in `PackDiscovery.cpp`, the hold loop in `loadLaunchPacks` (a development folder whose canonical
+path is under the canonical data root is held with `holdVersionBriefly` inside the `state.lock` section, `c.lock` set,
+its origin left `Development`; one that cannot be held is refused; one outside the root takes no hold) and their test
+cases are built with the rest of the task.
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc)`
 Expected: it builds.
@@ -5259,7 +5463,7 @@ Expected: it builds.
 - [ ] **Step 5: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 35 test cases)` on Linux (34 on macOS, 30 on Windows).
+Expected: `All tests passed (... assertions in 40 test cases)` on Linux (39 on macOS, 34 on Windows).
 
 - [ ] **Step 6: Commit**
 
@@ -5793,7 +5997,7 @@ void Engine::syncPacks() {
 - [ ] **Step 7: Run the tests**
 
 Run: `cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 42 test cases)` on Linux (41 on macOS, 37 on Windows), and two stderr
+Expected: `All tests passed (... assertions in 47 test cases)` on Linux (46 on macOS, 41 on Windows), and two stderr
 lines from the
 cases that refuse a pack in one Engine:
 `[engine] pack packfixture was refused here: package "rp.packfixture" is already registered` and
@@ -5885,7 +6089,7 @@ TSAN_OPTIONS="suppressions=$PWD/packages/native/test/sanitizer/tsan.supp halt_on
     build-tsan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 42 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
+Expected: `All tests passed (... assertions in 47 test cases)` and no `WARNING: ThreadSanitizer` line. Confirm the
 modules are instrumented:
 
 ```bash
@@ -5903,7 +6107,7 @@ cmake --build build-asan --target retroplug-packs-test -j$(nproc)
 ASAN_OPTIONS="abort_on_error=1 detect_leaks=1" build-asan/bin/retroplug-packs-test
 ```
 
-Expected: `All tests passed (... assertions in 42 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
+Expected: `All tests passed (... assertions in 47 test cases)`, exit 0, no `ERROR: AddressSanitizer` or
 `ERROR: LeakSanitizer` line.
 
 - [ ] **Step 4: Commit**
@@ -6310,7 +6514,7 @@ retroplug_pack(mesen)
 - [ ] **Step 5: Build and run**
 
 Run: `pnpm configure && cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 45 test cases)` on Linux (44 on macOS; on Windows 40, the PCM case
+Expected: `All tests passed (... assertions in 50 test cases)` on Linux (49 on macOS; on Windows 44, the PCM case
 among them reported skipped in Catch2's own summary). The Mesen cases print each boot's iNES lines twice (one per
 build) and pass.
 
@@ -6372,7 +6576,7 @@ git commit -m "packs: the Mesen package built as a pack renders its static build
 - [ ] **Step 8: Cross-platform gate, before anything is pushed**
 
 As at the end of Task 6, on a Windows and a macOS machine, from this commit: build `retroplug-packs-test` and run it.
-Expected: on macOS `All tests passed (... assertions in 44 test cases)` (the Mesen module a `.dylib` built for the
+Expected: on macOS `All tests passed (... assertions in 49 test cases)` (the Mesen module a `.dylib` built for the
 architectures the build names: CI's `build.yml` passes `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"`); on Windows every
 case passes and the Mesen PCM case is reported skipped, with `rp-mesen.dll` built and its descriptors equal to the
 static build's. Then `pnpm test:plugin` on both (`test.bat plugin` on Windows). The user pushes only after both pass.
@@ -6427,8 +6631,8 @@ folder). `PackManifest` parses and checks `pack.json` (a library is always `rp-<
 under a shared hold of `state.lock` and writes it under an exclusive one, through a temporary file and a rename, and
 settles pending updates and removals at a launch; `FileLock` is the shared lock a process holds in each installed
 version folder it opened, loaded or refused, which a settle must take exclusively, and keep while it deletes, before it
-deletes the folder; `PackDiscovery` finds the installed packs and the development folders (`RETROPLUG_PACK_PATH`, then
-the ones a host passes), a development pack overriding an installed one of its id, and `loadLaunchPacks` settles,
+deletes the folder; `PackDiscovery` finds the installed packs and the development folders (the ones a host passes, then
+`RETROPLUG_PACK_PATH`'s, so an explicit choice wins), a development pack overriding an installed one of its id, and `loadLaunchPacks` settles,
 discovers and takes its version locks in one exclusive hold of `state.lock`, so another launch's settle never deletes
 a folder between this one's discovery and its load.
 
@@ -6677,7 +6881,8 @@ Expected: only `deps/sameboy` (` m deps/sameboy`, expected after a configure; ne
 16. **A development folder inside the installed root** (a `--pack` or `RETROPLUG_PACK_PATH` entry that is really
     `packs/<id>/<version>/`) would load unheld, so a settle could delete a folder with a library open from it. Resolved
     in Task 7: `loadLaunchPacks` holds any candidate whose canonical path lies under the canonical data root, inside
-    the `state.lock` section, and the pack keeps its Development origin. (Task 7's code for this is not compiled yet.)
+    the `state.lock` section (one that cannot be held there is refused, never loaded unheld), and the pack keeps its
+    Development origin.
 
 ## Self-review
 

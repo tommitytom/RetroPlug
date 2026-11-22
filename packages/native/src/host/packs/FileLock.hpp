@@ -66,6 +66,13 @@ inline constexpr const char* kVersionLockFile = "pack.lock";
 std::optional<FileLock> holdVersion(const std::filesystem::path& versionDir, std::string* why,
                                     FileLock::Failure* failure = nullptr);
 
+// holdVersion, tried again briefly while the failure is only contention (versionInUse's instant of an exclusive lock,
+// a settle's hold) or, on Windows, an access error that may be a scanner's brief handle on the file (Denied): the one
+// bounded loop the table and a launch's discovery share. A folder being deleted (Replaced) is refused at once, and so
+// is a Denied one elsewhere, where it means a folder this process cannot write and waiting changes nothing.
+std::optional<FileLock> holdVersionBriefly(const std::filesystem::path& versionDir, std::string* why,
+                                           FileLock::Failure* failure);
+
 // Whether any process (this one included) holds `versionDir`: true when an exclusive lock cannot be taken at once. A
 // folder with no lock file is held by nobody. The probe takes the exclusive lock for an instant and lets it go, so a
 // holdVersion that lands in that instant fails once; callers retry or treat it as in use.

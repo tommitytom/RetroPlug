@@ -369,4 +369,30 @@ TEST_CASE("a data root this process cannot write is read without a lock", "[pack
     CHECK(state->find("packfixture") != nullptr);
     CHECK_FALSE(fs::exists(root / kStateLockFile));
 }
+
+TEST_CASE("a settle keeps a pending version it cannot look for, and promotes it once it can", "[packs-folders]") {
+    if (geteuid() == 0) SKIP("root reads through any permission, so an unreadable folder cannot be made");
+    TempDir tmp;
+    const fs::path root = tmp.roots().data;
+    rp::host::packs::test::install(root, "packfixture", "1.0.0");
+    rp::host::packs::test::install(root, "packfixture", "1.1.0");
+    std::string why;
+    REQUIRE(writePackState(root, PackState{{{"packfixture", "1.0.0", "1.1.0", false}}}, &why));
+    // The pack's folder cannot be searched: that the manifest is not there is not known, so the pending version is not
+    // forgotten (the listing failure is reported, as it is for any folder the settle cannot read).
+    const fs::path packDir = root / "packfixture";
+    fs::permissions(packDir, fs::perms::owner_all, fs::perm_options::remove);
+    const bool unreadable = settlePackState(root, &why);
+    fs::permissions(packDir, fs::perms::owner_all, fs::perm_options::add);
+    CHECK_FALSE(unreadable);
+    auto state = readPackState(root, &why);
+    REQUIRE(state);
+    CHECK(state->find("packfixture")->active == "1.0.0");
+    CHECK(state->find("packfixture")->pending == "1.1.0");
+    REQUIRE(settlePackState(root, &why));
+    state = readPackState(root, &why);
+    REQUIRE(state);
+    CHECK(state->find("packfixture")->active == "1.1.0");
+    CHECK(state->find("packfixture")->pending.empty());
+}
 #endif

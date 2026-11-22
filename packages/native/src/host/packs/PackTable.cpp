@@ -127,8 +127,10 @@ PackLoad PackTable::load(const PackCandidate& candidate) {
     return loadLocked(candidate);
 }
 
-std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candidates) {
+std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candidates,
+                                         std::vector<PackRefusal>* refused) {
     std::lock_guard<std::mutex> hold(mutex_);
+    const std::size_t refusedBefore = refusals_.size();
     std::vector<PackLoad> out;
     // Each candidate's requirements, read once; one whose manifest does not parse is loaded straight away, which
     // refuses it with the parse's reason.
@@ -192,6 +194,8 @@ std::vector<PackLoad> PackTable::loadAll(const std::vector<PackCandidate>& candi
         else
             out.push_back(loadLocked(p.candidate));
     }
+    if (refused != nullptr)
+        refused->assign(refusals_.begin() + static_cast<std::ptrdiff_t>(refusedBefore), refusals_.end());
     return out;
 }
 
@@ -213,20 +217,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     std::shared_ptr<FileLock> hold = candidate.lock;
     if (candidate.origin == PackOrigin::Installed && !hold) {
         FileLock::Failure failure = FileLock::Failure::None;
-        std::optional<FileLock> taken;
-        // A failure that is only contention (versionInUse's instant of an exclusive lock, a settle's hold), or on
-        // Windows an access error that may be a scanner's brief handle on the file (Denied), is tried again briefly; a
-        // folder being deleted (Replaced) is refused at once, and so is a Denied one elsewhere, where it means a
-        // folder this process cannot write and waiting changes nothing.
-        constexpr int kAttempts = 5;
-        for (int attempt = 0; attempt < kAttempts; ++attempt) {
-            taken = holdVersion(candidate.dir, &why, &failure);
-            if (taken || failure == FileLock::Failure::Replaced) break;
-#if !defined(_WIN32)
-            if (failure == FileLock::Failure::Denied) break;
-#endif
-            if (attempt + 1 < kAttempts) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+        std::optional<FileLock> taken = holdVersionBriefly(candidate.dir, &why, &failure);
         if (taken) {
             hold = std::make_shared<FileLock>(std::move(*taken));
         } else if (failure != FileLock::Failure::Denied) {
