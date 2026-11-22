@@ -319,8 +319,8 @@ function(_retroplug_read_manifest name _manifest)
             message(FATAL_ERROR "retroplug_package(${name}): entry \"${_entry}\" is not a C identifier")
         endif()
         # Every statically linked entry is an extern "C" symbol of the program, so two packages may not share one;
-        # rp_package_entry is a downloaded pack's, never a linked package's.
-        if(_entry IN_LIST _taken OR _entry STREQUAL "rp_package_entry")
+        # rp_pack_entry is a pack library's export (graph/rp_pack.h), never a linked package's.
+        if(_entry IN_LIST _taken OR _entry STREQUAL "rp_pack_entry")
             message(FATAL_ERROR "retroplug_package(${name}): entry ${_entry} is taken")
         endif()
         list(APPEND _taken ${_entry})

@@ -45,8 +45,7 @@ extern "C" {
  * rp_package has gained memory and ctx: ABI v1 has never shipped, so no pack was built against the old one. */
 #define RP_ABI_VERSION 1u
 
-/* The symbol a downloaded pack exports (an rp_package_entry_fn), and the visibility it needs. */
-#define RP_PACKAGE_ENTRY_SYMBOL "rp_package_entry"
+/* The visibility a pack's one exported symbol needs (graph/rp_pack.h's rp_pack_entry). */
 #ifndef RP_EXPORT
 #if defined(_WIN32)
 #define RP_EXPORT __declspec(dllexport)
@@ -377,11 +376,9 @@ typedef struct rp_host_packages {
     void* (*memory)(void* ctx, const rp_package* package, rp_error* err);
 } rp_host_packages;
 
-/* A downloaded pack exports this symbol; statically linked packages hand the same struct to the
- * generated registration list. Declared here, inside the header's C linkage, so a C++ pack that defines
- * it cannot forget extern "C". */
+/* A statically linked package's entry, which the generated registration list calls (graph/Packages.hpp). A pack's
+ * library exports rp_pack_entry instead (graph/rp_pack.h), which returns a list of these packages. */
 typedef const rp_package* (*rp_package_entry_fn)(void);
-RP_EXPORT const rp_package* rp_package_entry(void);
 
 /* ---- optional interfaces ------------------------------------------------------------------------ */
 
