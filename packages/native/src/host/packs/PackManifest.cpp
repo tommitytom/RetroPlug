@@ -1,5 +1,6 @@
 #include "host/packs/PackManifest.hpp"
 
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 
@@ -17,14 +18,19 @@ namespace {
 // The manifest as JSON spells it. Optional members are checked below, so a missing one is reported by name rather
 // than as reflect-cpp's generic message. Unknown top-level members are ignored: a member added at the same API level
 // is additive by definition, and an older host of that level still loads the pack whole.
+//
+// `requires` and `provides` are closed: a member they do not know (a misspelt "pack" for "packs") would otherwise parse
+// as an empty list and drop a dependency without a word, so `extra` catches it and the parse refuses it by name.
 struct RawRequires {
     std::optional<std::vector<std::string>> packs;
     std::optional<std::vector<std::string>> platforms;
+    rfl::ExtraFields<rfl::Generic>          extra;
 };
 struct RawProvides {
     std::optional<std::vector<std::string>> platforms;
     std::optional<std::vector<std::string>> nodeTypes;
     std::optional<std::vector<std::string>> roles;
+    rfl::ExtraFields<rfl::Generic>          extra;
 };
 struct RawManifest {
     std::optional<std::string>                                id;
@@ -38,10 +44,162 @@ struct RawManifest {
     std::optional<std::map<std::string, std::string>>         halves;
 };
 
+// The largest pack.json read: a manifest is a few hundred bytes, and the file comes from a folder anyone can write.
+constexpr std::uintmax_t kMaxManifestBytes = 1024 * 1024;
+// The longest free-text member (name, license, source) accepted.
+constexpr std::size_t kMaxTextChars = 256;
+
 bool refuse(std::string* why, std::string reason) {
     if (why) *why = "pack.json: " + std::move(reason);
     return false;
 }
+
+// `text` as a message may echo it: non-printable bytes escaped as \xNN and the length capped, so a hostile manifest
+// cannot put control codes or a megabyte into a log line.
+std::string echoed(std::string_view text) {
+    constexpr std::size_t kMax = 64;
+    std::string out;
+    for (const char ch : text) {
+        if (out.size() >= kMax) {
+            out += "...";
+            break;
+        }
+        const auto c = static_cast<unsigned char>(ch);
+        if (c < 0x20 || c == 0x7f || c == '\\' || c == '"') {
+            char buf[8];
+            std::snprintf(buf, sizeof buf, "\\x%02x", c);
+            out += buf;
+        } else {
+            out += ch;
+        }
+    }
+    return out;
+}
+
+// The first key an object repeats anywhere in `json`, or empty. yyjson (under reflect-cpp) keeps the first of a
+// repeated key and JS's JSON.parse the last, so a manifest the two readers would see differently is refused rather
+// than parsed either way. A scan of text that is not valid JSON stops quietly: the parse reports that.
+class DuplicateKeyScan {
+public:
+    explicit DuplicateKeyScan(std::string_view s) : s_(s) {}
+
+    std::optional<std::string> find() {
+        value(0);
+        return dup_;
+    }
+
+private:
+    static constexpr int kMaxDepth = 64;
+
+    void skipSpace() {
+        while (at_ < s_.size() && (s_[at_] == ' ' || s_[at_] == '\t' || s_[at_] == '\n' || s_[at_] == '\r')) ++at_;
+    }
+
+    // A string at at_ (on its opening quote), its escapes decoded to bytes; \u escapes become UTF-8.
+    bool string(std::string& out) {
+        if (at_ >= s_.size() || s_[at_] != '"') return false;
+        ++at_;
+        while (at_ < s_.size() && s_[at_] != '"') {
+            char c = s_[at_++];
+            if (c != '\\') {
+                out += c;
+                continue;
+            }
+            if (at_ >= s_.size()) return false;
+            c = s_[at_++];
+            switch (c) {
+                case 'n': out += '\n'; break;
+                case 't': out += '\t'; break;
+                case 'r': out += '\r'; break;
+                case 'b': out += '\b'; break;
+                case 'f': out += '\f'; break;
+                case 'u': {
+                    if (at_ + 4 > s_.size()) return false;
+                    unsigned cp = 0;
+                    for (int i = 0; i < 4; ++i) {
+                        const char h = s_[at_++];
+                        const int digit = h >= 'a' ? h - 'a' + 10 : h >= 'A' ? h - 'A' + 10 : h - '0';
+                        cp = cp * 16 + static_cast<unsigned>(digit);
+                    }
+                    // A surrogate half is kept as its own three bytes: two keys differ unless they spell it alike.
+                    if (cp < 0x80) {
+                        out += static_cast<char>(cp);
+                    } else if (cp < 0x800) {
+                        out += static_cast<char>(0xc0 | (cp >> 6));
+                        out += static_cast<char>(0x80 | (cp & 0x3f));
+                    } else {
+                        out += static_cast<char>(0xe0 | (cp >> 12));
+                        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
+                        out += static_cast<char>(0x80 | (cp & 0x3f));
+                    }
+                    break;
+                }
+                default: out += c; break;  // " \\ /
+            }
+        }
+        if (at_ >= s_.size()) return false;
+        ++at_;
+        return true;
+    }
+
+    // One value at at_; false once the text stops being JSON this scan can follow, or a duplicate is found.
+    bool value(int depth) {
+        if (depth > kMaxDepth) return false;
+        skipSpace();
+        if (at_ >= s_.size()) return false;
+        const char c = s_[at_];
+        if (c == '{') return object(depth);
+        if (c == '[') return array(depth);
+        if (c == '"') {
+            std::string ignored;
+            return string(ignored);
+        }
+        while (at_ < s_.size() && s_[at_] != ',' && s_[at_] != '}' && s_[at_] != ']') ++at_;
+        return true;
+    }
+
+    bool array(int depth) {
+        ++at_;
+        skipSpace();
+        if (at_ < s_.size() && s_[at_] == ']') return ++at_, true;
+        for (;;) {
+            if (!value(depth + 1)) return false;
+            skipSpace();
+            if (at_ >= s_.size()) return false;
+            if (s_[at_] == ']') return ++at_, true;
+            if (s_[at_++] != ',') return false;
+        }
+    }
+
+    bool object(int depth) {
+        ++at_;
+        std::vector<std::string> keys;
+        skipSpace();
+        if (at_ < s_.size() && s_[at_] == '}') return ++at_, true;
+        for (;;) {
+            skipSpace();
+            std::string key;
+            if (!string(key)) return false;
+            for (const auto& k : keys)
+                if (k == key) {
+                    dup_ = key;
+                    return false;
+                }
+            keys.push_back(std::move(key));
+            skipSpace();
+            if (at_ >= s_.size() || s_[at_++] != ':') return false;
+            if (!value(depth + 1)) return false;
+            skipSpace();
+            if (at_ >= s_.size()) return false;
+            if (s_[at_] == '}') return ++at_, true;
+            if (s_[at_++] != ',') return false;
+        }
+    }
+
+    std::string_view           s_;
+    std::size_t                at_ = 0;
+    std::optional<std::string> dup_;
+};
 
 }  // namespace
 
@@ -87,15 +245,28 @@ bool isPlainName(std::string_view s) {
     return true;
 }
 
+// A free-text member: printable characters only (no control code, NUL included) and a bounded length.
+bool checkText(const std::string& text, const char* member, std::string* why) {
+    std::size_t chars = 0;
+    for (const char ch : text) {
+        const auto c = static_cast<unsigned char>(ch);
+        if (c < 0x20 || c == 0x7f) return refuse(why, std::string(member) + " holds a control character");
+        if ((c & 0xc0) != 0x80) ++chars;  // count code points, not UTF-8 continuation bytes
+    }
+    if (chars > kMaxTextChars)
+        return refuse(why, std::string(member) + " is longer than " + std::to_string(kMaxTextChars) + " characters");
+    return true;
+}
+
 bool checkList(const std::optional<std::vector<std::string>>& list, const char* member, bool packIds,
                std::vector<std::string>& out, std::string* why) {
     if (!list) return true;
     for (const auto& item : *list) {
         if (packIds ? !isPackId(item) : !isPlainName(item))
-            return refuse(why, std::string(member) + " holds \"" + item + "\", which is not " +
+            return refuse(why, std::string(member) + " holds \"" + echoed(item) + "\", which is not " +
                                    (packIds ? "a pack id" : "an id"));
         for (const auto& seen : out)
-            if (seen == item) return refuse(why, std::string(member) + " names \"" + item + "\" twice");
+            if (seen == item) return refuse(why, std::string(member) + " names \"" + echoed(item) + "\" twice");
         out.push_back(item);
     }
     return true;
@@ -121,9 +292,13 @@ bool isPackId(std::string_view id) {
 }
 
 std::optional<PackManifest> parsePackManifest(std::string_view json, std::string* why) {
+    if (const auto dup = DuplicateKeyScan(json).find()) {
+        refuse(why, "the member \"" + echoed(*dup) + "\" appears twice in one object");
+        return std::nullopt;
+    }
     auto raw = rfl::json::read<RawManifest>(std::string(json));
     if (!raw) {
-        refuse(why, std::string("not a manifest: ") + raw.error().what());
+        refuse(why, std::string("not a manifest: ") + echoed(raw.error().what()));
         return std::nullopt;
     }
     PackManifest m;
@@ -136,20 +311,32 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
         !required(raw->version, "version", m.version) || !required(raw->license, "license", m.license) ||
         !required(raw->source, "source", m.source))
         return std::nullopt;
+    if (!checkText(m.name, "name", why) || !checkText(m.license, "license", why) ||
+        !checkText(m.source, "source", why))
+        return std::nullopt;
     if (!isPackId(m.id)) {
-        refuse(why, "id \"" + m.id + "\" is not a pack id (lowercase letters, digits and '-', starting with a letter)");
+        refuse(why, "id \"" + echoed(m.id) +
+                        "\" is not a pack id (lowercase letters, digits and '-', starting with a letter)");
         return std::nullopt;
     }
     if (!isPackVersion(m.version)) {
-        refuse(why, "version \"" + m.version + "\" is not MAJOR.MINOR.PATCH");
+        refuse(why, "version \"" + echoed(m.version) + "\" is not MAJOR.MINOR.PATCH");
         return std::nullopt;
     }
-    if (!raw->apiLevel || *raw->apiLevel < 0 || *raw->apiLevel > 0xffffffffll) {
+    if (!raw->apiLevel) {
         refuse(why, "apiLevel is required (a whole number)");
+        return std::nullopt;
+    }
+    if (*raw->apiLevel < 0 || *raw->apiLevel > 0xffffffffll) {
+        refuse(why, "apiLevel is " + std::to_string(*raw->apiLevel) + ", outside 0..4294967295");
         return std::nullopt;
     }
     m.apiLevel = static_cast<std::uint32_t>(*raw->apiLevel);
     if (const auto& r = raw->requirements.value()) {
+        if (const auto& extra = r->extra; !extra.empty()) {
+            refuse(why, "requires holds \"" + echoed(extra.begin()->first) + "\", which is no member of it");
+            return std::nullopt;
+        }
         if (!checkList(r->packs, "requires.packs", true, m.requiresPacks, why) ||
             !checkList(r->platforms, "requires.platforms", false, m.requiresPlatforms, why))
             return std::nullopt;
@@ -160,6 +347,10 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
             return std::nullopt;
         }
     if (const auto& p = raw->provides) {
+        if (const auto& extra = p->extra; !extra.empty()) {
+            refuse(why, "provides holds \"" + echoed(extra.begin()->first) + "\", which is no member of it");
+            return std::nullopt;
+        }
         if (!checkList(p->platforms, "provides.platforms", false, m.providesPlatforms, why) ||
             !checkList(p->nodeTypes, "provides.nodeTypes", false, m.providesNodeTypes, why) ||
             !checkList(p->roles, "provides.roles", false, m.providesRoles, why))
@@ -170,16 +361,18 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
             bool known = false;
             for (const auto& k : knownHalves()) known = known || k == kind;
             if (!known) {
-                refuse(why, "halves." + kind + " is no half this RetroPlug loads");
+                refuse(why, "halves." + echoed(kind) + " is no half this RetroPlug loads");
                 return std::nullopt;
             }
             if (kind == "native" && value != "rp-" + m.id) {
-                refuse(why, "halves.native is \"" + value + "\", and a pack's library is named after its id: rp-" +
+                refuse(why, "halves.native is \"" + echoed(value) +
+                                "\", and a pack's library is named after its id: rp-" +
                                 m.id);
                 return std::nullopt;
             }
             if (kind != "native" && !isInsidePath(value)) {
-                refuse(why, "halves." + kind + " is \"" + value + "\", which is not a path inside the pack");
+                refuse(why, "halves." + echoed(kind) + " is \"" + echoed(value) +
+                                "\", which is not a path inside the pack");
                 return std::nullopt;
             }
         }
@@ -198,12 +391,22 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
 
 std::optional<PackManifest> readPackManifest(const fs::path& versionDir, std::string* why) {
     const fs::path file = versionDir / "pack.json";
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
+    std::error_code ec;
+    const auto size = fs::is_regular_file(file, ec) ? fs::file_size(file, ec) : 0;
+    if (ec || !fs::is_regular_file(file, ec)) {
         if (why) *why = "pack.json: cannot read " + displayPath(file);
         return std::nullopt;
     }
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (size > kMaxManifestBytes) {
+        if (why) *why = "pack.json: too large (over " + std::to_string(kMaxManifestBytes) + " bytes)";
+        return std::nullopt;
+    }
+    std::ifstream in(file, std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (!in || in.bad()) {
+        if (why) *why = "pack.json: cannot read " + displayPath(file);
+        return std::nullopt;
+    }
     return parsePackManifest(text, why);
 }
 
