@@ -146,9 +146,12 @@ struct Rig {
         if (error) *error = why;
         return ok;
     }
-    void push(std::initializer_list<std::uint8_t> bytes) {
+    void push(std::initializer_list<std::uint8_t> bytes) { pushIn(0, bytes); }
+    // A push the link releases `ms` from now, as a block's later sample offset is: the serial thread writes it on time
+    // itself, which a case's own thread sleeping until then would not be, on a machine whose sleeps overshoot.
+    void pushIn(int ms, std::initializer_list<std::uint8_t> bytes) {
         const Bytes b(bytes);
-        cart.push(0, b.data(), b.size(), false, 48000.0);
+        cart.push(static_cast<std::uint32_t>(ms) * 48, b.data(), b.size(), false, 48000.0);
     }
 };
 
@@ -2394,15 +2397,16 @@ TEST_CASE("a menu probe that is on its way at the submission's deadline is waite
     }
     rig.push({0xF0, 0x7E, 0x7F});  // a SysEx head whose tail comes near the end of the submission's second
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
-    std::thread tail([&] {
-        std::this_thread::sleep_for(std::chrono::milliseconds(850));
-        rig.push({0x09, 0x01, 0xF7});
-    });
+    // The tail goes 810 ms into the second, from the link's own ring. The guard probes as soon as it is written (its
+    // cadence is long past) and the submission's probe waits out that probe's 100 ms answer window, so it begins no
+    // earlier than 90 ms before the deadline, and its own 100 ms listen (counted in whole ms) ends after it however the
+    // machine runs; what the machine adds can be up to 90 ms before the probe misses its deadline. A thread that slept
+    // 850 ms and then pushed left 50 ms less its own wake, and a macOS runner overran that twice running.
     Job job;
     std::string why;
     const auto t0 = Clock::now();
+    rig.pushIn(810, {0x09, 0x01, 0xF7});
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));
-    tail.join();
     CHECK(why == "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first");
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 1000);
 }
@@ -2422,10 +2426,7 @@ TEST_CASE("a probe that a later submission's probe answers is waited for too, an
     rig.push({0xF0, 0x7E, 0x7F});  // the stream is inside a message, so no probe goes until its tail
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F0 7E 7F") == 1; }));
     const auto t0 = Clock::now();
-    std::thread tail([&] {
-        std::this_thread::sleep_for(std::chrono::milliseconds(860));
-        rig.push({0x09, 0x01, 0xF7});
-    });
+    rig.pushIn(810, {0x09, 0x01, 0xF7});  // from the link's ring, as the case above has it, for the reason it gives
     Job         older, newer;
     std::string whyOlder, whyNewer;
     bool        newerAccepted = true;
@@ -2435,7 +2436,6 @@ TEST_CASE("a probe that a later submission's probe answers is waited for too, an
     });
     CHECK_FALSE(rig.submit(battery("dump"), older, &whyOlder));
     second.join();
-    tail.join();
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 1000);
     const std::string atGame =
         "the battery file can only be reached at the N8 menu: reset or power-cycle the console to it first";
