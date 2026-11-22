@@ -892,25 +892,27 @@ TEST_CASE("a probe on a link that never goes quiet is refused for that, not as a
     rig.dev.linkRom = true;
     rig.dev.cfg[0] = 69;
     rig.dev.cfg[2] = 0;
-    rig.dev.linkAckDelayMs = 30;  // a game that answers, but not instantly
+    // The guard is off: a window that stops moving is a stall it asks about, and its probe is a write, which hands the
+    // fake's owed ack back. The case is the submission's own wait, which the guard has no part in.
+    rig.host.link().setMenuCheck({});
     rig.connect();
     REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
-    // A stream the game keeps acknowledging: every turn has an ack in the last ack bound, so no turn is quiet for the
-    // probe's read, and the cart is answering as a game (its window moves), so the guard has nothing to ask either.
-    std::atomic<bool> streaming{true};
-    std::thread feeder([&] {
-        while (streaming.load(std::memory_order_relaxed)) {
-            rig.push({0x90, 0x3C, 0x7F});
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
-    });
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // acks in flight before the probe asks
+    // A game with an ack it owes for the whole case, and a back-channel it keeps talking on: a frame is outstanding
+    // and the cart has just spoken on every turn, so none is quiet for the probe's read. Built from the cart's state,
+    // not from a stream the case paces: a feeder's 5 ms pushes against a 30 ms ack left a turn with nothing
+    // outstanding whenever the machine stalled the case for 30 ms, as a macOS runner did twice running, and the probe
+    // rightly went in it.
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.linkAckDelayMs = 60'000;
+        rig.dev.chatterMs      = 5;
+    }
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
     Job job;
     std::string why;
     const auto t0 = Clock::now();
     CHECK_FALSE(rig.submit(battery("dump"), job, &why));
-    streaming.store(false, std::memory_order_relaxed);
-    feeder.join();
     CHECK(why == "the reliable link never went quiet for the menu's probe: the cart kept acknowledging the stream");
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 900);  // its deadline
     CHECK(rig.cart.connected());  // nothing paused
