@@ -91,19 +91,20 @@ async function runOutsideRepo(): Promise<{ run: Run | null; err: string }> {
     "    entry: fs.existsSync(path.join(work, 'out/ts-stripper-entry.mjs')), before, after: snap() };",
     "  process.stdout.write(JSON.stringify(run));",
     // The scratch tree is this run's, and a run leaves nothing behind: the parent has what it needs in the JSON above.
-    // Windows refuses to remove a directory that is any process's working directory (EBUSY): this one's, and that of
-    // esbuild's service, which the stripper started from here and which lives until it is stopped. So the run stops
-    // the service and leaves the directory first; the retries cover a scanner's brief handle on a file inside it.
-    "  return leave(true);",
-    "}).catch((e) => leave(false).then(() => {",
-    "  process.stderr.write(String((e && e.stack) || e)); process.exit(1); }));",
-    // A failed removal fails a run that built (the scratch tree must not survive it); after a failed build the build's
-    // own error is the one worth reporting.
-    "async function leave(strict) {",
-    "  try { await require(require.resolve('esbuild', { paths: [repo] })).stop(); } catch {}",
+    // Windows refuses to remove the process's working directory (EBUSY), so the run leaves it first; the retries (a
+    // linear backoff, about 10 s at most) cover a scanner's handle on the bundle just written, which on a Windows
+    // runner can outlast a short wait.
+    "  leave(true);",
+    "}).catch((e) => { leave(false);",
+    "  process.stderr.write(String((e && e.stack) || e)); process.exit(1); });",
+    // A failed removal fails a run that built (the scratch tree must not survive it), except on Windows, where a
+    // scanner may hold the tree past any sensible wait: there it is reported, since the build is what this checks.
+    // After a failed build the build's own error is the one worth reporting.
+    "function leave(strict) {",
     "  process.chdir(os.tmpdir());",
-    "  try { fs.rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }",
-    "  catch (e) { if (strict) throw e; }",
+    "  try { fs.rmSync(work, { recursive: true, force: true, maxRetries: 13, retryDelay: 100 }); }",
+    "  catch (e) { if (strict && process.platform !== 'win32') throw e;",
+    "    process.stderr.write('scratch tree left behind: ' + String(e && e.message) + '\\n'); }",
     "}",
   ].join("");
   const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
