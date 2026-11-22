@@ -6636,7 +6636,7 @@ retroplug_pack(mesen)
 - [ ] **Step 5: Build and run**
 
 Run: `pnpm configure && cmake --build build --target retroplug-packs-test -j$(nproc) && build/bin/retroplug-packs-test`
-Expected: `All tests passed (... assertions in 50 test cases)` on Linux (49 on macOS; on Windows 44, the PCM case
+Expected: `All tests passed (... assertions in 52 test cases)` on Linux (51 on macOS; on Windows 46, the PCM case
 among them reported skipped in Catch2's own summary). The Mesen cases print each boot's iNES lines twice (one per
 build) and pass.
 
@@ -6698,7 +6698,7 @@ git commit -m "packs: the Mesen package built as a pack renders its static build
 - [ ] **Step 8: Cross-platform gate, before anything is pushed**
 
 As at the end of Task 6, on a Windows and a macOS machine, from this commit: build `retroplug-packs-test` and run it.
-Expected: on macOS `All tests passed (... assertions in 49 test cases)` (the Mesen module a `.dylib` built for the
+Expected: on macOS `All tests passed (... assertions in 51 test cases)` (the Mesen module a `.dylib` built for the
 architectures the build names: CI's `build.yml` passes `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"`); on Windows every
 case passes and the Mesen PCM case is reported skipped, with `rp-mesen.dll` built and its descriptors equal to the
 static build's. Then `pnpm test:plugin` on both (`test.bat plugin` on Windows). The user pushes only after both pass.

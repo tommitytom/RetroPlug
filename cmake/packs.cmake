@@ -242,3 +242,33 @@ ${_body}}
                              "CALL _retroplug_pack_check_pic ${target} ${M_LIBS})")
     set_property(GLOBAL APPEND PROPERTY RP_PACK_TARGETS ${target})
 endfunction()
+
+# retroplug_pack(<package> [MANIFEST <file>]): the package's native entries built as a pack, retroplug-<package>-pack,
+# from its manifest's desktop targets and entries (the same ones a product links), its pack.json template MANIFEST
+# (packages/<package>/pack.json by default). Called from the package's own native/CMakeLists.txt, after its targets,
+# so the module is the package's own target and links nothing its manifest does not declare. Part 1 loads a pack's
+# native node types alone, so a package with a provider, an audio backend, a script pack or an embed is refused here
+# rather than built into a pack that would silently lose them.
+function(retroplug_pack package)
+    cmake_parse_arguments(P "" "MANIFEST" "" ${ARGN})
+    if(P_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "retroplug_pack(${package}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
+    endif()
+    if(NOT P_MANIFEST)
+        set(P_MANIFEST "${RP_PACKAGES_DIR}/${package}/pack.json")
+    endif()
+    get_property(_entries GLOBAL PROPERTY RP_PACKAGE_${package}_ENTRIES)
+    get_property(_targets GLOBAL PROPERTY RP_PACKAGE_${package}_TARGETS)
+    foreach(_part PROVIDERS AUDIO_BACKEND_TARGETS SCRIPT_ENTRY EMBED_IDS)
+        get_property(_has GLOBAL PROPERTY RP_PACKAGE_${package}_${_part})
+        if(_has)
+            message(FATAL_ERROR "retroplug_pack(${package}): the package has ${_part} (${_has}), which a pack does not "
+                                "load yet (docs/downloadable-packs-loading-design.md): build it into a product")
+        endif()
+    endforeach()
+    if(NOT _entries)
+        message(FATAL_ERROR "retroplug_pack(${package}): the package's manifest names no native entry, so its pack "
+                            "would register nothing")
+    endif()
+    retroplug_pack_module(retroplug-${package}-pack MANIFEST "${P_MANIFEST}" LIBS ${_targets} ENTRIES ${_entries})
+endfunction()

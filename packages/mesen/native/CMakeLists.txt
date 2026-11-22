@@ -59,3 +59,8 @@ retroplug_add_test_binary(
     DEFS     RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
+
+# --- retroplug-mesen-pack: the same entry built as a pack (cmake/packs.cmake), staged at build/packs/mesen/0.1.0/ from
+# ../pack.json. Built by name, or by what loads it: retroplug-packs-test boots a NES through it and holds its PCM to
+# this package's static build. Only the native half: the TS halves join a pack in M2.
+retroplug_pack(mesen)

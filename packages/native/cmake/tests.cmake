@@ -192,17 +192,22 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/fixture ${CMAKE_BINARY_D
 # case hands it over (Engine::addNodePackage), so the two builds render side by side in one process.
 retroplug_add_test_binary(
     NAME     retroplug-packs-test
-    SOURCES  test/packs/PackRoots.test.cpp         # the data and cache roots, the platform folder, the pack path
+    SOURCES  test/engine-graph/Deterministic.cpp  # every core powers on in a fixed state, the pack's copies too
+             test/packs/PackRoots.test.cpp         # the data and cache roots, the platform folder, the pack path
              test/packs/PackManifest.test.cpp      # pack.json, and each malformed member's refusal
              test/packs/PackState.test.cpp         # state.json, its writers, the version locks, a launch's settle
              test/packs/PackLoader.test.cpp        # the table: loads, dependency order, every refusal
              test/packs/PackDiscovery.test.cpp     # which folders a launch loads, and the launch itself
              test/packs/PackEngines.test.cpp       # a pack in a running Engine, two Engines, a live load under audio
+             test/packs/MesenPack.test.cpp         # the Mesen package as a pack, its PCM held to the static build's
+             test/packs/BoundaryRules.test.cpp     # the host's code casts nothing by RTTI
     LIBS     retroplug-backend                     # Engine, the process's pack table, the folder model
              retroplug-packfixture-nodes           # the fixture's types, statically: a second copy beside the pack's
+             retroplug-mesen                       # the static build MesenPack.test.cpp holds the pack to
     PACKAGES ${RP_PRODUCT_PACKAGES_packs-host}
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph  # GraphDocs.hpp
     DEFS     RP_PACKS_BUILD_DIR="${RP_PACKS_DIR}"
+             RP_REPO_ROOT="${CMAKE_SOURCE_DIR}"     # the trees BoundaryRules.test.cpp scans
              RP_PACK_PLATFORM_CMAKE="${RP_PACK_PLATFORM}"
              RP_API_LEVEL_CMAKE=${RP_API_LEVEL}u
              RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
@@ -210,7 +215,7 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms")
 # The packs it loads are modules nothing links, built before it.
 get_property(_rp_packfixture_targets GLOBAL PROPERTY RP_PACKFIXTURE_TARGETS)
-add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})
+add_dependencies(retroplug-packs-test ${_rp_packfixture_targets} retroplug-mesen-pack)
 
 # What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
