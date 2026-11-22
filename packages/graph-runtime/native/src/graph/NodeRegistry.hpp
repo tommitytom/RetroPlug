@@ -47,6 +47,9 @@ public:
     // descriptor whose id is not the node type's; and a type id registered already or listed twice. Never for
     // its flags: every bit is a relaxation (rp_node.h), so one this host does not know is ignored.
     bool addPackage(const rp_package* package, std::string* error = nullptr);
+    // Whether addPackage would register `package` now, with its reason when not, changing nothing: how a host stages
+    // a pack of several packages (Engine::syncPacks), every one of them checked before the first is added.
+    bool canAdd(const rp_package* package, std::string* error = nullptr) const;
 
     // Swap the entries of package `id` for those of `next`, a new version of it, checked as addPackage checks a
     // package. Every type of the new version gets an Entry of its own, a type id it shares with the old one included,

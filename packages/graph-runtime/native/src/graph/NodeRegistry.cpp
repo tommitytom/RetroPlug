@@ -108,6 +108,12 @@ bool NodeRegistry::addPackage(const rp_package* package, std::string* error) {
     return true;
 }
 
+bool NodeRegistry::canAdd(const rp_package* package, std::string* error) const {
+    std::string pkg;
+    std::vector<Entry> added;
+    return check(package, {}, pkg, added, error);
+}
+
 const rp_package* NodeRegistry::replacePackage(std::string_view id, const rp_package* next, std::string* error) {
     // Before check, which takes an empty `replacing` for an addition: no id is registered empty.
     if (!packages_.count(id)) {

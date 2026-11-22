@@ -34,6 +34,7 @@
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/graph/SystemTable.hpp"
+#include "host/packs/ProcessPacks.hpp"  // the process's loaded packs, which every engine registers after its own
 
 namespace {
 
@@ -196,7 +197,14 @@ struct Engine::Graph {
 Engine::Engine(double sampleRate) : Engine(sampleRate, embeddedScripts()) {}
 
 Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle)
-    : sampleRate_(sampleRate), pendingMidi_(rp::host::kHostMidiInMessages, rp::host::kHostMidiInBytes) {
+    : Engine(sampleRate, scriptBundle, rp::host::packs::processPacks()) {}
+
+Engine::Engine(double sampleRate, rp::host::packs::PackTable& packs) : Engine(sampleRate, embeddedScripts(), packs) {}
+
+Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle,
+               rp::host::packs::PackTable& packs)
+    : sampleRate_(sampleRate), pendingMidi_(rp::host::kHostMidiInMessages, rp::host::kHostMidiInBytes),
+      packs_(&packs) {
     graph_ = std::make_unique<Graph>();
     // The script node types first: the bundle runs in both of the built-in pack's contexts, and its definitions become
     // one more package. One that will not load registers no type, so a document naming one is refused (unknown-type).
@@ -215,6 +223,8 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
             std::fprintf(stderr, "[engine] a node package was refused (%s); its types are not registered\n", why.c_str());
     if (!graph_->registry.addPackage(graph_->script.package(), &why))
         std::fprintf(stderr, "[engine] the script node types were refused (%s); none is registered\n", why.c_str());
+    // Then the loaded packs, after every built-in, so a built-in's order and ids are what they were with none loaded.
+    syncPacks();
     // rp.host.systems/2: a system node that builds its own core, on the control thread, inside the setGraph that
     // activates it. The id it names must not be live; the core it builds claims its snapshot slot and joins the live
     // cores, and the table of the plan being built learns it (buildSystem).
@@ -376,6 +386,9 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     // The cores of plans the audio thread has handed back are freed first, so the checks below see them gone.
     graph_->host->reclaim();
     graph_->script.reclaim();
+    // A pack loaded since the last plan joins the registry before this one is made, on this thread, which is the only
+    // one that reads the registry: its node types exist from this setGraph on.
+    syncPacks();
     auto doc = rp::graph::parseGraphDocument(request.document);
     if (!doc) return refuse("", "document", std::string("not a graph document: ") + doc.error().what());
 
@@ -617,6 +630,32 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
 }
 
 void Engine::setScriptCallDeadline(std::chrono::milliseconds limit) { graph_->script.setCallDeadline(limit); }
+
+void Engine::syncPacks() {
+    if (packs_ == nullptr) return;
+    rp::graph::NodeRegistry& registry = graph_->registry;
+    for (const rp::host::packs::LoadedPack* pack : packs_->loadedFrom(packsSeen_)) {
+        ++packsSeen_;
+        // All or nothing here too, staged: every package is checked against this engine's registry before the first is
+        // added. The table judged the pack against the built-ins and the packs before it, its packages one after
+        // another on one registry, so what is left to clash with is this engine's own (its script node types, a test's
+        // addNodePackage), which canAdd sees, and a clash anywhere keeps the whole pack out.
+        std::string why;
+        bool fits = true;
+        for (const rp_package* p : pack->packages) fits = fits && registry.canAdd(p, &why);
+        if (!fits) {
+            std::fprintf(stderr, "[engine] pack %s was refused here: %s\n", pack->manifest.id.c_str(), why.c_str());
+            packsRefused_.push_back(pack->manifest.id);
+            continue;
+        }
+        // Each add then succeeds: canAdd proved each package against this registry, and the only thing an earlier add
+        // could change for a later one is a clash between the pack's own packages, which the table's trial refused.
+        for (const rp_package* p : pack->packages) {
+            [[maybe_unused]] const bool added = registry.addPackage(p, &why);
+            assert(added && "a package canAdd passed and the table's trial registered after its siblings");
+        }
+    }
+}
 
 bool Engine::addNodePackage(const rp_package* package, std::string* why) {
     if (package == nullptr) {

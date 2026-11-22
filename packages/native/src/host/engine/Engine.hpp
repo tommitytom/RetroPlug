@@ -29,6 +29,7 @@ struct DspCommand;
 struct SystemBuildRequest;
 namespace rp::graph { struct HostCommand; }
 namespace rp::host { class OfflineJobs; struct SystemEntry; struct SystemTable; }
+namespace rp::host::packs { class PackTable; }
 
 // One message of the host MIDI out (Engine::midiOut), tagged with the system that emitted it.
 struct EngineMidiOut {
@@ -61,10 +62,17 @@ public:
     // its blocks must fit; a host grows it to its own maximum with setMaxBlockFrames.
     static constexpr std::uint32_t kDefaultMaxBlockFrames = 8192;
 
+    // Every constructor registers the product's built-in packages, then the built-in script pack, then every pack
+    // `packs` has loaded, in its (dependency) order; the two that take no table read the process's
+    // (packs::processPacks()), which is how every host's engines see one set of loads.
     explicit Engine(double sampleRate = 44100.0);
     // With the script nodes of `scriptBundle` (its chunks, run in order) in place of the embedded bundle's: a test's
     // toy nodes.
     Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle);
+    // With the packs of `packs`, which must outlive the engine, in place of the process's: a test's table of its own.
+    Engine(double sampleRate, rp::host::packs::PackTable& packs);
+    Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle,
+           rp::host::packs::PackTable& packs);
     ~Engine();
 
     double sampleRate() const { return sampleRate_; }
@@ -370,6 +378,11 @@ public:
     bool addNodePackage(const rp_package* package, std::string* why = nullptr);
     // The node types a document can name: the registry's, native and script.
     std::size_t nodeTypeCount() const;
+    // The loaded packs this engine has registered, and the ids of those it refused (a type or package id another of
+    // its packages holds, which only a pack the table could not judge reaches: one taking a script node's type id, or
+    // one a test added with addNodePackage). Control thread.
+    std::size_t              packsRegistered() const { return packsSeen_ - packsRefused_.size(); }
+    std::vector<std::string> refusedPacks() const { return packsRefused_; }
     // The registry's entries a reload swapped out whose generation the script host has not yet freed.
     std::size_t retiredNodeTypeCount() const;
     // Script node instances whose JS is made and not yet released (ScriptHost::liveInstances): any thread, as
@@ -554,6 +567,15 @@ private:
     // members does not matter for what it touches; the destructor still resets it first, so every worker is joined,
     // and every node, core and runtime a job built destroyed, before any other member goes.
     std::unique_ptr<rp::host::OfflineJobs>          offline_;
+
+    // The pack table this engine registers from, and how far into it it has read (syncPacks): the packs before
+    // packsSeen_ are registered or, named in packsRefused_, refused here.
+    rp::host::packs::PackTable* packs_ = nullptr;
+    std::size_t                 packsSeen_ = 0;
+    std::vector<std::string>    packsRefused_;
+    // Each pack the table loaded since the last call, registered whole or not at all: from the constructor, and from
+    // each setGraph before it plans, on the control thread, as loadScriptPack changes the registry.
+    void syncPacks();
 
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ (and leave
     // liveCores_) as they go.

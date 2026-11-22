@@ -102,6 +102,7 @@ add_library(retroplug-backend STATIC
     # every kit compile reads a source. Console- and format-neutral; its content hash is the DSP package's util/Hash.hpp,
     # whose include root LIBS below takes.
     src/kit/SampleCache.cpp
+    src/host/packs/ProcessPacks.cpp         # the process's pack table, seeded with the product's packages
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull the full
     # lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp

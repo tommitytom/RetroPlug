@@ -197,12 +197,17 @@ retroplug_add_test_binary(
              test/packs/PackState.test.cpp         # state.json, its writers, the version locks, a launch's settle
              test/packs/PackLoader.test.cpp        # the table: loads, dependency order, every refusal
              test/packs/PackDiscovery.test.cpp     # which folders a launch loads, and the launch itself
+             test/packs/PackEngines.test.cpp       # a pack in a running Engine, two Engines, a live load under audio
     LIBS     retroplug-backend                     # Engine, the process's pack table, the folder model
              retroplug-packfixture-nodes           # the fixture's types, statically: a second copy beside the pack's
     PACKAGES ${RP_PRODUCT_PACKAGES_packs-host}
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph  # GraphDocs.hpp
     DEFS     RP_PACKS_BUILD_DIR="${RP_PACKS_DIR}"
              RP_PACK_PLATFORM_CMAKE="${RP_PACK_PLATFORM}"
-             RP_API_LEVEL_CMAKE=${RP_API_LEVEL}u)
+             RP_API_LEVEL_CMAKE=${RP_API_LEVEL}u
+             RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
+             RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
+             RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms")
 # The packs it loads are modules nothing links, built before it.
 get_property(_rp_packfixture_targets GLOBAL PROPERTY RP_PACKFIXTURE_TARGETS)
 add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})
