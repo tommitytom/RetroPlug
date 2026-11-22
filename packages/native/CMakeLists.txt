@@ -78,7 +78,12 @@ set_target_properties(retroplug-file-watcher PROPERTIES
 # the backend's: src/host/packs/ProcessPacks.cpp), so a test of the folder model links it alone.
 add_library(retroplug-packs STATIC
     src/host/packs/PackDirs.cpp
-    src/host/packs/PackManifest.cpp)
+    src/host/packs/PackManifest.cpp
+    src/host/packs/PackState.cpp
+    src/host/packs/FileLock.cpp
+    # fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line rather than in every includer. Here
+    # because state.json's write needs it; the backend's HostRpcService reaches it through this library.
+    src/util/FileSync.cpp)
 target_include_directories(retroplug-packs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-packs PUBLIC retroplug-graph PRIVATE ${CMAKE_DL_LIBS})
 set_target_properties(retroplug-packs PROPERTIES
@@ -94,8 +99,6 @@ add_library(retroplug-backend STATIC
     # every kit compile reads a source. Console- and format-neutral; its content hash is the DSP package's util/Hash.hpp,
     # whose include root LIBS below takes.
     src/kit/SampleCache.cpp
-    # fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line rather than in every includer.
-    src/util/FileSync.cpp
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull the full
     # lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp

@@ -194,6 +194,7 @@ retroplug_add_test_binary(
     NAME     retroplug-packs-test
     SOURCES  test/packs/PackRoots.test.cpp         # the data and cache roots, the platform folder, the pack path
              test/packs/PackManifest.test.cpp      # pack.json, and each malformed member's refusal
+             test/packs/PackState.test.cpp         # state.json, its writers, the version locks, a launch's settle
     LIBS     retroplug-backend                     # Engine, the process's pack table, the folder model
     PACKAGES ${RP_PRODUCT_PACKAGES_packs-host}
     DEFS     RP_PACKS_BUILD_DIR="${RP_PACKS_DIR}"

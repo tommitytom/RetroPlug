@@ -20,6 +20,19 @@ bool fsyncPath(const std::string& path) {
     ::CloseHandle(h);
     return ok;
 #else
+    return fsyncPath(std::filesystem::path(path));
+#endif
+}
+
+bool fsyncPath(const std::filesystem::path& path) {
+#if defined(_WIN32)
+    const HANDLE h = ::CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    const bool ok = ::FlushFileBuffers(h) != 0;
+    ::CloseHandle(h);
+    return ok;
+#else
     // O_WRONLY rather than O_RDONLY: fsync on a read-only descriptor is allowed on Linux but is not
     // portable (POSIX leaves it unspecified, and some systems answer EBADF). The file always exists
     // by the time we get here - we just wrote it - so no O_CREAT.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 namespace rp {
@@ -24,5 +25,8 @@ namespace rp {
 // as to processAlive: one TU pays for that include instead of every caller. Returns false if the
 // file cannot be opened or the flush fails.
 bool fsyncPath(const std::string& path);
+// The same for a path, which Windows opens by its wide name (CreateFileW), so a file under a profile folder outside
+// the ANSI code page is flushed too.
+bool fsyncPath(const std::filesystem::path& path);
 
 } // namespace rp
