@@ -1906,7 +1906,6 @@ TEST_CASE("a raw stream across the OS's boot window ends at ERROR:40 while the g
     // The real cart (spec/13, the N8 bridge): a note byte about a third of a second into the booting OS's life sends it
     // to ERROR:40, and a raw link cannot see the reset before the menu answers. The window is set early here so the
     // stream is certain to be inside it before the guard's first probe; MIDI clock alone is safe.
-    using Clock = std::chrono::steady_clock;
     const auto run = [](bool clock, bool& tripped, bool& error40, std::size_t& after) {
         Rig rig;
         rig.connectGame();
@@ -1916,12 +1915,15 @@ TEST_CASE("a raw stream across the OS's boot window ends at ERROR:40 while the g
         rig.push({0x90, 0x3C, 0x7F});
         REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1; }));
         rig.dev.resetToMenu();
-        const auto end = Clock::now() + std::chrono::milliseconds(1000);
-        while (Clock::now() < end) {
-            if (clock) rig.push({0xF8});
-            else rig.push({0x90, 0x45, 0x64});
-            std::this_thread::sleep_for(std::chrono::milliseconds(clock ? 20 : 30));
+        // A second of stream, a note every 30 ms or a tick every 20, handed to the link's ring at once and released at
+        // its own times, so what lands in the window is the serial thread's doing and not this thread's wake. A loop
+        // that pushed and then slept wrote its first note before the window opened, and when one 30 ms sleep ran past
+        // the window's end (a macOS runner's ran several times long) no note fell inside it and the OS booted clean.
+        for (int ms = 0; ms < 1000; ms += clock ? 20 : 30) {
+            if (clock) rig.pushIn(ms, {0xF8});
+            else rig.pushIn(ms, {0x90, 0x45, 0x64});
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         tripped = !rig.cart.connected();
         const auto streamed = [&] { return rig.dev.count("fifo:") - rig.dev.countExact("fifo:F0 2A 74 F7"); };
         const std::size_t before = streamed();
