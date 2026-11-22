@@ -296,6 +296,7 @@ bool settlePackState(const fs::path& dataRoot, const FileLock& held, std::string
     }
     if (ec) listing = "state.json: cannot list " + displayPath(dataRoot) + ": " + ec.message();
 
+    const std::vector<InstalledPack> before = state->packs;  // the promotion below edits state->packs in place
     std::vector<InstalledPack> kept;
     for (auto& p : state->packs) {
         if (p.remove) continue;
@@ -307,7 +308,7 @@ bool settlePackState(const fs::path& dataRoot, const FileLock& held, std::string
         }
         kept.push_back(p);
     }
-    const bool changed = !sameState(state->packs, kept);
+    const bool changed = !sameState(before, kept);
     state->packs = std::move(kept);
     if (changed && !writeHeld(dataRoot, *state, why)) return false;
     // Every version folder no entry names any more goes, unless a process holds it. A name that is no pack id or no

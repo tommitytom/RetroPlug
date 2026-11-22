@@ -196,6 +196,16 @@ TEST_CASE("a launch settles state.json: pending versions switch, removals go, un
     held.reset();
     REQUIRE(settlePackState(root, &why));
     CHECK_FALSE(fs::exists(heldC));
+
+    // A promotion alone (no removal beside it) is written too: the changed test compares against the state as read.
+    const fs::path newer = rp::host::packs::test::install(root, "packfixture", "1.2.0");
+    REQUIRE(updatePackState(root, [](PackState& s) { s.find("packfixture")->pending = "1.2.0"; return true; }, &why));
+    REQUIRE(settlePackState(root, &why));
+    const auto promoted = readPackState(root, &why);
+    REQUIRE(promoted);
+    CHECK(promoted->find("packfixture")->active == "1.2.0");
+    CHECK(promoted->find("packfixture")->pending.empty());
+    CHECK(fs::exists(newer));
 }
 
 TEST_CASE("a lock on a file that was replaced while it was taken is refused", "[packs-folders]") {
