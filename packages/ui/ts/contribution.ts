@@ -169,7 +169,7 @@ export type RoleRow = ConfigRow & {
  *  fills. "instance.footer" is the block after Remove Instance and before Exit (the Link Group); "instance.clock" is
  *  the host-transport block between the instance's own groups (the MIDI Clock submenu); "settings.audio" and
  *  "settings.midi" are the insides of Settings' two device containers, which the shell keeps. The list is data so
- *  the generated registry reads the same one the type is built from: a placement added here reaches its check without
+ *  the live registry reads the same one the type is built from: a placement added here reaches its check without
  *  a second copy to update. */
 export const PLACEMENTS = [
   "instance.tracker",
@@ -241,7 +241,7 @@ export interface AssetMenuSpec {
 /** A tracker's UI: its song and asset specs, its role-config rows and any fragment it builds. Keyed to its integration
  *  by id, so the shell finds this for the tracker a system resolved. */
 export interface TrackerUi {
-  /** The integration id (TRACKER_INTEGRATIONS' key, e.g. "lsdj"). */
+  /** The integration id (tracker integrations registry's key, e.g. "lsdj"). */
   readonly id: string;
   /** The cart's song and asset specs: a cart contributes the ones it has (an asset-only cart has no Songs submenu). */
   readonly song?: SongMenuSpec;
@@ -273,7 +273,7 @@ export interface UiService {
  *  `withActionDefaults`), so adding an action needs no migration. */
 export interface UiAction {
   /** "<package>.<name>", the manifest's package name and a dot: the profile stores it, so it names its owner, and the
-   *  generated registry refuses an id its own package does not prefix. */
+   *  registry's check refuses an id its own package does not prefix. */
   readonly id: string;
   /** The bindings menus' row text ("LSDj Debug Overlay"); the row shows it, then the bound names. */
   readonly label: string;
@@ -288,9 +288,9 @@ export interface UiAction {
   run(host: UiHost, ctx: { readonly systemId: number | null }): void;
 }
 
-/** A contributed action with the package it came from: the generated registry's shape (`ACTIONS`), which the shell's
+/** A contributed action with the package it came from: the live registry's shape (`ACTIONS`), which the shell's
  *  dispatch, the key maps' "known" set and the bindings menus all read. One declaration, so a consumer cannot drift
- *  from the generated list. */
+ *  from the live list. */
 export interface ContributedAction {
   readonly pkg: string;
   readonly action: UiAction;

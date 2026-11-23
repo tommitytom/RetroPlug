@@ -857,7 +857,7 @@ function renderPackages({ packages, outDir, shellDir, names, product }) {
   const baked = packages.flatMap((p) => p.embeds.map((entry) => ({ pkg: p.pkg.name, id: entry.id })));
   lines.push(
     "",
-    `export { ${registries.join(", ")}, SHELL_CONFIG_KEYS } from "${appRegistries}";`,
+    `export { ${registries.join(", ")} } from "${appRegistries}";`,
     "",
     "/** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the",
     " *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */",

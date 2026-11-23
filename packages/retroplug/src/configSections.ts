@@ -102,7 +102,7 @@ export function serializeConfigSection(contributor: ProjectSection, value: unkno
 
 /** Refuse a root key that is not a section a host may read or write: one of the shell's own fields (whose value in the
  *  file would become an object the next load clamps back to the default), or `__proto__`, which a plain assignment
- *  treats as a prototype rather than as a value. The generated registry refuses a contributor of the shell's keys;
+ *  treats as a prototype rather than as a value. The registry's check refuses a contributor of the shell's keys;
  *  `__proto__` it cannot refuse (a manifest's member of that name is not its JSON's to declare), so this is the one
  *  gate for it. */
 export function assertConfigSectionKey(key: string): void {

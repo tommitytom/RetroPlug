@@ -9,7 +9,7 @@
 // (packages/dsp/ts/packageContributions.ts), and each imports the types it names from the package that owns them.
 //
 // definePackage holds no registry and does nothing at run time: it is the identity function with types, so a package
-// states its contributions where they are defined, and the generated registry
+// states its contributions where they are defined, and the registry
 // (packages/retroplug/src/generated/packages.ts) only has to concatenate them in product order. It is deliberately not
 // generic: a type parameter inferred from the literal would swallow a misspelt key, where the parameter's own type
 // refuses it (test/packages/define-package.test.ts).
@@ -41,7 +41,7 @@ export interface Embed {
  *  package loses nothing in one that does not. */
 export interface ProjectSection<T = unknown> {
   /** Where the block lives: the key under a project's `settings`, or the root key of config.json. Never one of the
-   *  shell's own keys, and never a key two packages declare: the generated registry refuses both. */
+   *  shell's own keys, and never a key two packages declare: the registry's check refuses both. */
   readonly key: string;
   /** Raw, migrated value -> the section: defaults filled, values clamped, never throwing on junk. Anything with a
    *  `parse` will do, as a controller app's config schema does. */

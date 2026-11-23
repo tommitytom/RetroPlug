@@ -138,7 +138,7 @@ export interface ConsoleDescriptor {
 }
 
 /** A physical cart a project can drive, and the node that is it: the console's platform is the one the cart receives
- *  what that platform's system sends. One cart per platform and one per node, which the generated list refuses
+ *  what that platform's system sends. One cart per platform and one per node, which the registry's check refuses
  *  otherwise. */
 export interface RealCart {
   readonly platform: Platform;

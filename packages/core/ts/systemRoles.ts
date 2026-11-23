@@ -2,7 +2,7 @@
 // - the core treats config as an opaque per-kind blob. Everything specific to a
 // system (a backend's own knobs, or an optional feature like LSDj) is a role, so the
 // core stays free of backend/LSDj knowledge. Extensions populate a kind-keyed
-// RoleRegistry; a console package contributes its own system roles through its app module, and the generated registry
+// RoleRegistry; a console package contributes its own system roles through its app module, and the live registry
 // (packages/retroplug/src/generated/packages.ts) hands them over. Ports the shape of native RoleConfig
 // (RoleConfig.hpp), a
 // tagged union on "kind", into a runtime registry, minus the hardcoded if/else chains.

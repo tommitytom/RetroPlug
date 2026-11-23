@@ -158,9 +158,10 @@ channel too, and a project service whose `create()` throws when adopted is warne
 re-renders on the counter; the grid remounts a tile only when the tile views change (`SystemGrid` keys `EmulatorTile`
 on `tileViews().length`). The UI bundle's seam is `__rp_commitUiContributions`, which commits by registry name
 (`commitByName`). A shell module reads a registry through its facade (`src/contributions/app.ts`,
-`src/contributions/placers.ts`, `src/consoles.ts`, `ui/contributions/menus.ts`, `ui/contributions/views.ts`), which
-imports the generated seed, never the generated module directly. `src/generated/apiLevel.ts` is `RP_API_LEVEL` read
-from `rp_pack.h`.
+`src/contributions/placers.ts`, `src/consoles.ts`, `ui/contributions/menus.ts`, `ui/contributions/views.ts`, and the
+CLI's `cli/tools.ts`), which import the generated seed, never the generated module directly; `src/graph/directGraph.ts`
+is the one exception, importing `../generated/packages` only for the contribution kinds' load-time side effect (M2b
+makes the kinds live). `src/generated/apiLevel.ts` is `RP_API_LEVEL` read from `rp_pack.h`.
 
 **Every product but the desktop gets its own tree**, and its own bundles (the four
 embedded bundles: the control plane, the React UI, the script nodes and the render worker): `generate({ product })` (the
@@ -545,7 +546,7 @@ native node types alone ([spec/02](02-native-host.md#packs-a-packages-native-hal
     component draws is proved by a `test:ui` case in the shell, where the display is - which needs a product to list the
     package, since the UI test binary embeds the production bundle. A plain-TypeScript view needs none of that: its own tests
     live in the package's `ts/test/` over a fake host, as
-    [ui-views.test.ts](../packages/lsdj/ts/test/ui-views.test.ts) does. The generated registry refuses a duplicate view
+    [ui-views.test.ts](../packages/lsdj/ts/test/ui-views.test.ts) does. The registry's check refuses a duplicate view
     id (naming both packages), a placement or body kind the shell has not, a session body with no `open` or a component
     body with no `component`, and a `visible` on a window view. The `lvgljs-ui` widgets a component draws through are the
     SHELL's type slice ([lvgljs-ui.d.ts](../packages/retroplug/ui/types/lvgljs-ui.d.ts)), since the package ships
@@ -555,7 +556,7 @@ native node types alone ([spec/02](02-native-host.md#packs-a-packages-native-hal
     is prefixed by its own package's manifest name (`lsdj.debug-overlay`), because a stored binding profile keeps
     ids and a user's profile must name the owner; `label` is the bindings menus' row text, `keys`/`pad` are the
     DEFAULTS (a missing entry reads `-`), and `run(host, ctx)` gets the UI host and the focused system's id (null on the
-    start screen). The generated registry refuses a duplicate action id, an id not prefixed by its package's name, a
+    start screen). The registry's check refuses a duplicate action id, an id not prefixed by its package's name, a
     default key `resolveKeyName` cannot resolve, a single uppercase letter as a default (the hosts deliver letters
     unshifted, so `F` would bind and never fire, and the refusal names the lowercase key), a default pad name outside
     `GAMEPAD_BUTTON_NAMES` (SDL's button set), and a default that collides with a shell default or a Game Boy button's (a

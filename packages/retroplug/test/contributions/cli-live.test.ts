@@ -31,7 +31,7 @@ test("a tool committed later joins the index after the built-ins", () => {
 test("a tool taking a shell command's name is refused at its commit", () => {
   const clash = { ...fixtureTool, name: "render" } as CliTool;
   expect(() => commitContributions([{ registry: cliToolsRegistry, pkg: "packfixture2", items: [clash] }])).toThrow(
-    "a package declares the CLI tool render, which the shell already has",
+    "the package packfixture2 declares the CLI tool render, which the shell already has",
   );
 });
 

@@ -14,7 +14,7 @@ export const cliToolsRegistry = new Registry<CliTool>("cliTools", (entries) => {
   const owners = new Map<string, string>();
   for (const { pkg, item: tool } of entries) {
     if (SHELL_TOOL_NAMES.includes(tool.name)) {
-      throw new Error(`a package declares the CLI tool ${tool.name}, which the shell already has`);
+      throw new Error(`the package ${pkg} declares the CLI tool ${tool.name}, which the shell already has`);
     }
     const owner = owners.get(tool.name);
     if (owner !== undefined) {

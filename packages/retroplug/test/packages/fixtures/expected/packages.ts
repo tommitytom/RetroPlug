@@ -22,7 +22,7 @@ import { KIND_DATA, PROTOCOL_NODES, ROLE_NODES } from "./protocol";
 import kind_widgets_alpha from "@retroplug/alpha/kind";
 import kind_controllerApps_beta from "@retroplug/beta/kind";
 
-export { rolesRegistry, romProvidersRegistry, trackerIntegrationsRegistry, kitFormatsRegistry, projectSectionsRegistry, projectServicesRegistry, configSectionsRegistry, embedsRegistry, bakedEmbedsRegistry, SHELL_CONFIG_KEYS } from "../contributions/appRegistries";
+export { rolesRegistry, romProvidersRegistry, trackerIntegrationsRegistry, kitFormatsRegistry, projectSectionsRegistry, projectServicesRegistry, configSectionsRegistry, embedsRegistry, bakedEmbedsRegistry } from "../contributions/appRegistries";
 
 /** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the
  *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */
