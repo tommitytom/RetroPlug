@@ -2,8 +2,8 @@
 // The driver behind test/script/bundle-ui-split.test.ts: bundles each surface's entry the way the build does and prints
 // one JSON line - per bundle, the absolute paths of the modules that went in. The control plane, the UI and the CLI
 // dispatcher are the hosts of the shared module sets (tools/build-shared-modules.mjs), read from the closures that
-// build reports; the other surfaces are not shared sets and go through tools/build-session.js, in memory. The split is then a fact about the metafile rather than a claim about the imports: the
-// control plane, the render worker, the script nodes, the SDK, the CLI dispatcher and the planner carry no UI code, and
+// build reports; the other surfaces are not shared sets and go through tools/build-session.js, in memory. The split is
+// then a fact about the metafile rather than a claim about the imports: the control plane, the render worker, the script nodes, the SDK, the CLI dispatcher and the planner carry no UI code, and
 // the UI bundle carries no CLI one.
 //
 // The build is Node's (esbuild is not a txiki module), so the test runs this in a node child, as
@@ -27,8 +27,9 @@ const BUNDLES = [
 ];
 
 // A product's list may be named (its manifest name, as the root package.json declares it): the driver generates that
-// product's tree into a temporary build directory and builds the four bundles a product has from it, exactly as the
-// build does (tools/product-generated.js through each build script). No name is the desktop.
+// product's tree into a temporary build directory and builds its surfaces from it as the build does: the render worker
+// and the script nodes through build-session.js, the control plane and the UI as the app set
+// (tools/product-generated.js redirects the generated modules). No name is the desktop.
 const REPO = resolve(process.cwd(), "../..");
 const productName = process.argv[2];
 // The desktop's shape is exactly what it was (one key per bundle); a product's adds its generated modules' text, which
@@ -38,8 +39,6 @@ let productDir;
 let work;
 if (productName) {
     const { mkdtempSync, realpathSync } = await import("node:fs");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
     const { generate } = await import("../../../../packages/retroplug/scripts/lib/packages.mjs");
     // The real path: macOS's tmpdir() is /var/folders, a symlink to /private/var/folders, and the generated tree's
     // relative paths back to the repository are counted from the path given, while esbuild resolves them from the real
@@ -54,7 +53,6 @@ if (productName) {
 try {
     const entries = productName
         ? [
-              ["control-plane", "src/pluginControlPlane.ts", "esm"],
               ["render-worker", "src/render/worker.ts", "iife"],
               ["script-nodes", `${productDir}/src/generated/scriptNodes.ts`, "iife"],
           ]

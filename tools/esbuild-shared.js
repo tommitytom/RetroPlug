@@ -1,5 +1,5 @@
-// Shared esbuild plumbing for the three Node build scripts (build-ui.js,
-// build-test.js, gen-rpc-ts.js). One esbuild (the workspace devDependency, not
+// Shared esbuild plumbing for the Node build scripts (build-ui.js,
+// build-session.js, build-shared-modules.mjs, gen-rpc-ts.js). One esbuild (the workspace devDependency, not
 // the copy vendored in deps/lv_binding_js), one alias map, one set of depfile
 // helpers — so the bundler config lives in a single place.
 //

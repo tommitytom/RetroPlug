@@ -8,8 +8,9 @@
 // (any package's `ts/cli/`, the tool contract, the tools). The dispatcher is the bundle that carries the tools, which is
 // why it is named here.
 //
-// The bundles are built as the build builds them, in memory: tools/build-session.js's bundleInputs (esm/iife) and
-// tools/build-ui.js's, and esbuild's metafile says which modules went in. The build is Node's, so test/script/
+// The bundles are built as the build builds them, in memory: the control plane, the UI and the dispatcher are read from
+// the shared sets' closures (tools/build-shared-modules.mjs), the rest through tools/build-session.js's bundleInputs
+// (esm/iife), and esbuild's metafile says which modules went in. The build is Node's, so test/script/
 // bundle-split.mjs runs it in a child, as bundle-protocol.test.ts does.
 import { test, expect } from "@retroplug/testing";
 

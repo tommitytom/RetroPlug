@@ -1557,10 +1557,9 @@ names (`system`, `host-io`, `graph-runtime`, `core`, `dsp`, `launchpad`); the co
 the product does: `retroplug_product` links every package the product lists. The
 test host `retroplug-host` is that lib + `main.cpp`; the DPF plugin is
 [`dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)`](../packages/native/CMakeLists.txt)
-(AU is macOS-only). The control-plane and UI bytecode (and the app's shared module table both link to) are built by
-`tools/build-shared-modules.mjs` through `retroplug-modc` ([06](06-build-test.md#the-shared-module-sets)), and the
-script-node bundle
-by `tools/build-session.js` (`retroplug-script-bundle`); all are **derived, never committed**.
+(AU is macOS-only). The control-plane and UI host bytecode and the app's shared module table they link to are built by
+`tools/build-shared-modules.mjs` through `retroplug-modc`
+([06](06-build-test.md#the-shared-module-sets)), and the script-node bundle by `tools/build-session.js` (`retroplug-script-bundle`); all are **derived, never committed**.
 [06-build-test.md](06-build-test.md) is the full build/verify story.
 
 Plugin identity: name `RetroPlug`, CLAP id

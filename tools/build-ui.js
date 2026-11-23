@@ -1,6 +1,6 @@
-// The UI's esbuild option set (uiBuildOptions), reused by tools/build-shared-modules.mjs, which builds the control plane
-// and the UI as the app's shared module set; CMake no longer runs this file as a script. The tests' bundleInputs
-// (bundle-views.mjs) and the CLI form below (node tools/build-ui.js OUT.js) still use it.
+// The UI's esbuild option set (uiBuildOptions). tools/build-shared-modules.mjs, which builds the control plane and the
+// UI as the app's shared module set, and test/script/bundle-views.mjs reuse it; CMake does not run this file. The CLI
+// form below is an ad-hoc dev run.
 const path = require("path");
 const fs = require("fs");
 const {
@@ -51,29 +51,14 @@ function uiBuildOptions(entryPath, outfile, product = undefined) {
     };
 }
 
-/** The modules `entry` bundled to `outfile` carries, as absolute paths: test/script/bundle-ui-split.test.ts holds the
- *  UI bundle to carrying no CLI code, and the non-UI bundles to carrying no UI. Built in memory, so nothing is
- *  written. */
-async function bundleInputs(entry, outfile = path.resolve(REPO_ROOT, "build/ui/bundle.js"), product = undefined) {
-    // Asynchronous because a product's redirect is a plugin, and esbuild refuses plugins in buildSync.
-    const result = await esbuild.build({ ...uiBuildOptions(entry, outfile, product), write: false, metafile: true });
-    return {
-        inputs: Object.keys(result.metafile.inputs).map((input) => path.resolve(REPO_ROOT, input)),
-        bytes: result.outputFiles[0].contents.length,
-    };
-}
-
-module.exports = { uiBuildOptions, bundleInputs };
+module.exports = { uiBuildOptions };
 
 if (require.main === module) {
-    // Args from CMake (or default to writing into ../build/ui/ for ad-hoc runs).
+    // An ad-hoc run (the build goes through tools/build-shared-modules.mjs); the arguments default into ../build/ui/.
     //   node build-ui.js <bundle.js> [bundle.d] [ui-entry.tsx] [--product-dir <dir>]
-    // The UI entry is a consumer-owned build input (the framework doesn't hardcode
-    // it); CMake passes the RetroPlug entry, ad-hoc runs default to it.
-    // Bytecode compilation (bundle.js → bundle_data.c) is a separate step
-    // driven by CMake via txiki's `tjsc` binary.
+    // Nothing here compiles bytecode: that is retroplug-modc's, in the shared build.
     const argv = process.argv.slice(2);
-    // The product flag, in the form the other two build scripts take it (tools/product-generated.js), and only when
+    // The product flag, in the form build-session.js takes it (tools/product-generated.js), and only when
     // there is a product tree: no flag is the desktop, the shell's own tree.
     const productAt = argv.indexOf("--product-dir");
     const productArg = productAt === -1 ? undefined : argv.splice(productAt, 2)[1];

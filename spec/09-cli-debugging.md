@@ -88,8 +88,8 @@ external (the binary serves it from its loaded-module table). They are **loose `
 ### The `render` subcommand (compiled-in)
 
 For end users, `retroplug-cli` also carries **named subcommands whose session is compiled into the
-binary** (tjsc bytecode, exactly like the plugin's control-plane/UI bundles) — no loose `.js`, no Node,
-just the executable. The first is `render`, which takes a ROM + its battery `.sav` (or a savestate)
+binary** (retroplug-modc bytecode of the CLI's shared module set, built the way the plugin's control-plane/UI set is)
+— no loose `.js`, no Node, just the executable. The first is `render`, which takes a ROM + its battery `.sav` (or a savestate)
 straight to WAV. It runs as an engine job on the CLI's own engine ([11-ui-rendering.md](11-ui-rendering.md)); the
 first Ctrl-C cancels it (`ERROR: render: cancelled`, exit 1, no WAV from a cancel that lands mid-render, and an
 export already at the path left as it was) and a second kills the process:
@@ -119,7 +119,8 @@ high→low, polled each ~100 ms chunk via `backend.readCpu` (lsdpack's technique
 split into the pure, unit-tested [cli/renderArgs.ts](../packages/retroplug/cli/renderArgs.ts)). Commands are
 owned by the TS root dispatcher [cli/cli.ts](../packages/retroplug/cli/cli.ts) — registered in
 [cli/tools.ts](../packages/retroplug/cli/tools.ts), bundled by the `retroplug-cli-bundle` CMake target and
-linked into `retroplug-cli` (`rp_cli_bundle`, over the CLI set's module table `rp_cli_modules`, which the dispatcher branch registers; session files register only the SDK module); [cli/main.cpp](../packages/native/cli/main.cpp) evals that
+linked into `retroplug-cli` (`rp_cli_bundle`, over the CLI set's module table `rp_cli_modules`, which the dispatcher
+branch registers; session files register only the SDK module); [cli/main.cpp](../packages/native/cli/main.cpp) evals that
 dispatcher for a command (it prints the top-level help + routes `<cmd> --help`), or a `<session.js>` file by
 path as the dev fallback. Smoke: `pnpm cli:render-smoke`.
 

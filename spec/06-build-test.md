@@ -321,9 +321,9 @@ than a determined author (a computed `["g", "b"].join("")`, a computed table key
 
 **A bundle check keeps the surfaces apart.**
 [test/script/bundle-ui-split.test.ts](../packages/retroplug/test/script/bundle-ui-split.test.ts) holds the control
-plane (read from the app set's closure), the render worker, the script nodes, the SDK, the dispatcher (the CLI set's closure) and the planner to carrying no UI (no `ui` package
-module, no package's `ts/ui/`, no `ui/generated`), and the UI to carrying no CLI (no package's `ts/cli/`, no
-`core/cliTool.ts`, no `cli/generated`). The generated modules are split so that this can hold, the menus and views
+plane (read from the app set's closure), the render worker, the script nodes, the SDK, the dispatcher (the CLI set's
+closure) and the planner to carrying no UI (no `ui` package module, no package's `ts/ui/`, no `ui/generated`), and the
+UI to carrying no CLI (no package's `ts/cli/`, no `core/cliTool.ts`, no `cli/generated`). The generated modules are split so that this can hold, the menus and views
 imported by the UI alone and the tools by the dispatcher alone, and the bundle check keeps that true.
 
 **A package's tests are its own.** A test whose subject is wholly in a package lives in its `ts/test/`, runs on the
