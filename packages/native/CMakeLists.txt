@@ -61,8 +61,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/product-bundles.cmake)
 # the class-id test instantiate. PUBLIC because its includers write "dpfjs/host/TjsHostRuntime.hpp", and because the
 # library's own header is what brings tjs.h/quickjs.h to them; `tjs` is PUBLIC for the same reason (its runtime types
 # are in TjsHostRuntime's interface).
-add_library(retroplug-tjs-runtime STATIC ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp)
-target_include_directories(retroplug-tjs-runtime PUBLIC ${DPFJS_PATH}/src)
+add_library(retroplug-tjs-runtime STATIC
+    ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp
+    src/host/js/SharedModules.cpp)    # the shared module sets' loader (docs/downloadable-packs-m2b-plan.md)
+target_include_directories(retroplug-tjs-runtime PUBLIC ${DPFJS_PATH}/src ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-tjs-runtime PUBLIC tjs)
 set_target_properties(retroplug-tjs-runtime PROPERTIES
     CXX_STANDARD 20

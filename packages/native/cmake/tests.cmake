@@ -41,12 +41,34 @@ retroplug_add_test_binary(
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/plugin/dynparams   # the test's DistrhoPluginInfo.h — must come first
              ${DPFJS_PATH}/deps/dpf/distrho)                     # DistrhoPlugin.hpp + src/DistrhoPluginInternal.hpp
 
-# Guards TjsHostRuntime::init's class-id counter sync (the plugin-editor blank-UI fix); it needs the real txiki host,
-# which is the shell's own library, not the backend: the binary links no engine at all, so it is an ordinary binary (a
-# test of the host runtime, not of the engine).
+# The shared module loader's fixture (test/plugin/shared-modules-fixture): two tables and two host entries, compiled by
+# retroplug-modc as the real sets are.
+set(_fx_dir "${CMAKE_CURRENT_SOURCE_DIR}/test/plugin/shared-modules-fixture")
+set(_fx_out "${CMAKE_BINARY_DIR}/test/shared-modules-fixture")
+set(_fx_c "${_fx_out}/fx-table_data.c" "${_fx_out}/fx-misordered_data.c"
+          "${_fx_out}/fx-host-a_data.c" "${_fx_out}/fx-host-b_data.c")
+add_custom_command(
+    OUTPUT ${_fx_c}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_fx_out}
+    COMMAND ${_MODC_COMMAND} table -s rp_fx_modules table.tsv ${_fx_out}/fx-table_data.c
+    COMMAND ${_MODC_COMMAND} table -s rp_fx_misordered misordered.tsv ${_fx_out}/fx-misordered_data.c
+    COMMAND ${_MODC_COMMAND} array -s rp:fx-a rp_fx_host_a host-a.js ${_fx_out}/fx-host-a_data.c
+    COMMAND ${_MODC_COMMAND} array -s rp:fx-b rp_fx_host_b host-b.js ${_fx_out}/fx-host-b_data.c
+    WORKING_DIRECTORY ${_fx_dir}
+    DEPENDS ${_MODC_DEP} ${_fx_dir}/state.js ${_fx_dir}/dep.js ${_fx_dir}/host-a.js ${_fx_dir}/host-b.js
+            ${_fx_dir}/table.tsv ${_fx_dir}/misordered.tsv
+    COMMENT "Compiling the shared module loader's fixture"
+    VERBATIM)
+
+# Guards the host runtime: TjsHostRuntime::init's class-id counter sync (the plugin-editor blank-UI fix) and the shared
+# module sets' loader (host/js/SharedModules); it needs the real txiki host, which is the shell's own library, not the
+# backend: the binary links no engine at all, so it is an ordinary binary (a test of the host runtime, not of the
+# engine).
 retroplug_add_test_binary(
     NAME     retroplug-classid-test
     SOURCES  test/plugin/ClassIdReserve.test.cpp
+             test/plugin/SharedModules.test.cpp
+             ${_fx_c}
     LIBS     retroplug-tjs-runtime)                     # TjsHostRuntime + ClassIdSpace.hpp (+ txiki, quickjs)
 
 # Guards the engine's audio paths across systems: the NES split routings through a real Engine, a host sample-rate change
