@@ -157,19 +157,22 @@ The gamepad-axis bus dispatches no app action, and the generator refuses a bindi
 ### Downloadable packs
 
 Part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md) is built in five
-milestones, and what is left of it is M2b (loading a pack's TS halves, the protocol half and the contribution kinds among them, with
-the module-linking spike first: [the M2a plan](../docs/downloadable-packs-m2a-plan.md)'s design questions), M3 (placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands, Settings >
-Packs, and a host calling `loadLaunchPacks` at launch) and M5 (Mesen and BlipToaster loaded as packs with their suites
-unchanged, and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on
-Windows (the plan's design question 1). After part 1 the road is the design's parts 2 to 6, and the authoring loop, downloads and unloading a script pack (the `Engine` has `loadScriptPack` and no unload;
-native code is never unloaded) are what downloadable packs still need (the C1 design's section 8). With them come
-third-party controller apps: `controllerApps` registers from the product's package list (the kinds are M2b's), so an
-app from outside the tree waits for this road; menu rows a pack contributes go through the live UI registry. And a provider cannot be downloaded either, since it is reached only through the generated static
-table, and which of a pack's facet methods a product mounts is not yet scoped. Whether a downloaded pack's bytecode is
-stripped is the format's to say: a pack compiled from source keeps its debug information, about a quarter more memory
-than stripped code. ([C1 design](../docs/modular-graph-phase-c1-design.md) sections 8, 12 and 13,
-[E1](../docs/modular-graph-phase-e1-design.md) section 10, [E2](../docs/modular-graph-phase-e2-design.md) section 13.8,
-[F3](../docs/modular-graph-phase-f3-design.md) section 11, [F5a](../docs/modular-graph-phase-f5a-design.md) section 12.)
+milestones, and what is left of it is M2b (loading a pack's TS halves, the protocol half and the contribution kinds
+among them, with the module-linking spike first: [the M2a plan](../docs/downloadable-packs-m2a-plan.md)'s design
+questions), M3 (placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands, Settings > Packs, and
+a host calling `loadLaunchPacks` at launch) and M5 (Mesen and BlipToaster loaded as packs with their suites unchanged,
+and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on Windows (the
+plan's design question 1). After part 1 the road is the design's parts 2 to 6, and the authoring loop, downloads and
+unloading a script pack (the `Engine` has `loadScriptPack` and no unload; native code is never unloaded) are what
+downloadable packs still need (the C1 design's section 8). With them come third-party controller apps: `controllerApps`
+registers from the product's package list (the kinds are M2b's), so an app from outside the tree waits for this road;
+menu rows a pack contributes go through the live UI registry. And a provider cannot be downloaded either, since it is
+reached only through the generated static table, and which of a pack's facet methods a product mounts is not yet scoped.
+Whether a downloaded pack's bytecode is stripped is the format's to say: a pack compiled from source keeps its debug
+information, about a quarter more memory than stripped code. ([C1 design](../docs/modular-graph-phase-c1-design.md)
+sections 8, 12 and 13, [E1](../docs/modular-graph-phase-e1-design.md) section 10,
+[E2](../docs/modular-graph-phase-e2-design.md) section 13.8, [F3](../docs/modular-graph-phase-f3-design.md) section 11,
+[F5a](../docs/modular-graph-phase-f5a-design.md) section 12.)
 
 ### The app loads no script pack
 
