@@ -32,12 +32,11 @@ import {
 // The hook and its result resolver live on globalThis because the native hosts (the OS dialog, the plugin's and the
 // SDL's pump) reach JS only through globals, and the UI installs the hook; the pending slot below is this context's
 // one copy (the control plane and the UI import the same module), so a browse either side starts is the one in
-// flight and its result resolves it. The hook is installed by the UI (the in-app React/LVGL browser — see
+// flight and its result resolves it. The hook is installed by the UI (the in-app React/LVGL browser: see
 // useFileBrowser) which overrides any native host browser; a native OS dialog is an opt-in the UI routes to. Only
-// one browse is ever in flight, so one module-level pending slot suffices, and the install guard means the resolver
-// is written once per context (two copies would each have written it, the later one orphaning the earlier's pending
-// browse). Absent (headless harness) → every browse
-// resolves null. startDir opens the browser at that directory; directory picks a folder (the render Output Dir).
+// one browse is ever in flight, so one module-level pending slot suffices, and every browse goes through the one
+// backend the control plane composed, which the UI borrows. Absent (headless harness) → every browse resolves null.
+// startDir opens the browser at that directory; directory picks a folder (the render Output Dir).
 type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string, startDir: string, directory: boolean) => void;
 
 let pendingBrowse: ((path: string | null) => void) | null = null;

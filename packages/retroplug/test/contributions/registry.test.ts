@@ -175,7 +175,7 @@ test("commitByName resolves registries by their names, and refuses an unknown on
   commitByName([{ registry: "test.fruit", pkg: "mu", items: ["medlar"] }]);
   expect(fruit.items().includes("medlar")).toBe(true);
   expect(() => commitByName([{ registry: "test.nuts", pkg: "mu", items: ["pecan"] }])).toThrow(
-    "no registry is named test.nuts in this bundle",
+    "no registry is named test.nuts in this module set",
   );
 });
 

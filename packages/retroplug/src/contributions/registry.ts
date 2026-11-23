@@ -6,9 +6,9 @@
 //
 // A commit is all or nothing across registries: its additions are staged, the check of every registry seeded after the
 // commit runs over the staged entries of all of them, and only when every check passes are the registries swapped, the
-// counter bumped once and the listeners told once. A registry not yet seeded in this bundle reads as empty and its
+// counter bumped once and the listeners told once. A registry not yet seeded in this module set reads as empty and its
 // check does not run: the generated modules seed in import order, so a check that reads another registry finds it
-// seeded, or absent from the bundle altogether (the planner's bundle carries the consoles and no app).
+// seeded, or absent from the module set altogether (the planner's bundle carries the consoles and no app).
 //
 // This module imports nothing: the planner's bundle carries it, and must carry no schema.
 
@@ -19,7 +19,7 @@ export interface Contribution<T> {
 }
 
 /** What a check reads another registry through: its entries as the commit would leave them, or none for a registry not
- *  yet seeded in this bundle. */
+ *  yet seeded in this module set. */
 export type RegistryView = <U>(registry: Registry<U>) => readonly Contribution<U>[];
 
 /** A registry's rule over its whole staged list, which throws its refusal. A check reads other registries through
@@ -33,8 +33,8 @@ export interface Addition<T = unknown> {
   readonly items: readonly NoInfer<T>[];
 }
 
-/** An addition naming its registry: what a pack's loader and the UI's test seam commit, since neither holds this
- *  context's registry objects (a render worker's or a script host's bundle has its own). */
+/** An addition naming its registry: what a pack's loader and the UI's test seam commit, since neither holds
+ *  this module set's registry objects: a pack carries no reference to them, and a test's bundle inlines its own copy. */
 export interface NamedAddition {
   readonly registry: string;
   readonly pkg: string;
@@ -50,7 +50,7 @@ interface State {
 
 const EMPTY: readonly never[] = Object.freeze([]);
 
-/** Every registry in this bundle, in the order their modules created them: the order the checks run in. */
+/** Every registry in this module set, in the order their modules created them: the order the checks run in. */
 const ALL: Registry<unknown>[] = [];
 const BY_NAME = new Map<string, Registry<unknown>>();
 const STATE = new WeakMap<Registry<unknown>, State>();
@@ -61,7 +61,7 @@ function stateOf<T>(registry: Registry<T>): State {
   const state = STATE.get(registry as Registry<unknown>);
   if (!state) {
     throw new Error(
-      `the registry ${registry.name} is not this context's (each context's module set has its own registries): commit it by name`,
+      `the registry ${registry.name} is not this module set's (each module set, shared or bundled, has its own registries): commit it by name`,
     );
   }
   return state;
@@ -94,7 +94,7 @@ export class Registry<T> {
     return stateOf(this).items as readonly T[];
   }
 
-  /** Whether a commit has touched this registry in this bundle. */
+  /** Whether a commit has touched this registry in this module set. */
   get seeded(): boolean {
     return stateOf(this).seeded;
   }
@@ -141,14 +141,14 @@ export function commitContributions<A extends readonly unknown[]>(
 }
 
 /** `commitContributions` over registry names. An unknown name is refused before anything is staged, naming the
- *  registries this bundle has. */
+ *  registries this module set has. */
 export function commitByName(additions: readonly NamedAddition[]): void {
   commitContributions(
     additions.map((addition) => {
       const registry = BY_NAME.get(addition.registry);
       if (!registry) {
         throw new Error(
-          `no registry is named ${addition.registry} in this bundle (its registries: ${[...BY_NAME.keys()].join(", ")})`,
+          `no registry is named ${addition.registry} in this module set (its registries: ${[...BY_NAME.keys()].join(", ")})`,
         );
       }
       return { registry, pkg: addition.pkg, items: addition.items };
@@ -156,7 +156,7 @@ export function commitByName(additions: readonly NamedAddition[]): void {
   );
 }
 
-/** How many commits this bundle has made: a memo's key, and what the UI re-renders on. */
+/** How many commits this module set has made: a memo's key, and what the UI re-renders on. */
 export function contributionsVersion(): number {
   return counter;
 }

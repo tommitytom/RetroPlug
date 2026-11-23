@@ -92,9 +92,8 @@ function occupied(kind: string): readonly (SystemInput | typeof TRACKER_MARKER)[
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
 // JS context (the control plane and the UI share its one copy, and the UI only ever reads ids the control plane's
 // stores allocated, except in the UI test harness, where its stores are the only ones), which is 1:1 with the native
-// Engine in every host (a plugin instance has
-// its own JS context + Engine; a native test file shares one host + Engine across its cases). Ids are
-// opaque handles; the snapshot registry uses 0 as its free-slot sentinel, so they start at 1.
+// Engine in every host (a plugin instance has its own JS context + Engine; a native test file shares one host + Engine
+// across its cases). Ids are opaque handles; the snapshot registry uses 0 as its free-slot sentinel, so they start at 1.
 let nextSystemId = 1;
 function allocSystemId(): number {
   return nextSystemId++;
