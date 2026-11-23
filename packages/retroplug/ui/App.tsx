@@ -133,7 +133,8 @@ export function App() {
   // profile changes. The profile is filled with the contributed actions' defaults first (design 5.6), so an id the
   // user has never edited reads its default; a `[]` the user wrote stays empty. The value is a LIST per key: one press
   // can carry the shell's action and a package's, and each runs.
-  const actionIds = contributedActionIds(); // the registry's list: the same array until a commit adds actions, so a stable dep
+  // The registry's list: the same array until a commit adds actions, so a stable dep.
+  const actionIds = contributedActionIds();
   const actionBindings = useMemo(
     () => withActionDefaults(bindings, contributedActions().map((entry) => entry.action)),
     [bindings, actionIds],

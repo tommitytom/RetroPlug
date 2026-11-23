@@ -2,7 +2,8 @@
 // each in a StableSlot of its own, always. The slot is why a view that appears late (a flag flipping, a session opening
 // on the next frame) does not land at the END of the tile's child list: lv_binding_js's insertChildBefore always
 // appends (spec/03's "Framework gotchas"), so a fixed wrapper with one swappable child is the one way React can place
-// it. The list is the registry's, which only grows at a commit, and the grid remounts the tile at a commit (SystemGrid keys it on the counter), so within a mount the slot list never changes length; a `when` that
+// it. The list is the registry's, which only grows at a commit, and the grid remounts the tile when the tile views
+// change (SystemGrid keys it on their count), so within a mount the slot list never changes length; a `when` that
 // flips under a live tile swaps the slot's child rather than appending a slot over the border and the badge, and a slot
 // with nothing in it is an empty transparent Box (the same shape the dim layer proves passes a click to the tile).
 import { useCallback, useSyncExternalStore } from "react";

@@ -14,6 +14,7 @@ import { Box } from "@retroplug/ui-react";
 import { useWindowSize } from "../../lvgl/useWindowSize";
 import { StableSlot } from "../../lvgl/StableSlot";
 import { EmulatorTile } from "./EmulatorTile";
+import { tileViews } from "../../host/viewContributions";
 import { Menu } from "../menu/Menu";
 import type { MenuTree } from "@retroplug/ui/menu";
 import type { UiHost } from "@retroplug/ui/contribution";
@@ -33,7 +34,7 @@ export function SystemGrid({
   onMenuClose?: () => void;
 }) {
   const stores = useStores();
-  const contributions = useContributionsVersion();
+  useContributionsVersion(); // a commit re-renders the grid; the tile key below decides what remounts
   const systems = useSystems();
   const settings = useProjectSettings();
   const userConfig = useUserConfig();
@@ -62,14 +63,15 @@ export function SystemGrid({
               const showMenu = sys.id === menuSystemId && menuTree != null;
               return (
                 <StableSlot key={`slot-${sys.id}`} testId={`tile-${index}`} width={tw} height={th}>
-                  {/* The tile is keyed on the registries' commit counter: a commit can add a tile view, whose slot must sit
-                      before the border and the badge, and lv_binding_js only appends (spec/03's framework gotchas), so the
-                      tile remounts with its slots in place. A commit is a launch or a pack, never a frame. */}
+                  {/* The tile is keyed on the tile views' count: a commit can add a tile view, whose slot must sit before
+                      the border and the badge, and lv_binding_js only appends (spec/03's framework gotchas), so the tile
+                      remounts with its slots in place. The registry only grows, and a commit to anything else (a role, a
+                      console, a menu row) leaves the count, so the tiles stay mounted. */}
                   {showMenu ? (
                     <Menu width={tw} height={th} zoom={zoom} tree={menuTree!} onClose={onMenuClose ?? (() => {})} />
                   ) : (
                     <EmulatorTile
-                      key={`tile-${sys.id}-${contributions}`}
+                      key={`tile-${sys.id}-${tileViews().length}`}
                       systemId={sys.id}
                       host={host}
                       focused={sys.focused}

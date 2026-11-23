@@ -18,7 +18,6 @@ import { siblingRplgPath, isSavPath, SAV_PATTERNS } from "./savPaths";
 import { romExtensions } from "./consoles";
 import { classifyRom, type SystemsStore } from "./systemsStore";
 
-/** The file-dialog globs for a ROM: one per extension the registered consoles read, in product order. */
 /** The file dialogs' ROM patterns: every registered console's extensions, read when a dialog opens, so a console a pack
  *  registers is offered from then on. */
 export function romPatterns(): string[] {
