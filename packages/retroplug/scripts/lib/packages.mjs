@@ -7,11 +7,12 @@
 //                                                    the tracker integrations, the kit formats, the project sections
 //                                                    and services, the contribution kinds' items, and a duplicate in
 //                                                    list a key or a marker role identifies refused at load
-//   packages/retroplug/src/generated/consoles.ts      the consoles the shell classifies a ROM with and places systems
-//                                                    by, and the physical carts a project can drive, from each
-//                                                    package's retroplug.consoles module. It imports only those
-//                                                    modules and a type, so a bundle of the planner carries the
-//                                                    descriptors without an app module or zod
+//   packages/retroplug/src/generated/consoles.ts      seeds the live registries in
+//                                                    src/contributions/consoleRegistries.ts (where the checks live) with the consoles the shell classifies a
+//                                                    ROM with and places systems by, and the physical carts a project
+//                                                    can drive, from each package's retroplug.consoles module. It
+//                                                    imports only those modules and the registries, so a bundle of
+//                                                    the planner carries the descriptors without an app module or zod
 //   packages/retroplug/src/generated/protocol.ts     PROTOCOL_NODES, ROLE_NODES and DECLARED_NODE_TYPES, the wiring
 //                                                    buildGraph reads, and KIND_DATA, the data the contributing
 //                                                    manifests declare for each contribution kind's items. It imports
@@ -20,9 +21,11 @@
 //   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, registering each contribution
 //                                                    kind's runtime halves (the manifests' entries) and then the node
 //                                                    definitions, in span-label order
-//   packages/retroplug/src/generated/placers.ts      the graph placers buildGraph reads, one import per declaring
-//                                                    package, in product order. Types and constants alone, so the
-//                                                    planner's bundle carries no node module and no schema
+//   packages/retroplug/src/generated/placers.ts      seeds the live registry in
+//                                                    src/contributions/placerRegistries.ts (where the checks live) with the graph placers buildGraph reads,
+//                                                    one import per declaring package, in product order. Types and
+//                                                    constants alone, so the planner's bundle carries no node module
+//                                                    and no schema
 //   packages/retroplug/ui/generated/menus.ts          the packages' UI contributions, in product order, and the checks
 //                                                    their rows and builders are held to at load. Imported only by
 //                                                    ui/, so no other bundle carries a menu contribution
@@ -1041,7 +1044,8 @@ function renderPackages({ packages, outDir, names, product }) {
 }
 
 /** The generated graph placers module (`<shell>/src/generated/placers.ts`): each package's `protocol.placer` module, in
- *  product order, and the checks buildGraph's slots are held to. A placer's module is reachable from the planner's
+ *  product order, seeded into the live registry src/contributions/placerRegistries.ts, where the checks live. A
+ *  placer's module is reachable from the planner's
  *  bundle, so this file imports a package that imports types and constants only (test/script/bundle-protocol.test.ts
  *  holds the bundle to carrying no node module and no zod). */
 function renderPlacers({ packages, outDir, shellDir, product }) {

@@ -264,7 +264,7 @@ access such as `x.gb` is not, since the declaration is what is judged), and text
 `rom.gb` tail; a string with whitespace in it is prose, not a path, so a help text naming a file is not a hit), and a
 regular expression whose source spells an escaped dot and matches `rom<ext>` but not the extension's bare letters (so
 `/\.gbc?$/i` is a hit and `/^[\x20-\x7e]*$/` is not). A comment is trivia and a `${...}` cannot move the walk's
-place. The ids, extensions, cores and node types are the console registry's, read from the generated `CONSOLES` list,
+place. The ids, extensions, cores and node types are the console registry's, read from the console registry (src/contributions/consoleRegistries.ts),
 and the cart ids (an embed's, a tracker integration's and a kit format's) from the generated package list, so a
 console or a cart a product adds is guarded without an edit to the test, and its knowledge stays its package's. The
 exemptions are the frozen v2 to v3 step's four package role-kind keys, which may not read the registry (decision 13).

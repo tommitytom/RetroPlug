@@ -94,12 +94,12 @@ export function platformEntry(platform: Platform): ConsolePlatform | undefined {
   return index().byPlatform.get(platform)?.platform;
 }
 
-/** Every registered platform, in product order. */
+/** Every registered platform, in registration order (the product's, then packs'). */
 export function registeredPlatforms(): readonly ConsolePlatform[] {
   return index().platforms;
 }
 
-/** Every core a descriptor names, in product order, first registration first. */
+/** Every core a descriptor names, in registration order (the product's, then packs'), first registration first. */
 export function registeredCores(): readonly Core[] {
   return index().cores;
 }
@@ -137,12 +137,12 @@ export function platformCapabilities(platform: Platform): NonNullable<ConsoleDes
   return index().byPlatform.get(platform)?.descriptor.capabilities ?? {};
 }
 
-/** Every registered physical cart, in product order. */
+/** Every registered physical cart, in registration order (the product's, then packs'). */
 export function registeredRealCarts(): readonly RealCart[] {
   return realCartsRegistry.items();
 }
 
-/** The registered physical cart for `platform`, if one is: at most one, which the generated list refuses otherwise, so
+/** The registered physical cart for `platform`, if one is: at most one, which the real-carts registry's check refuses otherwise, so
  *  a caller resolving a platform's cart and a caller walking the list agree. */
 export function realCartOf(platform: Platform): RealCart | undefined {
   return index().realCartByPlatform.get(platform);
