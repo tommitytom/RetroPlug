@@ -19,7 +19,7 @@ import type { ConstructSpec, EmulatorBackend, HostBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
 import { capabilitiesOf, exportModeOf, linkGroupOf, systemKnobs, systemNodeId, type GraphSystem } from "./buildGraph";
 import { bootSystem, ResourcePool, systemHandles, type BootedSystem } from "./systemResources";
-import { PLACERS } from "../generated/placers";
+import { placerEntries } from "../contributions/placers";
 // The product's registrations, for their load-time side effect: a package's placer normalizes its model through the
 // registry its contribution kind fills, and this publisher parses no project, so nothing else here would fill it. A
 // module that reads a kind-filled registry imports the generated registry (projectConfig.ts states the rule).
@@ -117,7 +117,7 @@ export class DirectGraph {
    *  placer resolves its target and forces its cart's sync mode as it does a project's. A key no listed package places
    *  is still stored and published, and places nothing. False when the document did not plan. */
   setModel(key: string, model: unknown | null): boolean {
-    const normalize = PLACERS.find((entry) => entry.placer.key === key)?.placer.normalize;
+    const normalize = placerEntries().find((entry) => entry.placer.key === key)?.placer.normalize;
     const parsed = model !== null && model !== undefined && normalize ? normalize(model) : model;
     return this.change(() => {
       const models = { ...this.models };

@@ -60,7 +60,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { generate } from "../../scripts/lib/packages.mjs";
-import { fixtureAliases } from "./fixtureAliases.mjs";
+import { copyShellContributions, fixtureAliases } from "./fixtureAliases.mjs";
 
 const require = createRequire(import.meta.url);
 const { buildOptions } = require("../../../../tools/build-session.js");
@@ -72,6 +72,7 @@ const MODE = process.argv[2];
 const work = mkdtempSync(join(tmpdir(), "rp-packages-"));
 const root = join(work, "tree");
 cpSync(join(FIXTURES, "tree"), root, { recursive: true });
+copyShellContributions(root);
 
 const generated = join(root, "packages/retroplug/src/generated");
 
@@ -226,13 +227,13 @@ async function loadPackages() {
     projectServices: loaded.PROJECT_SERVICES.map((entry) => entry.service.key),
     configSections: loaded.CONFIG_SECTIONS.map((entry) => `${entry.pkg}:${entry.section.key}`),
     embeds: loaded.EMBEDS.map((embed) => ({ id: embed.id, label: embed.label, platform: embed.platform })),
-    consoles: consoles.CONSOLES.map((descriptor) => ({
+    consoles: consoles.consolesRegistry.items().map((descriptor) => ({
       id: descriptor.id,
       core: descriptor.core,
       nodeType: descriptor.nodeType,
       platforms: descriptor.platforms.map((platform) => platform.id),
     })),
-    realCarts: consoles.REAL_CARTS.map((cart) => ({ platform: cart.platform, cartNode: cart.cartNode })),
+    realCarts: consoles.realCartsRegistry.items().map((cart) => ({ platform: cart.platform, cartNode: cart.cartNode })),
   };
 }
 
@@ -1442,7 +1443,9 @@ try {
       generate({ root });
       try {
         result = await loadPlacers();
-        result = { placers: result.PLACERS.map((entry) => `${entry.pkg}:${entry.placer.key}`) };
+        result = {
+          placers: result.placersRegistry.entries().map(({ pkg, item }) => `${pkg}:${item.key}`),
+        };
       } catch (e) {
         result = { error: e.message };
       }

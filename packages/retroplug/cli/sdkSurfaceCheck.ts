@@ -25,7 +25,7 @@ import type * as Sdk from "./sdk";
 import type { ConstructSpec as RealConstructSpec } from "../src/backend";
 import type { EngineGraph as RealEngineGraph } from "../src/engineGraph";
 import { bootSession as realBootSession, DirectGraph } from "./sdk";
-import { CONSOLES, REAL_CARTS } from "../src/generated/consoles";
+import { consoleDescriptors, registeredRealCarts } from "../src/consoles";
 import {
   bootSession,
   hostArgs,
@@ -212,8 +212,8 @@ export function sdkSurfaceCheck(): void {
   // fact, so every field below is the real one's and only `platform` and `core` read as plain strings.
   // The console is the one a REAL cart drives - the FIFO knob at the end is that console's role config, not another
   // console's - read from the registry by the cart's platform, so this check spells no console's knowledge either.
-  const realCart = REAL_CARTS[0]!;
-  const descriptor = CONSOLES.find((console) =>
+  const realCart = registeredRealCarts()[0]!;
+  const descriptor = consoleDescriptors().find((console) =>
     console.platforms.some((platform) => platform.id === realCart.platform),
   )!;
   const spec = { romPath: rom ?? "", platform: realCart.platform, core: descriptor.core, embeddedRom: "",

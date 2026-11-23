@@ -13,14 +13,16 @@ import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import type { KitFormat } from "@retroplug/dsp/kitContract";
 import type { Embed, ProjectSection } from "@retroplug/core/definePackage";
 import type { ProjectServiceFactory } from "@retroplug/tracker/projectService";
-import { CONSOLES } from "./consoles";
-import { PLACERS } from "./placers";
+import { consolesRegistry } from "./consoles";
+import { placersRegistry } from "./placers";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
 import { KIND_DATA, PROTOCOL_NODES, ROLE_NODES } from "./protocol";
 import kind_widgets_alpha from "@retroplug/alpha/kind";
 import kind_controllerApps_beta from "@retroplug/beta/kind";
+const CONSOLES = consolesRegistry.items();
+const PLACERS = placersRegistry.entries().map(({ pkg, item }) => ({ pkg, placer: item }));
 
 /** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the
  *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */

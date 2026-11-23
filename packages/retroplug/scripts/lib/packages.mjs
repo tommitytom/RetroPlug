@@ -811,10 +811,10 @@ function renderPackages({ packages, outDir, names, product }) {
     'import type { KitFormat } from "@retroplug/dsp/kitContract";',
     'import type { Embed, ProjectSection } from "@retroplug/core/definePackage";',
     'import type { ProjectServiceFactory } from "@retroplug/tracker/projectService";',
-    'import { CONSOLES } from "./consoles";',
+    'import { consolesRegistry } from "./consoles";',
     // The placers are checked against the sections below (a placer's key is its section's), so this module imports
     // them: the control plane already carries them through buildGraph, so only the check is new here.
-    'import { PLACERS } from "./placers";',
+    'import { placersRegistry } from "./placers";',
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   // The kind's data and the product's node types reach the declaring package's check: a mode naming a node type no
@@ -826,6 +826,8 @@ function renderPackages({ packages, outDir, names, product }) {
     );
   }
   lines.push(
+    "const CONSOLES = consolesRegistry.items();",
+    "const PLACERS = placersRegistry.entries().map(({ pkg, item }) => ({ pkg, placer: item }));",
     "",
     "/** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the",
     " *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */",
@@ -1042,7 +1044,7 @@ function renderPackages({ packages, outDir, names, product }) {
  *  product order, and the checks buildGraph's slots are held to. A placer's module is reachable from the planner's
  *  bundle, so this file imports a package that imports types and constants only (test/script/bundle-protocol.test.ts
  *  holds the bundle to carrying no node module and no zod). */
-function renderPlacers({ packages, outDir, product }) {
+function renderPlacers({ packages, outDir, shellDir, product }) {
   const contributors = packages.filter((p) => p.placer);
   const local = (name) => `placer_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
   const lines = [
@@ -1050,33 +1052,23 @@ function renderPlacers({ packages, outDir, product }) {
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
     "//",
     "// The product's graph placers, in product order: each package's `protocol.placer` module, which says where",
-    "// the nodes of a model the shell hands it go (docs/modular-graph-phase-f5a-design.md section 6.3). buildGraph",
-    `// reads the slots in this order, so a package's place in \`retroplug.products.${product}\` is where its nodes land.`,
-    "// Only the planner imports this module, and it carries types and constants alone: no package's node code and",
-    "// no schema.",
-    'import type { GraphPlacer } from "@retroplug/core/placer";',
+    "// the nodes of a model the shell hands it go (docs/modular-graph-phase-f5a-design.md section 6.3), seeded into",
+    "// the live registry src/contributions/placerRegistries.ts. buildGraph reads them in this order, so a package's",
+    `// place in \`retroplug.products.${product}\` is where its nodes land. Only the planner imports this module, and it`,
+    "// carries types and constants alone: no package's node code and no schema.",
+    `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
+    `import { placersRegistry } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/placerRegistries.ts")}";`,
   ];
   for (const p of contributors) {
     lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.placer)}";`);
   }
-  lines.push("");
-  lines.push("/** Each package's graph placer, in product order. */");
-  lines.push("export const PLACERS: readonly { pkg: string; placer: GraphPlacer<any> }[] = [");
-  for (const p of contributors) {
-    lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, placer: ${local(p.pkg.name)} },`);
-  }
-  lines.push("];");
   lines.push(
-    "const placerKeys = new Map<string, string>();",
-    "for (const { pkg, placer } of PLACERS) {",
-    "  const owner = placerKeys.get(placer.key);",
-    "  if (owner !== undefined) {",
-    "    throw new Error(owner === pkg",
-    "      ? `the package ${pkg} places the graph's model ${placer.key} twice`",
-    "      : `two packages place the graph's model ${placer.key}: ${owner} and ${pkg}`);",
-    "  }",
-    "  placerKeys.set(placer.key, pkg);",
-    "}",
+    "",
+    "export { placersRegistry };",
+    "",
+    ...seedLines(["placersRegistry"], contributors.map((p) => ({
+      registry: "placersRegistry", pkg: p.pkg.name, items: `[${local(p.pkg.name)}]`,
+    }))),
     "",
   );
   return lines.join("\n");
@@ -1614,7 +1606,28 @@ function manifestsWithEmbeds(packages) {
     .join(", ");
 }
 
-function renderConsoles({ packages, outDir, product }) {
+/** The import of one of the shell's hand-written contribution modules (src/contributions/<name>.ts, ui/contributions,
+ *  cli/contributions) from a generated module, by a path relative to wherever that module is written: the desktop's
+ *  tree and a product's tree under build/ both reach the shell's one file, so the registry a generated module seeds is
+ *  the one the shell reads. */
+function contributionsSpecifier(outDir, shellDir, file) {
+  return specifier(outDir, join(shellDir, file));
+}
+
+/** A commit's additions as generated lines: the shell's own empty addition first for each registry, which seeds it even
+ *  in a product none of whose packages contributes (an unseeded registry reads as empty and goes unchecked), then one
+ *  addition per contributing package. */
+function seedLines(registries, contributions) {
+  return [
+    "commitContributions([",
+    ...registries.map((registry) => `  { registry: ${registry}, pkg: ${JSON.stringify(SHELL)}, items: [] },`),
+    ...contributions.map(({ registry, pkg, items }) =>
+      `  { registry: ${registry}, pkg: ${JSON.stringify(pkg)}, items: ${items} },`),
+    "]);",
+  ];
+}
+
+function renderConsoles({ packages, outDir, shellDir, product }) {
   const contributors = packages.filter((p) => p.consoles);
   // A module identifier per package: the package name loses its punctuation, as the app imports' do, and a collision
   // would be a tsc error naming neither manifest.
@@ -1623,74 +1636,29 @@ function renderConsoles({ packages, outDir, product }) {
     `${generatedFrom(product)} and the`,
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
     "//",
-    "// The consoles the product's packages contribute, in product order, and the physical carts a project can drive.",
-    "// The descriptors say how a ROM is classified, which node type places a system, what that node's knobs and stream",
-    "// layouts are and how a render of it splits and shapes its output; a real cart says which platform's systems",
-    "// reach it. Nothing here imports an app module or zod: the planner reads this list, and a bundle of the planner",
-    "// must carry no role's schema (test/script/bundle-protocol.test.ts).",
-    'import type { ConsoleDescriptor, RealCart } from "@retroplug/core/consoles";',
+    "// The consoles the product's packages contribute, in product order, and the physical carts a project can drive,",
+    "// seeded into the live registries (src/contributions/consoleRegistries.ts holds them and their checks). Nothing",
+    "// here imports an app module or zod: the planner reads these, and a bundle of the planner must carry no role's",
+    "// schema (test/script/bundle-protocol.test.ts).",
+    `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
+    "import { consolesRegistry, realCartsRegistry } from " +
+      `"${contributionsSpecifier(outDir, shellDir, "src/contributions/consoleRegistries.ts")}";`,
   ];
   for (const p of contributors) {
     lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.consoles)}";`);
   }
   lines.push(
     "",
-    "/** The consoles, in product order: each package's descriptors, which the classifier, the node table, the battery",
-    " *  rules and the render are read from. */",
-    "export const CONSOLES: readonly ConsoleDescriptor[] = [",
-    ...contributors.map((p) => `  ...(${local(p.pkg.name)}.consoles ?? []),`),
-    "];",
-    "// A platform id is looked up by the classifier, a stored project's validation and the menus, so one declared",
-    "// twice would leave one of the two consoles unreachable; a node type places a system, so two descriptors sharing",
-    "// one would make the node table depend on the order. (A descriptor's core must also be a system role, which",
-    "// ./packages.ts checks: the roles are its.)",
-    "const consolePlatforms = new Map<string, string>();",
-    "const consoleNodeTypes = new Map<string, string>();",
-    "for (const consoleDescriptor of CONSOLES) {",
-    "  for (const consolePlatform of consoleDescriptor.platforms) {",
-    "    const owner = consolePlatforms.get(consolePlatform.id);",
-    "    if (owner !== undefined) {",
-    "      throw new Error(`two console descriptors declare the platform ${consolePlatform.id}: ${owner} and ` +",
-    "        consoleDescriptor.id);",
-    "    }",
-    "    consolePlatforms.set(consolePlatform.id, consoleDescriptor.id);",
-    "  }",
-    "  const nodeOwner = consoleNodeTypes.get(consoleDescriptor.nodeType);",
-    "  if (nodeOwner !== undefined) {",
-    "    throw new Error(`two console descriptors declare the node type ${consoleDescriptor.nodeType}: ` +",
-    "      `${nodeOwner} and ${consoleDescriptor.id}`);",
-    "  }",
-    "  consoleNodeTypes.set(consoleDescriptor.nodeType, consoleDescriptor.id);",
-    "}",
+    "export { consolesRegistry, realCartsRegistry };",
     "",
-    "/** The physical carts a project can drive, in product order: each names the platform whose systems it receives",
-    " *  and the node that owns its link. */",
-    "export const REAL_CARTS: readonly RealCart[] = [",
-    ...contributors.map((p) => `  ...(${local(p.pkg.name)}.realCarts ?? []),`),
-    "];",
-    "// One cart per platform and one per node, because a document places at most one: the store's lookup,",
-    "// buildGraph's placement and the menu's jobs all resolve a platform's cart, and with two registered the answer",
-    "// would be whichever package the product listed last.",
-    "const cartPlatforms = new Map<string, string>();",
-    "const cartNodes = new Map<string, string>();",
-    "for (const realCart of REAL_CARTS) {",
-    "  if (!consolePlatforms.has(realCart.platform)) {",
-    "    throw new Error(`the real cart ${realCart.cartNode} names the platform ${realCart.platform}, which no ` +",
-    "      \"console descriptor registers\");",
-    "  }",
-    "  const platformOwner = cartPlatforms.get(realCart.platform);",
-    "  if (platformOwner !== undefined) {",
-    "    throw new Error(`two real carts name the platform ${realCart.platform}: ${platformOwner} and ` +",
-    "      realCart.cartNode);",
-    "  }",
-    "  cartPlatforms.set(realCart.platform, realCart.cartNode);",
-    "  const nodeOwner = cartNodes.get(realCart.cartNode);",
-    "  if (nodeOwner !== undefined) {",
-    "    throw new Error(`two real carts name the cart node ${realCart.cartNode}: ${nodeOwner} and ` +",
-    "      realCart.platform);",
-    "  }",
-    "  cartNodes.set(realCart.cartNode, realCart.platform);",
-    "}",
+    ...seedLines(["consolesRegistry", "realCartsRegistry"], [
+      ...contributors.map((p) => ({
+        registry: "consolesRegistry", pkg: p.pkg.name, items: `${local(p.pkg.name)}.consoles ?? []`,
+      })),
+      ...contributors.map((p) => ({
+        registry: "realCartsRegistry", pkg: p.pkg.name, items: `${local(p.pkg.name)}.realCarts ?? []`,
+      })),
+    ]),
     "",
   );
   return lines.join("\n");
@@ -2139,7 +2107,7 @@ export function generate({
     },
     {
       path: join(outDir, "consoles.ts"),
-      content: renderConsoles({ packages: contributionsOf, outDir, product }),
+      content: renderConsoles({ packages: contributionsOf, outDir, shellDir: shell.dir, product }),
     },
     {
       path: join(outDir, "protocol.ts"),
@@ -2151,7 +2119,7 @@ export function generate({
     },
     {
       path: join(outDir, "placers.ts"),
-      content: renderPlacers({ packages: contributionsOf, outDir, product }),
+      content: renderPlacers({ packages: contributionsOf, outDir, shellDir: shell.dir, product }),
     },
     {
       path: join(uiOutDir, "menus.ts"),

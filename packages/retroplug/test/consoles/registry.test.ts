@@ -12,7 +12,7 @@
 import { test, expect } from "@retroplug/testing";
 import { classifyRom } from "../../src/systemsStore";
 import {
-  CONSOLE_DESCRIPTORS,
+  consoleDescriptors,
   consoleFor,
   detectPlatform,
   detectorAnswer,
@@ -262,7 +262,7 @@ test("each split's tap mode is the export mode its config patch names", () => {
   // The mode a render builds a node in (the split's configPatch label) and the mode the engine arms for a lone system
   // (its tapMode) must be the same ordinal, or a split renders one layout and arms another.
   const wrong: string[] = [];
-  for (const descriptor of CONSOLE_DESCRIPTORS) {
+  for (const descriptor of consoleDescriptors()) {
     for (const [name, split] of Object.entries(descriptor.splits ?? {})) {
       // A split that changes no config and arms no tap (the Game Boy's four channels) has no mode to agree on.
       if (split.tapMode === undefined && split.configPatch === undefined) continue;

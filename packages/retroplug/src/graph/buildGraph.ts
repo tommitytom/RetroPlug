@@ -30,7 +30,7 @@ import {
 import { serialOutCaptureFor, type SerialOutCaptureMode } from "./serialCapture";
 import type { GraphPlacer, PlaceContext, Placement, Placed } from "@retroplug/core/placer";
 import type { KindData } from "@retroplug/core/defineKind";
-import { PLACERS } from "../generated/placers";
+import { placerEntries } from "../contributions/placers";
 import { KIND_DATA } from "../generated/protocol";
 
 /** A placer's throw is one package's fault: it is warned about once per package and model key, and the placement is
@@ -411,7 +411,7 @@ function nesMode(arm: TapArm | null, s: GraphSystem): number {
 
 export function buildGraph(
   model: GraphModel,
-  placers: readonly { pkg: string; placer: GraphPlacer<any> }[] = PLACERS,
+  placers: readonly { pkg: string; placer: GraphPlacer<any> }[] = placerEntries(),
 ): BuiltGraph {
   const { systems, routing, shape } = model;
   // One decision for the wiring and the arm returned with it, so the two always agree.

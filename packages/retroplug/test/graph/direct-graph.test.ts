@@ -6,12 +6,12 @@
 // does not know and answers `{}`: every knob silently back to the app's defaults.
 import { test, expect } from "@retroplug/testing";
 import { directGraph } from "../../src/graph/directGraph";
-import { PLACERS } from "../../src/generated/placers";
+import { placerEntries } from "../../src/contributions/placers";
 
 test("the model publisher parses a model's app config, so the registry is filled by the time it loads", () => {
   // The publisher is imported for its side effect: it is not called (a DirectGraph needs a native host's RPC).
   expect(typeof directGraph).toBe("function");
-  const placer = PLACERS.find((entry) => entry.placer.key === "controller")?.placer;
+  const placer = placerEntries().find((entry) => entry.placer.key === "controller")?.placer;
   expect(placer !== undefined).toBe(true);
   // A user's own value survives; the knobs it does not name fill from the app's schema, which is the table's.
   const normalized = placer!.normalize!({

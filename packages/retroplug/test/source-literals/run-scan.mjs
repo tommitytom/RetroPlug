@@ -13,7 +13,7 @@
 //     --cores <id,...> --node-types <type,...> --node-prefixes <prefix,...> --node-exempt <type,...> --carts <id,...> \
 //     [--dirs src,cli,ui] [--root <dir>]
 //
-// The guarded sets are the console registry's, not this file's: the test imports the generated CONSOLES list and passes
+// The guarded sets are the console registry's, not this file's: the test imports the console registry's list and passes
 // its platform ids, extensions, cores and node types, so a console a product registers later is guarded without an edit
 // here. A value is a hit when it is one of those, the `*.gb`-style glob a file filter would take, or text that ends in a
 // guarded extension (the `rom.gb` tail a suffix test reads). A pattern is a hit when its source spells an escaped dot and

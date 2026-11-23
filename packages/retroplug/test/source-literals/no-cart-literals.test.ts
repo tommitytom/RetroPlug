@@ -9,7 +9,7 @@
 // read, and a template's `${...}` or a regular expression cannot move the walk's place. It reads the three shapes the
 // removed tables took: a table's property name (`{ gb: "sameboy" }`, an interface member, an enum member), a pattern
 // that reads an extension (`/\.gbc?$/i`) and a string or template text that ends in one (`rom.gb`). The guarded ids,
-// extensions, cores and node types are the registry's, not a list here: the generated CONSOLES list is read below, so a
+// extensions, cores and node types are the registry's, not a list here: the console registry's list is read below, so a
 // console a product adds later is guarded without an edit to this test. It catches an accident, not a determined
 // author: a computed platform (["g", "b"].join("")) and a dotless pattern (/(gb|gbc)$/) are invisible to it, as the
 // boundary check says of itself.
@@ -18,19 +18,19 @@
 // It walks src/, cli/ and ui/ (each skipping its generated/ tree), so the shell's three trees are held to the same
 // rule; the guard sets are the registries', and a fixture pins each directory's walk.
 import { test, expect } from "@retroplug/testing";
-import { CONSOLES } from "../../src/generated/consoles";
+import { consoleDescriptors } from "../../src/consoles";
 import { EMBEDS, KIT_FORMATS, PACKAGE_IDS, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
 import { DECLARED_NODE_TYPES } from "../../src/generated/protocol";
 
 /** The console registry's platform ids, ROM extensions, cores and node types: the descriptors' own, so nothing here is a
  *  second copy. */
 const PLATFORM_IDS = [
-  ...new Set(CONSOLES.flatMap((console) => console.platforms.map((platform) => platform.id))),
+  ...new Set(consoleDescriptors().flatMap((console) => console.platforms.map((platform) => platform.id))),
 ].sort();
 const ROM_EXTENSIONS = [
-  ...new Set(CONSOLES.flatMap((console) => console.platforms.flatMap((platform) => platform.extensions))),
+  ...new Set(consoleDescriptors().flatMap((console) => console.platforms.flatMap((platform) => platform.extensions))),
 ].sort();
-const CORE_IDS = [...new Set(CONSOLES.map((console) => console.core))].sort();
+const CORE_IDS = [...new Set(consoleDescriptors().map((console) => console.core))].sort();
 /** The one declared node type the shell spells, and why: the MIDI routing node's, which buildGraph builds itself for
  *  every document (core's manifest declares it). It is exempt from the family guard too, because the midi package's name
  *  claims the rp.midi. prefix the routing node already sits in; every other rp.midi.* type is still guarded. The
@@ -40,7 +40,7 @@ const SHELL_NODE_TYPES = ["rp.midi.route"];
  *  declares (its script nodes), but for the shell's own. Both are the registries', so a package a product adds is
  *  guarded without an edit here. */
 const NODE_TYPES = [
-  ...new Set([...CONSOLES.map((console) => console.nodeType), ...DECLARED_NODE_TYPES]),
+  ...new Set([...consoleDescriptors().map((console) => console.nodeType), ...DECLARED_NODE_TYPES]),
 ].filter((type) => !SHELL_NODE_TYPES.includes(type)).sort();
 /** The shell's own node vocabulary: the nodes it builds itself (rp.core.split and -add, rp.host.midi-in/-out and
  *  audio-out) and the MIDI routing node it names as a constant, which is why those three packages' families are not

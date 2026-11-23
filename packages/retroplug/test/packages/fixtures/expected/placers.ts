@@ -2,24 +2,17 @@
 // packages' manifests. Do not edit; edit a manifest and rebuild.
 //
 // The product's graph placers, in product order: each package's `protocol.placer` module, which says where
-// the nodes of a model the shell hands it go (docs/modular-graph-phase-f5a-design.md section 6.3). buildGraph
-// reads the slots in this order, so a package's place in `retroplug.products.desktop` is where its nodes land.
-// Only the planner imports this module, and it carries types and constants alone: no package's node code and
-// no schema.
-import type { GraphPlacer } from "@retroplug/core/placer";
+// the nodes of a model the shell hands it go (docs/modular-graph-phase-f5a-design.md section 6.3), seeded into
+// the live registry src/contributions/placerRegistries.ts. buildGraph reads them in this order, so a package's
+// place in `retroplug.products.desktop` is where its nodes land. Only the planner imports this module, and it
+// carries types and constants alone: no package's node code and no schema.
+import { commitContributions } from "../contributions/registry";
+import { placersRegistry } from "../contributions/placerRegistries";
 import placer_alpha from "@retroplug/alpha/placer";
 
-/** Each package's graph placer, in product order. */
-export const PLACERS: readonly { pkg: string; placer: GraphPlacer<any> }[] = [
-  { pkg: "alpha", placer: placer_alpha },
-];
-const placerKeys = new Map<string, string>();
-for (const { pkg, placer } of PLACERS) {
-  const owner = placerKeys.get(placer.key);
-  if (owner !== undefined) {
-    throw new Error(owner === pkg
-      ? `the package ${pkg} places the graph's model ${placer.key} twice`
-      : `two packages place the graph's model ${placer.key}: ${owner} and ${pkg}`);
-  }
-  placerKeys.set(placer.key, pkg);
-}
+export { placersRegistry };
+
+commitContributions([
+  { registry: placersRegistry, pkg: "retroplug", items: [] },
+  { registry: placersRegistry, pkg: "alpha", items: [placer_alpha] },
+]);

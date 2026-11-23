@@ -7,11 +7,22 @@
 // the fixture shell's src/*.ts shims by the real shell's binding vocabulary (an action's defaults are then checked
 // against the real key names, pad names and shell defaults rather than against a copy of them). React is aliased by
 // none of them, which is what the views split's absence case rests on.
+import { cpSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SHELL = resolve(HERE, "../..");
+
+/** Copy the shell's hand-written contribution modules (src/contributions, ui/contributions, cli/contributions) into a
+ *  fixture tree at `root`: the generated modules import them by a path relative to the tree's own shell, and the checks
+ *  a fixture's refusal comes from are the real ones. */
+export function copyShellContributions(root) {
+  for (const tree of ["src", "ui", "cli"]) {
+    const from = join(SHELL, tree, "contributions");
+    if (existsSync(from)) cpSync(from, join(root, "packages/retroplug", tree, "contributions"), { recursive: true });
+  }
+}
 
 /** The alias map for a fixture tree at `root`. */
 export function fixtureAliases(root) {

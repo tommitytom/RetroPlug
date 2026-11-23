@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fixtureAliases } from "../packages/fixtureAliases.mjs";
+import { copyShellContributions, fixtureAliases } from "../packages/fixtureAliases.mjs";
 
 const require = createRequire(import.meta.url);
 const { esbuild } = require("../../../../tools/esbuild-shared");
@@ -81,6 +81,7 @@ const result = (() => {
       try {
         const root = join(work, "tree");
         cpSync(join(HERE, "../packages/fixtures/tree"), root, { recursive: true });
+        copyShellContributions(root);
         mkdirSync(join(root, "packages/alpha/ts/ui"), { recursive: true });
         const viewsFile = join(root, "packages/alpha/ts/ui/views.ts");
         writeFileSync(
