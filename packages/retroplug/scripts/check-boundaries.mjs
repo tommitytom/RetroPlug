@@ -37,8 +37,8 @@
 //      package's ts/ tree, which no check reads; or one naming no file, an entry still saying the package publishes a
 //      module that moved away;
 //   9. an @retroplug/<package> specifier in the shell's own src, cli or ui that is not one of that root's list
-//      (SHELL_IMPORTS for src and cli, UI_IMPORTS for ui, both declared in lib/contracts.mjs), each an explicit list of contract modules with the reason
-//      each entry is a contract rather than a cart; or a RELATIVE import from there that lands outside what that root
+//      (SHELL_IMPORTS for src and cli, UI_IMPORTS for ui, both declared in lib/contracts.mjs), each an explicit list
+//      of contract modules with the reason each entry is a contract rather than a cart; or a RELATIVE import from there that lands outside what that root
 //      may reach (src: src; cli: cli and src; ui: ui and src): a file of the app may reach a cart or a console only
 //      through the generated registries the generator writes, and the app's other trees are not a source's to import.
 //      Each generated/ tree is not judged (it is the one place that names every package), and an entry no import of its
@@ -938,7 +938,7 @@ export function checkBoundaries({ root = REPO } = {}) {
           .filter((entry) => !used.has(entry.specifier))
           .map(
             (entry) =>
-              `${name} names ${entry.specifier} (${entry.reason}), which no file of ${where} imports: delete the entry`,
+              `${name} names ${entry.specifier} (${entry.reason}), which no file of ${where} imports: delete the entry (scripts/lib/contracts.mjs)`,
           )
       : [];
   const shellStale = staleList(
