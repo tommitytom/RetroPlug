@@ -178,7 +178,7 @@ int main(int argc, char** argv) try {
     const bool runFile = argc >= 2 && endsWithJs(argv[1]);
     const int  argStart = runFile ? 2 : 1;
 
-    TjsHostRuntime host;
+    rp::host::PackHostRuntime host;
     if (!host.init()) {
         std::fprintf(stderr, "TjsHostRuntime init failed\n");
         return 1;
@@ -329,8 +329,8 @@ int main(int argc, char** argv) try {
     // runs during these pumps. A normal command runs to completion + calls tjs.exit within the bounded
     // backstop; a long-running session calls __rp_keepAlive() during setup, which drops us into the unbounded
     // loop below so it can react to MIDI until tjs.exit or Ctrl-C.
-    // Past those pumps a pack's half still evaluating (a top-level await) is waited for at ~1 ms a pump, up to the
-    // deadline the TS loader's own timeout sits below.
+    // Past those pumps the session is waited for at ~1 ms a pump, up to a 10 s wall-clock backstop that applies to every
+    // session (a pack's half still evaluating, a top-level await, is the case it exists for).
     const auto sessionDeadline = std::chrono::steady_clock::now() + rp::host::kHostReadyDeadline;
     for (int i = 0; !pump.exitTaken() && !g_sigint && !g_keepAlive && !pump.threw(); ++i) {
         if (i >= 20000) {

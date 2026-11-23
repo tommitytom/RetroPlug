@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstddef>
 
+#include "dpfjs/host/TjsHostRuntime.hpp"
 #include "quickjs.h"
 
 #include "host/js/rp_js_module.h"
@@ -14,8 +15,8 @@ namespace rp::host {
 
 /** How long a host waits for its entry to signal ready (or finish) while a pack's half evaluates. The wait pumps with
  *  no sleep for its first pumps, so an empty pack list costs nothing; after that it sleeps ~1 ms a pump up to this
- *  deadline. The TS loader refuses a half that has not settled well before it (loadPacks.ts), so a stuck pack is named
- *  rather than leaving the host without its control plane. */
+ *  deadline. It is a backstop: the TS loader gives the packs' halves one budget of 5 s overall (loadPacks.ts) and
+ *  refuses what has not settled in it, so a stuck pack is named, and this deadline also covers the composition. */
 inline constexpr std::chrono::seconds kHostReadyDeadline{10};
 
 namespace packs {
@@ -36,5 +37,19 @@ class PackTable;
  *  context is harmless. The table is process-wide: a later call with another table points every context's loader at
  *  that table. */
 void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count);
+
+/** Make `host`'s runtime safe to free while a pack's half is still pending (a top-level await parked on a timer):
+ *  destroys the runtime's timers and collects, so the pending module's callbacks are freed before QuickJS frees the
+ *  module structs they point at. Idempotent; ~PackHostRuntime calls it. */
+void settleForFree(TjsHostRuntime& host);
+
+/** The TjsHostRuntime every host that loads packs owns: its destructor settles the runtime before it is freed. */
+class PackHostRuntime : public TjsHostRuntime {
+public:
+    PackHostRuntime() = default;
+    ~PackHostRuntime() { settleForFree(*this); }
+    PackHostRuntime(const PackHostRuntime&) = delete;
+    PackHostRuntime& operator=(const PackHostRuntime&) = delete;
+};
 
 }  // namespace rp::host

@@ -90,7 +90,7 @@ class PluginDSP : public Plugin, private rp::plugin::HandoffHost {
     // over __rpcSend. The plugin owns the Engine and drives it per audio block from run() directly (it
     // never routes audio through RPC), so it holds svc_.engine + the ONE invoker plus the host + emulator
     // services it mounts. Declaration order is load-bearing.
-    TjsHostRuntime host_;
+    rp::host::PackHostRuntime host_;
     // The three facets below are ALL this channel mounts — no debug, no audio-driver. See host/
     // HostServices.hpp for why those two are not members here rather than merely unmounted.
     HostServices     svc_;
@@ -496,8 +496,9 @@ private:
         // Eval the control-plane bundle (composes the stores, defines the __rp_* globals), then pump until it signals
         // ready: that covers module eval and the packs' app halves (a slow one is waited for, up to the deadline).
         const auto readyDeadline = std::chrono::steady_clock::now() + rp::host::kHostReadyDeadline;
-        host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
-        for (int i = 0; !readReady(); ++i) {
+        const bool evaluated = host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size) == 0;
+        // A failed eval, or a composition that threw (__rp_bootFailed), will never become ready: no deadline to wait out.
+        for (int i = 0; evaluated && !readReady() && !jsBootFailed(host_.context()); ++i) {
             if (i >= 1000) {
                 if (std::chrono::steady_clock::now() >= readyDeadline) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

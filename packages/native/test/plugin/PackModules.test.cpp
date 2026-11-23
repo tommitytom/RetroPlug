@@ -32,7 +32,7 @@ namespace {
 fs::path fixture(const char* id) { return fs::path(RP_PACK_MODULES_FIXTURE) / id / "1.0.0"; }
 
 struct Runtime {
-    TjsHostRuntime host;
+    rp::host::PackHostRuntime host;
     Runtime() { REQUIRE(host.init()); }
     JSContext* ctx() { return host.context(); }
 };
@@ -135,4 +135,30 @@ TEST_CASE("the pack list and the refusal report", "[pack-modules]") {
     // The contract set is the context's, frozen, and not enumerable.
     CHECK(readString(rt, "Object.isFrozen(globalThis.__rp_packContracts)") == "true");
     CHECK(readString(rt, "Object.keys(globalThis).includes('__rp_packContracts')") == "false");
+}
+
+TEST_CASE("a runtime freed with a pack half still pending frees cleanly", "[pack-modules]") {
+    PackTable table;
+    REQUIRE(table.load(fixture("pmpending")));
+    {
+        Runtime rt;
+        REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
+        rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
+        // The half awaits a timer that never fires in this test: its async module stays pending until the runtime goes.
+        evalModule(rt, "import('pack:pmpending/app').catch(() => {});");
+        for (int i = 0; i < 5; ++i) rt.host.pump();
+        CHECK(readString(rt, "typeof globalThis.__rp_packList") == "function");
+    }  // freeing the runtime here used to touch a freed module (an ASan report; an abort in a normal build)
+    SUCCEED();
+}
+
+TEST_CASE("a pack this process refused is left out of the pack list", "[pack-modules]") {
+    PackTable table;
+    REQUIRE(table.load(fixture("pmgood")));
+    Runtime rt;
+    REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
+    rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
+    CHECK(readString(rt, "globalThis.__rp_packList()").find("pmgood") != std::string::npos);
+    evalModule(rt, "globalThis.__rp_packRefused('pmgood', 'its app half failed');");
+    CHECK(readString(rt, "globalThis.__rp_packList()") == "[]");
 }

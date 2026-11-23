@@ -65,6 +65,7 @@ extern "C" {
 #include "host/ui/NativeFileDialog.hpp"      // OS-native file picker (pfd) backing __rp_openFileBrowser
 #include "host/ui/OpenPath.hpp"
 #include "host/QuickJsGlobals.hpp"
+#include "host/js/PackModules.hpp"          // PackHostRuntime: the host whose teardown settles a pending pack half
 #include "host/HostServices.hpp"
 #include "host/IdleReclaimProbe.hpp"     // the idle tick's smoke hook (RETROPLUG_IDLE_RECLAIM_TEST)
 
@@ -169,7 +170,7 @@ struct MidiClockSync {
 // unlike the plugin's per-context routing for multi-instance DAWs).
 struct AppState {
     // --- the shared runtime + backend graph (PluginDSP's control plane) ---
-    TjsHostRuntime host;
+    rp::host::PackHostRuntime host;
     // Three facets only, same as the plugin's channel — no debug, no audio-driver. See
     // host/HostServices.hpp for why those two are not members rather than merely unmounted.
     HostServices   svc;

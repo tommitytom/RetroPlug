@@ -17,28 +17,30 @@ import { nativePackHost, type HalfKind, type PackHost, type PackInfo } from "./p
 /** A half's default export as the additions a commit takes; throws when the export is not the half's shape. */
 export type HalfBuilder = (pkg: string, exported: unknown) => Addition<any>[];
 
-/** How long a half may take to evaluate before its pack is refused: below the hosts' own ready deadline (10 s), so a
- *  stuck top-level await names the pack instead of leaving the host without its control plane. */
-let halfTimeoutMs = 5000;
+/** The whole load's budget for the packs' halves to evaluate, in ms: one clock for every import of a call, below the
+ *  hosts' own ready deadline (10 s), so a few slow packs cannot add up past it. A stuck pack is refused by name; a half
+ *  with no top-level await still settles in microtasks, before a 0 ms timer, so a fast pack after the budget is spent
+ *  still loads. */
+let loadBudgetMs = 5000;
 
-/** Test seam: the half timeout in ms, returning the previous one. */
-export function setHalfTimeoutMs(ms: number): number {
-  const was = halfTimeoutMs;
-  halfTimeoutMs = ms;
+/** Test seam: the load budget in ms, returning the previous one. */
+export function setLoadBudgetMs(ms: number): number {
+  const was = loadBudgetMs;
+  loadBudgetMs = ms;
   return was;
 }
 
-/** The half's namespace, or the refusal that names it when it does not settle in time. */
-async function importWithin(host: PackHost, id: string, kind: HalfKind): Promise<unknown> {
+/** The half's namespace, or the refusal that names it when it has not settled by `deadline` (a Date.now() time). */
+async function importBefore(host: PackHost, id: string, kind: HalfKind, deadline: number): Promise<unknown> {
   // The shell's tsconfig carries no timer types (txiki provides the globals), so they are reached by name.
   const timers = globalThis as unknown as {
     setTimeout(fn: () => void, ms: number): unknown;
     clearTimeout(id: unknown): void;
   };
   let timer: unknown;
-  const limit = halfTimeoutMs;
   const stuck = new Promise<never>((_, reject) => {
-    timer = timers.setTimeout(() => reject(new Error(`its ${kind} half did not finish evaluating within ${limit / 1000} s`)), limit);
+    timer = timers.setTimeout(() => reject(new Error(
+      `the packs' load ran past its ${loadBudgetMs / 1000} s budget in its ${kind} half`)), Math.max(0, deadline - Date.now()));
   });
   try {
     return await Promise.race([host.importHalf(id, kind), stuck]);
@@ -198,6 +200,7 @@ async function load(host: PackHost, builders: Partial<Record<HalfKind, HalfBuild
 }
 
 async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, HalfBuilder>>): Promise<void> {
+  const deadline = Date.now() + loadBudgetMs;
   const kinds = Object.keys(builders) as HalfKind[];
   const platforms = new Set(consolesRegistry.items().flatMap((d) => d.platforms.map((p) => p.id)));
   const staged: Staged[] = [];
@@ -213,7 +216,7 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
     try {
       const exported = new Map<HalfKind, unknown>();
       for (const kind of todo) {
-        const ns = (await importWithin(host, pack.id, kind)) as { default?: unknown };
+        const ns = (await importBefore(host, pack.id, kind, deadline)) as { default?: unknown };
         exported.set(kind, ns.default);
       }
       checkManifest(pack, exported, platforms);

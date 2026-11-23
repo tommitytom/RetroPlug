@@ -1,7 +1,7 @@
 // The pack loader (docs/downloadable-packs-m2c-plan.md): a pack's halves imported through the host, held to its
 // manifest, and committed all or nothing per pack, in one commit when every pack passes.
 import { test, expect } from "@retroplug/testing";
-import { loadPacks, packStatus, setHalfTimeoutMs, APP_BUILDERS, type HalfBuilder } from "../../src/packs/loadPacks";
+import { loadPacks, packStatus, setLoadBudgetMs, APP_BUILDERS, type HalfBuilder } from "../../src/packs/loadPacks";
 import type { HalfKind, PackHost, PackInfo } from "../../src/packs/packHost";
 import { rolesRegistry } from "../../src/contributions/appRegistries";
 import { consolesRegistry, realCartsRegistry } from "../../src/contributions/consoleRegistries";
@@ -252,11 +252,34 @@ test("the fallback refuses a pack whose required platform's provider was refused
 test("a half that never settles is refused by name within the timeout, and the load still resolves", async () => {
   const { host, refused } = fakeHost([pack("lp-stuck")], {});
   host.importHalf = () => new Promise(() => {});
-  const was = setHalfTimeoutMs(20);
+  const was = setLoadBudgetMs(20);
   try {
     await loadPacks(host, APP_BUILDERS);
   } finally {
-    setHalfTimeoutMs(was);
+    setLoadBudgetMs(was);
   }
-  expect(refused["lp-stuck"]).toBe("its app half did not finish evaluating within 0.02 s");
+  expect(refused["lp-stuck"]).toBe("the packs' load ran past its 0.02 s budget in its app half");
+});
+
+test("one slow pack consumes the budget and a fast pack after it still loads", async () => {
+  const { host, refused } = fakeHost(
+    [pack("lp-slow"), pack("lp-slow2"),
+     pack("lp-fast", { provides: { platforms: [], nodeTypes: [], roles: ["lp-fast-role"] } })],
+    { "lp-fast": { app: { roles: [role("lp-fast-role")] } } },
+  );
+  const fast = host.importHalf;
+  host.importHalf = (id, half) => (id.startsWith("lp-slow") ? new Promise(() => {}) : fast(id, half));
+  const was = setLoadBudgetMs(100);
+  const start = Date.now();
+  try {
+    await loadPacks(host, APP_BUILDERS);
+  } finally {
+    setLoadBudgetMs(was);
+  }
+  // Two stuck packs share the one budget: a per-half timer would take twice as long.
+  expect(Date.now() - start < 180).toBe(true);
+  expect(refused["lp-slow"]).toBe("the packs' load ran past its 0.1 s budget in its app half");
+  expect(refused["lp-slow2"]).toBe("the packs' load ran past its 0.1 s budget in its app half");
+  expect(refused["lp-fast"]).toBe(undefined);
+  expect(rolesRegistry.items().some((r) => r.kind === "lp-fast-role")).toBe(true);
 });

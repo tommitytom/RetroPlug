@@ -1,5 +1,6 @@
 #include "host/js/PackModules.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <filesystem>
@@ -116,7 +117,12 @@ JSValue packList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     std::string out = "[";
     bool first = true;
     if (packs::PackTable* table = g_table.load()) {
+        // A pack this process already refused is left out: refusals are per runtime in the TS loader, so without this
+        // every plugin instance, DPF's info instance and the editor would pay a stuck pack's budget again.
+        std::vector<std::string> refusedIds;
+        for (const packs::PackRefusal& r : table->refusals()) refusedIds.push_back(r.id);
         for (const packs::LoadedPack* pack : table->loadedFrom(0)) {
+            if (std::find(refusedIds.begin(), refusedIds.end(), pack->manifest.id) != refusedIds.end()) continue;
             std::vector<std::string> halves;
             for (const auto& [kind, file] : pack->manifest.halves)
                 if (kind != "native") halves.push_back(kind);
@@ -172,6 +178,24 @@ void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_modu
                                   JS_NewCFunction(ctx, packRefused, "__rp_packRefused", 2), 0);
     }
     JS_FreeValue(ctx, global);
+}
+
+}  // namespace rp::host
+
+extern "C" void tjs__destroy_timers(TJSRuntime* qrt);
+
+namespace rp::host {
+
+void settleForFree(TjsHostRuntime& host) {
+    TJSRuntime* qrt = host.runtime();
+    if (!qrt || !host.context()) return;
+    // QuickJS-ng frees a context's module structs while a callback of a pending async module (a pack half parked on a
+    // timer) still holds a counted reference to one: the callback is garbage only once its timer is destroyed, and no
+    // collection runs before the context is freed (the same defect as bellard/quickjs#280). Destroying the timers
+    // here, then collecting, frees the callback while the modules are alive. txiki destroys timers again when it
+    // frees the runtime; that walk finds none left.
+    tjs__destroy_timers(qrt);
+    JS_RunGC(JS_GetRuntime(host.context()));
 }
 
 }  // namespace rp::host
