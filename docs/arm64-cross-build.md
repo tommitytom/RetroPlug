@@ -41,9 +41,9 @@ scp build-arm/bin/retroplug-sdl root@<device-ip>:/mnt/mmc/MUOS/application/Retro
 - **Toolchain**: [cmake/toolchains/aarch64-cortex-a53.cmake](../cmake/toolchains/aarch64-cortex-a53.cmake) —
   the cross compilers, `CMAKE_SYSROOT` → `.arm64/sysroot`, `-mcpu=cortex-a53`, and pkg-config pointed at the
   sysroot. Only the emitted code is aarch64.
-- **Host build-tools**: tjsc (bytecode) and sameboy_pb12 (boot-ROM logo) RUN during the build, so they
+- **Host build-tools**: tjsc (bytecode), retroplug-modc (shared module bytecode) and sameboy_pb12 (boot-ROM logo) RUN during the build, so they
   can't be aarch64 — the cross build borrows the host-built ones from `build/` via `-DTJSC_EXECUTABLE=` /
-  `-DSAMEBOY_PB12_EXECUTABLE=` (both wired by `arm-build.sh`). rgbds + node/esbuild also run on the host.
+  `-DRP_MODC_EXECUTABLE=` / `-DSAMEBOY_PB12_EXECUTABLE=` (all wired by `arm-build.sh`). rgbds + node/esbuild also run on the host.
 - **glibc floor = 2.38** (the device's version — it runs). Ubuntu's cross-gcc is `--with-sysroot=/`, so
   `--sysroot` doesn't relocate its built-in glibc headers (the host's newer 2.39). The toolchain file drops
   them (`-nostdinc` + an explicit ordered include list) so header-driven symbols stay pinned to the sysroot's

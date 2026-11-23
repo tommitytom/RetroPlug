@@ -42,7 +42,9 @@ find_package(Threads REQUIRED)
 add_executable(retroplug-modc EXCLUDE_FROM_ALL modc/modc.c)
 target_link_libraries(retroplug-modc PRIVATE qjs)
 target_include_directories(retroplug-modc PRIVATE ${RP_QUICKJS_INCLUDE})
-set_target_properties(retroplug-modc PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+# C11 like qjs and tjsc: quickjs.h's JS_MKVAL compound literals with non-constant values trip MSVC's C4204 in legacy C.
+set_target_properties(retroplug-modc PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    C_STANDARD 11 C_STANDARD_REQUIRED ON)
 
 # A product's embedded bundles (the control plane, the UI, the script nodes and the render worker) are
 # cmake/product-bundles.cmake's, declared there before the first product below: the script nodes and the render worker

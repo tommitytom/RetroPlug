@@ -56,7 +56,8 @@ test("a module tjsc accepts compiles to tjsc's bytes", async () => {
         .toBe(0);
       expect((await run([exe("retroplug-modc"), "array", ...strip, "rp:plain", "rp_plain", `${dir}/plain.js`, `${dir}/modc.c`]))
         .status).toBe(0);
-      const bytesOf = (c: string) => Uint8Array.from([...c.matchAll(/0x([0-9a-f]{2})/gi)].map((m) => parseInt(m[1], 16)));
+      // Only the array body: the leading comment carries a scratch path that can hold "0x..".
+      const bytesOf = (c: string) => Uint8Array.from([...c.slice(c.indexOf("= {")).matchAll(/0x([0-9a-f]{2})/gi)].map((m) => parseInt(m[1], 16)));
       const tjscBytes = bytesOf(new TextDecoder().decode(await tjs.readFile(`${dir}/tjsc.c`)));
       const modcBytes = bytesOf(new TextDecoder().decode(await tjs.readFile(`${dir}/modc.c`)));
       expect(same(modcBytes, tjscBytes)).toBe(true);
