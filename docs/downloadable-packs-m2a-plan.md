@@ -3525,6 +3525,40 @@ platforms runs when the user asks for it.
    the cost is a one-off; a pack store that commits often (a development pack's hot reload, the C1 design's section 8)
    would want the tile to keep its canvas and re-key only the view slots' container.
 
+## After the final review
+
+M2a was built as `b78595daa..3bb37c074`. Where the task blocks above and the tree differ, the tree
+wins: Task 1's `commitContributions` is generic over a tuple with each addition's items typed `NoInfer<T>` against its
+registry, and a registry's rule lives in its private state; `derivedList` keeps a list's array across a commit that
+does not change it (the menus' actions and services, the views); a project service whose `create()` throws when adopted
+is warned about and skipped; `adoptContributions` also fires the project channel; the grid keys a tile on
+`tileViews().length`, not the commit counter; the generated modules are gitignored build outputs, not tracked; the CLI's
+shell-name refusal names the package.
+
+The final review's findings for M2b, beside design questions 1 to 4:
+
+7. **A registry's name is not always a member name.** It is for the app members, the consoles module (`consoles`,
+   `realCarts`) and the views module (`views`), but a `ui` item is a whole `defineUi` export, the `placers` item is the
+   placer module's default export, `cliTools` takes the CLI module's exported array, `bakedEmbeds` is no member, and a
+   kind's members (`controllerApps`) have no registry. M2b's loader needs an explicit table from a pack's half to the
+   registries and item shapes it fills, not a member-name passthrough (this refines question 3).
+8. **No bundle holds every registry**, and `commitByName` refuses an unknown name. The control plane has the app, the
+   consoles and the placers; the UI those and `ui` and `views`; the render worker the consoles and placers; the CLI the
+   tools. A loader needs to ask a bundle which registries it has (a `registryNames()` export) or skip absent ones.
+   Within a bundle a pack's halves must go in one commit: a console whose core role is in the same pack fails the roles
+   check alone.
+9. **A pack's embedded ROM is always refused**: the embeds check requires the declaring package to bake the ROM into the
+   binary (`bakedEmbeds`), which a pack cannot. A pack-carried ROM needs a rule of its own.
+10. **The control plane's and the UI's registries do not follow each other.** In the plugin the UI reuses the control
+    plane's stores (whose role registry and sections read the control plane's registries), while
+    `__rp_commitUiContributions` reaches only the UI's copy, and the UI bundle is evaluated at the first editor open,
+    after packs committed at launch. If the spike (question 1) does not merge the copies, the UI must pull the packs
+    already loaded when it evaluates.
+11. **A system already loaded keeps the feature roles its ROM was given**: a pack's ROM provider attaches at the next load
+    or derive, not to systems on screen.
+12. **Commit cost**: every seeded check runs at every commit (the UI check parses every role's schema defaults, the embeds
+    check is quadratic), so a launch should commit its packs in one batch per bundle, not one commit per pack.
+
 ## Self-review
 
 **Spec coverage** (the design's section 3, "Live registries" and "One set of checks", for M2a's share):
