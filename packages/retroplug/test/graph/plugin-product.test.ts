@@ -160,7 +160,13 @@ test("a fresh plugin project writes no controller block, and one already carryin
   const desktop = parseConfig(JSON.stringify(raw));
   const script =
     'const fs = require("fs"), os = require("os"), path = require("path");' +
-    'const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "rp-plugin-project-"));' +
+    // The build directory is reached through a symlink whose target is two levels deeper, as macOS's os.tmpdir() (/var
+    // is /private/var) is: the generator's relative imports must hold from the real path the bundler resolves them
+    // from. Windows takes the plain directory (a symlink there needs a privilege a runner may not have).
+    'const base = fs.mkdtempSync(path.join(os.tmpdir(), "rp-plugin-project-"));' +
+    'let buildDir = base;' +
+    'if (process.platform !== "win32") { fs.mkdirSync(path.join(base, "real/a/b"), { recursive: true });' +
+    '  fs.symlinkSync(path.join(base, "real/a/b"), path.join(base, "link")); buildDir = path.join(base, "link"); }' +
     'require("../../packages/retroplug/scripts/lib/packages.mjs")' +
     '.generate({ root: path.resolve("../../"), product: "plugin", buildDir });' +
     'const product = path.join(buildDir, "products/plugin/packages/retroplug");' +
@@ -174,7 +180,7 @@ test("a fresh plugin project writes no controller block, and one already carryin
     '  const parsed = m.parseConfig(raw);' +
     '  const written = m.serializeConfig(m.buildConfig(parsed.settings, parsed.systems));' +
     '  const fresh = JSON.stringify(m.buildConfig(m.DEFAULT_SETTINGS, []));' +
-    '  fs.rmSync(buildDir, { recursive: true, force: true });' +
+    '  fs.rmSync(base, { recursive: true, force: true });' +
     '  process.stdout.write(JSON.stringify({ sections: Object.keys(m.defaultSections()),' +
     '    carries: Object.prototype.hasOwnProperty.call(m.DEFAULT_SETTINGS.sections, "controller"),' +
     '    written, fresh })); });';

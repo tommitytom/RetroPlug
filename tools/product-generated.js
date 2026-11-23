@@ -15,6 +15,7 @@
 //
 // No plugin (no `dir`) is the desktop: the shell's tree holds the desktop's modules, so nothing is redirected and the
 // build takes esbuild's synchronous path (a plugin needs the asynchronous one).
+const fs = require("fs");
 const path = require("path");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -46,7 +47,10 @@ const under = (file, dir) => file === dir || file.startsWith(dir + path.sep);
 /** The plugin, or null when no product tree was given (the desktop's bundle). */
 function productGenerated({ dir } = {}) {
   if (!dir) return null;
-  const productTree = path.resolve(dir);
+  // The real path: esbuild resolves every other import through symlinks, so a tree reached through one (macOS's /var is
+  // /private/var) would otherwise be bundled twice, once under each name, and its seeds would run twice.
+  const resolved = path.resolve(dir);
+  const productTree = fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved;
   return {
     name: "retroplug-product-generated",
     setup(build) {

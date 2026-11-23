@@ -82,7 +82,7 @@
 // product's tree lands (<build-dir>/products/<name>/, the layout CMake's bundle targets read); --products-dir names
 // that products directory directly, which is how the typecheck keeps its tree out of build/ (a build directory is
 // build.sh's sentinel for a configured tree). The desktop writes into the shell's own tree and takes neither.
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -688,6 +688,19 @@ function roleTable(packages) {
     }
   }
   return kinds;
+}
+
+/** A directory's real path, or, while it does not exist yet, its nearest existing ancestor's real path with the rest
+ *  rejoined: the generator writes trees that a later step creates, under parents that may be symlinks. */
+function realDir(dir) {
+  const abs = resolve(dir);
+  let at = abs;
+  while (!existsSync(at)) {
+    const up = dirname(at);
+    if (up === at) return abs;
+    at = up;
+  }
+  return join(realpathSync(at), relative(at, abs));
 }
 
 // A module path as the generated file imports it: relative, POSIX separators, no .ts (the bundler and tsc resolve it).
@@ -1557,6 +1570,10 @@ export function generate({
   buildDir = join(root, "build"),
   productsDir = join(buildDir, "products"),
 } = {}) {
+  // Every relative import a product's generated module carries is computed from this directory, and a bundler resolves
+  // it from the file's REAL path: through a symlink (macOS's /var is /private/var, so every os.tmpdir() tree is one)
+  // the two differ in depth and the import lands one directory off.
+  productsDir = realDir(productsDir);
   const manifestPath = join(root, "package.json");
   const manifest = readJson(manifestPath);
   const retroplug = isObject(manifest.retroplug) ? manifest.retroplug : {};
