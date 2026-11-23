@@ -26,8 +26,8 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
   const rerender = useRerenderOn(subscribeFileBrowser);
 
   // Install the in-app browser as the __rp_openFileBrowser hook, overriding any native host browser. This is
-  // the cross-bundle seam: realBackend (control-plane bundle) calls the global hook and awaits
-  // __rp_onFileBrowserResult; here (UI bundle) we open the React overlay and hand the pick back. Saving the
+  // the seam with the native hosts: realBackend (the control plane's backend) calls the global hook and awaits
+  // __rp_onFileBrowserResult; here (the UI) we open the React overlay and hand the pick back. Saving the
   // prior native hook lets the useNativeFileDialogs toggle delegate to the OS dialog later (step 2).
   useEffect(() => {
     const nativeHook = native.__rp_openFileBrowser;

@@ -29,10 +29,14 @@ import {
 // --- file dialog (async, UI-direct) ------------------------------------------------------------------
 // openFileBrowser is the ONE async Backend method, and it does NOT ride the RPC bridge: it calls the
 // __rp_openFileBrowser hook on the shared globalThis and, once settled, gets __rp_onFileBrowserResult back.
-// This crosses the control-plane↔UI bundle boundary via globalThis (module singletons do NOT — each bundle
-// gets its own). The hook is installed by the UI (the in-app React/LVGL browser — see useFileBrowser) which
-// overrides any native host browser; a native OS dialog is an opt-in the UI routes to. Only one browse is
-// ever in flight, so one module-level pending slot suffices. Absent (headless harness) → every browse
+// The hook and its result resolver live on globalThis because the native hosts (the OS dialog, the plugin's and the
+// SDL's pump) reach JS only through globals, and the UI installs the hook; the pending slot below is this context's
+// one copy (the control plane and the UI import the same module), so a browse either side starts is the one in
+// flight and its result resolves it. The hook is installed by the UI (the in-app React/LVGL browser — see
+// useFileBrowser) which overrides any native host browser; a native OS dialog is an opt-in the UI routes to. Only
+// one browse is ever in flight, so one module-level pending slot suffices, and the install guard means the resolver
+// is written once per context (two copies would each have written it, the later one orphaning the earlier's pending
+// browse). Absent (headless harness) → every browse
 // resolves null. startDir opens the browser at that directory; directory picks a folder (the render Output Dir).
 type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string, startDir: string, directory: boolean) => void;
 
@@ -109,8 +113,10 @@ const resourceParams = (spec: ResourceSpec): Record<string, unknown> => {
 // Native's completion queue is one per engine, and a runtime binds one engine (globalThis[Symbol.for("plugin")]), so
 // every emulator client of a runtime shares one CapabilityJobs: a second client's drain settles the first client's
 // promises, where a per-client queue would drop the completions it does not hold. The sharing is per module registry,
-// not per QuickJS context, so its precondition is one bundle per engine creating emulator clients: the UI bundle
-// borrows the control plane's stores rather than composing its own, and bootSession replans the one engine instead of
+// which is per context's module set (a render worker or a script host runs its own bundle on bare QuickJS, with its
+// own copy and its own engine), so its precondition is one engine per context creating emulator clients: the UI
+// borrows the control plane's stores rather than composing its own (only the UI test harness, which has no control
+// plane, composes them, and then it is the only creator), and bootSession replans the one engine instead of
 // replacing it. A host that rebound the RPC to another engine would hold the old promises' ids, which are the old
 // engine's, against the new channel's completions; nothing rebinds today.
 let realJobs: CapabilityJobs | null = null;

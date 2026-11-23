@@ -1,7 +1,7 @@
 // The running UI follows a commit (docs/downloadable-packs-m2a-plan.md, Task 6): a menu builder committed after the UI
 // booted shows in the start menu, and a tile view committed with a system on screen gets its slot in every tile. The
-// commit goes through the UI bundle's own seam (__rp_commitUiContributions), since the UI bundle's registries are its
-// own copy and this test's bundle cannot name them.
+// commit goes through the UI's seam (__rp_commitUiContributions), which reaches the context's one set of registries
+// (the control plane's stores read the same copy); this test's bundle has its own module copies and cannot name them.
 import { test, expect, ui, navTo, navToPad, Key } from "ui-harness";
 
 type NamedAddition = { registry: string; pkg: string; items: unknown[] };

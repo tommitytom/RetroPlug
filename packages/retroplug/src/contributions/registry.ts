@@ -34,7 +34,7 @@ export interface Addition<T = unknown> {
 }
 
 /** An addition naming its registry: what a pack's loader and the UI's test seam commit, since neither holds this
- *  bundle's registry objects. */
+ *  context's registry objects (a render worker's or a script host's bundle has its own). */
 export interface NamedAddition {
   readonly registry: string;
   readonly pkg: string;
@@ -61,7 +61,7 @@ function stateOf<T>(registry: Registry<T>): State {
   const state = STATE.get(registry as Registry<unknown>);
   if (!state) {
     throw new Error(
-      `the registry ${registry.name} is not this bundle's (each bundle has its own registries): commit it by name`,
+      `the registry ${registry.name} is not this context's (each context's module set has its own registries): commit it by name`,
     );
   }
   return state;

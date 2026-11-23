@@ -51,6 +51,8 @@ function initialWindowSize(): { width: number; height: number } | null {
 }
 
 native.__rp_mountUI = mountUI;
+// The registries this reaches are the context's one copy, the same the control plane's stores read, so a commit
+// through it is seen by both (the UI test harness, which has no control plane, has only the UI reading them).
 native.__rp_commitUiContributions = commitByName;
 native.__rp_unmountUI = unmountUI;
 native.__rp_initialWindowSize = initialWindowSize;
