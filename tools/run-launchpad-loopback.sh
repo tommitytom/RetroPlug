@@ -18,9 +18,11 @@ CLIENT="RetroPlug Loopback"
 command -v aconnect >/dev/null || { echo "SKIP: aconnect not available (no ALSA sequencer)"; exit 0; }
 
 log=$(mktemp)
+# The probe is a host: its launch packs are an empty scratch folder, never the user's.
+export RETROPLUG_PACKS_DIR="$log.packs" RETROPLUG_PACKS_CACHE_DIR="$log.packs-cache"; unset RETROPLUG_PACK_PATH
 "$CLI" launchpad-probe --loopback >"$log" 2>&1 &
 cli=$!
-trap 'kill $cli 2>/dev/null || true; rm -f "$log"' EXIT
+trap 'kill $cli 2>/dev/null || true; rm -rf "$log" "$log.packs" "$log.packs-cache"' EXIT
 
 # Wait for the virtual ports to appear, then wire output -> input. The probe holds its send for ~2 s
 # precisely so this has time to land.

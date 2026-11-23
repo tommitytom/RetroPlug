@@ -304,7 +304,7 @@ int main(int argc, char** argv) try {
         rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
     } else {
         // Session files load no pack: they never get the cli set (docs/downloadable-packs-m2c-plan.md).
-        rp::host::packs::ensureLaunchPacks();  // before any context: a pack's TS halves are read from what it loaded
+        rp::host::packs::ensureLaunchPacks();  // before the shared modules: a pack's TS halves are read from what it loaded
         // The dispatcher's contract modules first: its imports resolve to them by name.
         const std::string why = rp::host::registerSharedModules(ctx, rp_cli_modules, rp_cli_modules_count);
         if (!why.empty()) {

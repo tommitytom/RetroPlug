@@ -63,8 +63,9 @@ bool UiHarness::boot() {
         });
     });
 
+    rp::host::packs::ensureLaunchPacks();  // before the shared modules: a pack's TS halves are read from what it loaded
+
     // Eval the UI bundle (the React app + realBackend), then bind the display + mount React.
-    rp::host::packs::ensureLaunchPacks();  // before any context: a pack's TS halves are read from what it loaded
     // The app's shared modules first: the UI's imports resolve to them by name.
     if (const std::string why = rp::host::registerSharedModules(ctx, rp_app_modules, rp_app_modules_count);
         !why.empty()) {

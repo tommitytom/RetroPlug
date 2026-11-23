@@ -1,6 +1,7 @@
 #include "host/packs/ProcessPacks.hpp"
 
 #include <cstdio>
+#include <exception>
 #include <mutex>
 
 #include "graph/Packages.hpp"
@@ -19,8 +20,13 @@ PackTable& processPacks() {
 void ensureLaunchPacks() {
     static std::once_flag once;
     std::call_once(once, [] {
-        for (const PackRefusal& refusal : loadLaunchPacks(processPacks(), defaultPackRoots(), {}))
-            std::fprintf(stderr, "[packs] %s\n", refusal.reason.c_str());
+        try {
+            for (const PackRefusal& refusal : loadLaunchPacks(processPacks(), defaultPackRoots(), {}))
+                std::fprintf(stderr, "[packs] %s\n", refusal.reason.c_str());
+        } catch (const std::exception& e) {
+            // Reported once and never thrown: this runs inside a plugin's constructor.
+            std::fprintf(stderr, "[packs] the launch load failed: %s\n", e.what());
+        }
     });
 }
 

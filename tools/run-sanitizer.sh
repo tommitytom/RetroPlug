@@ -28,6 +28,12 @@ esac
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 
+# Every binary below is a host that loads its launch packs: an empty scratch folder, never the user's.
+packs_scratch="$(mktemp -d)"
+trap 'rm -rf "$packs_scratch"' EXIT
+export RETROPLUG_PACKS_DIR="$packs_scratch/packs" RETROPLUG_PACKS_CACHE_DIR="$packs_scratch/packs-cache"
+unset RETROPLUG_PACK_PATH
+
 slugs=("dsp-threaded" "dsp-lifecycle")
 [ -n "${2:-}" ] && slugs=("$2")
 
