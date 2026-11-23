@@ -125,9 +125,17 @@ async function runOne({ file, slug }) {
     return false;
   }
 
+  // The host reads the launch packs: an empty folder it owns, and no development path, so no test meets the user's.
+  const { RETROPLUG_PACK_PATH: _ignored, ...inherited } = process.env;
   const run = await spawnBuffered(HOST, ["--test", outFile], {
     cwd: PKG,
-    env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir, RETROPLUG_UI_TEST_ROMS: romsDir },
+    env: {
+      ...inherited,
+      RETROPLUG_USER_CONFIG_DIR: cfgDir,
+      RETROPLUG_UI_TEST_ROMS: romsDir,
+      RETROPLUG_PACKS_DIR: join(cfgDir, "packs"),
+      RETROPLUG_PACKS_CACHE_DIR: join(cfgDir, "packs-cache"),
+    },
   });
   flush(slug, run.output);
   rmSync(cfgDir, { recursive: true, force: true });

@@ -22,6 +22,7 @@
 #include <rfl/DefaultIfMissing.hpp>
 
 #include "host/js/SharedModules.hpp"   // registerSharedModules (the app's shared module table)
+#include "host/packs/ProcessPacks.hpp"
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
@@ -449,6 +450,7 @@ private:
 
     // Bring up the control-plane runtime: bind __rpcSend, eval the bundle, autoload.
     void bootControlPlane() {
+        rp::host::packs::ensureLaunchPacks();  // before any context: a pack's TS halves are read from what it loaded
         if (!host_.init()) { d_stderr("[retroplug] TjsHostRuntime init failed"); return; }
         JSContext* ctx = host_.context();
 

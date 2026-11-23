@@ -16,7 +16,8 @@
 // ("recent/store") or dash ("recent-store") form; a directory prefix runs all
 // tests under it.
 
-import { readdirSync, mkdirSync, existsSync } from "node:fs";
+import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { build } from "esbuild";
@@ -33,6 +34,14 @@ const OUT_DIR = join(PKG, ".test-build");
 // The node running this runner, for a test that needs a Node child (the script-node bundle's build): handed down so it
 // is this node and not whichever the PATH names. spawnBuffered's children inherit the environment.
 process.env.RP_NODE = process.execPath;
+
+// A test (or a binary it spawns) that launches a host loads the launch packs: point that at an empty scratch folder and
+// drop any development path, so no run reads the user's packs. spawnBuffered's children inherit this environment.
+const PACKS_SCRATCH = mkdtempSync(join(tmpdir(), "rp-packs-"));
+process.env.RETROPLUG_PACKS_DIR = join(PACKS_SCRATCH, "packs");
+process.env.RETROPLUG_PACKS_CACHE_DIR = join(PACKS_SCRATCH, "packs-cache");
+delete process.env.RETROPLUG_PACK_PATH;
+process.on("exit", () => rmSync(PACKS_SCRATCH, { recursive: true, force: true }));
 
 // The generated package registries first (src/generated, docs/modular-graph-phase-f1-design.md section 3): the tests
 // bundle src, which imports them, so they must exist before the first esbuild run. A fresh checkout has none.

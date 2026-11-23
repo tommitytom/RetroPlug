@@ -4,6 +4,7 @@
 // unit that constructs them includes them, so a unit that just uses AppState reads no generated declaration.
 #include "rp_product_audio_backends.hpp"
 #include "rp_product_providers.hpp"
+#include "host/packs/ProcessPacks.hpp"
 
 namespace retroplug::sdl {
 
@@ -41,6 +42,7 @@ bool readReady(TjsHostRuntime& host) { return jsReadReady(host.context()); }
 }  // namespace
 
 bool bootControlPlane(AppState& a) {
+    rp::host::packs::ensureLaunchPacks();  // before any context: a pack's TS halves are read from what it loaded
     if (!a.host.init()) { std::fprintf(stderr, "[retroplug-sdl] TjsHostRuntime init failed\n"); return false; }
     JSContext* ctx = a.host.context();
 

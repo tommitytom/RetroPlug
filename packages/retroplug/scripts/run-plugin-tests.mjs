@@ -25,7 +25,8 @@
 //
 //   node scripts/run-plugin-tests.mjs [nameFilter...]    # a binary runs if its name holds any filter
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush } from "./lib/testPool.mjs";
@@ -33,6 +34,14 @@ import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush } from "./
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
 const BIN_DIR = process.env.RETROPLUG_BIN_DIR || join(REPO, "build", "bin");
+// A test (or a binary it spawns) that launches a host loads the launch packs: point that at an empty scratch folder and
+// drop any development path, so no run reads the user's packs. spawnBuffered's children inherit this environment.
+const PACKS_SCRATCH = mkdtempSync(join(tmpdir(), "rp-packs-"));
+process.env.RETROPLUG_PACKS_DIR = join(PACKS_SCRATCH, "packs");
+process.env.RETROPLUG_PACKS_CACHE_DIR = join(PACKS_SCRATCH, "packs-cache");
+delete process.env.RETROPLUG_PACK_PATH;
+process.on("exit", () => rmSync(PACKS_SCRATCH, { recursive: true, force: true }));
+
 const EXE = process.platform === "win32" ? ".exe" : "";
 
 const BINARIES = [

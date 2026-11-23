@@ -79,6 +79,7 @@ absent() { # absent <label> <haystack-file> <needle> - and it is NOT in there
 # Each case gets its own build dir so nothing is inherited between them.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+export RETROPLUG_PACKS_DIR="$TMP/packs" RETROPLUG_PACKS_CACHE_DIR="$TMP/packs-cache"; unset RETROPLUG_PACK_PATH
 
 echo "# retroplug-cli test / run"
 

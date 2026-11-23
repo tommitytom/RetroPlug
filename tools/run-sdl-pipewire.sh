@@ -71,6 +71,7 @@ export SDL_VIDEODRIVER=dummy
 # would be claimed at startup and written to at quit. The filter's empty list means "every port", so it names one
 # nothing has (midi/PortFilter.hpp's midiPortAllowedBy).
 export RETROPLUG_USER_CONFIG_DIR="$TMP/home/.config/retroplug"
+export RETROPLUG_PACKS_DIR="$TMP/packs" RETROPLUG_PACKS_CACHE_DIR="$TMP/packs-cache"; unset RETROPLUG_PACK_PATH
 export RP_MIDI_PORT_ALLOW="RP_NO_PORT"
 mkdir -p "$XDG_RUNTIME_DIR" "$HOME/.config/retroplug" "$TMP/pwconf/pipewire.conf.d" "$TMP/alsa"
 chmod 700 "$XDG_RUNTIME_DIR"

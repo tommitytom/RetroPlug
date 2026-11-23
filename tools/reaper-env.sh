@@ -171,6 +171,7 @@ reaper_env_up() {
     # Tag-stable isolated config dir. Reaper on Linux always scans ~/.vst3, so HOME points here
     # and the built bundle is symlinked in (VST3_PATH alone is ignored without a manual rescan).
     REAPER_CFG="$RP_REPO_DIR/build/reaper-cfg-$RP_JOB_TAG"
+    export RETROPLUG_PACKS_DIR="$REAPER_CFG/packs" RETROPLUG_PACKS_CACHE_DIR="$REAPER_CFG/packs-cache"; unset RETROPLUG_PACK_PATH
     RP_LOG_DIR="$REAPER_CFG/logs"
     mkdir -p "$REAPER_CFG/.vst3" "$RP_LOG_DIR"
 

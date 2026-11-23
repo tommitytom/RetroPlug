@@ -94,6 +94,7 @@ KEYS_PORT="RPTestKeys:RPTestKeys $KEYS_ADDR"
 export RP_MIDI_PORT_ALLOW="$FAKE_PORT,$KEYS_PORT"
 
 export RETROPLUG_USER_CONFIG_DIR="$TMP/cfg"
+export RETROPLUG_PACKS_DIR="$TMP/packs" RETROPLUG_PACKS_CACHE_DIR="$TMP/packs-cache"; unset RETROPLUG_PACK_PATH
 mkdir -p "$RETROPLUG_USER_CONFIG_DIR"
 
 # What the fake heard during a run: the lines after `mark`, once it has gone quiet (a message sent at quit

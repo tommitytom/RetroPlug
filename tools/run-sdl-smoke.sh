@@ -48,6 +48,7 @@ export NOSND_LOG="${NOSND_LOG:-$TMP/nosnd.log}"
 # saved means nothing claimed) and the test-only port filter set to a name no port has (see midi/PortFilter.hpp's
 # midiPortAllowedBy: an EMPTY list means every port, so it has to name something).
 export RETROPLUG_USER_CONFIG_DIR="$TMP/cfg"
+export RETROPLUG_PACKS_DIR="$TMP/packs" RETROPLUG_PACKS_CACHE_DIR="$TMP/packs-cache"; unset RETROPLUG_PACK_PATH
 export RP_MIDI_PORT_ALLOW="RP_NO_PORT"
 mkdir -p "$RETROPLUG_USER_CONFIG_DIR"
 

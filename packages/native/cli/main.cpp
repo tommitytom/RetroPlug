@@ -35,6 +35,7 @@
 #include "transports/QuickJSTransport.h"
 #include "host/HostServices.hpp"
 #include "host/js/SharedModules.hpp"
+#include "host/packs/ProcessPacks.hpp"
 #include "host/SessionPump.hpp"
 #include "host/QuickJsGlobals.hpp"
 #include "host/devices/ProviderHost.hpp"  // the rp_device_host this product starts its providers with
@@ -302,6 +303,8 @@ int main(int argc, char** argv) try {
         const std::string code = slurp(argv[1]);
         rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
     } else {
+        // Session files load no pack: they never get the cli set (docs/downloadable-packs-m2c-plan.md).
+        rp::host::packs::ensureLaunchPacks();  // before any context: a pack's TS halves are read from what it loaded
         // The dispatcher's contract modules first: its imports resolve to them by name.
         const std::string why = rp::host::registerSharedModules(ctx, rp_cli_modules, rp_cli_modules_count);
         if (!why.empty()) {
