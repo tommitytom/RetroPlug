@@ -1,0 +1,7 @@
+{
+  "id": "tsfix-protocol", "name": "TS fixture variant tsfix-protocol", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": [] },
+  "halves": { "protocol": "js/protocol.js" }
+}

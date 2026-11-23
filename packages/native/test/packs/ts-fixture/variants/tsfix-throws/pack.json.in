@@ -1,0 +1,7 @@
+{
+  "id": "tsfix-throws", "name": "TS fixture variant tsfix-throws", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": [] },
+  "halves": { "app": "js/app.js" }
+}

@@ -1,0 +1,7 @@
+{
+  "id": "tsfix-cliclash", "name": "TS fixture variant tsfix-cliclash", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": [] },
+  "halves": { "cli": "js/cli.js" }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug-test/ts-fixture",
+  "private": true,
+  "retroplug": { "app": "ts/app.ts", "ui": "ts/ui.ts", "cli": "ts/cli.ts" }
+}

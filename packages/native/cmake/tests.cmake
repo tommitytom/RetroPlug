@@ -218,6 +218,7 @@ retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/named/rp_product_p
 
 # The fixture pack and its broken variants (test/packs/fixture): modules nothing links, staged under build/packs/.
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/fixture ${CMAKE_BINARY_DIR}/packs-fixture EXCLUDE_FROM_ALL)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/ts-fixture ${CMAKE_BINARY_DIR}/packs-ts-fixture EXCLUDE_FROM_ALL)
 
 # The packs (docs/downloadable-packs-loading-design.md sections 1 and 2, docs/downloadable-packs-m1-plan.md): the folder
 # model on a temporary root, the loader's every refusal against the fixture pack's variants (test/packs/fixture), a pack
