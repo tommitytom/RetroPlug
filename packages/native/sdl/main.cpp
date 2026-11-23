@@ -67,6 +67,13 @@ bool bootControlPlane(AppState& a) {
     // BEFORE the bundle composes / autoloads.
     a.svc.engine.setSampleRate(a.sampleRate);
 
+    // The app's shared modules first: the control plane's and the UI's imports resolve to them by name, so the two
+    // share one copy of every contract module. A failure is fatal: a retry would append duplicate modules.
+    if (const std::string why = rp::host::registerSharedModules(ctx, rp_app_modules, rp_app_modules_count);
+        !why.empty()) {
+        std::fprintf(stderr, "[retroplug-sdl] %s\n", why.c_str());
+        return false;
+    }
     a.host.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
     for (int i = 0; i < 1000 && !readReady(a.host); ++i) a.host.pump();
     if (!readReady(a.host)) { std::fprintf(stderr, "[retroplug-sdl] control plane not ready\n"); return false; }

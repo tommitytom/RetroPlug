@@ -374,6 +374,7 @@ add_executable(retroplug-sdl
     sdl/audioLoop.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
+    ${APP_MODULES_C}              # the app's shared modules (rp_app_modules)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
 # `retroplug-audio` and `retroplug-midi` are unlisted library targets, linked by name (their manifests name no
@@ -400,7 +401,7 @@ target_include_directories(retroplug-sdl PRIVATE
     # libs on Linux/macOS (it fork/execs zenity/kdialog/osascript); Windows pulls comdlg32/ole32 via its header.
     ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
-add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
+add_dependencies(retroplug-sdl retroplug-app-modules)  # embedded bundles must exist first
 
 # Statically link libstdc++ on Linux so the binary doesn't depend on the target device's libstdc++
 # version — handhelds (muOS/Buildroot) may ship an older one. But DO NOT static-link libgcc: the C++
@@ -424,18 +425,20 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/plugin.cmake)
 # --- UI test harness -------------------------------------------------------------------------------
 # retroplug-ui-test boots the React UI on a headless software LVGL display
 # (RenderCore) driven by the BackendFacade RPC (UiHarness) — the counterpart of the
-# legacy retroplug-ui-test. Only built on demand (not ALL). Reuses UI_BUNDLE_C + the ui-bundle target
+# legacy retroplug-ui-test. Only built on demand (not ALL). Reuses UI_BUNDLE_C + the app-modules target
 # defined above the plugin.
 
 add_executable(retroplug-ui-test
     test/ui/UiRunner.cpp
     test/ui/UiHarness.cpp
     test/ui/RenderCore.cpp
+    ${APP_MODULES_C}              # the app's shared modules (rp_app_modules)
     ${UI_BUNDLE_C})               # the embedded UI bytecode (rp_ui_bundle)
 
 target_link_libraries(retroplug-ui-test PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
-    retroplug-backend) # BackendFacade + rpcpp + the cores + the txiki host
+    retroplug-backend             # BackendFacade + rpcpp + the cores + the txiki host
+    retroplug-tjs-runtime)        # registerSharedModules (lvgl-js-native's own host copy and the backend lack it)
 retroplug_product(retroplug-ui-test PACKAGES ${RP_DESKTOP_PACKAGES})
 
 target_include_directories(retroplug-ui-test PRIVATE
@@ -450,7 +453,7 @@ set_target_properties(retroplug-ui-test PROPERTIES
 )
 
 # The embedded bundle must exist before the test binary compiles it.
-add_dependencies(retroplug-ui-test retroplug-ui-bundle)
+add_dependencies(retroplug-ui-test retroplug-app-modules)
 
 # The shell's nine native test binaries (EXCLUDE_FROM_ALL; built by name), and the configure checks the packages'
 # manifests, boundary fixtures and device entries are held to.

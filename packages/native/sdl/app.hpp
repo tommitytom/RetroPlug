@@ -43,6 +43,7 @@ extern "C" {
 #include "dpfjs/host/TjsHostRuntime.hpp"     // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #include "host/engine/Engine.hpp"
+#include "host/js/SharedModules.hpp"          // registerSharedModules + rp_js_module (the app's shared module table)
 #include "host/engine/EngineInvoker.hpp"
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/GamepadPump.hpp"        // the event->bus switch, shared with the plugin editor
@@ -80,6 +81,8 @@ extern const std::uint8_t  rp_cp_bundle[];
 extern const std::uint32_t rp_cp_bundle_size;
 extern const std::uint8_t  rp_ui_bundle[];
 extern const std::uint32_t rp_ui_bundle_size;
+extern const rp_js_module rp_app_modules[];
+extern const std::uint32_t rp_app_modules_count;
 }
 
 // LVGL is built LV_GLOBAL_CUSTOM: the application must supply lv_global_default(). In the plugin DPF's

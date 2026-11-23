@@ -16,7 +16,9 @@ get_filename_component(RP_TS_SHELL "${RP_TS_GENERATOR}/../../.." ABSOLUTE)
 
 # --- the per-product generated modules and embedded bundles (docs/modular-graph-phase-f5a-design.md section 7.2).
 #
-# Every product has four embedded bundles: the control plane, the React UI, the script nodes and the render worker.
+# Every product has four embedded bundles: the control plane, the React UI, the script nodes and the render worker;
+# the control plane and the UI are the two hosts of the app's shared module set, built in one step with the modules
+# they share (below).
 # The desktop's are the shell's own tree's (src/generated, ui/generated), which the shell program, the pure tier and
 # every existing path already read, and its bundles keep the names and paths they had. Any other product's are written
 # under build/products/<name>/, laid out as the shell's tree is, by the same generator run with --product: its package
@@ -102,40 +104,34 @@ function(retroplug_bundles name)
         # boundary check's voucher, stated here where that is read (cmake/packages.cmake).
         set_target_properties(${_generator_target} PROPERTIES RP_BOUNDARY_SKIP "the shell's own TS generator")
 
-        # --- control-plane bundle: pluginControlPlane.ts -> bytecode C array (mirrors ui-regenerate). The DPF plugin
-        # evals this at construct to compose the stores (what runs on the audio thread is the script nodes, below).
-        set(_cp_js "${_dir}/cp-bundle.js")
+        # --- the app's shared module set (docs/downloadable-packs-m2b-plan.md): the control plane (rp:cp), the UI (rp:ui)
+        # and every contract module, one esbuild code-splitting build whose outputs are named modules, so the context the
+        # two share holds ONE copy of each (one set of registries, one React) and a pack's modules can link to them by
+        # name. retroplug-modc writes the shared modules as one ordered table (rp_app_modules, registered by the host
+        # before it evaluates anything: host/js/SharedModules) and each host entry as the array it always was
+        # (rp_cp_bundle, rp_ui_bundle), now importing the table's modules by name. Built for every list, as the control
+        # plane always was.
+        set(_app_dir "${_dir}/app-modules")
         set(_cp_c "${_dir}/cp-bundle_data.c")
-        set_source_files_properties(${_cp_c} PROPERTIES GENERATED TRUE)
-        add_custom_target(retroplug-cp-bundle${_suffix} ALL
-            BYPRODUCTS ${_cp_js} ${_cp_c} ${_cp_c}.new
-            COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-controlplane.js ${_cp_js} ${_product_args}
-            COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${_cp_c}.new ${_cp_js}
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_cp_c}.new ${_cp_c}
-            COMMENT "Regenerating control-plane bundle${_suffix} (esbuild + bytecode)"
-            VERBATIM)
-        if(TARGET ${_TJSC_DEP})
-            add_dependencies(retroplug-cp-bundle${_suffix} ${_TJSC_DEP})
-        endif()
-        add_dependencies(retroplug-cp-bundle${_suffix} ${_generator_target})
-
-        # --- the UI bundle: main.tsx -> bytecode C array (React entry via build-ui.js).
-        set(_ui_js "${_dir}/ui-bundle.js")
         set(_ui_c "${_dir}/ui-bundle_data.c")
-        set_source_files_properties(${_ui_c} PROPERTIES GENERATED TRUE)
-        add_custom_target(retroplug-ui-bundle${_suffix}
-            BYPRODUCTS ${_ui_js} ${_ui_c} ${_ui_c}.new ${_ui_js}.d
-            COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
-                    ${_ui_js} ${_ui_js}.d
-                    ${CMAKE_SOURCE_DIR}/packages/retroplug/ui/main.tsx ${_product_args}
-            COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${_ui_c}.new ${_ui_js}
+        set(_modules_c "${_dir}/app-modules_data.c")
+        set_source_files_properties(${_cp_c} ${_ui_c} ${_modules_c} PROPERTIES GENERATED TRUE)
+        add_custom_target(retroplug-app-modules${_suffix} ALL
+            BYPRODUCTS ${_cp_c} ${_ui_c} ${_modules_c} ${_cp_c}.new ${_ui_c}.new ${_modules_c}.new
+                       ${_app_dir}/shared.tsv ${_app_dir}/hosts.tsv
+            COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-shared-modules.mjs app ${_app_dir} ${_product_args}
+            COMMAND ${_MODC_COMMAND} table -s rp_app_modules ${_app_dir}/shared.tsv ${_modules_c}.new
+            COMMAND ${_MODC_COMMAND} array -s rp:cp rp_cp_bundle ${_app_dir}/js/rp/cp.js ${_cp_c}.new
+            COMMAND ${_MODC_COMMAND} array -s rp:ui rp_ui_bundle ${_app_dir}/js/rp/ui.js ${_ui_c}.new
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_modules_c}.new ${_modules_c}
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_cp_c}.new ${_cp_c}
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_ui_c}.new ${_ui_c}
-            COMMENT "Regenerating UI bundle${_suffix} (esbuild + bytecode)"
+            COMMENT "Building the app's shared module set${_suffix} (esbuild split + retroplug-modc)"
             VERBATIM)
-        if(TARGET ${_TJSC_DEP})
-            add_dependencies(retroplug-ui-bundle${_suffix} ${_TJSC_DEP})
+        if(TARGET ${_MODC_DEP})
+            add_dependencies(retroplug-app-modules${_suffix} ${_MODC_DEP})
         endif()
-        add_dependencies(retroplug-ui-bundle${_suffix} ${_generator_target})
+        add_dependencies(retroplug-app-modules${_suffix} ${_generator_target})
 
         # --- the script-node bundle: the product's generated scriptNodes.ts, every TS node type its packages
         # contribute, esbuilt to a global-code IIFE (each Engine's script host evaluates it on two BARE QuickJS
@@ -195,12 +191,13 @@ function(retroplug_bundles name)
     get_property(_suffix GLOBAL PROPERTY RP_BUNDLES_${_key}_SUFFIX)
     get_property(_dir GLOBAL PROPERTY RP_BUNDLES_${_key}_DIR)
     set(RP_BUNDLE_${name}_GENERATOR "retroplug-ts-packages${_suffix}" PARENT_SCOPE)
-    set(RP_BUNDLE_${name}_CP_TARGET "retroplug-cp-bundle${_suffix}" PARENT_SCOPE)
-    set(RP_BUNDLE_${name}_UI_TARGET "retroplug-ui-bundle${_suffix}" PARENT_SCOPE)
+    set(RP_BUNDLE_${name}_CP_TARGET "retroplug-app-modules${_suffix}" PARENT_SCOPE)
+    set(RP_BUNDLE_${name}_UI_TARGET "retroplug-app-modules${_suffix}" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_SCRIPT_TARGET "retroplug-script-bundle${_suffix}" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_RENDER_TARGET "retroplug-render-worker-bundle${_suffix}" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_CP_C "${_dir}/cp-bundle_data.c" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_UI_C "${_dir}/ui-bundle_data.c" PARENT_SCOPE)
+    set(RP_BUNDLE_${name}_MODULES_C "${_dir}/app-modules_data.c" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_OBJECTS "retroplug-bundles${_suffix}-objects" PARENT_SCOPE)
 endfunction()
 
@@ -212,3 +209,4 @@ set_property(GLOBAL PROPERTY RP_BUNDLE_PACKAGES_desktop "${RP_PRODUCT_PACKAGES_d
 retroplug_bundles(desktop)
 set(CP_BUNDLE_C "${RP_BUNDLE_desktop_CP_C}")
 set(UI_BUNDLE_C "${RP_BUNDLE_desktop_UI_C}")
+set(APP_MODULES_C "${RP_BUNDLE_desktop_MODULES_C}")

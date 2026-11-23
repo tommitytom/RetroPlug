@@ -21,6 +21,7 @@ dpf_add_plugin(retroplug
     FILES_DSP
         plugin/PluginDSP.cpp
         ${RP_BUNDLE_plugin_CP_C}      # the embedded control-plane bytecode (rp_cp_bundle)
+        ${RP_BUNDLE_plugin_MODULES_C} # the app's shared modules (rp_app_modules)
     FILES_UI
         plugin/PluginUI.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
