@@ -211,26 +211,27 @@ set_target_properties(retroplug-render-host-test PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# The root CLI dispatcher bundle — cli/cli.ts → tjsc bytecode C array, COMPILED INTO retroplug-cli
-# (mirrors the app-modules recipe). It owns command routing + all help; esbuild follows its
-# imports (cli.ts → tools.ts → sessions/render.ts → session.ts). tjsc derives the array name from the
-# output stem → rp_cli_bundle[] +
-# rp_cli_bundle_size. Derived; never committed. Adding a command is pure TS (cli/tools.ts) — no change here.
-set(CLI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/cli-bundle.js")
+# The root CLI dispatcher (cli/cli.ts) and the shell's contract modules as the CLI's shared module set
+# (docs/downloadable-packs-m2b-plan.md): rp_cli_modules is the ordered table the launcher registers before it evaluates
+# the dispatcher (rp_cli_bundle, now importing those modules by name), so a pack's CLI half can link to the same
+# contracts (M2c). Derived; never committed. Adding a command is pure TS (cli/tools.ts): no change here.
+set(CLI_MODULES_DIR "${CMAKE_BINARY_DIR}/native/cli-modules")
 set(CLI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/cli-bundle_data.c")
-set_source_files_properties(${CLI_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the CLI compiles
+set(CLI_MODULES_C "${CMAKE_BINARY_DIR}/native/cli-modules_data.c")
+set_source_files_properties(${CLI_BUNDLE_C} ${CLI_MODULES_C} PROPERTIES GENERATED TRUE)  # produced before the CLI compiles
 add_custom_target(retroplug-cli-bundle
-    BYPRODUCTS ${CLI_BUNDLE_JS} ${CLI_BUNDLE_C} ${CLI_BUNDLE_C}.new
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CMAKE_SOURCE_DIR}/packages/retroplug/cli/cli.ts ${CLI_BUNDLE_JS}
-    COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${CLI_BUNDLE_C}.new ${CLI_BUNDLE_JS}
+    BYPRODUCTS ${CLI_BUNDLE_C} ${CLI_BUNDLE_C}.new ${CLI_MODULES_C} ${CLI_MODULES_C}.new
+               ${CLI_MODULES_DIR}/shared.tsv ${CLI_MODULES_DIR}/hosts.tsv
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-shared-modules.mjs cli ${CLI_MODULES_DIR}
+    COMMAND ${_MODC_COMMAND} table -s rp_cli_modules ${CLI_MODULES_DIR}/shared.tsv ${CLI_MODULES_C}.new
+    COMMAND ${_MODC_COMMAND} array -s rp:cli rp_cli_bundle ${CLI_MODULES_DIR}/js/rp/cli.js ${CLI_BUNDLE_C}.new
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CLI_MODULES_C}.new ${CLI_MODULES_C}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CLI_BUNDLE_C}.new ${CLI_BUNDLE_C}
-    COMMENT "Bundling retroplug-cli dispatcher (esbuild + bytecode)"
+    COMMENT "Building the CLI's shared module set (esbuild split + retroplug-modc)"
     VERBATIM)
-# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
-# path (not a target) — the custom command's DEPENDS already tracks it.
-if(TARGET ${_TJSC_DEP})
-  add_dependencies(retroplug-cli-bundle ${_TJSC_DEP})
+# Order against the in-tree tool target only; a cross-build's -DRP_MODC_EXECUTABLE is a host file path (not a target).
+if(TARGET ${_MODC_DEP})
+  add_dependencies(retroplug-cli-bundle ${_MODC_DEP})
 endif()
 # ...and against the shell's generator: cli.ts imports cli/generated/tools.ts and the dispatcher's own modules import
 # src/generated, which a fresh tree has not written yet. Unbundled from this edge, a parallel build from a tree with no
@@ -298,7 +299,7 @@ add_dependencies(retroplug-cli-sdk-assets ${RP_BUNDLE_desktop_GENERATOR})
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
 # runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp src/host/SessionPump.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
+add_executable(retroplug-cli cli/main.cpp src/host/SessionPump.cpp ${CLI_BUNDLE_C} ${CLI_MODULES_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend retroplug-tjs-runtime)
 retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad midi)

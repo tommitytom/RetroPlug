@@ -34,6 +34,7 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 #include "host/HostServices.hpp"
+#include "host/js/SharedModules.hpp"
 #include "host/SessionPump.hpp"
 #include "host/QuickJsGlobals.hpp"
 #include "host/devices/ProviderHost.hpp"  // the rp_device_host this product starts its providers with
@@ -46,6 +47,9 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec
 extern "C" {
 extern const std::uint8_t  rp_cli_bundle[];
 extern const std::uint32_t rp_cli_bundle_size;
+// The CLI's shared module set (docs/downloadable-packs-m2b-plan.md): the contract modules the dispatcher imports by name.
+extern const rp_js_module  rp_cli_modules[];
+extern const std::uint32_t rp_cli_modules_count;
 // The TypeScript type stripper (ts-blank-space + the TS parser), also compiled in but as GLOBAL CODE
 // rather than a module, and loaded ON DEMAND — see jsLoadTsStripper below.
 extern const std::uint8_t  rp_ts_stripper_bundle[];
@@ -298,7 +302,16 @@ int main(int argc, char** argv) try {
         const std::string code = slurp(argv[1]);
         rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
     } else {
-        rc = host.evalModuleBytecode(rp_cli_bundle, rp_cli_bundle_size);
+        // The shared modules import the SDK module by name and reading their bytecode resolves that import, so the
+        // SDK is registered first, then the dispatcher's contract modules, then the dispatcher itself.
+        registerSdkModule(ctx);
+        const std::string why = rp::host::registerSharedModules(ctx, rp_cli_modules, rp_cli_modules_count);
+        if (!why.empty()) {
+            std::fprintf(stderr, "retroplug-cli: %s\n", why.c_str());
+            rc = 1;
+        } else {
+            rc = host.evalModuleBytecode(rp_cli_bundle, rp_cli_bundle_size);
+        }
     }
     // A session that took its exit through the hook has already unwound: an evaluation path that still reports a
     // failure for it (one this launcher does not know about) must not print "session eval failed" over a clean exit.
