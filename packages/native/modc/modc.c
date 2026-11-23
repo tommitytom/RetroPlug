@@ -176,7 +176,8 @@ static int cmd_array(int strip, const char *name, const char *symbol, const char
             fprintf(f, "const uint8_t %s[%lu] = {", symbol, (unsigned long) len);
             write_bytes(f, buf, len);
             fprintf(f, "};\n");
-            rc = (ferror(f) == 0 && fclose(f) == 0) ? 0 : 1;
+            const int err = ferror(f);
+            rc = (fclose(f) == 0 && !err) ? 0 : 1;
             if (rc != 0) remove(out);
         }
         js_free(c.ctx, buf);

@@ -23,7 +23,7 @@ tjsc="$repo/build/dpfjs/deps/lv_binding_js/deps/txiki/tjsc"
 pb12="$repo/build/sameboy-bootroms/sameboy_pb12"
 modc="$repo/build/bin/retroplug-modc"
 # retroplug-modc is EXCLUDE_FROM_ALL, so a host build does not make it unless asked.
-cmake --build "$repo/build" --target retroplug-modc -j"$(nproc)"
+[[ -f "$repo/build/CMakeCache.txt" ]] && cmake --build "$repo/build" --target retroplug-modc -j"$(nproc)"
 for t in "$tjsc" "$pb12" "$modc"; do
     [[ -x "$t" ]] || { echo "!! missing host tool: $t — run ./build.sh (a host build) first" >&2; exit 1; }
 done
