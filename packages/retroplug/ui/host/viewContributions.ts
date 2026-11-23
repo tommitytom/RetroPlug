@@ -3,12 +3,22 @@
 // module on purpose: a component view imports React, and only the UI bundle resolves it, so a menu module that reached
 // this one would put React in every pure-tier test that builds a menu.
 import type { TileView, ViewDef, WindowView } from "@retroplug/ui/contribution";
-import { VIEWS } from "../generated/views";
+import { viewsRegistry } from "../contributions/views";
+import { derived } from "../../src/contributions/registry";
+
+/** Every view with the package it came from, in registration order: the same array until the next commit. */
+const VIEWS = derived((): readonly { pkg: string; view: ViewDef }[] =>
+  viewsRegistry.entries().map(({ pkg, item }) => ({ pkg, view: item })),
+);
+
+const TILE_VIEWS = derived((): readonly { pkg: string; view: TileView }[] =>
+  VIEWS().filter((entry): entry is { pkg: string; view: TileView } => entry.view.placement === "tile"),
+);
 
 /** The view a package registers under `id`, with the package it came from, or undefined. The generated module has
  *  already refused a duplicate id, so the first match is the only one. */
 export function viewById(id: string): { pkg: string; view: ViewDef } | undefined {
-  return VIEWS.find((entry) => entry.view.id === id);
+  return VIEWS().find((entry) => entry.view.id === id);
 }
 
 /** The window view a package registers under `id`, or undefined for an unknown id or a tile view. What
@@ -31,5 +41,5 @@ export function windowViewOrReport(id: string): { view: WindowView } | { report:
 /** Every tile view, in product order, with the package it came from: the layers EmulatorTile mounts over each tile
  *  whose system the view's `when` accepts. */
 export function tileViews(): readonly { pkg: string; view: TileView }[] {
-  return VIEWS.filter((entry): entry is { pkg: string; view: TileView } => entry.view.placement === "tile");
+  return TILE_VIEWS();
 }

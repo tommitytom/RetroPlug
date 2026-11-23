@@ -891,9 +891,9 @@ function renderPlacers({ packages, outDir, shellDir, product }) {
 }
 
 /** The generated UI contributions module (`<shell>/ui/generated/menus.ts`): each package's `retroplug.ui` module, in
- *  product order, and the checks a contribution is held to at load. The order is the menus' order - a system-settings
+ *  product order, seeded into the live registry. The order is the menus' order - a system-settings
  *  block's rows and a device entry land where the package sits in the product list - so it is the list's, not a sort. */
-function renderMenus({ packages, outDir, generatedDir, shellSrc, product }) {
+function renderMenus({ packages, outDir, generatedDir, shellDir, product }) {
   const contributors = packages.filter((p) => p.ui);
   // A module identifier per package: the package name loses its punctuation, and a collision would be a tsc error
   // naming neither manifest.
@@ -903,208 +903,37 @@ function renderMenus({ packages, outDir, generatedDir, shellSrc, product }) {
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
     "//",
     "// The product's UI contributions, in product order: each package's `retroplug.ui` module, which default-exports the",
-    "// system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this",
-    `// list, so a package's place in \`retroplug.products.${product}\` is where its rows and entries land. Only ui/ imports`,
-    "// this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.",
-    'import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution } ' +
-      'from "@retroplug/ui/contribution";',
+    "// system-settings rows, menu builders, tracker specs and services it adds, seeded into the live registry",
+    "// ui/contributions/uiRegistries.ts (which holds the checks). The shell composes the menus from it, so a package's",
+    `// place in \`retroplug.products.${product}\` is where its rows and entries land. Only ui/ imports this module: the`,
+    "// control plane, the render worker, the SDK and the planner carry no menu contribution. It seeds the app's",
+    "// registries first, through their generated module, because the checks read the roles and the trackers.",
+    `import "${specifier(outDir, join(generatedDir, "packages.ts"))}";`,
+    `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
+    `import { uiRegistry } from "${contributionsSpecifier(outDir, shellDir, "ui/contributions/uiRegistries.ts")}";`,
   ];
   for (const p of contributors) {
     lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.ui)}";`);
   }
-  // The role kinds and tracker integrations the product registers, for the checks below: a row over a kind nothing
-  // registers, or over a key its role's schema does not read, would render nowhere and do nothing, and a tracker UI no
-  // integration matches would never be found - typos the compiler cannot see in a data literal.
   lines.push(
-    `import { rolesRegistry, trackerIntegrationsRegistry } from "${specifier(outDir, join(generatedDir, "packages.ts"))}";`,
-    "const ROLES = rolesRegistry.items();",
-    "const TRACKER_INTEGRATIONS = trackerIntegrationsRegistry.items();",
+    "",
+    "export { uiRegistry };",
+    "",
+    ...seedLines(["uiRegistry"], contributors.map((p) => ({
+      registry: "uiRegistry", pkg: p.pkg.name, items: `[${local(p.pkg.name)}]`,
+    }))),
+    "",
   );
-  // The binding vocabulary an action's default is checked against (the key names the profiles resolve, SDL's pad
-  // names, and the defaults the shell and the Game Boy buttons already take), all of it the shell's own modules: read
-  // from wherever this module was written, so a product's tree reaches the shell's real files.
-  lines.push(
-    `import { GAMEPAD_BUTTON_NAMES, resolveKeyName } from "${specifier(outDir, join(shellSrc, "keyCodes.ts"))}";`,
-  );
-  lines.push(
-    `import { DEFAULT_GAMEPAD_ACTIONS, DEFAULT_KEYBOARD_ACTIONS, defaultBindingMap } from ` +
-      `"${specifier(outDir, join(shellSrc, "bindingMap.ts"))}";`,
-  );
-  lines.push("");
-  lines.push("/** Each package's UI contribution, in product order. */");
-  lines.push("export const UI_CONTRIBUTIONS: readonly { pkg: string; ui: UiContribution }[] = [");
-  for (const p of contributors) {
-    lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, ui: ${local(p.pkg.name)} },`);
-  }
-  lines.push("];");
-  lines.push("");
-  lines.push("/** The product's app actions, in product order, with the package each came from: the bindings menus'");
-  lines.push(" *  rows, the key and gamepad maps' known ids, and the dispatch's lookups. */");
-  lines.push("export const ACTIONS: readonly ContributedAction[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>");
-  lines.push("  (ui.actions ?? []).map((action) => ({ pkg, action })),");
-  lines.push(");");
-  lines.push("");
-  lines.push("// A row's id has to be unique inside its placement: the menu is keyed by id, so a second row of one id would");
-  lines.push("// take the first one's place (a system-settings row lands in the System submenu, a tracker's extras in its own");
-  lines.push("// submenu).");
-  lines.push("const rowOwners = new Map<string, string>();");
-  lines.push("function claimRow(placement: string, id: string, pkg: string): void {");
-  lines.push("  const owner = rowOwners.get(`${placement}:${id}`);");
-  lines.push("  if (owner === undefined) {");
-  lines.push("    rowOwners.set(`${placement}:${id}`, pkg);");
-  lines.push("    return;");
-  lines.push("  }");
-  lines.push("  throw new Error(owner === pkg");
-  lines.push("    ? `the package ${pkg} declares the row ${id} twice in the placement ${placement}`");
-  lines.push("    : `two packages declare the row ${id} in the placement ${placement}: ${owner} and ${pkg}`);");
-  lines.push("}");
-  lines.push("");
-  lines.push("const roleKinds = new Set(ROLES.map((role) => role.kind));");
-  lines.push("/** The keys a role's schema declares, which are the only ones a row can read (or gate on). */");
-  lines.push(
-    "const roleKeys = new Map(ROLES.map((role) => [role.kind, new Set(Object.keys(role.schema.parse({})))]));",
-  );
-  lines.push("const trackerIds = new Set(TRACKER_INTEGRATIONS.map((integration) => integration.id));");
-  lines.push("const trackerOwners = new Map<string, string>();");
-  lines.push("// A service is looked up by its id: two of one id would run one of them twice or the other never, so a");
-  lines.push("// duplicate is refused rather than let the second definition win.");
-  lines.push("const serviceOwners = new Map<string, string>();");
-  lines.push("const placements = new Set<string>(PLACEMENTS);");
-  lines.push("// An action's id is what a binding profile stores, so it is unique across the product and names its");
-  lines.push("// package. Its defaults are held to the names the shell binds and to the ones it already binds at a");
-  lines.push("// default: a key on both would fire the action AND the Game Boy button (or the shell action) it is on.");
-  lines.push("const actionOwners = new Map<string, string>();");
-  lines.push("const padButtonNames = new Set<string>(GAMEPAD_BUTTON_NAMES);");
-  lines.push("const defaultMap = defaultBindingMap();");
-  lines.push("const takenKeyCodes = new Set<number>();");
-  lines.push("for (const names of Object.values(DEFAULT_KEYBOARD_ACTIONS)) {");
-  lines.push("  for (const name of names) takenKeyCodes.add(resolveKeyName(name)!);");
-  lines.push("}");
-  lines.push("for (const names of Object.values(defaultMap.keyboard)) {");
-  lines.push("  for (const name of names) takenKeyCodes.add(resolveKeyName(name)!);");
-  lines.push("}");
-  lines.push("const takenPadNames = new Set<string>();");
-  lines.push("for (const names of Object.values(DEFAULT_GAMEPAD_ACTIONS)) {");
-  lines.push("  for (const name of names) takenPadNames.add(name);");
-  lines.push("}");
-  lines.push("for (const names of Object.values(defaultMap.gamepad)) {");
-  lines.push("  for (const name of names) takenPadNames.add(name);");
-  lines.push("}");
-  lines.push("");
-  lines.push("/** One contributed row: its role must be registered, its id unique in its placement, and its key (and its");
-  lines.push(" *  gate's key) one its role's schema reads. */");
-  lines.push("function checkRow(placement: string, pkg: string, row: RoleRow): void {");
-  lines.push("  if (!roleKinds.has(row.role)) {");
-  lines.push("    throw new Error(`the package ${pkg} declares the row ${row.id} over the role ${row.role}, which no ` +");
-  lines.push('      "registered role type has");');
-  lines.push("  }");
-  lines.push("  claimRow(placement, row.id, pkg);");
-  lines.push("  const keys = roleKeys.get(row.role)!;");
-  lines.push("  if (!keys.has(row.key)) {");
-  lines.push(
-    "    throw new Error(`the package ${pkg} declares the row ${row.id} over the key ${row.key}, which the role ` +",
-  );
-  lines.push('      `${row.role} does not read`);');
-  lines.push("  }");
-  lines.push("  if (row.when && !keys.has(row.when.key)) {");
-  lines.push(
-    "    throw new Error(`the package ${pkg} declares the row ${row.id} gated on the key ${row.when.key}, which ` +",
-  );
-  lines.push('      `the role ${row.role} does not read`);');
-  lines.push("  }");
-  lines.push("}");
-  lines.push("");
-  lines.push("/** One contributed action: its id unique across the product and prefixed by its own package's name,");
-  lines.push(" *  its default key and pad names ones the shell resolves, and no default the shell (or a Game Boy");
-  lines.push(" *  button) already binds, since one press would fire both.");
-  lines.push(" *  Two contributions on one key are allowed: the overlays' backtick. */");
-  lines.push("function checkAction(pkg: string, action: UiAction): void {");
-  lines.push("  const owner = actionOwners.get(action.id);");
-  lines.push("  if (owner !== undefined) {");
-  lines.push("    throw new Error(owner === pkg");
-  lines.push("      ? `the package ${pkg} declares the action ${action.id} twice`");
-  lines.push("      : `two packages declare the action ${action.id}: ${owner} and ${pkg}`);");
-  lines.push("  }");
-  lines.push("  actionOwners.set(action.id, pkg);");
-  lines.push("  if (!action.id.startsWith(`${pkg}.`)) {");
-  lines.push("    throw new Error(`the package ${pkg} declares the action ${action.id}, which is not prefixed ` +");
-  lines.push('      `by its own name ("${pkg}.")`);');
-  lines.push("  }");
-  lines.push("  for (const name of action.keys ?? []) {");
-  lines.push("    const code = resolveKeyName(name);");
-  lines.push("    if (code === null) {");
-  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +");
-  lines.push('        `${name}, which is no key name`);');
-  lines.push("    }");
-  lines.push("    if (takenKeyCodes.has(code)) {");
-  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +");
-  lines.push('        `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);');
-  lines.push("    }");
-  lines.push("    if (/^[A-Z]$/.test(name)) {");
-  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ${name} by ` +");
-  lines.push('        `default, which no host sends (the hosts send letters unshifted: bind "${name.toLowerCase()}")`);');
-  lines.push("    }");
-  lines.push("  }");
-  lines.push("  for (const name of action.pad ?? []) {");
-  lines.push("    if (!padButtonNames.has(name)) {");
-  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the gamepad button ` +");
-  lines.push('        `${name}, which is no SDL button name (the names are GAMEPAD_BUTTON_NAMES)`);');
-  lines.push("    }");
-  lines.push("    if (takenPadNames.has(name)) {");
-  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the gamepad button ` +");
-  lines.push('        `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);');
-  lines.push("    }");
-  lines.push("  }");
-  lines.push("}");
-  lines.push("");
-  lines.push("for (const { pkg, ui } of UI_CONTRIBUTIONS) {");
-  lines.push("  for (const row of ui.rows ?? []) checkRow(\"system.settings\", pkg, row);");
-  lines.push("  for (const action of ui.actions ?? []) checkAction(pkg, action);");
-  lines.push("  for (const tracker of ui.trackers ?? []) {");
-  lines.push("    if (!trackerIds.has(tracker.id)) {");
-  lines.push(
-    "      throw new Error(`the package ${pkg} declares a tracker UI for ${tracker.id}, which no registered ` +",
-  );
-  lines.push('        "tracker integration has");');
-  lines.push("    }");
-  lines.push("    const owner = trackerOwners.get(tracker.id);");
-  lines.push("    if (owner !== undefined) {");
-  lines.push("      throw new Error(owner === pkg");
-  lines.push("        ? `the package ${pkg} declares the tracker UI ${tracker.id} twice`");
-  lines.push("        : `two packages declare a tracker UI for ${tracker.id}: ${owner} and ${pkg}`);");
-  lines.push("    }");
-  lines.push("    trackerOwners.set(tracker.id, pkg);");
-  lines.push(
-    "    for (const row of tracker.extras?.rows ?? []) checkRow(`instance.tracker:${tracker.id}`, pkg, row);",
-  );
-  lines.push("  }");
-  lines.push("  for (const service of ui.services ?? []) {");
-  lines.push("    const owner = serviceOwners.get(service.id);");
-  lines.push("    if (owner !== undefined) {");
-  lines.push("      throw new Error(owner === pkg");
-  lines.push("        ? `the package ${pkg} declares the UI service ${service.id} twice`");
-  lines.push("        : `two packages declare a UI service ${service.id}: ${owner} and ${pkg}`);");
-  lines.push("    }");
-  lines.push("    serviceOwners.set(service.id, pkg);");
-  lines.push("  }");
-  lines.push("  for (const menu of ui.menus ?? []) {");
-  lines.push("    if (!placements.has(menu.placement)) {");
-  lines.push("      throw new Error(`the package ${pkg} declares a menu builder at the placement ${menu.placement}, ` +");
-  lines.push('        `which is no placement (the placements are ${PLACEMENTS.join(", ")})`);');
-  lines.push("    }");
-  lines.push("  }");
-  lines.push("}");
-  lines.push("");
   return lines.join("\n");
 }
 
 /** The generated views module (`<shell>/ui/generated/views.ts`): each package's `retroplug.views` module, in product
- *  order, and the checks a view is held to at load. Apart from menus.ts, which every pure-tier test that reaches
+ *  order, seeded into the live registry. Apart from menus.ts, which every pure-tier test that reaches
  *  menuDefs.ts bundles with no alias: a component view imports React, and the UI bundle is the one that can resolve it
  *  (tools/build-ui.js's aliases and nodePaths). The order is the views' order: a window view is looked up by id (the
  *  first match, which the duplicate check makes unique) while the tile layers stack where the package sits in the
  *  product list, so it is the list's order, not a sort. */
-function renderViews({ packages, outDir, product }) {
+function renderViews({ packages, outDir, shellDir, product }) {
   const contributors = packages.filter((p) => p.views);
   const local = (name) => `views_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
   const lines = [
@@ -1112,73 +941,24 @@ function renderViews({ packages, outDir, product }) {
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
     "//",
     "// The product's views, in product order: each package's `retroplug.views` module, default-exporting the window",
-    "// and tile views it draws. Only the shell's view slots import this module, and only the UI bundle resolves it: a",
-    "// component view imports React, which the pure tier (the menu tests, the control plane, the CLI) has no path to.",
-    'import type { ViewDef, ViewsContribution } from "@retroplug/ui/contribution";',
+    "// and tile views it draws, seeded into the live registry ui/contributions/uiRegistries.ts (which holds the checks).",
+    "// Only the shell's view slots import this module, and only the UI bundle resolves it: a component view imports",
+    "// React, which the pure tier (the menu tests, the control plane, the CLI) has no path to.",
+    `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
+    `import { viewsRegistry } from "${contributionsSpecifier(outDir, shellDir, "ui/contributions/uiRegistries.ts")}";`,
   ];
   for (const p of contributors) {
     lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.views)}";`);
   }
-  lines.push("");
-  lines.push("/** Each package's views, in product order. */");
-  lines.push("export const VIEW_CONTRIBUTIONS: readonly { pkg: string; views: ViewsContribution }[] = [");
-  for (const p of contributors) {
-    lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, views: ${local(p.pkg.name)} },`);
-  }
-  lines.push("];");
-  lines.push("");
-  lines.push("/** The product's views, in product order, with the package each came from: what host.views.open looks");
-  lines.push(" *  a window view up by id, and the tile layers every tile mounts in turn. */");
-  lines.push("export const VIEWS: readonly { pkg: string; view: ViewDef }[] = VIEW_CONTRIBUTIONS.flatMap(({ pkg, views }) =>");
-  lines.push("  (views.views ?? []).map((view) => ({ pkg, view })),");
-  lines.push(");");
-  lines.push("");
-  lines.push("// A view's id is its test id and the id host.views.open names, so it is unique across the product; its");
-  lines.push("// placement and its body's kind are the two data fields the type cannot hold a package to at load.");
-  lines.push("const viewOwners = new Map<string, string>();");
-  lines.push('const viewPlacements = new Set<string>(["window", "tile"]);');
-  lines.push('const bodyKinds = new Set<string>(["pixels", "readout", "component"]);');
-  lines.push("");
-  lines.push("/** One contributed view: its id unique across the product, its placement one the shell has, its body kind");
-  lines.push(" *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and");
-  lines.push(" *  no `visible` on a window view (the type refuses that; this backs the type). */");
-  lines.push("function checkView(pkg: string, view: ViewDef): void {");
-  lines.push("  const owner = viewOwners.get(view.id);");
-  lines.push("  if (owner !== undefined) {");
-  lines.push("    throw new Error(owner === pkg");
-  lines.push("      ? `the package ${pkg} declares the view ${view.id} twice`");
-  lines.push("      : `two packages declare the view ${view.id}: ${owner} and ${pkg}`);");
-  lines.push("  }");
-  lines.push("  viewOwners.set(view.id, pkg);");
-  lines.push("  if (!viewPlacements.has(view.placement)) {");
-  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +");
-  lines.push('      `which is no placement (the placements are window, tile)`);');
-  lines.push("  }");
-  lines.push("  const kind = view.body?.kind;");
-  lines.push("  if (!bodyKinds.has(kind)) {");
-  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +");
-  lines.push('      `which is no body kind (the kinds are pixels, readout, component)`);');
-  lines.push("  }");
-  lines.push("  const body = view.body as { readonly open?: unknown; readonly component?: unknown };");
-  lines.push('  if (kind === "component") {');
-  lines.push('    if (typeof body.component !== "function") {');
-  lines.push("      throw new Error(`the package ${pkg} declares the view ${view.id} with a component body and no ` +");
-  lines.push('        "component (reactView builds the one a component body carries)");');
-  lines.push("    }");
-  lines.push('  } else if (typeof body.open !== "function") {');
-  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with a ${kind} body and no open ` +");
-  lines.push('      `(a ${kind} body\'s open is what the shell calls)`);');
-  lines.push("  }");
-  lines.push('  if (view.placement !== "tile" && (view as { readonly visible?: unknown }).visible !== undefined) {');
-  lines.push("    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +");
-  lines.push('      `a tile view has`);');
-  lines.push("  }");
-  lines.push("}");
-  lines.push("");
-  lines.push("for (const { pkg, views } of VIEW_CONTRIBUTIONS) {");
-  lines.push("  for (const view of views.views ?? []) checkView(pkg, view);");
-  lines.push("}");
-  lines.push("");
+  lines.push(
+    "",
+    "export { viewsRegistry };",
+    "",
+    ...seedLines(["viewsRegistry"], contributors.map((p) => ({
+      registry: "viewsRegistry", pkg: p.pkg.name, items: `${local(p.pkg.name)}.views ?? []`,
+    }))),
+    "",
+  );
   return lines.join("\n");
 }
 
@@ -1935,11 +1715,11 @@ export function generate({
     },
     {
       path: join(uiOutDir, "menus.ts"),
-      content: renderMenus({ packages: contributionsOf, outDir: uiOutDir, generatedDir: outDir, shellSrc, product }),
+      content: renderMenus({ packages: contributionsOf, outDir: uiOutDir, generatedDir: outDir, shellDir: shell.dir, product }),
     },
     {
       path: join(uiOutDir, "views.ts"),
-      content: renderViews({ packages: contributionsOf, outDir: uiOutDir, product }),
+      content: renderViews({ packages: contributionsOf, outDir: uiOutDir, shellDir: shell.dir, product }),
     },
   ];
   if (cliOutDir) {

@@ -1,7 +1,7 @@
 // The product's UI contributions (docs/modular-graph-phase-f4b-design.md section 4.2), for the shell's menu composers:
-// the generated list, in product order, is the one place a package's rows, builders, tracker specs, services and app
+// the live registry (ui/contributions/uiRegistries.ts, seeded by the generated module in product order and appended to by packs) is the one place a package's rows, builders, tracker specs, services and app
 // actions are read from. Only ui/ imports it, so the control plane, the render worker, the SDK and the planner carry no
-// menu contribution; the generated module has already refused a duplicate row id, an unknown placement, a row over a
+// menu contribution; the registry's check has already refused a duplicate row id, an unknown placement, a row over a
 // role kind no registered type declares or over a key its schema does not read, and a tracker UI no integration
 // matches, so what this module reads it can index. The views are viewContributions.ts's, over their own generated
 // module: a component view imports React, which this module must not reach.
@@ -10,17 +10,18 @@ import type {
 } from "@retroplug/ui/contribution";
 import type { SystemInfo } from "@retroplug/core/host";
 import type { MenuItem } from "@retroplug/ui/menu";
-import { ACTIONS, UI_CONTRIBUTIONS } from "../generated/menus";
+import { uiRegistry } from "../contributions/menus";
+import { derived } from "../../src/contributions/registry";
 
 /** Every contributed role row, in product order: the System submenu's package-owned block. */
 export function roleRows(): readonly RoleRow[] {
-  return UI_CONTRIBUTIONS.flatMap((entry) => entry.ui.rows ?? []);
+  return uiRegistry.items().flatMap((ui) => ui.rows ?? []);
 }
 
 /** The tracker UI a cart contributes, by its integration id, or undefined for a cart with no contributed specs. */
 export function contributedTrackerUi(id: string): TrackerUi | undefined {
-  for (const entry of UI_CONTRIBUTIONS) {
-    for (const tracker of entry.ui.trackers ?? []) {
+  for (const ui of uiRegistry.items()) {
+    for (const tracker of ui.trackers ?? []) {
       if (tracker.id === id) return tracker;
     }
   }
@@ -35,8 +36,8 @@ export function menuPlacement(
   sys: SystemInfo | null,
   ctx: MenuBuildContext,
 ): MenuItem[] {
-  return UI_CONTRIBUTIONS.flatMap((entry) =>
-    (entry.ui.menus ?? []).filter((menu) => menu.placement === placement).flatMap((menu) => menu.build(host, sys, ctx)),
+  return uiRegistry.items().flatMap((ui) =>
+    (ui.menus ?? []).filter((menu) => menu.placement === placement).flatMap((menu) => menu.build(host, sys, ctx)),
   );
 }
 
@@ -47,8 +48,8 @@ export function menuPlacementOpen(
   placement: MenuBuilder["placement"],
   host: UiHost,
 ): (() => void) | undefined {
-  const builders = UI_CONTRIBUTIONS.flatMap((entry) =>
-    (entry.ui.menus ?? []).filter((menu) => menu.placement === placement && menu.onOpen),
+  const builders = uiRegistry.items().flatMap((ui) =>
+    (ui.menus ?? []).filter((menu) => menu.placement === placement && menu.onOpen),
   );
   if (builders.length === 0) return undefined;
   return () => {
@@ -56,27 +57,30 @@ export function menuPlacementOpen(
   };
 }
 
-/** Every app action a package contributes, in product order, with the package it came from: the bindings menus' rows,
- *  the key and gamepad maps' "known" ids, and the dispatch's lookups. The generated list itself, so the export the
- *  generator's checks run over is the one the product reads. A module constant, so a hook's dependency (and a memo
- *  over it) is stable. */
-const ACTION_IDS: readonly string[] = ACTIONS.map((entry) => entry.action.id);
+/** Every app action a package contributes, in registration order, with the package it came from: the bindings menus'
+ *  rows, the key and gamepad maps' "known" ids, and the dispatch's lookups. The same array until the next commit, so a
+ *  hook's dependency (and a memo over it) changes only when a pack adds actions. */
+const ACTIONS = derived((): readonly ContributedAction[] =>
+  uiRegistry.entries().flatMap(({ pkg, item }) => (item.actions ?? []).map((action) => ({ pkg, action }))),
+);
+
+const ACTION_IDS = derived((): readonly string[] => ACTIONS().map((entry) => entry.action.id));
 
 export function contributedActions(): readonly ContributedAction[] {
-  return ACTIONS;
+  return ACTIONS();
 }
 
 /** Their ids alone, for the maps' "known" set and the bindings rows. */
 export function contributedActionIds(): readonly string[] {
-  return ACTION_IDS;
+  return ACTION_IDS();
 }
 
-/** Every service a package contributes, in product order: the list `useUiServices` runs, subscribes and polls. It is a
- *  module constant derived from the generated list, so the hook's dependency is stable. */
-const SERVICES: readonly UiService[] = UI_CONTRIBUTIONS.flatMap((entry) => entry.ui.services ?? []);
+/** Every service a package contributes, in registration order: the list `useUiServices` runs, subscribes and polls. The
+ *  same array until the next commit, so the hook's dependency changes only when a pack adds services. */
+const SERVICES = derived((): readonly UiService[] => uiRegistry.items().flatMap((ui) => ui.services ?? []));
 
 export function uiServices(): readonly UiService[] {
-  return SERVICES;
+  return SERVICES();
 }
 
 /** Drop the later of two rows of one id in one menu, reporting it. This is what the composers run over the tree they

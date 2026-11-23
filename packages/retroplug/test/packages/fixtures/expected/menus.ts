@@ -2,167 +2,21 @@
 // packages' manifests. Do not edit; edit a manifest and rebuild.
 //
 // The product's UI contributions, in product order: each package's `retroplug.ui` module, which default-exports the
-// system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this
-// list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports
-// this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.
-import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution } from "@retroplug/ui/contribution";
+// system-settings rows, menu builders, tracker specs and services it adds, seeded into the live registry
+// ui/contributions/uiRegistries.ts (which holds the checks). The shell composes the menus from it, so a package's
+// place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports this module: the
+// control plane, the render worker, the SDK and the planner carry no menu contribution. It seeds the app's
+// registries first, through their generated module, because the checks read the roles and the trackers.
+import "../../src/generated/packages";
+import { commitContributions } from "../../src/contributions/registry";
+import { uiRegistry } from "../contributions/uiRegistries";
 import ui_zeta from "@retroplug/zeta/ui";
 import ui_alpha from "@retroplug/alpha/ui";
-import { rolesRegistry, trackerIntegrationsRegistry } from "../../src/generated/packages";
-const ROLES = rolesRegistry.items();
-const TRACKER_INTEGRATIONS = trackerIntegrationsRegistry.items();
-import { GAMEPAD_BUTTON_NAMES, resolveKeyName } from "../../src/keyCodes";
-import { DEFAULT_GAMEPAD_ACTIONS, DEFAULT_KEYBOARD_ACTIONS, defaultBindingMap } from "../../src/bindingMap";
 
-/** Each package's UI contribution, in product order. */
-export const UI_CONTRIBUTIONS: readonly { pkg: string; ui: UiContribution }[] = [
-  { pkg: "zeta", ui: ui_zeta },
-  { pkg: "alpha", ui: ui_alpha },
-];
+export { uiRegistry };
 
-/** The product's app actions, in product order, with the package each came from: the bindings menus'
- *  rows, the key and gamepad maps' known ids, and the dispatch's lookups. */
-export const ACTIONS: readonly ContributedAction[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>
-  (ui.actions ?? []).map((action) => ({ pkg, action })),
-);
-
-// A row's id has to be unique inside its placement: the menu is keyed by id, so a second row of one id would
-// take the first one's place (a system-settings row lands in the System submenu, a tracker's extras in its own
-// submenu).
-const rowOwners = new Map<string, string>();
-function claimRow(placement: string, id: string, pkg: string): void {
-  const owner = rowOwners.get(`${placement}:${id}`);
-  if (owner === undefined) {
-    rowOwners.set(`${placement}:${id}`, pkg);
-    return;
-  }
-  throw new Error(owner === pkg
-    ? `the package ${pkg} declares the row ${id} twice in the placement ${placement}`
-    : `two packages declare the row ${id} in the placement ${placement}: ${owner} and ${pkg}`);
-}
-
-const roleKinds = new Set(ROLES.map((role) => role.kind));
-/** The keys a role's schema declares, which are the only ones a row can read (or gate on). */
-const roleKeys = new Map(ROLES.map((role) => [role.kind, new Set(Object.keys(role.schema.parse({})))]));
-const trackerIds = new Set(TRACKER_INTEGRATIONS.map((integration) => integration.id));
-const trackerOwners = new Map<string, string>();
-// A service is looked up by its id: two of one id would run one of them twice or the other never, so a
-// duplicate is refused rather than let the second definition win.
-const serviceOwners = new Map<string, string>();
-const placements = new Set<string>(PLACEMENTS);
-// An action's id is what a binding profile stores, so it is unique across the product and names its
-// package. Its defaults are held to the names the shell binds and to the ones it already binds at a
-// default: a key on both would fire the action AND the Game Boy button (or the shell action) it is on.
-const actionOwners = new Map<string, string>();
-const padButtonNames = new Set<string>(GAMEPAD_BUTTON_NAMES);
-const defaultMap = defaultBindingMap();
-const takenKeyCodes = new Set<number>();
-for (const names of Object.values(DEFAULT_KEYBOARD_ACTIONS)) {
-  for (const name of names) takenKeyCodes.add(resolveKeyName(name)!);
-}
-for (const names of Object.values(defaultMap.keyboard)) {
-  for (const name of names) takenKeyCodes.add(resolveKeyName(name)!);
-}
-const takenPadNames = new Set<string>();
-for (const names of Object.values(DEFAULT_GAMEPAD_ACTIONS)) {
-  for (const name of names) takenPadNames.add(name);
-}
-for (const names of Object.values(defaultMap.gamepad)) {
-  for (const name of names) takenPadNames.add(name);
-}
-
-/** One contributed row: its role must be registered, its id unique in its placement, and its key (and its
- *  gate's key) one its role's schema reads. */
-function checkRow(placement: string, pkg: string, row: RoleRow): void {
-  if (!roleKinds.has(row.role)) {
-    throw new Error(`the package ${pkg} declares the row ${row.id} over the role ${row.role}, which no ` +
-      "registered role type has");
-  }
-  claimRow(placement, row.id, pkg);
-  const keys = roleKeys.get(row.role)!;
-  if (!keys.has(row.key)) {
-    throw new Error(`the package ${pkg} declares the row ${row.id} over the key ${row.key}, which the role ` +
-      `${row.role} does not read`);
-  }
-  if (row.when && !keys.has(row.when.key)) {
-    throw new Error(`the package ${pkg} declares the row ${row.id} gated on the key ${row.when.key}, which ` +
-      `the role ${row.role} does not read`);
-  }
-}
-
-/** One contributed action: its id unique across the product and prefixed by its own package's name,
- *  its default key and pad names ones the shell resolves, and no default the shell (or a Game Boy
- *  button) already binds, since one press would fire both.
- *  Two contributions on one key are allowed: the overlays' backtick. */
-function checkAction(pkg: string, action: UiAction): void {
-  const owner = actionOwners.get(action.id);
-  if (owner !== undefined) {
-    throw new Error(owner === pkg
-      ? `the package ${pkg} declares the action ${action.id} twice`
-      : `two packages declare the action ${action.id}: ${owner} and ${pkg}`);
-  }
-  actionOwners.set(action.id, pkg);
-  if (!action.id.startsWith(`${pkg}.`)) {
-    throw new Error(`the package ${pkg} declares the action ${action.id}, which is not prefixed ` +
-      `by its own name ("${pkg}.")`);
-  }
-  for (const name of action.keys ?? []) {
-    const code = resolveKeyName(name);
-    if (code === null) {
-      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +
-        `${name}, which is no key name`);
-    }
-    if (takenKeyCodes.has(code)) {
-      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +
-        `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);
-    }
-    if (/^[A-Z]$/.test(name)) {
-      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ${name} by ` +
-        `default, which no host sends (the hosts send letters unshifted: bind "${name.toLowerCase()}")`);
-    }
-  }
-  for (const name of action.pad ?? []) {
-    if (!padButtonNames.has(name)) {
-      throw new Error(`the package ${pkg} declares the action ${action.id} on the gamepad button ` +
-        `${name}, which is no SDL button name (the names are GAMEPAD_BUTTON_NAMES)`);
-    }
-    if (takenPadNames.has(name)) {
-      throw new Error(`the package ${pkg} declares the action ${action.id} on the gamepad button ` +
-        `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);
-    }
-  }
-}
-
-for (const { pkg, ui } of UI_CONTRIBUTIONS) {
-  for (const row of ui.rows ?? []) checkRow("system.settings", pkg, row);
-  for (const action of ui.actions ?? []) checkAction(pkg, action);
-  for (const tracker of ui.trackers ?? []) {
-    if (!trackerIds.has(tracker.id)) {
-      throw new Error(`the package ${pkg} declares a tracker UI for ${tracker.id}, which no registered ` +
-        "tracker integration has");
-    }
-    const owner = trackerOwners.get(tracker.id);
-    if (owner !== undefined) {
-      throw new Error(owner === pkg
-        ? `the package ${pkg} declares the tracker UI ${tracker.id} twice`
-        : `two packages declare a tracker UI for ${tracker.id}: ${owner} and ${pkg}`);
-    }
-    trackerOwners.set(tracker.id, pkg);
-    for (const row of tracker.extras?.rows ?? []) checkRow(`instance.tracker:${tracker.id}`, pkg, row);
-  }
-  for (const service of ui.services ?? []) {
-    const owner = serviceOwners.get(service.id);
-    if (owner !== undefined) {
-      throw new Error(owner === pkg
-        ? `the package ${pkg} declares the UI service ${service.id} twice`
-        : `two packages declare a UI service ${service.id}: ${owner} and ${pkg}`);
-    }
-    serviceOwners.set(service.id, pkg);
-  }
-  for (const menu of ui.menus ?? []) {
-    if (!placements.has(menu.placement)) {
-      throw new Error(`the package ${pkg} declares a menu builder at the placement ${menu.placement}, ` +
-        `which is no placement (the placements are ${PLACEMENTS.join(", ")})`);
-    }
-  }
-}
+commitContributions([
+  { registry: uiRegistry, pkg: "retroplug", items: [] },
+  { registry: uiRegistry, pkg: "zeta", items: [ui_zeta] },
+  { registry: uiRegistry, pkg: "alpha", items: [ui_alpha] },
+]);

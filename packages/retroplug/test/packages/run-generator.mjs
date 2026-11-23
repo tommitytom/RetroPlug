@@ -275,7 +275,7 @@ async function importGenerated(module, name) {
 }
 
 async function loadMenus() {
-  return (await importGenerated("menus", "menus.mjs")).UI_CONTRIBUTIONS.map((entry) => entry.pkg);
+  return (await importGenerated("menus", "menus.mjs")).uiRegistry.entries().map((entry) => entry.pkg);
 }
 
 /** The package ui modules the generated menus module imports, in the order it imports them: the filter's answer
@@ -289,20 +289,21 @@ function menusImports() {
  *  reports them. */
 async function loadViews() {
   const loaded = await importGenerated("views", "views.mjs");
-  return loaded.VIEWS.map(({ pkg, view }) => ({ pkg, id: view.id, placement: view.placement, kind: view.body.kind }));
+  return loaded.viewsRegistry.entries().map(({ pkg, item: view }) =>
+    ({ pkg, id: view.id, placement: view.placement, kind: view.body.kind }));
 }
 
 /** The generated menus module's ACTIONS: product order, and each action's id, label and default key and pad names as
  *  the registry reports them. */
 async function loadActions() {
   const loaded = await importGenerated("menus", "actions.mjs");
-  return loaded.ACTIONS.map(({ pkg, action }) => ({
+  return loaded.uiRegistry.entries().flatMap(({ pkg, item }) => (item.actions ?? []).map((action) => ({
     pkg,
     id: action.id,
     label: action.label,
     keys: action.keys ?? [],
     pad: action.pad ?? [],
-  }));
+  })));
 }
 
 /** Load the menus module with alpha contributing `ui`, and report the registry's own refusal (or null): the action
