@@ -67,7 +67,6 @@ function message(e: unknown): string {
 const APP_MEMBERS: ReadonlySet<string> = new Set(["roles", "romProviders", "trackerIntegrations", "kitFormats",
   "projectSections", "projectServices", "configSections", "embeds"]);
 
-/** The pack's manifest against the halves loaded now (`exported`, by kind): throws the first mismatch. */
 /** The platforms the loaded consoles half declares (none without one). */
 function ownPlatforms(exported: Map<HalfKind, unknown>): Set<string> {
   const mine = new Set<string>();
@@ -83,6 +82,7 @@ function missingPlatform(pack: PackInfo, available: ReadonlySet<string>, own: Re
   return pack.requires.platforms.find((id) => !available.has(id) && !own.has(id));
 }
 
+/** The pack's manifest against the halves loaded now (`exported`, by kind): throws the first mismatch. */
 function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platforms: ReadonlySet<string>): void {
   if (exported.has("app")) {
     const app = objectExport("app", exported.get("app"));
@@ -96,7 +96,7 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
       }
     }
     for (const member of Object.keys(app)) {
-      if (!APP_MEMBERS.has(member) && !(member in KIND_DATA)) {
+      if (!APP_MEMBERS.has(member) && !Object.prototype.hasOwnProperty.call(KIND_DATA, member)) {
         throw new Error(`its app half exports ${member}, which is not something an app half contributes`);
       }
     }
