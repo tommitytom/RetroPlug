@@ -98,6 +98,7 @@ TEST_CASE("a pack's half loads by name and links to the context's contract modul
     SECTION("a half the pack does not have, or a pack the table does not hold") {
         CHECK(importResult(rt, "pack:pmgood/cli").rfind("error could not load 'pack:pmgood/cli'", 0) == 0);
         CHECK(importResult(rt, "pack:nope/app").rfind("error could not load 'pack:nope/app'", 0) == 0);
+        // pmgood declares no native half, so this fails at the half lookup; the loader's own native refusal is untested.
         CHECK(importResult(rt, "pack:pmgood/native").rfind("error could not load", 0) == 0);
     }
     SECTION("the guard") {

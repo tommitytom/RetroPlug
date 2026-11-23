@@ -26,7 +26,8 @@ class PackTable;
  *    id, version, half kinds, provides and requires, in load order;
  *  - `globalThis.__rp_packRefused(id, reason)` records "pack <id> is refused: <reason>" in `table`'s refusals.
  *  The table is the process's (processPacks) in every host, and must outlive the runtime. Calling it again on a
- *  context is harmless. */
+ *  context is harmless. The table is process-wide: a later call with another table points every context's loader at
+ *  that table. */
 void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count);
 
 }  // namespace rp::host

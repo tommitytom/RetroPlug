@@ -82,9 +82,9 @@ JSModuleDef* load(JSContext* ctx, const char* name, void* opaque, JSValueConst a
         return nullptr;
     }
     const std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    // Compiled, not evaluated: QuickJS evaluates it when the import that asked for it completes. Its imports are
-    // resolved inside this compile, through the guard above, with this module's name as their base; a refused one
-    // fails the compile and frees this module alone.
+    // Compiled, not evaluated or resolved: QuickJS resolves its imports once this returns, through the guard above
+    // with this module's name as their base; a refused one fails the import, and QuickJS frees every module of the
+    // context not yet resolved (this one: the shared sets are resolved at registration, SharedModules.cpp).
     JSValue val = JS_Eval(ctx, source.c_str(), source.size(), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
     if (JS_IsException(val)) return nullptr;
     // The name is no path, so import.meta takes it as written.
@@ -146,7 +146,7 @@ JSValue packRefused(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     }
     JS_FreeCString(ctx, id);
     JS_FreeCString(ctx, reason);
-    return JS_UNDEFINED;
+    return (id && reason) ? JS_UNDEFINED : JS_EXCEPTION;
 }
 
 }  // namespace
