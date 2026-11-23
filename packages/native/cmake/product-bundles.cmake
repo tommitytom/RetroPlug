@@ -83,7 +83,7 @@ function(retroplug_bundles name)
             set(_product_args --product-dir "${_product_tree}")
         endif()
         set(_generated_files "${_generated}/packages.ts" "${_generated}/consoles.ts" "${_generated}/protocol.ts"
-                             "${_generated}/scriptNodes.ts" "${_generated}/placers.ts"
+                             "${_generated}/scriptNodes.ts" "${_generated}/placers.ts" "${_generated}/apiLevel.ts"
                              "${_ui_generated}/menus.ts" "${_ui_generated}/views.ts")
         if(_cli_generated)
             list(APPEND _generated_files "${_cli_generated}/tools.ts")
@@ -94,6 +94,7 @@ function(retroplug_bundles name)
             BYPRODUCTS ${_generated_files} ${_tsconfigs}
             SOURCES ${RP_TS_GENERATOR} ${_manifests} "${CMAKE_SOURCE_DIR}/package.json"
                     "${RP_TS_SHELL}/host-modules.json" "${RP_TS_SHELL}/tsconfig.aliases.json"
+                    "${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/graph/rp_pack.h"
             COMMENT "Generating the TS package registries${_suffix} and the typecheck paths"
             VERBATIM)
         # The generator IS the shell's script (the shell's tree holds it, and it writes registries), so this target
