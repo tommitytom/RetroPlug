@@ -64,6 +64,9 @@ export async function buildPackHalves({ packageDir, outDir, template }) {
       external: externals.filter((name) => !name.startsWith("@retroplug/")),
       plugins: [refuseForeign],
       jsx: "automatic",
+      // Esbuild writes each bundled file's path, relative to its working directory, into a comment: anchoring it at the
+      // package keeps where the build ran (and the repository's layout) out of the pack's bytes.
+      absWorkingDir: packageDir,
       define: { "process.env.NODE_ENV": '"production"' },
       nodePaths: [join(REPO, "node_modules")],
       logLevel: "silent",

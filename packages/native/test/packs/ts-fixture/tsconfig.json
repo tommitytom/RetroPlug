@@ -1,0 +1,21 @@
+{
+  // Type-checks the fixture pack's halves (ts/) against the real contracts, as a package's own tsconfig would check a
+  // package: nothing else compiles them, and the tool that builds them only bundles. A pack imports the contracts by
+  // their specifiers, which this program maps onto the workspace packages' sources; `paths` replaces the shell's whole
+  // map, so the host modules the contracts import (react and the UI runtime's) are repeated here.
+  "extends": "../../../../retroplug/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@retroplug/core/*": ["../../../../core/ts/*"],
+      "@retroplug/ui/contribution": ["../../../../ui/ts/contribution.ts"],
+      "retroplug-cli": ["../../../../retroplug/cli/sdk-types.d.ts"],
+      "react": ["../../../../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react"],
+      "react/jsx-runtime": ["../../../../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react/jsx-runtime"],
+      "lvgljs": ["../../../../../deps/dpf.js/runtime/lvgljs/index.ts"],
+      "lvgljs-ui": ["../../../../retroplug/ui/types/lvgljs-ui.d.ts"]
+    }
+  },
+  "files": ["../../../../core/ts/runtime.d.ts"],
+  "include": ["ts"],
+  "exclude": []
+}
