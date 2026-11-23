@@ -36,6 +36,7 @@
 #include "host/HostServices.hpp"
 #include "host/js/SharedModules.hpp"
 #include "host/packs/ProcessPacks.hpp"
+#include "host/js/PackModules.hpp"
 #include "host/SessionPump.hpp"
 #include "host/QuickJsGlobals.hpp"
 #include "host/devices/ProviderHost.hpp"  // the rp_device_host this product starts its providers with
@@ -311,6 +312,7 @@ int main(int argc, char** argv) try {
             std::fprintf(stderr, "retroplug-cli: %s\n", why.c_str());
             rc = 1;
         } else {
+            rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_cli_modules, rp_cli_modules_count);
             rc = host.evalModuleBytecode(rp_cli_bundle, rp_cli_bundle_size);
         }
     }

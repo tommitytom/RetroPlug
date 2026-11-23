@@ -23,6 +23,7 @@
 
 #include "host/js/SharedModules.hpp"   // registerSharedModules (the app's shared module table)
 #include "host/packs/ProcessPacks.hpp"
+#include "host/js/PackModules.hpp"
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
@@ -490,6 +491,7 @@ private:
         }
         // Eval the control-plane bundle (composes the stores, defines the __rp_* globals), then
         // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
+        rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_app_modules, rp_app_modules_count);
         host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
         for (int i = 0; i < 1000 && !readReady(); ++i) host_.pump();
         jsReady_ = readReady();

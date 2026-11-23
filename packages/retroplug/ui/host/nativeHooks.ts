@@ -24,6 +24,8 @@ export interface RpHooks {
    *  registry name (ui, views, roles, ...): what a test and M2c's pack loader reach them through
    *  (docs/downloadable-packs-m2a-plan.md). Throws a check's refusal. */
   __rp_commitUiContributions?: (additions: readonly NamedAddition[]) => void;
+  /** What the packs' halves loaded and refused (src/packs/loadPacks.ts): a test reads it, as Settings > Packs (M4) will. */
+  __rp_packStatus?: () => { loaded: Record<string, string[]>; refused: Record<string, string> };
   /** The window size to open at for the already-loaded project (before first map), or null for the default. */
   __rp_initialWindowSize?: () => { width: number; height: number } | null;
   /** Start a control-surface scan as Settings > MIDI's row does (launchpadDevices). The SDL's harness hook reads it, so a

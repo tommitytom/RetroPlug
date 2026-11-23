@@ -5,6 +5,7 @@
 #include "rp_product_audio_backends.hpp"
 #include "rp_product_providers.hpp"
 #include "host/packs/ProcessPacks.hpp"
+#include "host/js/PackModules.hpp"
 
 namespace retroplug::sdl {
 
@@ -76,6 +77,7 @@ bool bootControlPlane(AppState& a) {
         std::fprintf(stderr, "[retroplug-sdl] %s\n", why.c_str());
         return false;
     }
+    rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_app_modules, rp_app_modules_count);
     a.host.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
     for (int i = 0; i < 1000 && !readReady(a.host); ++i) a.host.pump();
     if (!readReady(a.host)) { std::fprintf(stderr, "[retroplug-sdl] control plane not ready\n"); return false; }

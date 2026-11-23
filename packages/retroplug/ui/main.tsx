@@ -15,6 +15,8 @@ import { commitByName } from "../src/contributions/registry";
 import "./contributions/menus";
 import "./contributions/views";
 import { native, pluginNamespace } from "./host/nativeHooks";
+import { loadUiPacks } from "./packs/uiPacks";
+import { packStatus } from "../src/packs/loadPacks";
 import { gridContentSize, resolveZoom, SystemLayout } from "./screens/grid/layout";
 
 function Root() {
@@ -56,3 +58,6 @@ native.__rp_mountUI = mountUI;
 native.__rp_commitUiContributions = commitByName;
 native.__rp_unmountUI = unmountUI;
 native.__rp_initialWindowSize = initialWindowSize;
+native.__rp_packStatus = packStatus;
+// The packs' UI halves (and, with no control plane, their app halves): the commit re-renders whatever has mounted.
+void loadUiPacks();

@@ -9,11 +9,13 @@
 //   <cmd> --help                  → print that tool's detailed help (exit 0)
 //   <cmd> [args]                  → boot the control plane and run the tool
 //   <unknown>                     → error + the index (exit 2)
+// Packs load first (cli/packs/cliPacks.ts), so a pack's tool routes like a built-in one.
 // Help/version/error paths print and exit WITHOUT booting a session (bootSession composes the backend and the
 // stores - wasted work for a help print), so only a real tool run pays that cost.
 import { hostArgs, runSession, runLongSession, exitProcess } from "./session";
 import { createHostClient } from "../src/realBackend";
 import { tools, topLevelHelp } from "./tools";
+import { loadCliPacks } from "./packs/cliPacks";
 
 const isHelpFlag = (a: string): boolean => a === "-h" || a === "--help";
 
@@ -22,31 +24,36 @@ function appVersion(): string {
   try { return createHostClient().version(); } catch { return "unknown"; } // no RPC bridge
 }
 
-const [cmd, ...rest] = hostArgs();
-if (cmd === "--version") {
-  console.log(`v${appVersion()}`); // bare version, e.g. "v0.7.1"
-  exitProcess(0);
-} else if (cmd === undefined) {
-  // Bare `retroplug-cli`: show the index but signal misuse (nothing ran).
-  console.error(topLevelHelp(tools(), `RetroPlug v${appVersion()}`));
-  exitProcess(2);
-} else if (isHelpFlag(cmd)) {
-  console.log(topLevelHelp(tools(), `RetroPlug v${appVersion()}`));
-  exitProcess(0);
-} else {
-  const tool = tools().find((t) => t.name === cmd);
-  if (!tool) {
-    console.error(`retroplug-cli: unknown command '${cmd}'\n\n${topLevelHelp(tools(), `RetroPlug v${appVersion()}`)}`);
-    exitProcess(2);
-  } else if (rest.some(isHelpFlag)) {
-    console.log(tool.help);
+function route(): void {
+  const [cmd, ...rest] = hostArgs();
+  if (cmd === "--version") {
+    console.log(`v${appVersion()}`); // bare version, e.g. "v0.7.1"
     exitProcess(0);
-  } else if (tool.longRunning) {
-    // A long-running tool (live MIDI bridge) sets up an event loop + keepAlive() and returns; the native
-    // pump runs it until tjs.exit / Ctrl-C, so it must NOT be auto-exited.
-    runLongSession((s) => tool.run(s, rest));
+  } else if (cmd === undefined) {
+    // Bare `retroplug-cli`: show the index but signal misuse (nothing ran).
+    console.error(topLevelHelp(tools(), `RetroPlug v${appVersion()}`));
+    exitProcess(2);
+  } else if (isHelpFlag(cmd)) {
+    console.log(topLevelHelp(tools(), `RetroPlug v${appVersion()}`));
+    exitProcess(0);
   } else {
-    // Only now boot the control plane. runSession reports the exit code (0, or 1 on a thrown error).
-    runSession((s) => tool.run(s, rest));
+    const tool = tools().find((t) => t.name === cmd);
+    if (!tool) {
+      console.error(`retroplug-cli: unknown command '${cmd}'\n\n${topLevelHelp(tools(), `RetroPlug v${appVersion()}`)}`);
+      exitProcess(2);
+    } else if (rest.some(isHelpFlag)) {
+      console.log(tool.help);
+      exitProcess(0);
+    } else if (tool.longRunning) {
+      // A long-running tool (live MIDI bridge) sets up an event loop + keepAlive() and returns; the native
+      // pump runs it until tjs.exit / Ctrl-C, so it must NOT be auto-exited.
+      runLongSession((s) => tool.run(s, rest));
+    } else {
+      // Only now boot the control plane. runSession reports the exit code (0, or 1 on a thrown error).
+      runSession((s) => tool.run(s, rest));
+    }
   }
 }
+
+// A pack's tools are commands: its halves commit before the arguments are routed (loadCliPacks never rejects).
+void loadCliPacks().then(route);

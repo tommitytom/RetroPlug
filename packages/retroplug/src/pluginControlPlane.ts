@@ -9,7 +9,8 @@
 //   __rp_saveProjectB64()       — DPF getState: export the project as a base64 .rplg chunk
 //   __rp_newProject()           — DPF setState(""): reset to an empty project
 //   __rp_setHostOutputs(n)      - the host's output channel count: the graph's multi(n) shape
-//   __rp_ready                  - set true once composition succeeded
+//   __rp_packStatus()           - what the packs' halves loaded and refused
+//   __rp_ready                  - set true once composition succeeded and the packs' app halves committed
 //
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the
 // .rplg is binary PKZIP). Every op is synchronous over the synchronous Backend RPC — the host pumps
@@ -19,6 +20,7 @@ import { FileWatcher } from "./fileWatcher";
 import { projectParameterMap } from "./parameterMap";
 import { syncLatencyMs } from "./syncLatency";
 import { b64encode, b64decode } from "./base64";
+import { loadAppPacks, packStatus } from "./packs/loadPacks";
 
 // --- compose the app layer over the real backend ---
 // One store graph, composed here at construct. The editor, when it attaches (same runtime, separate
@@ -104,4 +106,12 @@ g.__rp_syncLatencyMs = (): string => String(syncLatencyMs(project.systems.view()
 g.__rp_parameterMapJson = (): string =>
   JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting, stores.registry));
 
-g.__rp_ready = true;
+// What the packs' halves loaded and refused, for a test and Settings > Packs (M4).
+g.__rp_packStatus = packStatus;
+
+// The packs' app and consoles halves commit before the host is told the control plane is ready, so the first project
+// load (an autoload, the DAW's setState) finds their roles and consoles; the stores were composed first and adopt the
+// commit (docs/downloadable-packs-m2a-plan.md). loadAppPacks never rejects: a pack that fails is refused and reported.
+void loadAppPacks().then(() => {
+  g.__rp_ready = true;
+});
