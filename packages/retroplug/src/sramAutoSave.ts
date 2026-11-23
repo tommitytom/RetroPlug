@@ -12,7 +12,7 @@ import type { ControlPlaneBackend } from "./backend";
 import type { SystemsStore } from "./systemsStore";
 import type { UserConfigStore } from "./userConfigStore";
 import { resolveSavPath } from "./savPaths";
-import { TRACKER_INTEGRATIONS } from "./trackerRegistry";
+import { trackerIntegrations } from "./trackerRegistry";
 
 function fnvInto(h: number, bytes: Uint8Array): number {
   for (let i = 0; i < bytes.length; i++) {
@@ -35,7 +35,7 @@ export function hashBytes(bytes: Uint8Array): number {
  *  order, as the ROM sniffers are. Used only for the dirty/dedup decision; the bytes written to disk are always the
  *  live SRAM. */
 export function sramSignature(bytes: Uint8Array): number {
-  for (const t of TRACKER_INTEGRATIONS) {
+  for (const t of trackerIntegrations()) {
     const sig = t.sramSignature?.(bytes);
     if (sig != null) return sig;
   }

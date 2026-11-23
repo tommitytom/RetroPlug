@@ -35,7 +35,7 @@ import {
   type PrefixReader,
 } from "../consoles";
 import { rolesForRom } from "../rolesForRom";
-import { TRACKER_INTEGRATIONS, resolveTracker } from "../trackerRegistry";
+import { trackerIntegrations, resolveTracker } from "../trackerRegistry";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { Host } from "@retroplug/core/host";
 import type { SongInfo } from "@retroplug/tracker/songCatalog";
@@ -138,7 +138,7 @@ function splitPlatformLabels(split: "channels" | "pins"): string[] {
 
 /** The integrations whose carts can play a saved song, by label, in product order: what a --song refusal names. */
 function songCartLabels(): string {
-  const labels = TRACKER_INTEGRATIONS.filter(
+  const labels = trackerIntegrations().filter(
     (t) => t.render?.seedSong !== undefined || t.render?.loadSong !== undefined,
   ).map((t) => t.label);
   return labels.length ? labels.join(", ") : "no cart this build carries";

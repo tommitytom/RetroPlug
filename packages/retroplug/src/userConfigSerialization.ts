@@ -9,7 +9,7 @@ import { userConfigSchema, type ConfigModel, type UserConfig, configFileShape } 
 import { stringifyConfig } from "./configSchema";
 import { parseVersionedRoot, type MigrationMap, type RawObject, type RootRefusal } from "./migrate";
 import { parseConfigSections, rawConfigSections, type ConfigSectionEntry } from "./configSections";
-import { CONFIG_SECTIONS } from "./generated/packages";
+import { configSectionEntries } from "./contributions/app";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
  *  newer than this is refused on load, one stamped older is migrated (below). */
@@ -46,7 +46,7 @@ const USER_CONFIG_MIGRATIONS: MigrationMap = { 1: userConfigV1toV2, 2: userConfi
  *  key comes back as a section (its contributor's parse, or the raw block). */
 export function parseUserConfigResult(
   json: string,
-  contributors: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  contributors: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): { ok: true; model: ConfigModel } | { ok: false; reason: RootRefusal; stamped?: number } {
   const root = parseVersionedRoot(json, USER_CONFIG_SCHEMA, USER_CONFIG_MIGRATIONS);
   if (!root.ok) return root;
@@ -76,7 +76,7 @@ export function parseUserConfig(json: string): UserConfig | null {
  *  holds them: a contributor's key in product order, then a key no package contributes in the order it was read. */
 export function serializeUserConfig(
   model: ConfigModel,
-  contributors: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  contributors: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): string {
   return stringifyConfig({ schemaVersion: USER_CONFIG_SCHEMA, ...configFileShape(model, contributors) });
 }

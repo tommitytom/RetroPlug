@@ -219,14 +219,14 @@ async function loadPackages() {
   const loaded = await import(pathToFileURL(out).href);
   const consoles = await import(pathToFileURL(consolesOut).href);
   return {
-    roles: loaded.ROLES.map((role) => role.kind),
-    romProviders: loaded.ROM_PROVIDERS.map((provider) => provider.id),
-    trackerIntegrations: loaded.TRACKER_INTEGRATIONS.map((integration) => integration.id),
-    kitFormats: loaded.KIT_FORMATS.map((format) => format.id),
-    projectSections: loaded.PROJECT_SECTIONS.map((entry) => `${entry.pkg}:${entry.section.key}`),
-    projectServices: loaded.PROJECT_SERVICES.map((entry) => entry.service.key),
-    configSections: loaded.CONFIG_SECTIONS.map((entry) => `${entry.pkg}:${entry.section.key}`),
-    embeds: loaded.EMBEDS.map((embed) => ({ id: embed.id, label: embed.label, platform: embed.platform })),
+    roles: loaded.rolesRegistry.items().map((role) => role.kind),
+    romProviders: loaded.romProvidersRegistry.items().map((provider) => provider.id),
+    trackerIntegrations: loaded.trackerIntegrationsRegistry.items().map((integration) => integration.id),
+    kitFormats: loaded.kitFormatsRegistry.items().map((format) => format.id),
+    projectSections: loaded.projectSectionsRegistry.entries().map((entry) => `${entry.pkg}:${entry.item.key}`),
+    projectServices: loaded.projectServicesRegistry.items().map((service) => service.key),
+    configSections: loaded.configSectionsRegistry.entries().map((entry) => `${entry.pkg}:${entry.item.key}`),
+    embeds: loaded.embedsRegistry.items().map((embed) => ({ id: embed.id, label: embed.label, platform: embed.platform })),
     consoles: consoles.consolesRegistry.items().map((descriptor) => ({
       id: descriptor.id,
       core: descriptor.core,

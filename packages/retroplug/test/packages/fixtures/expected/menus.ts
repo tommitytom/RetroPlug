@@ -8,7 +8,9 @@
 import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution } from "@retroplug/ui/contribution";
 import ui_zeta from "@retroplug/zeta/ui";
 import ui_alpha from "@retroplug/alpha/ui";
-import { ROLES, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
+import { rolesRegistry, trackerIntegrationsRegistry } from "../../src/generated/packages";
+const ROLES = rolesRegistry.items();
+const TRACKER_INTEGRATIONS = trackerIntegrationsRegistry.items();
 import { GAMEPAD_BUTTON_NAMES, resolveKeyName } from "../../src/keyCodes";
 import { DEFAULT_GAMEPAD_ACTIONS, DEFAULT_KEYBOARD_ACTIONS, defaultBindingMap } from "../../src/bindingMap";
 

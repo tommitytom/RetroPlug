@@ -22,7 +22,7 @@ import type { RecentStore } from "./recentStore";
 import { workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker/liveSav";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
 import type { ProjectService, ProjectServiceContext, ProjectServiceFactory } from "@retroplug/tracker/projectService";
-import { PROJECT_SERVICES, PROJECT_SECTIONS } from "./generated/packages";
+import { projectSectionEntries, projectServiceEntries } from "./contributions/app";
 import { basename, dirname, stem } from "./pathUtil";
 import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
@@ -177,7 +177,7 @@ export class ProjectStore {
     registry?: RoleRegistry,
     contributions: ProjectContributions = {},
   ) {
-    this.sections = contributions.sections ?? PROJECT_SECTIONS;
+    this.sections = contributions.sections ?? projectSectionEntries();
     this.graph = new EngineGraph(backend);
     // Any user mutation of the systems list marks the project dirty and tells the structure's observers; the systems
     // store publishes the graph itself where the edit changes it.
@@ -193,7 +193,7 @@ export class ProjectStore {
     this.systems.setOnLiveParam((systems) => this.graph.systemsMovedLive(systems));
     // Built once, here: a service's poll and model read the systems and the backend, never a file, so nothing
     // about them is per-project the way the settings are. `newProject` leaves them standing, as it leaves their state.
-    this.services = (contributions.services ?? PROJECT_SERVICES).map(({ pkg, service: factory }) => ({
+    this.services = (contributions.services ?? projectServiceEntries()).map(({ pkg, service: factory }) => ({
       pkg,
       key: factory.key,
       service: factory.create(),

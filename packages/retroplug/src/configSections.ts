@@ -9,7 +9,7 @@
 import type { ProjectSection } from "@retroplug/core/definePackage";
 import { migrateRaw, type RawObject } from "./migrate";
 import { readSectionVersion } from "./projectConfig";
-import { CONFIG_SECTIONS } from "./generated/packages";
+import { configSectionEntries } from "./contributions/app";
 import { CORE_CONFIG_KEYS } from "./userConfig";
 
 // The shell's own root keys are derived from its schema (userConfig.ts), so the list a contributor may not take is the
@@ -27,7 +27,7 @@ export interface ConfigSectionEntry {
  *  then kept verbatim). */
 export function configSectionEntryOf(
   key: string,
-  sections: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  sections: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): ConfigSectionEntry | undefined {
   return sections.find((entry) => entry.section.key === key);
 }
@@ -35,7 +35,7 @@ export function configSectionEntryOf(
 /** The section a package contributes under `key`, or undefined for a key no package of this product contributes. */
 export function configSectionOf(
   key: string,
-  sections: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  sections: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): ProjectSection | undefined {
   return configSectionEntryOf(key, sections)?.section;
 }
@@ -68,7 +68,7 @@ export function configSectionDefaults(entry: ConfigSectionEntry): unknown {
 /** Every contributor's defaults, by key: what a config that never set a section reads, and what a fresh file starts
  *  with. */
 export function defaultConfigSections(
-  sections: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  sections: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const entry of sections) out[entry.section.key] = configSectionDefaults(entry);
@@ -118,7 +118,7 @@ export function assertConfigSectionKey(key: string): void {
 export function readableConfigSection<T = unknown>(
   sections: Readonly<Record<string, unknown>>,
   key: string,
-  contributors: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  contributors: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): T {
   const entry = configSectionEntryOf(key, contributors);
   if (!Object.prototype.hasOwnProperty.call(sections, key)) {
@@ -158,7 +158,7 @@ export function rawConfigSections(raw: Record<string, unknown>): Record<string, 
  *  its defaults, and a write of the file leaves the file as it was rather than stamping a block nobody set. */
 export function parseConfigSections(
   raw: Record<string, unknown>,
-  contributors: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  contributors: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): Record<string, unknown> {
   const sections: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -182,7 +182,7 @@ export function parseConfigSections(
 export function serializeConfigSectionValue(
   key: string,
   value: unknown,
-  contributors: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  contributors: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): unknown {
   const contributor = configSectionOf(key, contributors);
   return contributor ? serializeConfigSection(contributor, value) : value;

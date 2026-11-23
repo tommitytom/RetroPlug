@@ -56,7 +56,7 @@ import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettings
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
 import type { Host } from "@retroplug/core/host";
 import { placedKinds, protocolNodeOf, protocolPipeline, protocolWrites, type SystemInput } from "./graph/protocolNodes";
-import { resolveSongCatalog, resolveTracker, TRACKER_MARKERS } from "./trackerRegistry";
+import { resolveSongCatalog, resolveTracker, trackerMarkers } from "./trackerRegistry";
 import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
 // Frames the slot watcher waits for a landed carry's queued writes to appear before it trusts the cart
@@ -86,7 +86,7 @@ const TRACKER_MARKER = "tracker-marker";
  *  the marker today's ROM earns is moved ahead of the stale one, never deleted. */
 function occupied(kind: string): readonly (SystemInput | typeof TRACKER_MARKER)[] {
   const writes: readonly (SystemInput | typeof TRACKER_MARKER)[] = protocolWrites(kind);
-  return TRACKER_MARKERS.has(kind) ? [...writes, TRACKER_MARKER] : writes;
+  return trackerMarkers().has(kind) ? [...writes, TRACKER_MARKER] : writes;
 }
 
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per

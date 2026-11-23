@@ -2,27 +2,27 @@
 // package.json's retroplug.products.desktop) and the packages' manifests. Do not edit; edit a manifest and
 // rebuild.
 //
-// The app's registrations, in product order (the list's, which is a dependency order, then the shell): the roles
-// buildAppRegistry applies, the ROM providers it offers, the tracker integrations the Songs and Assets menus
-// search, the kit formats the audio driver dispatches to, the project sections and services each package owns,
-// and the contribution kinds' items. The consoles and the real carts are apart, in ./consoles.ts, the protocol
-// tables and the kinds' data in ./protocol.ts and the graph placers in ./placers.ts, so a module that needs one
-// of those imports no package's app.
-import type { RoleType, RomProvider } from "@retroplug/core";
-import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
-import type { KitFormat } from "@retroplug/dsp/kitContract";
-import type { Embed, ProjectSection } from "@retroplug/core/definePackage";
-import type { ProjectServiceFactory } from "@retroplug/tracker/projectService";
-import { consolesRegistry } from "./consoles";
-import { placersRegistry } from "./placers";
+// The app's registrations, in product order (the list's, which is a dependency order, then the shell), seeded into
+// the live registries src/contributions/appRegistries.ts holds: the roles buildAppRegistry applies, the ROM
+// providers it offers, the tracker integrations the Songs and Assets menus search, the kit formats the audio driver
+// dispatches to, the project sections and services each package owns, the config sections and the embedded ROMs;
+// then the contribution kinds' items. The consoles and the real carts are apart, in ./consoles.ts, the protocol
+// tables and the kinds' data in ./protocol.ts and the graph placers in ./placers.ts, so a module that needs one of
+// those imports no package's app; this module imports the consoles and the placers first, for their seeds, because
+// the app's checks read them.
+import "./consoles";
+import "./placers";
+import type { PackageContributions } from "@retroplug/core/definePackage";
+import { commitContributions } from "../contributions/registry";
+import { appAdditions, rolesRegistry, romProvidersRegistry, trackerIntegrationsRegistry, kitFormatsRegistry, projectSectionsRegistry, projectServicesRegistry, configSectionsRegistry, embedsRegistry, bakedEmbedsRegistry } from "../contributions/appRegistries";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
 import { KIND_DATA, PROTOCOL_NODES, ROLE_NODES } from "./protocol";
 import kind_widgets_alpha from "@retroplug/alpha/kind";
 import kind_controllerApps_beta from "@retroplug/beta/kind";
-const CONSOLES = consolesRegistry.items();
-const PLACERS = placersRegistry.entries().map(({ pkg, item }) => ({ pkg, placer: item }));
+
+export { rolesRegistry, romProvidersRegistry, trackerIntegrationsRegistry, kitFormatsRegistry, projectSectionsRegistry, projectServicesRegistry, configSectionsRegistry, embedsRegistry, bakedEmbedsRegistry, SHELL_CONFIG_KEYS } from "../contributions/appRegistries";
 
 /** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the
  *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */
@@ -32,169 +32,25 @@ export const PACKAGE_IDS: readonly string[] = [
   "beta",
 ];
 
-/** The app's roles, in product order: the role contract's objects, which the registry holds by kind. */
-export const ROLES: readonly RoleType[] = [
-  ...(app_alpha.roles ?? []),
-  ...(app_beta.roles ?? []),
-  ...(app_retroplug.roles ?? []),
-];
-const roleKinds = new Set<string>();
-for (const role of ROLES) {
-  if (roleKinds.has(role.kind)) {
-    throw new Error(`the app's roles declare the role kind ${role.kind} twice`);
-  }
-  roleKinds.add(role.kind);
-}
-
-// A console's core is the kind of its core-config role (the role is named after its core), so a descriptor
-// naming a core nothing contributes could be classified and never configured. The check is here rather than in
-// ./consoles.ts because the roles are this module's (that one imports no package's app).
-for (const consoleDescriptor of CONSOLES) {
-  if (!ROLES.some((role) => role.kind === consoleDescriptor.core && role.category === "system")) {
-    throw new Error(`the console ${consoleDescriptor.id} names the core ${consoleDescriptor.core}, whose system ` +
-      "role no package contributes");
-  }
-}
-
-/** The ROM providers, in product order: the first to match a ROM fixes its feature roles' order, so this list's
- *  order is behaviour. */
-export const ROM_PROVIDERS: readonly RomProvider[] = [
-  ...(app_alpha.romProviders ?? []),
-  ...(app_beta.romProviders ?? []),
-  ...(app_retroplug.romProviders ?? []),
+/** Each package's app contribution, in product order. */
+const APPS: readonly { pkg: string; app: PackageContributions }[] = [
+  { pkg: "alpha", app: app_alpha },
+  { pkg: "beta", app: app_beta },
+  { pkg: "retroplug", app: app_retroplug },
 ];
 
-/** The tracker integrations, in product order. A system's tracker is the first of its marker roles the system's
- *  own order places (resolveTracker), which a load orders by the ROM's marker; a duplicate is refused below. */
-export const TRACKER_INTEGRATIONS: readonly TrackerIntegration[] = [
-  ...(app_alpha.trackerIntegrations ?? []),
-  ...(app_beta.trackerIntegrations ?? []),
-  ...(app_retroplug.trackerIntegrations ?? []),
-];
-const markerRoles = new Set<string>();
-for (const integration of TRACKER_INTEGRATIONS) {
-  if (markerRoles.has(integration.markerRole)) {
-    throw new Error(`the app's tracker integrations declare the marker role ${integration.markerRole} twice`);
-  }
-  markerRoles.add(integration.markerRole);
-}
-
-/** The kit bank formats, by the id the audio driver dispatches with. */
-export const KIT_FORMATS: readonly KitFormat<any>[] = [
-  ...(app_alpha.kitFormats ?? []),
-  ...(app_beta.kitFormats ?? []),
-  ...(app_retroplug.kitFormats ?? []),
-];
-const kitIds = new Set<string>();
-for (const format of KIT_FORMATS) {
-  if (kitIds.has(format.id)) {
-    throw new Error(`the app's kit formats declare the id ${format.id} twice`);
-  }
-  kitIds.add(format.id);
-}
-
-/** The project sections the product's packages contribute, in product order: a block under a .rplg's
- *  `settings` which its package parses, defaults and migrates (docs/modular-graph-phase-f5a-design.md
- *  section 6.1). A key the shell owns, and a key two packages declare, are refused below: the shell keeps
- *  every non-core key verbatim, so a duplicate would have one section silently replace the other's bytes in
- *  every project. */
-export const PROJECT_SECTIONS: readonly { pkg: string; section: ProjectSection }[] = [
-  ...(app_alpha.projectSections ?? []).map((section) => ({ pkg: "alpha", section })),
-  ...(app_beta.projectSections ?? []).map((section) => ({ pkg: "beta", section })),
-  ...(app_retroplug.projectSections ?? []).map((section) => ({ pkg: "retroplug", section })),
-];
-// Keep in step with the shell's CORE_SETTING_KEYS (packages/retroplug/src/projectConfig.ts): the one list of the
-// settings keys a package may not contribute a section under.
-const SHELL_SECTION_KEYS = ["layout", "midiRouting", "audioRouting", "zoom"];
-const sectionOwners = new Map<string, string>();
-const sectionKeysByPkg = new Map<string, string[]>();
-for (const { pkg, section } of PROJECT_SECTIONS) {
-  if (SHELL_SECTION_KEYS.includes(section.key)) {
-    throw new Error(`the package ${pkg} declares the project section ${section.key}, which is one of the ` +
-      `shell's own settings (${SHELL_SECTION_KEYS.join(", ")})`);
-  }
-  const owner = sectionOwners.get(section.key);
-  if (owner !== undefined) {
-    throw new Error(owner === pkg
-      ? `the package ${pkg} declares the project section ${section.key} twice`
-      : `two packages declare the project section ${section.key}: ${owner} and ${pkg}`);
-  }
-  sectionOwners.set(section.key, pkg);
-  sectionKeysByPkg.set(pkg, [...(sectionKeysByPkg.get(pkg) ?? []), section.key]);
-}
-
-/** The project services the product's packages contribute, in product order: a feature's control-plane
- *  half, which the shell builds one instance of per project store (docs/modular-graph-phase-f5a-design.md
- *  section 6.2). A key is a model's and a section's, so two services under one key would fight over the
- *  graph's placement. */
-export const PROJECT_SERVICES: readonly { pkg: string; service: ProjectServiceFactory }[] = [
-  ...(app_alpha.projectServices ?? []).map((service) => ({ pkg: "alpha", service })),
-  ...(app_beta.projectServices ?? []).map((service) => ({ pkg: "beta", service })),
-  ...(app_retroplug.projectServices ?? []).map((service) => ({ pkg: "retroplug", service })),
-];
-const serviceKeys = new Map<string, string>();
-for (const { pkg, service } of PROJECT_SERVICES) {
-  const owner = serviceKeys.get(service.key);
-  if (owner !== undefined) {
-    throw new Error(owner === pkg
-      ? `the package ${pkg} declares the project service ${service.key} twice`
-      : `two packages declare the project service ${service.key}: ${owner} and ${pkg}`);
-  }
-  serviceKeys.set(service.key, pkg);
-}
-for (const { pkg, service } of PROJECT_SERVICES) {
-  // A service's key is the section it reads and the model its placer places: a key no package declares a section
-  // for would read undefined where the store asserts, and one of the shell's keys would fight the shell's field.
-  if (SHELL_SECTION_KEYS.includes(service.key)) {
-    throw new Error(`the package ${pkg} declares the project service ${service.key}, which is one of the shell's ` +
-      `own settings (${SHELL_SECTION_KEYS.join(", ")})`);
-  }
-  // A package that declares no section at all is not held to one: a fixture tree may replace an app module, and a
-  // service key is judged against the sections the product actually declares.
-  if (!sectionOwners.has(service.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {
-    throw new Error(`the package ${pkg} declares the project service ${service.key}, which matches no project ` +
-      "section (the service key is its section's key)");
-  }
-}
-// A placer's key is the section whose model it places, so the same two rules hold where the placement is made.
-for (const { pkg, placer } of PLACERS) {
-  if (SHELL_SECTION_KEYS.includes(placer.key)) {
-    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which is one of the shell's own ` +
-      `settings (${SHELL_SECTION_KEYS.join(", ")})`);
-  }
-  if (!sectionOwners.has(placer.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {
-    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which matches no project ` +
-      "section (a placer's key is its section's key)");
-  }
-}
-
-/** The config.json sections the product's packages contribute, in product order: a root key of the user config
- *  which its package parses, defaults and migrates (docs/modular-graph-phase-f5b-design.md section 6.1). The
- *  shell keeps every non-core root key verbatim, so the same two refusals hold: a key the shell owns, and a
- *  key two packages declare. */
-export const CONFIG_SECTIONS: readonly { pkg: string; section: ProjectSection }[] = [
-  ...(app_alpha.configSections ?? []).map((section) => ({ pkg: "alpha", section })),
-  ...(app_beta.configSections ?? []).map((section) => ({ pkg: "beta", section })),
-  ...(app_retroplug.configSections ?? []).map((section) => ({ pkg: "retroplug", section })),
-];
-// The shell's own config.json keys (packages/retroplug/src/userConfig.ts's CORE_CONFIG_KEYS, which a test holds
-// this list to): the root keys a package may not contribute a section under.
-export const SHELL_CONFIG_KEYS = ["schemaVersion", "activeKeyboardBindings", "activeGamepadBindings",
-  "defaultZoom", "sramAutoSave", "render", "useNativeFileDialogs"];
-const configOwners = new Map<string, string>();
-for (const { pkg, section } of CONFIG_SECTIONS) {
-  if (SHELL_CONFIG_KEYS.includes(section.key)) {
-    throw new Error(`the package ${pkg} declares the config section ${section.key}, which is one of the ` +
-      `shell's own keys (${SHELL_CONFIG_KEYS.join(", ")})`);
-  }
-  const owner = configOwners.get(section.key);
-  if (owner !== undefined) {
-    throw new Error(owner === pkg
-      ? `the package ${pkg} declares the config section ${section.key} twice`
-      : `two packages declare the config section ${section.key}: ${owner} and ${pkg}`);
-  }
-  configOwners.set(section.key, pkg);
-}
+commitContributions([
+  { registry: rolesRegistry, pkg: "retroplug", items: [] },
+  { registry: romProvidersRegistry, pkg: "retroplug", items: [] },
+  { registry: trackerIntegrationsRegistry, pkg: "retroplug", items: [] },
+  { registry: kitFormatsRegistry, pkg: "retroplug", items: [] },
+  { registry: projectSectionsRegistry, pkg: "retroplug", items: [] },
+  { registry: projectServicesRegistry, pkg: "retroplug", items: [] },
+  { registry: configSectionsRegistry, pkg: "retroplug", items: [] },
+  { registry: embedsRegistry, pkg: "retroplug", items: [] },
+  { registry: bakedEmbedsRegistry, pkg: "retroplug", items: [] },
+  ...APPS.flatMap(({ pkg, app }) => appAdditions(pkg, app)),
+]);
 
 /** The widgets items the product's packages contribute, in product order: each app module's
  *  `widgets` list, which the declaring package accepts (its `accept`). */
@@ -292,54 +148,3 @@ kind_controllerApps_beta.check?.(KIND_ITEMS_controllerApps, KIND_DATA_controller
   roleNodes: ROLE_NODES,
 });
 kind_controllerApps_beta.accept(KIND_ITEMS_controllerApps, KIND_DATA_controllerApps);
-
-/** The embedded ROMs the product's packages declare, in product order: the id native's resource table knows them
- *  by, the label a menu offers one under, and the console it runs on. A load takes its platform from here, so an
- *  embedded ROM is not assumed to be any console's. */
-export const EMBEDS: readonly Embed[] = [
-  ...(app_alpha.embeds ?? []),
-  ...(app_beta.embeds ?? []),
-  ...(app_retroplug.embeds ?? []),
-];
-// The other half of each declaration: the manifest entries (`retroplug.embed`) that put the bytes in the binary, by
-// the package that bakes them in.
-const EMBED_SOURCES: readonly { pkg: string; embeds: readonly Embed[] }[] = [
-  { pkg: "alpha", embeds: app_alpha.embeds ?? [] },
-  { pkg: "beta", embeds: app_beta.embeds ?? [] },
-  { pkg: "retroplug", embeds: app_retroplug.embeds ?? [] },
-];
-const MANIFEST_EMBEDS: readonly { pkg: string; id: string }[] = [];
-// A declaration and a manifest entry are one embedded ROM's two halves: the shell loads it by the declaration,
-// native boots the bytes the manifest names, so neither can stand alone. The id belongs to the package whose bytes
-// carry it, an id is one ROM, and its platform is a console this product runs - the same rule the consoles' own
-// checks hold the descriptors to.
-for (const source of EMBED_SOURCES) {
-  for (const embed of source.embeds) {
-    const declarers = EMBED_SOURCES.flatMap((s) => s.embeds.filter((e) => e.id === embed.id).map(() => s.pkg));
-    if (declarers.length > 1) {
-      const [first, second] = declarers;
-      throw new Error(first === second
-        ? `the package ${first} declares the embedded ROM ${embed.id} twice: an id is one ROM`
-        : `two packages declare the embedded ROM ${embed.id}: ${first} and ${second}`);
-    }
-    const baked = MANIFEST_EMBEDS.filter((e) => e.id === embed.id);
-    if (!baked.length) {
-      throw new Error(`the package ${source.pkg} declares the embedded ROM ${embed.id}, which its manifest does ` +
-        "not bake in (its retroplug.embed)");
-    }
-    if (!baked.some((e) => e.pkg === source.pkg)) {
-      throw new Error(`the embedded ROM ${embed.id} is declared by ${source.pkg} and baked in by ${baked[0].pkg}: ` +
-        "the two halves belong to one package");
-    }
-    if (!CONSOLES.some((c) => c.platforms.some((p) => p.id === embed.platform))) {
-      throw new Error(`the embedded ROM ${embed.id} names the platform ${embed.platform}, which no console ` +
-        "descriptor registers");
-    }
-  }
-}
-for (const baked of MANIFEST_EMBEDS) {
-  if (!EMBEDS.some((e) => e.id === baked.id)) {
-    throw new Error(`the package ${baked.pkg} bakes in the embedded ROM ${baked.id}, which no app module ` +
-      "declares (an embeds entry with its label and platform)");
-  }
-}

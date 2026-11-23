@@ -715,10 +715,6 @@ function moduleSpecifier(outDir, pkg, file) {
   return published.key === "." ? name : `${name}/${published.key.replace(/^\.\//, "")}`;
 }
 
-function contributionLines(packages, member) {
-  return packages.filter((p) => p.app).map((p) => `  ...(${identifier(p.pkg.name)}.${member} ?? []),`);
-}
-
 /** A generated local per declaring package and kind: the package name loses its punctuation, as every generated local
  *  does. A package declares each kind once (a duplicate is refused) and a package name is unique, so two locals cannot
  *  mangle to one name. */
@@ -792,32 +788,36 @@ function kindBlocks({ packages, kindDecls }) {
   return lines;
 }
 
-function renderPackages({ packages, outDir, names, product }) {
+function renderPackages({ packages, outDir, shellDir, names, product }) {
   const app = packages.filter((p) => p.app);
   // Each declaring package's kind module: the control-plane half's `accept` and `check`, imported rather than
   // named by the generator, so a kind is data (docs/modular-graph-phase-f5a-design.md section 6.5).
   const kindDecls = packages.flatMap((p) => Object.values(p.kinds).map((decl) => ({ pkg: p, decl })));
+  const registries = [
+    "rolesRegistry", "romProvidersRegistry", "trackerIntegrationsRegistry", "kitFormatsRegistry",
+    "projectSectionsRegistry", "projectServicesRegistry", "configSectionsRegistry", "embedsRegistry",
+    "bakedEmbedsRegistry",
+  ];
+  const appRegistries = contributionsSpecifier(outDir, shellDir, "src/contributions/appRegistries.ts");
   const lines = [];
   lines.push(
     `${generatedFrom(product)} (the root`,
     `// package.json's retroplug.products.${product}) and the packages' manifests. Do not edit; edit a manifest and`,
     "// rebuild.",
     "//",
-    "// The app's registrations, in product order (the list's, which is a dependency order, then the shell): the roles",
-    "// buildAppRegistry applies, the ROM providers it offers, the tracker integrations the Songs and Assets menus",
-    "// search, the kit formats the audio driver dispatches to, the project sections and services each package owns,",
-    "// and the contribution kinds' items. The consoles and the real carts are apart, in ./consoles.ts, the protocol",
-    "// tables and the kinds' data in ./protocol.ts and the graph placers in ./placers.ts, so a module that needs one",
-    "// of those imports no package's app.",
-    'import type { RoleType, RomProvider } from "@retroplug/core";',
-    'import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";',
-    'import type { KitFormat } from "@retroplug/dsp/kitContract";',
-    'import type { Embed, ProjectSection } from "@retroplug/core/definePackage";',
-    'import type { ProjectServiceFactory } from "@retroplug/tracker/projectService";',
-    'import { consolesRegistry } from "./consoles";',
-    // The placers are checked against the sections below (a placer's key is its section's), so this module imports
-    // them: the control plane already carries them through buildGraph, so only the check is new here.
-    'import { placersRegistry } from "./placers";',
+    "// The app's registrations, in product order (the list's, which is a dependency order, then the shell), seeded into",
+    "// the live registries src/contributions/appRegistries.ts holds: the roles buildAppRegistry applies, the ROM",
+    "// providers it offers, the tracker integrations the Songs and Assets menus search, the kit formats the audio driver",
+    "// dispatches to, the project sections and services each package owns, the config sections and the embedded ROMs;",
+    "// then the contribution kinds' items. The consoles and the real carts are apart, in ./consoles.ts, the protocol",
+    "// tables and the kinds' data in ./protocol.ts and the graph placers in ./placers.ts, so a module that needs one of",
+    "// those imports no package's app; this module imports the consoles and the placers first, for their seeds, because",
+    "// the app's checks read them.",
+    'import "./consoles";',
+    'import "./placers";',
+    'import type { PackageContributions } from "@retroplug/core/definePackage";',
+    `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
+    `import { appAdditions, ${registries.join(", ")} } from "${appRegistries}";`,
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   // The kind's data and the product's node types reach the declaring package's check: a mode naming a node type no
@@ -828,9 +828,10 @@ function renderPackages({ packages, outDir, names, product }) {
       `import ${kindLocal(owner.pkg.name, decl.kind)} from "${moduleSpecifier(outDir, owner.pkg, decl.control)}";`,
     );
   }
+  const baked = packages.flatMap((p) => p.embeds.map((entry) => ({ pkg: p.pkg.name, id: entry.id })));
   lines.push(
-    "const CONSOLES = consolesRegistry.items();",
-    "const PLACERS = placersRegistry.entries().map(({ pkg, item }) => ({ pkg, placer: item }));",
+    "",
+    `export { ${registries.join(", ")}, SHELL_CONFIG_KEYS } from "${appRegistries}";`,
     "",
     "/** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the",
     " *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */",
@@ -838,207 +839,18 @@ function renderPackages({ packages, outDir, names, product }) {
     ...names.map((name) => `  ${JSON.stringify(name)},`),
     "];",
     "",
-    "/** The app's roles, in product order: the role contract's objects, which the registry holds by kind. */",
-    "export const ROLES: readonly RoleType[] = [",
-    ...contributionLines(app, "roles"),
-    "];",
-    "const roleKinds = new Set<string>();",
-    "for (const role of ROLES) {",
-    "  if (roleKinds.has(role.kind)) {",
-    "    throw new Error(`the app's roles declare the role kind ${role.kind} twice`);",
-    "  }",
-    "  roleKinds.add(role.kind);",
-    "}",
-    "",
-    "// A console's core is the kind of its core-config role (the role is named after its core), so a descriptor",
-    "// naming a core nothing contributes could be classified and never configured. The check is here rather than in",
-    "// ./consoles.ts because the roles are this module's (that one imports no package's app).",
-    "for (const consoleDescriptor of CONSOLES) {",
-    "  if (!ROLES.some((role) => role.kind === consoleDescriptor.core && role.category === \"system\")) {",
-    "    throw new Error(`the console ${consoleDescriptor.id} names the core ${consoleDescriptor.core}, whose system ` +",
-    "      \"role no package contributes\");",
-    "  }",
-    "}",
-    "",
-    "/** The ROM providers, in product order: the first to match a ROM fixes its feature roles' order, so this list's",
-    " *  order is behaviour. */",
-    "export const ROM_PROVIDERS: readonly RomProvider[] = [",
-    ...contributionLines(app, "romProviders"),
+    "/** Each package's app contribution, in product order. */",
+    "const APPS: readonly { pkg: string; app: PackageContributions }[] = [",
+    ...app.map((p) => `  { pkg: ${JSON.stringify(p.pkg.name)}, app: ${identifier(p.pkg.name)} },`),
     "];",
     "",
-    "/** The tracker integrations, in product order. A system's tracker is the first of its marker roles the system's",
-    " *  own order places (resolveTracker), which a load orders by the ROM's marker; a duplicate is refused below. */",
-    "export const TRACKER_INTEGRATIONS: readonly TrackerIntegration[] = [",
-    ...contributionLines(app, "trackerIntegrations"),
-    "];",
-    "const markerRoles = new Set<string>();",
-    "for (const integration of TRACKER_INTEGRATIONS) {",
-    "  if (markerRoles.has(integration.markerRole)) {",
-    "    throw new Error(`the app's tracker integrations declare the marker role ${integration.markerRole} twice`);",
-    "  }",
-    "  markerRoles.add(integration.markerRole);",
-    "}",
-    "",
-    "/** The kit bank formats, by the id the audio driver dispatches with. */",
-    "export const KIT_FORMATS: readonly KitFormat<any>[] = [",
-    ...contributionLines(app, "kitFormats"),
-    "];",
-    "const kitIds = new Set<string>();",
-    "for (const format of KIT_FORMATS) {",
-    "  if (kitIds.has(format.id)) {",
-    "    throw new Error(`the app's kit formats declare the id ${format.id} twice`);",
-    "  }",
-    "  kitIds.add(format.id);",
-    "}",
-    "",
-    "/** The project sections the product's packages contribute, in product order: a block under a .rplg's",
-    " *  `settings` which its package parses, defaults and migrates (docs/modular-graph-phase-f5a-design.md",
-    " *  section 6.1). A key the shell owns, and a key two packages declare, are refused below: the shell keeps",
-    " *  every non-core key verbatim, so a duplicate would have one section silently replace the other's bytes in",
-    " *  every project. */",
-    "export const PROJECT_SECTIONS: readonly { pkg: string; section: ProjectSection }[] = [",
-    ...app.map((p) => `  ...(${identifier(p.pkg.name)}.projectSections ?? []).map((section) => ({ pkg: ` +
-      `${JSON.stringify(p.pkg.name)}, section })),`),
-    "];",
-    "// Keep in step with the shell's CORE_SETTING_KEYS (packages/retroplug/src/projectConfig.ts): the one list of the",
-    "// settings keys a package may not contribute a section under.",
-    "const SHELL_SECTION_KEYS = [\"layout\", \"midiRouting\", \"audioRouting\", \"zoom\"];",
-    "const sectionOwners = new Map<string, string>();",
-    "const sectionKeysByPkg = new Map<string, string[]>();",
-    "for (const { pkg, section } of PROJECT_SECTIONS) {",
-    "  if (SHELL_SECTION_KEYS.includes(section.key)) {",
-    "    throw new Error(`the package ${pkg} declares the project section ${section.key}, which is one of the ` +",
-    "      `shell's own settings (${SHELL_SECTION_KEYS.join(\", \")})`);",
-    "  }",
-    "  const owner = sectionOwners.get(section.key);",
-    "  if (owner !== undefined) {",
-    "    throw new Error(owner === pkg",
-    "      ? `the package ${pkg} declares the project section ${section.key} twice`",
-    "      : `two packages declare the project section ${section.key}: ${owner} and ${pkg}`);",
-    "  }",
-    "  sectionOwners.set(section.key, pkg);",
-    "  sectionKeysByPkg.set(pkg, [...(sectionKeysByPkg.get(pkg) ?? []), section.key]);",
-    "}",
-    "",
-    "/** The project services the product's packages contribute, in product order: a feature's control-plane",
-    " *  half, which the shell builds one instance of per project store (docs/modular-graph-phase-f5a-design.md",
-    " *  section 6.2). A key is a model's and a section's, so two services under one key would fight over the",
-    " *  graph's placement. */",
-    "export const PROJECT_SERVICES: readonly { pkg: string; service: ProjectServiceFactory }[] = [",
-    ...app.map((p) => `  ...(${identifier(p.pkg.name)}.projectServices ?? []).map((service) => ({ pkg: ` +
-      `${JSON.stringify(p.pkg.name)}, service })),`),
-    "];",
-    "const serviceKeys = new Map<string, string>();",
-    "for (const { pkg, service } of PROJECT_SERVICES) {",
-    "  const owner = serviceKeys.get(service.key);",
-    "  if (owner !== undefined) {",
-    "    throw new Error(owner === pkg",
-    "      ? `the package ${pkg} declares the project service ${service.key} twice`",
-    "      : `two packages declare the project service ${service.key}: ${owner} and ${pkg}`);",
-    "  }",
-    "  serviceKeys.set(service.key, pkg);",
-    "}",
-    "for (const { pkg, service } of PROJECT_SERVICES) {",
-    "  // A service's key is the section it reads and the model its placer places: a key no package declares a section",
-    "  // for would read undefined where the store asserts, and one of the shell's keys would fight the shell's field.",
-    "  if (SHELL_SECTION_KEYS.includes(service.key)) {",
-    "    throw new Error(`the package ${pkg} declares the project service ${service.key}, which is one of the shell's ` +",
-    "      `own settings (${SHELL_SECTION_KEYS.join(\", \")})`);",
-    "  }",
-    "  // A package that declares no section at all is not held to one: a fixture tree may replace an app module, and a",
-    "  // service key is judged against the sections the product actually declares.",
-    "  if (!sectionOwners.has(service.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {",
-    "    throw new Error(`the package ${pkg} declares the project service ${service.key}, which matches no project ` +",
-    "      \"section (the service key is its section's key)\");",
-    "  }",
-    "}",
-    "// A placer's key is the section whose model it places, so the same two rules hold where the placement is made.",
-    "for (const { pkg, placer } of PLACERS) {",
-    "  if (SHELL_SECTION_KEYS.includes(placer.key)) {",
-    "    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which is one of the shell's own ` +",
-    "      `settings (${SHELL_SECTION_KEYS.join(\", \")})`);",
-    "  }",
-    "  if (!sectionOwners.has(placer.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {",
-    "    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which matches no project ` +",
-    "      \"section (a placer's key is its section's key)\");",
-    "  }",
-    "}",
-    "",
-    "/** The config.json sections the product's packages contribute, in product order: a root key of the user config",
-    " *  which its package parses, defaults and migrates (docs/modular-graph-phase-f5b-design.md section 6.1). The",
-    " *  shell keeps every non-core root key verbatim, so the same two refusals hold: a key the shell owns, and a",
-    " *  key two packages declare. */",
-    "export const CONFIG_SECTIONS: readonly { pkg: string; section: ProjectSection }[] = [",
-    ...app.map((p) => `  ...(${identifier(p.pkg.name)}.configSections ?? []).map((section) => ({ pkg: ` +
-      `${JSON.stringify(p.pkg.name)}, section })),`),
-    "];",
-    "// The shell's own config.json keys (packages/retroplug/src/userConfig.ts's CORE_CONFIG_KEYS, which a test holds",
-    "// this list to): the root keys a package may not contribute a section under.",
-    "export const SHELL_CONFIG_KEYS = [\"schemaVersion\", \"activeKeyboardBindings\", \"activeGamepadBindings\",",
-    "  \"defaultZoom\", \"sramAutoSave\", \"render\", \"useNativeFileDialogs\"];",
-    "const configOwners = new Map<string, string>();",
-    "for (const { pkg, section } of CONFIG_SECTIONS) {",
-    "  if (SHELL_CONFIG_KEYS.includes(section.key)) {",
-    "    throw new Error(`the package ${pkg} declares the config section ${section.key}, which is one of the ` +",
-    "      `shell's own keys (${SHELL_CONFIG_KEYS.join(\", \")})`);",
-    "  }",
-    "  const owner = configOwners.get(section.key);",
-    "  if (owner !== undefined) {",
-    "    throw new Error(owner === pkg",
-    "      ? `the package ${pkg} declares the config section ${section.key} twice`",
-    "      : `two packages declare the config section ${section.key}: ${owner} and ${pkg}`);",
-    "  }",
-    "  configOwners.set(section.key, pkg);",
-    "}",
+    ...seedLines(registries, []).slice(0, -1),
+    "  ...APPS.flatMap(({ pkg, app }) => appAdditions(pkg, app)),",
+    ...baked.map((entry) =>
+      `  { registry: bakedEmbedsRegistry, pkg: ${JSON.stringify(entry.pkg)}, items: [{ id: ${JSON.stringify(entry.id)} }] },`),
+    "]);",
     "",
     ...kindBlocks({ packages, kindDecls }),
-    "/** The embedded ROMs the product's packages declare, in product order: the id native's resource table knows them",
-    " *  by, the label a menu offers one under, and the console it runs on. A load takes its platform from here, so an",
-    " *  embedded ROM is not assumed to be any console's. */",
-    "export const EMBEDS: readonly Embed[] = [",
-    ...contributionLines(app, "embeds"),
-    "];",
-    "// The other half of each declaration: the manifest entries (`retroplug.embed`) that put the bytes in the binary, by",
-    "// the package that bakes them in.",
-    "const EMBED_SOURCES: readonly { pkg: string; embeds: readonly Embed[] }[] = [",
-    ...app.map((p) => `  { pkg: ${JSON.stringify(p.pkg.name)}, embeds: ${identifier(p.pkg.name)}.embeds ?? [] },`),
-    "];",
-    `const MANIFEST_EMBEDS: readonly { pkg: string; id: string }[] = [${manifestsWithEmbeds(packages)}];`,
-    "// A declaration and a manifest entry are one embedded ROM's two halves: the shell loads it by the declaration,",
-    "// native boots the bytes the manifest names, so neither can stand alone. The id belongs to the package whose bytes",
-    "// carry it, an id is one ROM, and its platform is a console this product runs - the same rule the consoles' own",
-    "// checks hold the descriptors to.",
-    "for (const source of EMBED_SOURCES) {",
-    "  for (const embed of source.embeds) {",
-    "    const declarers = EMBED_SOURCES.flatMap((s) => s.embeds.filter((e) => e.id === embed.id).map(() => s.pkg));",
-    "    if (declarers.length > 1) {",
-    "      const [first, second] = declarers;",
-    "      throw new Error(first === second",
-    "        ? `the package ${first} declares the embedded ROM ${embed.id} twice: an id is one ROM`",
-    "        : `two packages declare the embedded ROM ${embed.id}: ${first} and ${second}`);",
-    "    }",
-    "    const baked = MANIFEST_EMBEDS.filter((e) => e.id === embed.id);",
-    "    if (!baked.length) {",
-    "      throw new Error(`the package ${source.pkg} declares the embedded ROM ${embed.id}, which its manifest does ` +",
-    '        "not bake in (its retroplug.embed)");',
-    "    }",
-    "    if (!baked.some((e) => e.pkg === source.pkg)) {",
-    "      throw new Error(`the embedded ROM ${embed.id} is declared by ${source.pkg} and baked in by ${baked[0].pkg}: ` +",
-    '        "the two halves belong to one package");',
-    "    }",
-    "    if (!CONSOLES.some((c) => c.platforms.some((p) => p.id === embed.platform))) {",
-    "      throw new Error(`the embedded ROM ${embed.id} names the platform ${embed.platform}, which no console ` +",
-    '        "descriptor registers");',
-    "    }",
-    "  }",
-    "}",
-    "for (const baked of MANIFEST_EMBEDS) {",
-    "  if (!EMBEDS.some((e) => e.id === baked.id)) {",
-    "    throw new Error(`the package ${baked.pkg} bakes in the embedded ROM ${baked.id}, which no app module ` +",
-    '      "declares (an embeds entry with its label and platform)");',
-    "  }",
-    "}",
-    "",
   );
   return lines.join("\n");
 }
@@ -1103,7 +915,11 @@ function renderMenus({ packages, outDir, generatedDir, shellSrc, product }) {
   // The role kinds and tracker integrations the product registers, for the checks below: a row over a kind nothing
   // registers, or over a key its role's schema does not read, would render nowhere and do nothing, and a tracker UI no
   // integration matches would never be found - typos the compiler cannot see in a data literal.
-  lines.push(`import { ROLES, TRACKER_INTEGRATIONS } from "${specifier(outDir, join(generatedDir, "packages.ts"))}";`);
+  lines.push(
+    `import { rolesRegistry, trackerIntegrationsRegistry } from "${specifier(outDir, join(generatedDir, "packages.ts"))}";`,
+    "const ROLES = rolesRegistry.items();",
+    "const TRACKER_INTEGRATIONS = trackerIntegrationsRegistry.items();",
+  );
   // The binding vocabulary an action's default is checked against (the key names the profiles resolve, SDL's pad
   // names, and the defaults the shell and the Game Boy buttons already take), all of it the shell's own modules: read
   // from wherever this module was written, so a product's tree reaches the shell's real files.
@@ -1600,14 +1416,6 @@ function renderShellPaths(list, aliases) {
     "}",
     "",
   ].join("\n");
-}
-
-/** The manifest embed entries the generated module pairs with the app modules' declarations, as source text. */
-function manifestsWithEmbeds(packages) {
-  return packages
-    .flatMap((p) => p.embeds.map((baked) => ({ pkg: p.pkg.name, id: baked.id })))
-    .map((baked) => `{ pkg: ${JSON.stringify(baked.pkg)}, id: ${JSON.stringify(baked.id)} }`)
-    .join(", ");
 }
 
 /** The import of one of the shell's hand-written contribution modules (src/contributions/<name>.ts, ui/contributions,
@@ -2107,7 +1915,7 @@ export function generate({
   const files = [
     {
       path: join(outDir, "packages.ts"),
-      content: renderPackages({ packages: contributionsOf, outDir, names, product }),
+      content: renderPackages({ packages: contributionsOf, outDir, shellDir: shell.dir, names, product }),
     },
     {
       path: join(outDir, "consoles.ts"),

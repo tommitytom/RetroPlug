@@ -5,19 +5,15 @@
 // registry the stores drive. The audio thread needs no registry: the ProjectStore publishes each role's protocol node
 // with the graph.
 //
-// What it registers is the product's list, not a list here: each package's app contribution is generated into
-// src/generated/packages.ts (docs/modular-graph-phase-f1-design.md section 3), in product order, and this applies
+// What it registers is the product's list, not a list here: each package's app contribution is seeded into the live
+// registries by src/generated/packages.ts (docs/modular-graph-phase-f1-design.md section 3), in product order, and this applies
 // it in that order.
 
-import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { ROLES } from "./generated/packages";
-import { registerRomProviders } from "./romProviders";
+import type { RoleRegistry } from "@retroplug/core/systemRoles";
+import { AppRoleRegistry } from "./appRoleRegistry";
 
-/** The control-plane role registry: backend system roles + the feature roles + the ROM providers
- *  that attach features by ROM identity. */
+/** The control-plane role registry: backend system roles + the feature roles + the ROM providers that attach features
+ *  by ROM identity, as registered now and as committed later (a pack's), adopted at the registry's next read. */
 export function buildAppRegistry(): RoleRegistry {
-  const registry = new RoleRegistry();
-  for (const role of ROLES) registry.registerRole(role);
-  registerRomProviders(registry);
-  return registry;
+  return new AppRoleRegistry();
 }

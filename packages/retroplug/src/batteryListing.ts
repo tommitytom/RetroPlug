@@ -3,12 +3,12 @@
 // integration's `batteryListing`, so what a cart's battery means stays the cart's and no cart is named here: the shell
 // composes them in rank order (`BatteryListing.rank`), so two carts that read one image are tried deterministically.
 import type { BatteryListing } from "@retroplug/tracker/trackerIntegration";
-import { TRACKER_INTEGRATIONS } from "./trackerRegistry";
+import { trackerIntegrations } from "./trackerRegistry";
 
 /** Every integration that lists a battery, in the order they are tried: a cart's rank first, and product order between
  *  equal ranks (a stable sort, so the list is deterministic). */
 function listings(): BatteryListing[] {
-  return TRACKER_INTEGRATIONS.map((integration) => integration.batteryListing)
+  return trackerIntegrations().map((integration) => integration.batteryListing)
     .filter((listing): listing is BatteryListing => listing !== undefined)
     .sort((a, b) => a.rank - b.rank);
 }

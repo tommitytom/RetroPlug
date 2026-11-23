@@ -11,7 +11,7 @@ import {
   assertConfigSectionKey, configSectionEntryOf, CORE_CONFIG_KEYS, putConfigSection, type ConfigSectionEntry,
 } from "../../src/configSections";
 import { userConfigSchema } from "../../src/userConfig";
-import { SHELL_CONFIG_KEYS } from "../../src/generated/packages";
+import { SHELL_CONFIG_KEYS } from "../../src/contributions/app";
 import type { ProjectSection } from "@retroplug/core/definePackage";
 import { stringifyConfig } from "../../src/configSchema";
 

@@ -278,7 +278,8 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
         () => [],
       ),
     // The 16 KB kit bank and each slot's reason, or the 8 KB risa DMC bank's: the format `id` names among the ones the
-    // product's packages register (each cart's app contribution, src/generated/packages.ts). The spec's type is the
+    // product's packages register (each cart's app contribution, seeded into the live registries by
+    // src/generated/packages.ts). The spec's type is the
     // owner's, so a caller writes compileKitFormat<KitCompileSpec>("lsdj", spec) and the driver names no cart.
     // Async so an unknown id rejects the returned promise, as the contract says, rather than throwing before one
     // exists.

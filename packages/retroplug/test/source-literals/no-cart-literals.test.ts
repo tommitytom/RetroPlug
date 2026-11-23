@@ -19,7 +19,8 @@
 // rule; the guard sets are the registries', and a fixture pins each directory's walk.
 import { test, expect } from "@retroplug/testing";
 import { consoleDescriptors } from "../../src/consoles";
-import { EMBEDS, KIT_FORMATS, PACKAGE_IDS, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
+import { PACKAGE_IDS } from "../../src/generated/packages";
+import { embedsRegistry, kitFormatsRegistry, trackerIntegrationsRegistry } from "../../src/contributions/app";
 import { DECLARED_NODE_TYPES } from "../../src/generated/protocol";
 
 /** The console registry's platform ids, ROM extensions, cores and node types: the descriptors' own, so nothing here is a
@@ -58,9 +59,9 @@ const NODE_PREFIXES = PACKAGE_IDS.filter((id) => !SHELL_NODE_PACKAGES.includes(i
  *  A cart's or a console's id is its package's knowledge, so the shell spells none of them either. */
 const CART_IDS = [
   ...new Set([
-    ...EMBEDS.map((embed) => embed.id),
-    ...TRACKER_INTEGRATIONS.map((integration) => integration.id),
-    ...KIT_FORMATS.map((format) => format.id),
+    ...embedsRegistry.items().map((embed) => embed.id),
+    ...trackerIntegrationsRegistry.items().map((integration) => integration.id),
+    ...kitFormatsRegistry.items().map((format) => format.id),
   ]),
 ].sort();
 

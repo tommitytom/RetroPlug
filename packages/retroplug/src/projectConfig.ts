@@ -24,8 +24,8 @@ import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALU
 import type { ProjectSection } from "@retroplug/core/definePackage";
 // The product's registrations, and through them every declared contribution kind's `accept`: each kind fills the table
 // its declaring package's schema, defaults or placer reads. A module that reads a kind-filled registry imports the
-// generated registry for that reason; this one also needs PROJECT_SECTIONS itself.
-import { PROJECT_SECTIONS } from "./generated/packages";
+// generated registry for that reason; this one also needs the project sections itself.
+import { projectSectionEntries } from "./contributions/app";
 
 /** The settings keys the SHELL owns, which no package may contribute as a section (the generated registry refuses one
  *  that does). Everything else under `settings` belongs to whichever package contributed it. Keep in step with the
@@ -113,7 +113,7 @@ export interface SectionEntry {
  *  kept verbatim). */
 export function projectSectionEntryOf(
   key: string,
-  sections: readonly SectionEntry[] = PROJECT_SECTIONS,
+  sections: readonly SectionEntry[] = projectSectionEntries(),
 ): SectionEntry | undefined {
   return sections.find((entry) => entry.section.key === key);
 }
@@ -121,7 +121,7 @@ export function projectSectionEntryOf(
 /** The section a package contributes under `key`, or undefined for a key no package of this product contributes. */
 export function projectSectionOf(
   key: string,
-  sections: readonly SectionEntry[] = PROJECT_SECTIONS,
+  sections: readonly SectionEntry[] = projectSectionEntries(),
 ): ProjectSection | undefined {
   return projectSectionEntryOf(key, sections)?.section;
 }
@@ -153,7 +153,7 @@ export function sectionDefaults(entry: SectionEntry): unknown {
 
 /** Every contributor's defaults, by key: what a project that never set a section reads, and what a fresh project
  *  starts with. */
-export function defaultSections(sections: readonly SectionEntry[] = PROJECT_SECTIONS): Record<string, unknown> {
+export function defaultSections(sections: readonly SectionEntry[] = projectSectionEntries()): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const entry of sections) out[entry.section.key] = sectionDefaults(entry);
   return out;
@@ -182,7 +182,7 @@ export function projectSection<T = unknown>(settings: ProjectSettings, key: stri
 export function readableProjectSection<T = unknown>(
   settings: ProjectSettings,
   key: string,
-  sections: readonly SectionEntry[] = PROJECT_SECTIONS,
+  sections: readonly SectionEntry[] = projectSectionEntries(),
 ): T {
   const raw = projectSection<unknown>(settings, key);
   const entry = projectSectionEntryOf(key, sections);
@@ -576,7 +576,7 @@ export function serializeConfig(cfg: ProjectFileConfig, baseDir: string, canonic
  *  (unknown fields are stripped, except a `settings` key no package contributes, which is kept: E5). Never
  *  throws — malformed JSON / a non-object root yield an empty-default config, a
  *  garbage system entry is dropped, out-of-range/wrong-type values are coerced. */
-export function parseConfig(json: string, sections: readonly SectionEntry[] = PROJECT_SECTIONS): ProjectConfig {
+export function parseConfig(json: string, sections: readonly SectionEntry[] = projectSectionEntries()): ProjectConfig {
   let doc: unknown;
   try {
     doc = JSON.parse(json);

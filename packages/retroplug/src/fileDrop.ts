@@ -17,12 +17,15 @@
 import type { HostBackend } from "./backend";
 import { classifyKind } from "./fileSelection";
 import { siblingRplgPath } from "./savPaths";
-import { TRACKER_INTEGRATIONS } from "./trackerRegistry";
+import { derived } from "./contributions/registry";
+import { trackerIntegrations } from "./trackerRegistry";
 
 /** The song files ANY tracker this build carries imports, lowercase and dot included. Recognition is the product's, not
  *  a target's: a song file dropped where nothing imports it is refused with a reason, and read as an unsupported file
  *  only when no cart here claims the type. */
-const SONG_EXTENSIONS: readonly string[] = TRACKER_INTEGRATIONS.flatMap((t) => t.songImport?.extensions ?? []);
+const songExtensions = derived((): readonly string[] =>
+  trackerIntegrations().flatMap((t) => t.songImport?.extensions ?? []),
+);
 
 /** True when `path` is one of the song files `extensions` names, as a tracker integration spells them: a dropped
  *  file's type is the cart's, so the routing asks the product's. The CONTRACT is lowercase, dot included, and both
@@ -80,7 +83,7 @@ export function resolveDropAction(backend: HostBackend, ctx: DropContext, paths:
   // in a mixed drop are ignored, and so is a song file of a type the target's own tracker does not declare: with a
   // second importing tracker in the product, a mixed drop must not hand one cart the other's files. Requires such a
   // target (else a no-op).
-  const songs = files.filter((p) => isSongPath(SONG_EXTENSIONS, p));
+  const songs = files.filter((p) => isSongPath(songExtensions(), p));
   if (songs.length > 0) {
     const targetSongs = songs.filter((p) => isSongPath(ctx.targetSongExtensions, p));
     if (targetSongs.length > 0 && ctx.targetId != null) {

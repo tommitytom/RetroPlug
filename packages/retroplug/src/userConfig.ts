@@ -15,7 +15,7 @@ import { z } from "zod";
 import { clampedInt, stringField, enumField } from "@retroplug/core/configFields";
 import type { SplitMode } from "./render";
 import { defaultConfigSections, serializeConfigSectionValue, type ConfigSectionEntry } from "./configSections";
-import { CONFIG_SECTIONS } from "./generated/packages";
+import { configSectionEntries } from "./contributions/app";
 
 /** The persisted render-menu selections (System > Render): what to split into, the output sample rate, and
  *  the max render length. Global (not per-system) so the single "Render..." action reads the current picks. */
@@ -129,7 +129,7 @@ export function defaultConfig(): ConfigModel {
  *  always wrote it, and a config.json this build reads and writes back must not move a key. */
 export function configFileShape(
   model: ConfigModel,
-  contributors: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+  contributors: readonly ConfigSectionEntry[] = configSectionEntries(),
 ): Record<string, unknown> {
   const core = model.core;
   const out: Record<string, unknown> = {

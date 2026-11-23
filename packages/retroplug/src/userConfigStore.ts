@@ -27,7 +27,7 @@ import {
   readableConfigSection, type ConfigSectionEntry,
 } from "./configSections";
 import { readSectionVersion } from "./projectConfig";
-import { CONFIG_SECTIONS } from "./generated/packages";
+import { configSectionEntries } from "./contributions/app";
 
 const CONFIG_FILE = "config.json";
 const enc = new TextEncoder();
@@ -71,7 +71,7 @@ export class UserConfigStore {
   constructor(
     private readonly backend: HostBackend,
     private readonly onChange: () => void = () => {},
-    configSections: readonly ConfigSectionEntry[] = CONFIG_SECTIONS,
+    configSections: readonly ConfigSectionEntry[] = configSectionEntries(),
   ) {
     this.configSections = configSections;
     this.sections = defaultConfigSections(configSections);

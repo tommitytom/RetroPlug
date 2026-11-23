@@ -6,7 +6,7 @@
 import { test, expect } from "@retroplug/testing";
 import { RoleRegistry, type RoleType } from "@retroplug/core/systemRoles";
 import { buildAppRegistry } from "../../src/appHost";
-import { ROLES } from "../../src/generated/packages";
+import { rolesRegistry } from "../../src/contributions/app";
 import { protocolNodeOf } from "../../src/graph/protocolNodes";
 import { registerCoreRoles } from "../_coreRoles";
 import { registerFeatureRoles } from "../_featureRoles";
@@ -72,7 +72,7 @@ test("the app's roles are the product's kinds, and a duplicate is what the gener
   // The registry holds roles in a Map keyed by kind and never iterates it, so the order the app registers them in is
   // unobservable: the generated module checks that each kind appears once, and that is the property this pins. A kind
   // lost by a package's app contribution would still show here, whatever order the list is in.
-  expect(ROLES.map((role) => role.kind).sort()).toEqual([
+  expect(rolesRegistry.items().map((role) => role.kind).sort()).toEqual([
     "bliptoaster", "bliptoaster-assets", "lsdj-assets", "lsdj-sync", "mesen", "mgb", "nes-n8-midi",
     "risa", "risa-assets", "risa-sync", "sameboy", "sms-sync",
   ]);

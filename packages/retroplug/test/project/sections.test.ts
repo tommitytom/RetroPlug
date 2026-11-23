@@ -7,8 +7,10 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores } from "../../src/appStores";
 import { lsdjRom } from "../systems/fixtures";
 import * as R from "@retroplug/lsdj/codec/regions";
+import { SHELL_SECTION_KEYS } from "../../src/contributions/app";
 import {
   buildConfig,
+  CORE_SETTING_KEYS,
   DEFAULT_SETTINGS,
   K_PROJECT,
   parseConfig,
@@ -361,4 +363,8 @@ test("a service or a placer that throws is isolated, and the rest of the project
     ],
   );
   expect(built.document.nodes.some((node) => node.id === "survivor-node")).toBe(true);
+});
+
+test("the registry's reserved section keys are the shell's own settings keys", () => {
+  expect([...SHELL_SECTION_KEYS]).toEqual([...CORE_SETTING_KEYS]);
 });

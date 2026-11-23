@@ -1,17 +1,19 @@
 // The kit bank formats this product compiles (docs/modular-graph-phase-f1-design.md section 3): which formats exist is
-// the packages' business (each cart's app contribution registers its own, src/generated/packages.ts), so the id to
-// format lookup is the shell's, beside src/romProviders.ts and src/trackerRegistry.ts, and the kit compile driver
-// (src/audioDriver.ts' compileKitFormat) compiles the format it is handed.
-import { KIT_FORMATS } from "./generated/packages";
+// the packages' business (each cart's app contribution registers its own, seeded into the live registries by
+// src/generated/packages.ts), so the id to format lookup is the shell's, beside src/romProviders.ts and
+// src/trackerRegistry.ts, and the kit compile driver (src/audioDriver.ts' compileKitFormat) compiles the format it is handed.
+import { kitFormatsRegistry } from "./contributions/app";
 import type { KitFormat } from "@retroplug/dsp/kitContract";
 
-/** The product's kit formats, in package order: what kitFormat resolves an id through. */
-export { KIT_FORMATS };
+/** The product's kit formats, then packs', in registration order: what kitFormat resolves an id through. */
+export function kitFormats(): readonly KitFormat<any>[] {
+  return kitFormatsRegistry.items();
+}
 
 /** The kit bank format `id` names, as the product's packages registered it; a driver refuses an id no package
  *  registers, naming it, rather than compiling a bank nothing assembles. */
 export function kitFormat<S>(id: string): KitFormat<S> {
-  return resolveKitFormat(id, KIT_FORMATS) as KitFormat<S>;
+  return resolveKitFormat(id, kitFormats()) as KitFormat<S>;
 }
 
 /** The format `id` names among `formats`, or refused: an id no format names, or one two formats name (two packages

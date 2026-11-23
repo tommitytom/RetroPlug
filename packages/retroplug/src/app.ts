@@ -1,7 +1,7 @@
 // The shell's own app contribution, its package.json's retroplug.app: the lists the app hardcoded in appHost.ts,
-// romProviders.ts, tracker/trackerIntegration.ts and kit/compile.ts until the generated registry
-// (src/generated/packages.ts) concatenated every package's. Every list is empty now: each console and cart that
-// contributes one has its own package (its app module), and what is left in this tree is the stores, the graph and the
+// romProviders.ts, tracker/trackerIntegration.ts and kit/compile.ts until the generated module
+// (src/generated/packages.ts) seeded every package's into the live registries. Every list is empty now: each console
+// and cart that contributes one has its own package (its app module), and what is left in this tree is the stores, the graph and the
 // UI. The controller session node (rp.controller.session) is the launchpad pack's `protocol` member (label 22) and the
 // MI.MAP app is the lsdj-launchpad bridge's `controllerApps` contribution, which is why no list here names either.
 //
