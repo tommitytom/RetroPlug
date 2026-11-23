@@ -6,9 +6,8 @@
 //
 // State is per module set: the plugin's control plane and its UI share one, so a half the control plane loaded is not
 // loaded again for the UI, and a pack the control plane refused is not tried there.
-import "../generated/packages";
 import { commitContributions, type Addition } from "../contributions/registry";
-import { appAdditions } from "../contributions/appRegistries";
+import { appAdditions } from "../contributions/app";
 import { consolesRegistry, realCartsRegistry } from "../contributions/consoleRegistries";
 import { KIND_DATA } from "../generated/protocol";
 import type { PackageContributions } from "@retroplug/core/definePackage";
@@ -53,14 +52,37 @@ export function packStatus(): { loaded: Record<string, HalfKind[]>; refused: Rec
 function refuse(host: PackHost, id: string, reason: string): void {
   refused.set(id, reason);
   console.warn(`[packs] pack ${id} is refused: ${reason}`);
-  host.refuse(id, reason);
+  try {
+    host.refuse(id, reason);
+  } catch (e) {
+    console.warn(`[packs] the host could not record the refusal of ${id}: ${message(e)}`);
+  }
 }
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** The app members appAdditions maps: any other member that is not a contribution kind is a typo or a mistake. */
+const APP_MEMBERS: ReadonlySet<string> = new Set(["roles", "romProviders", "trackerIntegrations", "kitFormats",
+  "projectSections", "projectServices", "configSections", "embeds"]);
+
 /** The pack's manifest against the halves loaded now (`exported`, by kind): throws the first mismatch. */
+/** The platforms the loaded consoles half declares (none without one). */
+function ownPlatforms(exported: Map<HalfKind, unknown>): Set<string> {
+  const mine = new Set<string>();
+  if (exported.has("consoles")) {
+    const consoles = (objectExport("consoles", exported.get("consoles")).consoles ?? []) as ConsoleDescriptor[];
+    for (const d of consoles) for (const p of d.platforms) mine.add(p.id);
+  }
+  return mine;
+}
+
+/** The first platform the pack requires that neither `available` nor its own consoles provide. */
+function missingPlatform(pack: PackInfo, available: ReadonlySet<string>, own: ReadonlySet<string>): string | undefined {
+  return pack.requires.platforms.find((id) => !available.has(id) && !own.has(id));
+}
+
 function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platforms: ReadonlySet<string>): void {
   if (exported.has("app")) {
     const app = objectExport("app", exported.get("app"));
@@ -71,6 +93,11 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
     for (const kind of Object.keys(KIND_DATA)) {
       if (Array.isArray(app[kind]) && (app[kind] as unknown[]).length) {
         throw new Error(`its app half contributes ${kind}, a contribution kind a pack cannot add to yet`);
+      }
+    }
+    for (const member of Object.keys(app)) {
+      if (!APP_MEMBERS.has(member) && !(member in KIND_DATA)) {
+        throw new Error(`its app half exports ${member}, which is not something an app half contributes`);
       }
     }
     const roles = ((app.roles ?? []) as { kind: string }[]).map((r) => r.kind);
@@ -86,16 +113,15 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
   } else if (pack.provides.roles.length && !pack.halves.includes("app")) {
     throw new Error(`provides.roles names ${pack.provides.roles[0]}, which no half of the pack contributes`);
   }
+  const mine = ownPlatforms(exported);
   if (exported.has("consoles")) {
     const consoles = ((objectExport("consoles", exported.get("consoles")).consoles ?? []) as ConsoleDescriptor[]);
-    const mine = new Set<string>();
     for (const d of consoles) {
       for (const p of d.platforms) {
         if (!pack.provides.platforms.includes(p.id)) {
           throw new Error(`its console ${d.id} declares the platform ${p.id}, which its pack.json's ` +
             "provides.platforms does not declare");
         }
-        mine.add(p.id);
       }
       if (!pack.provides.nodeTypes.includes(d.nodeType)) {
         throw new Error(`its console ${d.id} names the node type ${d.nodeType}, which its pack.json's ` +
@@ -105,13 +131,12 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
     for (const id of pack.provides.platforms) {
       if (!mine.has(id)) throw new Error(`provides.platforms names ${id}, which no half of the pack contributes`);
     }
-    for (const id of pack.requires.platforms) {
-      if (!platforms.has(id) && !mine.has(id)) {
-        throw new Error(`it requires the platform ${id}, which no loaded console provides`);
-      }
-    }
   } else if (pack.provides.platforms.length && !pack.halves.includes("consoles")) {
     throw new Error(`provides.platforms names ${pack.provides.platforms[0]}, which no half of the pack contributes`);
+  }
+  if (exported.has("app") || exported.has("consoles")) {
+    const id = missingPlatform(pack, platforms, mine);
+    if (id !== undefined) throw new Error(`it requires the platform ${id}, which no loaded console provides`);
   }
 }
 
@@ -119,11 +144,30 @@ interface Staged {
   readonly pack: PackInfo;
   readonly kinds: readonly HalfKind[];
   readonly additions: Addition<any>[];
+  /** The platforms its own consoles half declares. */
+  readonly own: ReadonlySet<string>;
 }
 
+// Calls run one at a time: two overlapping loads would each stage the same pack and commit it twice.
+let chain: Promise<void> = Promise.resolve();
+
 /** Load every pack's halves `builders` names that this module set has not loaded yet. Never rejects: a pack that fails
- *  is refused, reported, and commits nothing. */
-export async function loadPacks(host: PackHost, builders: Partial<Record<HalfKind, HalfBuilder>>): Promise<void> {
+ *  is refused, reported, and commits nothing, and a failure of the loader itself is reported and resolves. */
+export function loadPacks(host: PackHost, builders: Partial<Record<HalfKind, HalfBuilder>>): Promise<void> {
+  const run = chain.then(() => load(host, builders));
+  chain = run.catch(() => {});
+  return run;
+}
+
+async function load(host: PackHost, builders: Partial<Record<HalfKind, HalfBuilder>>): Promise<void> {
+  try {
+    await loadUnguarded(host, builders);
+  } catch (e) {
+    console.warn("[packs] the loader failed: " + message(e));
+  }
+}
+
+async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, HalfBuilder>>): Promise<void> {
   const kinds = Object.keys(builders) as HalfKind[];
   const platforms = new Set(consolesRegistry.items().flatMap((d) => d.platforms.map((p) => p.id)));
   const staged: Staged[] = [];
@@ -144,7 +188,7 @@ export async function loadPacks(host: PackHost, builders: Partial<Record<HalfKin
       }
       checkManifest(pack, exported, platforms);
       const additions = todo.flatMap((kind) => builders[kind]!(pack.id, exported.get(kind)));
-      staged.push({ pack, kinds: todo, additions });
+      staged.push({ pack, kinds: todo, additions, own: ownPlatforms(exported) });
       for (const id of pack.provides.platforms) platforms.add(id);
     } catch (e) {
       refuse(host, pack.id, message(e));
@@ -164,6 +208,12 @@ export async function loadPacks(host: PackHost, builders: Partial<Record<HalfKin
       const missing = s.pack.requires.packs.find((dep) => refused.has(dep));
       if (missing) {
         refuse(host, s.pack.id, `it requires the pack ${missing}, which is refused`);
+        continue;
+      }
+      const available = new Set(consolesRegistry.items().flatMap((d) => d.platforms.map((p) => p.id)));
+      const lost = missingPlatform(s.pack, available, s.own);
+      if (lost !== undefined) {
+        refuse(host, s.pack.id, `it requires the platform ${lost}, which no loaded console provides`);
         continue;
       }
       try {

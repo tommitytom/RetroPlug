@@ -4,7 +4,7 @@ import { test, expect } from "@retroplug/testing";
 import { loadPacks, packStatus, APP_BUILDERS, type HalfBuilder } from "../../src/packs/loadPacks";
 import type { HalfKind, PackHost, PackInfo } from "../../src/packs/packHost";
 import { rolesRegistry } from "../../src/contributions/appRegistries";
-import { consolesRegistry } from "../../src/contributions/consoleRegistries";
+import { consolesRegistry, realCartsRegistry } from "../../src/contributions/consoleRegistries";
 import { contributionsVersion } from "../../src/contributions/registry";
 
 const role = (kind: string) => ({ kind, category: "feature", schema: { parse: () => ({}) } });
@@ -52,6 +52,7 @@ test("a pack's app half commits its roles, in one commit with the other packs'",
   expect(packStatus().loaded["lp-a"]).toEqual(["app"]);
 });
 
+// Relies on the previous test's module-level state: lp-a is already loaded in this bundle's loader.
 test("a half loaded in this context is not imported again", async () => {
   const { host, imported } = fakeHost(
     [pack("lp-a", { provides: { platforms: [], nodeTypes: [], roles: ["lp-a-role"] } })],
@@ -72,6 +73,20 @@ test("a pack that fails the commit is refused by name, and the others commit", a
   expect((refused["lp-dupe"] ?? "").includes(`declare the role kind ${builtIn} twice`)).toBe(true);
   expect(rolesRegistry.items().some((r) => r.kind === "lp-c-role")).toBe(true);
   expect((packStatus().refused["lp-dupe"] ?? "").includes("twice")).toBe(true);
+});
+
+test("a dependent of a pack refused in the fallback is refused, and a refused pack is not retried", async () => {
+  const dupe = pack("lp-dupe", { provides: { platforms: [], nodeTypes: [], roles: ["lp-a-role"] } });
+  const { host, refused, imported } = fakeHost(
+    [dupe, pack("lp-dep2", { requires: { packs: ["lp-dupe"], platforms: [] } })],
+    { "lp-dep2": { app: {} } },
+  );
+  await loadPacks(host, APP_BUILDERS);
+  expect(imported).toEqual([]);
+  expect((refused["lp-dep2"] ?? "").includes("requires the pack lp-dupe, which is refused")).toBe(true);
+  const again = fakeHost([dupe], {});
+  await loadPacks(again.host, APP_BUILDERS);
+  expect(again.imported).toEqual([]);
 });
 
 test("the manifest is held to the halves", async () => {
@@ -130,4 +145,106 @@ test("a context's builders decide which halves it loads", async () => {
   const { host, imported } = fakeHost([pack("lp-app-only", { halves: ["app"] })], { "lp-app-only": { app: {} } });
   await loadPacks(host, only);
   expect(imported).toEqual([]);
+});
+
+function consoleOf(id: string, platform: string, nodeType: string) {
+  const borrowed = consolesRegistry.items()[0]!;
+  return { ...borrowed, id, nodeType, platforms: [{ ...borrowed.platforms[0]!, id: platform, extensions: [".lpy"] }] };
+}
+
+test("a console's node type must be declared, and a declared platform must be contributed", async () => {
+  const { host, refused } = fakeHost(
+    [pack("lp-nt", { halves: ["consoles"], provides: { platforms: ["lp-plat2"], nodeTypes: [], roles: [] } }),
+     pack("lp-extra", { halves: ["consoles"], provides: { platforms: ["lp-extra", "lp-plat3"], nodeTypes: ["rp.lp.c3"],
+       roles: [] } })],
+    { "lp-nt": { consoles: { consoles: [consoleOf("lp-c2", "lp-plat2", "rp.lp.console2")] } },
+      "lp-extra": { consoles: { consoles: [consoleOf("lp-c3", "lp-plat3", "rp.lp.c3")] } } },
+  );
+  await loadPacks(host, APP_BUILDERS);
+  expect((refused["lp-nt"] ?? "").includes("names the node type rp.lp.console2, which its pack.json's " +
+    "provides.nodeTypes does not declare")).toBe(true);
+  expect((refused["lp-extra"] ?? "").includes("provides.platforms names lp-extra, which no half of the pack " +
+    "contributes")).toBe(true);
+});
+
+test("provides with no half to contribute them is refused", async () => {
+  const { host, refused } = fakeHost(
+    [pack("lp-noc", { halves: ["app"], provides: { platforms: ["x"], nodeTypes: [], roles: [] } }),
+     pack("lp-noa", { halves: ["consoles"], provides: { platforms: [], nodeTypes: [], roles: ["y"] } })],
+    { "lp-noc": { app: {} }, "lp-noa": { consoles: {} } },
+  );
+  await loadPacks(host, APP_BUILDERS);
+  expect((refused["lp-noc"] ?? "").includes("provides.platforms names x")).toBe(true);
+  expect((refused["lp-noa"] ?? "").includes("provides.roles names y")).toBe(true);
+});
+
+test("a required platform may come from the pack's own console or an earlier staged pack", async () => {
+  const { host, refused } = fakeHost(
+    [pack("lp-self", { halves: ["consoles"], requires: { packs: [], platforms: ["lp-p4"] },
+       provides: { platforms: ["lp-p4"], nodeTypes: ["rp.lp.c4"], roles: [] } }),
+     pack("lp-later", { halves: ["app"], requires: { packs: ["lp-self"], platforms: ["lp-p4"] } })],
+    { "lp-self": { consoles: { consoles: [consoleOf("lp-c4", "lp-p4", "rp.lp.c4")] } }, "lp-later": { app: {} } },
+  );
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused).toEqual({});
+  expect(packStatus().loaded["lp-later"]).toEqual(["app"]);
+});
+
+test("an app-only pack requiring a missing platform is refused", async () => {
+  const { host, refused } = fakeHost(
+    [pack("lp-app-req", { requires: { packs: [], platforms: ["nowhere"] } })], { "lp-app-req": { app: {} } });
+  await loadPacks(host, APP_BUILDERS);
+  expect((refused["lp-app-req"] ?? "").includes("requires the platform nowhere")).toBe(true);
+});
+
+test("a consoles half's real carts land in the real cart registry", async () => {
+  const cartNode = "rp.lp.cart5";
+  const { host, refused } = fakeHost(
+    [pack("lp-cart", { halves: ["consoles"], provides: { platforms: ["lp-p5"], nodeTypes: ["rp.lp.c5"], roles: [] } })],
+    { "lp-cart": { consoles: { consoles: [consoleOf("lp-c5", "lp-p5", "rp.lp.c5")],
+      realCarts: [{ platform: "lp-p5", cartNode }] } } },
+  );
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused).toEqual({});
+  expect(realCartsRegistry.items().some((c) => c.cartNode === cartNode)).toBe(true);
+});
+
+test("an app half's unknown member is refused by name", async () => {
+  const { host, refused } = fakeHost([pack("lp-typo")], { "lp-typo": { app: { rolez: [] } } });
+  await loadPacks(host, APP_BUILDERS);
+  expect((refused["lp-typo"] ?? "").includes("exports rolez")).toBe(true);
+});
+
+test("a loader failure resolves, and a throwing refuse is survived", async () => {
+  const bad: PackHost = { list: () => { throw new Error("no list"); }, importHalf: async () => ({}), refuse: () => {} };
+  await loadPacks(bad, APP_BUILDERS);
+  const { host } = fakeHost([pack("lp-refuse-throws", { requires: { packs: [], platforms: ["nowhere2"] } })],
+    { "lp-refuse-throws": { app: {} } });
+  await loadPacks({ ...host, refuse: () => { throw new Error("cannot record"); } }, APP_BUILDERS);
+  expect((packStatus().refused["lp-refuse-throws"] ?? "").includes("nowhere2")).toBe(true);
+});
+
+test("overlapping loads of the same pack commit it once", async () => {
+  const before = contributionsVersion();
+  const { host, refused } = fakeHost(
+    [pack("lp-race", { provides: { platforms: [], nodeTypes: [], roles: ["lp-race-role"] } })],
+    { "lp-race": { app: { roles: [role("lp-race-role")] } } });
+  await Promise.all([loadPacks(host, APP_BUILDERS), loadPacks(host, APP_BUILDERS)]);
+  expect(refused).toEqual({});
+  expect(contributionsVersion()).toBe(before + 1);
+});
+
+test("the fallback refuses a pack whose required platform's provider was refused there", async () => {
+  const builtIn = rolesRegistry.items()[0]!.kind;
+  // The provider's console commits, its role clashes: the batch fails, then the provider is refused in the fallback.
+  const { host, refused } = fakeHost(
+    [pack("lp-prov", { halves: ["app", "consoles"],
+       provides: { platforms: ["lp-p6"], nodeTypes: ["rp.lp.c6"], roles: [builtIn] } }),
+     pack("lp-user", { halves: ["app"], requires: { packs: [], platforms: ["lp-p6"] } })],
+    { "lp-prov": { app: { roles: [role(builtIn)] }, consoles: { consoles: [consoleOf("lp-c6", "lp-p6", "rp.lp.c6")] } },
+      "lp-user": { app: {} } },
+  );
+  await loadPacks(host, APP_BUILDERS);
+  expect((refused["lp-prov"] ?? "").includes("twice")).toBe(true);
+  expect((refused["lp-user"] ?? "").includes("requires the platform lp-p6")).toBe(true);
 });
