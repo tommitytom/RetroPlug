@@ -99,8 +99,7 @@ test("a check on a registry the commit did not touch still runs", () => {
 });
 
 test("a check sees its own registry's committed and staged entries whole", () => {
-  // A seeded registry's rule holds whichever side a commit touched: here the fruit check refuses a duplicate even
-  // though the commit's other addition is a basket.
+  // The duplicate is caught across the registry's own committed entries (apple) and the entries this commit stages.
   expect(() =>
     commitContributions([
       { registry: fruit, pkg: "zeta", items: ["apple"] },
@@ -181,4 +180,13 @@ test("commitByName resolves registries by their names, and refuses an unknown on
 
 test("two registries may not share a name", () => {
   expect(() => new Registry<string>("test.fruit")).toThrow("two registries are named test.fruit");
+});
+
+test("an addition's items are typed by their registry", () => {
+  const numbers = new Registry<number>("test.numbers");
+  // @ts-expect-error a string is not a number: the seed's items are checked against the registry's element type
+  const bad = () => commitContributions([{ registry: numbers, pkg: "nu", items: ["bad"] }]);
+  void bad;
+  commitContributions([{ registry: numbers, pkg: "nu", items: [1, 2] }]);
+  expect(numbers.items()).toEqual([1, 2]);
 });

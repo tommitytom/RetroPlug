@@ -30,7 +30,7 @@ export type RegistryCheck<T> = (entries: readonly Contribution<T>[], view: Regis
 export interface Addition<T = unknown> {
   readonly registry: Registry<T>;
   readonly pkg: string;
-  readonly items: readonly T[];
+  readonly items: readonly NoInfer<T>[];
 }
 
 /** An addition naming its registry: what a pack's loader and the UI's test seam commit, since neither holds this
@@ -75,7 +75,12 @@ export class Registry<T> {
     if (BY_NAME.has(name)) throw new Error(`two registries are named ${name}`);
     BY_NAME.set(name, this as Registry<unknown>);
     ALL.push(this as Registry<unknown>);
-    STATE.set(this as Registry<unknown>, { rule: rule as RegistryCheck<unknown> | undefined, entries: EMPTY, items: EMPTY, seeded: false });
+    STATE.set(this as Registry<unknown>, {
+      rule: rule as RegistryCheck<unknown> | undefined,
+      entries: EMPTY,
+      items: EMPTY,
+      seeded: false,
+    });
   }
 
   /** Every entry, in commit order (within a commit, the additions' order). Frozen, and the same array until the next
@@ -93,7 +98,6 @@ export class Registry<T> {
   get seeded(): boolean {
     return stateOf(this).seeded;
   }
-
 }
 
 /** Commit `additions` across their registries, all or none: see the header. Throws the first refusal, in the order the
