@@ -9,10 +9,10 @@
 #include <vector>
 
 // A pack's manifest, pack.json (docs/downloadable-packs-loading-design.md section 1), parsed and checked: every member
-// is held to its shape here, so a manifest a later milestone reads is one this parser already accepted whole. What M1's
-// loader (PackTable) enforces beyond the shape is the native half and provides.nodeTypes; it refuses a pack naming any
-// other half, since M1 cannot load a TS half and a pack never loads in part. provides.platforms and .roles, and
-// requires.platforms, are M2's to enforce.
+// is held to its shape here, so a manifest a later milestone reads is one this parser already accepted whole. What the
+// loader (PackTable) enforces beyond the shape is the native half, provides.nodeTypes and that each TS half's file is
+// there; it refuses the protocol and script halves, which M2d loads. provides.platforms and .roles, and
+// requires.platforms, are held to the TS halves when a context loads them (src/packs/loadPacks.ts).
 namespace rp::host::packs {
 
 struct PackManifest {
@@ -35,7 +35,7 @@ struct PackManifest {
     std::string nativeHalf() const;
 };
 
-// The kinds of half this host knows (the members halves may name). M1 loads the native one only.
+// The kinds of half this host knows (the members halves may name).
 const std::vector<std::string>& knownHalves();
 
 // Whether `id` is a plain pack id: 1 to 64 characters, [a-z][a-z0-9-]*.

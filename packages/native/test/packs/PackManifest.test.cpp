@@ -47,6 +47,22 @@ std::string manifestWith(const std::string& member, const std::string& value) {
 
 }  // namespace
 
+TEST_CASE("a half's path is printable ASCII and a name Windows can hold", "[packs-folders]") {
+    const auto parses = [](const std::string& halves) {
+        std::string why;
+        return parsePackManifest(manifestWith("halves", halves), &why, std::nullopt).has_value();
+    };
+    // views is a half of its own (docs/downloadable-packs-m2c-plan.md).
+    CHECK(parses(R"({"native":"rp-demo","views":"js/views.js"})"));
+    for (const char* bad : {"js/con.js", "js/CON", "js/aux.txt", "js/nul", "js/com1.js", "js/LPT9", "js/app.js.",
+                            "js/app.js ", "js/app\x01.js", "js/\xc3\xa9.js"}) {
+        INFO(bad);
+        CHECK_FALSE(parses(std::string(R"({"native":"rp-demo","app":")") + bad + "\"}"));
+    }
+    CHECK(parses(R"({"native":"rp-demo","app":"js/console.js"})"));  // a prefix of a reserved name is a name
+    CHECK(parses(R"({"native":"rp-demo","app":"js/com10.js"})"));
+}
+
 TEST_CASE("pack.json parses whole, and each malformed member or file is refused by name", "[packs-folders]") {
     std::string why;
     const auto good = parsePackManifest(manifestWith("", ""), &why, std::nullopt);

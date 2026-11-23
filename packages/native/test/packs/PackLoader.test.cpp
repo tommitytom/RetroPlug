@@ -191,9 +191,12 @@ TEST_CASE("a pack whose library is missing or exports no entry is refused", "[pa
     checkRefused(table, "packfixture-noentry", "'s library exports no rp_pack_entry");
     // An entry that throws is refused, the exception caught on this side of the C entry.
     checkRefused(table, "packfixture-throws", "'s rp_pack_entry threw");
-    // A TS half beside the native one: M1 loads none, and a pack never loads in part.
-    checkRefused(table, "packfixture-tshalf",
-                 "has a TS half, halves.app (js/app.js), which this RetroPlug does not load yet");
+    // A TS half loads now (docs/downloadable-packs-m2c-plan.md), but every file the manifest names must be there: the
+    // variant names js/app.js and ships none.
+    checkRefused(table, "packfixture-tshalf", "halves.app names js/app.js, which the pack does not have");
+    // The protocol and script halves are M2d's: a pack with one is refused whole.
+    checkRefused(table, "packfixture-protocol",
+                 "has a protocol half (js/protocol.js), which this RetroPlug does not load yet");
 }
 
 TEST_CASE("a pack that registers what it does not declare, or what is registered already, is refused",

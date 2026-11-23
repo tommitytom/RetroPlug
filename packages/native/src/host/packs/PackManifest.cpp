@@ -1,6 +1,7 @@
 #include "host/packs/PackManifest.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -255,16 +256,32 @@ bool isPackVersion(std::string_view v) {
 
 namespace {
 
-// A half's path: relative, inside the version folder, '/'-separated, no empty, "." or ".." segment.
+// A segment Windows cannot hold as written: a reserved device name (CON, PRN, AUX, NUL, COM1 to COM9, LPT1 to LPT9,
+// alone or before an extension, in any case), or one ending in a dot or a space, which Windows strips, so two
+// spellings would open one file.
+bool isWindowsReserved(std::string_view seg) {
+    if (seg.back() == '.' || seg.back() == ' ') return true;
+    std::string stem(seg.substr(0, seg.find('.')));
+    for (char& c : stem) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul") return true;
+    return stem.size() == 4 && (stem.compare(0, 3, "com") == 0 || stem.compare(0, 3, "lpt") == 0) && stem[3] >= '1' &&
+           stem[3] <= '9';
+}
+
+// A half's path: relative, inside the version folder, '/'-separated, printable ASCII (a path is opened as given on
+// every platform, and Windows reads a narrow path in its ANSI code page), no empty, "." or ".." segment, and no segment
+// Windows cannot hold.
 bool isInsidePath(std::string_view p) {
     if (p.empty() || p.front() == '/') return false;
+    for (const char c : p)
+        if (c < ' ' || c > '~') return false;
     if (p.find('\\') != std::string_view::npos || p.find(':') != std::string_view::npos) return false;
     std::size_t at = 0;
     while (at <= p.size()) {
         std::size_t end = p.find('/', at);
         if (end == std::string_view::npos) end = p.size();
         const std::string_view seg = p.substr(at, end - at);
-        if (seg.empty() || seg == "." || seg == "..") return false;
+        if (seg.empty() || seg == "." || seg == ".." || isWindowsReserved(seg)) return false;
         at = end + 1;
     }
     return true;
@@ -308,7 +325,8 @@ bool checkList(const std::optional<std::vector<std::string>>& list, const char* 
 }  // namespace
 
 const std::vector<std::string>& knownHalves() {
-    static const std::vector<std::string> kHalves = {"native", "app", "consoles", "protocol", "ui", "cli", "script"};
+    static const std::vector<std::string> kHalves = {"native", "app", "consoles", "protocol",
+                                                     "ui",     "views", "cli",    "script"};
     return kHalves;
 }
 

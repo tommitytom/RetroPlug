@@ -256,11 +256,18 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
         return refuseHere(id, pack + " " + manifest->version + " is installed in " + displayPath(candidate.dir) +
                                   ", which is not packs/" + id + "/" + manifest->version);
 
-    // Only the native half loads in M1, and a pack loads whole or not at all.
-    for (const auto& [kind, file] : manifest->halves)
-        if (kind != "native")
-            return refuseHere(id, pack + " has a TS half, halves." + kind + " (" + file +
+    // The TS halves load when a context imports them (host/js/PackModules, docs/downloadable-packs-m2c-plan.md), long
+    // after this load, so each file the manifest names is checked here, where a refusal still leaves nothing loaded.
+    // The protocol and script halves are M2d's, and a pack loads whole or not at all.
+    for (const auto& [kind, file] : manifest->halves) {
+        if (kind == "native") continue;
+        if (kind == "protocol" || kind == "script")
+            return refuseHere(id, pack + " has a " + kind + " half (" + file +
                                       "), which this RetroPlug does not load yet; a pack loads whole or not at all");
+        std::error_code ec;
+        if (!fs::is_regular_file(candidate.dir / fs::path(file), ec))
+            return refuseHere(id, pack + ": halves." + kind + " names " + file + ", which the pack does not have");
+    }
 
     for (const auto& p : packs_) {
         if (p->manifest.id != id) continue;

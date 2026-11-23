@@ -12,7 +12,8 @@
 #   packfixture-overdeclared  declares a third type in provides.nodeTypes that its library does not register
 #   packfixture-throws        a library whose entry throws (throws/: its own directory, for MSVC's /EHs)
 #   packfixture-pair          two packages from one library (FixtureSecond.cpp), the second taking the good pack's types
-#   packfixture-tshalf        a manifest with a TS half beside its native one, which M1 does not load
+#   packfixture-tshalf        a TS half naming a file the pack does not have
+#   packfixture-protocol      a protocol half, which M2c does not load (M2d's)
 #   packfixture-duplicate     registers rp.core.add, a built-in's type
 #   packfixture-clone         registers the good pack's two types under another package id
 #   packfixture-scriptclash   types in a script pack's namespace (test.clash), for a script reload to hold and drop
@@ -81,4 +82,7 @@ retroplug_pack_module(retroplug-packfixture-noplatform-pack
     NO_LIBRARY)
 retroplug_pack_module(retroplug-packfixture-tshalf-pack
     MANIFEST ${_rp_fixture_dir}/manifests/packfixture-tshalf.json
+    NO_LIBRARY)
+retroplug_pack_module(retroplug-packfixture-protocol-pack
+    MANIFEST ${_rp_fixture_dir}/manifests/packfixture-protocol.json
     NO_LIBRARY)

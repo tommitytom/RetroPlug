@@ -1,0 +1,23 @@
+{
+  "id": "packfixture-protocol",
+  "name": "Pack fixture (packfixture-protocol)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-protocol.tone",
+      "rp.packfixture-protocol.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-protocol",
+    "protocol": "js/protocol.js"
+  }
+}
