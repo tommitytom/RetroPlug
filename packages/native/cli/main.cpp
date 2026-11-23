@@ -42,8 +42,8 @@
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
-// The root CLI dispatcher, compiled into the binary (tjsc bytecode of cli/cli.ts, see
-// packages/native/CMakeLists.txt). It owns command routing + all help; this launcher just evals it.
+// The root CLI dispatcher, compiled into the binary (retroplug-modc bytecode of the cli set's `rp:cli`
+// (cli/cli.ts), see packages/native/CMakeLists.txt). It owns command routing + all help; this launcher just evals it.
 extern "C" {
 extern const std::uint8_t  rp_cli_bundle[];
 extern const std::uint32_t rp_cli_bundle_size;
@@ -302,9 +302,7 @@ int main(int argc, char** argv) try {
         const std::string code = slurp(argv[1]);
         rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
     } else {
-        // The shared modules import the SDK module by name and reading their bytecode resolves that import, so the
-        // SDK is registered first, then the dispatcher's contract modules, then the dispatcher itself.
-        registerSdkModule(ctx);
+        // The dispatcher's contract modules first: its imports resolve to them by name.
         const std::string why = rp::host::registerSharedModules(ctx, rp_cli_modules, rp_cli_modules_count);
         if (!why.empty()) {
             std::fprintf(stderr, "retroplug-cli: %s\n", why.c_str());
