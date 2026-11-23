@@ -1,0 +1,1 @@
+export default { half: "ui" };

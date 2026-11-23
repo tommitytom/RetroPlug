@@ -60,6 +60,18 @@ add_custom_command(
     COMMENT "Compiling the shared module loader's fixture"
     VERBATIM)
 
+# The pack loader's fixture (test/plugin/pack-modules-fixture): five development packs with JS halves alone, staged
+# with this build's API level so a level bump needs no edit there.
+set(_pm_src "${CMAKE_CURRENT_SOURCE_DIR}/test/plugin/pack-modules-fixture")
+set(_pm_out "${CMAKE_BINARY_DIR}/test/pack-modules-fixture")
+foreach(_pm pmgood pmforeign pminternal pmrelative pmthrows)
+    configure_file("${_pm_src}/${_pm}/pack.json.in" "${_pm_out}/${_pm}/1.0.0/pack.json" @ONLY)
+    file(GLOB _pm_js RELATIVE "${_pm_src}/${_pm}" CONFIGURE_DEPENDS "${_pm_src}/${_pm}/js/*.js")
+    foreach(_js IN LISTS _pm_js)
+        configure_file("${_pm_src}/${_pm}/${_js}" "${_pm_out}/${_pm}/1.0.0/${_js}" COPYONLY)
+    endforeach()
+endforeach()
+
 # Guards the host runtime: TjsHostRuntime::init's class-id counter sync (the plugin-editor blank-UI fix) and the shared
 # module sets' loader (host/js/SharedModules); it needs the real txiki host, which is the shell's own library, not the
 # backend: the binary links no engine at all, so it is an ordinary binary (a test of the host runtime, not of the
@@ -68,8 +80,10 @@ retroplug_add_test_binary(
     NAME     retroplug-classid-test
     SOURCES  test/plugin/ClassIdReserve.test.cpp
              test/plugin/SharedModules.test.cpp
+             test/plugin/PackModules.test.cpp
              ${_fx_c}
-    LIBS     retroplug-tjs-runtime)                     # TjsHostRuntime + ClassIdSpace.hpp (+ txiki, quickjs)
+    LIBS     retroplug-tjs-runtime retroplug-packs)     # TjsHostRuntime + ClassIdSpace.hpp (+ txiki, quickjs); PackTable for the pack loader's test
+target_compile_definitions(retroplug-classid-test PRIVATE RP_PACK_MODULES_FIXTURE="${_pm_out}")
 
 # Guards the engine's audio paths across systems: the NES split routings through a real Engine, a host sample-rate change
 # re-rating live cores, the offline teardown a staged-message payload rides, and the kit dithers. Links

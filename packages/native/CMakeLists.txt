@@ -63,9 +63,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/product-bundles.cmake)
 # are in TjsHostRuntime's interface).
 add_library(retroplug-tjs-runtime STATIC
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp
-    src/host/js/SharedModules.cpp)    # the shared module sets' loader (docs/downloadable-packs-m2b-plan.md)
+    src/host/js/SharedModules.cpp     # the shared module sets' loader (docs/downloadable-packs-m2b-plan.md)
+    src/host/js/PackModules.cpp)      # a pack's TS halves and their import guard (docs/downloadable-packs-m2c-plan.md)
 target_include_directories(retroplug-tjs-runtime PUBLIC ${DPFJS_PATH}/src ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(retroplug-tjs-runtime PUBLIC tjs)
+target_link_libraries(retroplug-tjs-runtime PUBLIC tjs PRIVATE retroplug-packs)
 set_target_properties(retroplug-tjs-runtime PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
