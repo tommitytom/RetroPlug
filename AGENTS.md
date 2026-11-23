@@ -48,7 +48,7 @@ topic, and a line here links to it. Keep it under 200 lines; a new rule cuts or 
   ([Build gotchas](spec/06-build-test.md#build-gotchas)).
 - **`retroplug-sdl` is not in releases until the standalone is release-ready** (`release.yml`'s packaging steps are
   allowlists; [spec/13](spec/13-subsystems.md#retroplug-sdl--the-sdl2-standalone)).
-- **Never commit derived artifacts**: the embedded bundle C arrays (`build/native/*bundle_data.c`).
+- **Never commit derived artifacts**: the embedded bundle and module-table C arrays (`build/native/*_data.c`).
 - **A commit that breaks packs bumps `RP_API_LEVEL`** (graph/rp_pack.h): the C ABI, `SystemBase` and the contract
   headers, the TS contract modules ([spec/02](spec/02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)).
 - **Config migrations**: every config root is versioned raw JSON and keeps only its latest schema. A breaking change

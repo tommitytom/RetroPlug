@@ -1872,3 +1872,38 @@ and what to check for each.
 `rp_fx_host_b`; the module names `rp:cp`, `rp:ui`, `rp:cli`, `rp:chunks/...`; the CMake names `_MODC_COMMAND`,
 `_MODC_DEP`, `RP_MODC_EXECUTABLE`, `retroplug-app-modules${_suffix}`, `RP_BUNDLE_<name>_MODULES_C`, `APP_MODULES_C`,
 `CLI_MODULES_C`; `buildSharedModules({ set, outDir, productDir, write })` with its `shared`, `hosts`, `closures`.
+
+## After the final review
+
+M2b was built as `250852a29..8def14772` (plus the final review's fixes). Where the task blocks above and the tree
+differ, the tree wins: `retroplug-modc` builds as C11 (QuickJS's header needs it under MSVC's C mode), refuses a
+duplicate module name and reports a failed write; `tools/arm-build.sh` builds and passes it; the React facades are
+served from memory by an esbuild plugin, their export list taken from React's production build; the CLI's dispatcher
+registers its set without the SDK module (no shared module imports `retroplug-cli`; session files alone register it);
+`tools/build-controlplane.js` is deleted.
+
+The final review proved the milestone's point on the real tables: every app-set module compiled with `retroplug-modc`
+and registered by the spike's harness, two pack sources evaluated afterwards (`pack:a/app.js`, `pack:b/app.js`) that
+import `react`, `react/jsx-runtime`, `@retroplug/core/definePackage` and `@retroplug/core/systemRoles` link, and both
+get the shell's instances. Its findings for M2c, beside design questions 1 to 5:
+
+9. **The registration mark is per context, not per set.** A second table in the same context (a pack's own set, a
+   bytecode cache) would be skipped; key the mark by the table's symbol or set name before M2c registers another.
+10. **The pack-import guard (question 1) must also refuse `rp:*` names** (`rp:cp`, `rp:ui` and the hashed chunks resolve
+    by bare name from the loaded-module table) **and run before txiki's import-map resolver**, which answers bare names
+    first and which `tjs.setImportMap` lets JS change, so a pack could otherwise remap a contract.
+11. **zod is not a contract, but `@retroplug/core/configFields` hands out zod schemas**, and every package that becomes
+    a pack imports `zod` itself, so each pack would carry its own copy beside the shell's. Nothing uses `instanceof` or
+    zod's global registry across that line today; decide whether `zod` becomes a host module of the set.
+12. **No development JSX runtime is served** (`react/jsx-dev-runtime` is not in the set): a pack is built with the
+    production JSX transform and `NODE_ENV=production`, matching the facade's export list.
+13. **A CLI session file never gets the cli set**: it registers only the SDK module, whose bundle inlines its own copies
+    of the contracts, so a pack's CLI half run from a session file would not link to the shared modules (question 4's
+    problem, on txiki rather than Node).
+14. **A pack source is evaluated with `use_realpath` off** (`TJS_EvalModuleContent` under a `pack:` name, which is not a
+    path), as the spike's harness does.
+15. **A module whose evaluation throws stays failed** in QuickJS: a contract that throws when the control plane
+    evaluates it first (question 5's lvgljs module-scope reads) is broken for the UI too.
+16. **Per instance, the app set is read at construct**: each plugin instance's context deserialises the whole set
+    (64 modules, about 1.1 MB of bytecode, about 3 ms), the UI's modules included, where the UI's bytecode used to be read
+    at the first editor open; nothing is evaluated early, and the binaries are 0.7 MB smaller.

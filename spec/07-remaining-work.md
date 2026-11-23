@@ -733,7 +733,8 @@ line.
 - **A web / Emscripten port**: design only ([modular-graph-design.md](../docs/modular-graph-design.md) section 11). The
   web host must register the app set's table (`rp_app_modules`) before it evaluates `rp_cp_bundle`, and its CMake must
   depend on `retroplug-app-modules-web` rather than the removed `retroplug-cp-bundle` / `-ui-bundle` targets
-  (`feature/web` still uses them).
+  (`feature/web` still uses them); `tools/web-build.sh` must pass `-DRP_MODC_EXECUTABLE` beside
+  `-DTJSC_EXECUTABLE`, since an Emscripten configure is a cross build and refuses to go on without it.
 - **`MemoryType` stays a closed wire enum, F2's item**, of nine regions
   ([MemoryType.hpp](../packages/system/native/src/system/MemoryType.hpp)): a tenth changes the wire, the debug RPCs and
   the TS mirror together, and it is not a build seam ([F2 design](../docs/modular-graph-phase-f2-design.md) section 10).
