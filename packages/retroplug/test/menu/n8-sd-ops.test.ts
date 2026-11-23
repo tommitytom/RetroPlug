@@ -14,7 +14,7 @@ import type { MenuItem } from "@retroplug/ui/menu";
 import { getN8CartJob, n8RestoreSram, projectCart, resetN8CartJob, setN8LinkClient } from "@retroplug/n8/ui";
 import { importHost } from "../../ui/host/uiHost";
 import { nesRom, gbRom } from "../systems/fixtures";
-import { ROM_PATTERNS } from "../../src/fileSelection";
+import { romPatterns } from "../../src/fileSelection";
 
 // The MenuContext App.tsx assembles from its hooks, minus React (mirrors leaves.test's ctxOf).
 function ctxOf(stores: AppStores): MenuContext {
@@ -124,8 +124,8 @@ test("N8 Pro (instance menu) shows the card rows when connected, and each browse
     be.queueBrowse("/roms/game.nes");
     findItem(rows, "n8-load-rom")!.onSelect!();
     await flush();
-    expect(be.fileBrowserCalls[be.fileBrowserCalls.length - 1].patterns).toEqual(ROM_PATTERNS);
-    expect(ROM_PATTERNS.includes("*.nes")).toBe(true);
+    expect(be.fileBrowserCalls[be.fileBrowserCalls.length - 1].patterns).toEqual(romPatterns());
+    expect(romPatterns().includes("*.nes")).toBe(true);
     const upload = be.jobRequests[be.jobRequests.length - 1];
     expect([upload.nodeId, upload.capability, upload.op, upload.name]).toEqual([
       cart.nodeId, "rp.system.rom/1", "upload", "game.nes",

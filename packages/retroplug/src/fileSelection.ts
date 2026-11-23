@@ -19,8 +19,16 @@ import { romExtensions } from "./consoles";
 import { classifyRom, type SystemsStore } from "./systemsStore";
 
 /** The file-dialog globs for a ROM: one per extension the registered consoles read, in product order. */
-export const ROM_PATTERNS: string[] = romExtensions().map((ext) => `*${ext}`);
-export const ROM_OR_SAV_PATTERNS = [...ROM_PATTERNS, ...SAV_PATTERNS];
+/** The file dialogs' ROM patterns: every registered console's extensions, read when a dialog opens, so a console a pack
+ *  registers is offered from then on. */
+export function romPatterns(): string[] {
+  return romExtensions().map((ext) => `*${ext}`);
+}
+
+/** The ROM patterns and the save patterns together. */
+export function romOrSavPatterns(): string[] {
+  return [...romPatterns(), ...SAV_PATTERNS];
+}
 
 /** What a picked file is: a ROM (any known format, by content), a battery save (`.sav`/`.srm`, by
  *  extension since it isn't a ROM), or something else. */
@@ -98,7 +106,7 @@ export class FileSelection {
    *  save") and swap system `id`'s ROM in place, carrying its live battery SRAM into the new cart. Stays in
    *  the current project. Distinct from browseReplace, which cold-boots the picked ROM with its own on-disk sav. */
   async browseSwap(id: number): Promise<SelectionOutcome> {
-    const path = await this.backend.openFileBrowser({ title: "Swap ROM (keep SRAM)", patterns: ROM_PATTERNS });
+    const path = await this.backend.openFileBrowser({ title: "Swap ROM (keep SRAM)", patterns: romPatterns() });
     if (path === null) return { kind: "cancelled" };
     if (classifyKind(this.backend, path) !== "rom") return { kind: "error", path };
     const newId = this.systems.swapRom(id, path);
@@ -108,7 +116,7 @@ export class FileSelection {
   // Open the ROM-or-sav browser and resolve the pick to a concrete ROM (+ paired sav), running the 2nd
   // ROM-only browser for an unpaired `.sav`. No store mutation — the shared front half of every op.
   private async pickRom(): Promise<Pick> {
-    const path = await this.backend.openFileBrowser({ title: "Open ROM or Save", patterns: ROM_OR_SAV_PATTERNS });
+    const path = await this.backend.openFileBrowser({ title: "Open ROM or Save", patterns: romOrSavPatterns() });
     if (path === null) return { kind: "cancelled" };
     if (classifyKind(this.backend, path) === "sav") return this.pairSav(path);
     if (classifyKind(this.backend, path) === "rom") return { kind: "rom", rom: path };
@@ -121,7 +129,7 @@ export class FileSelection {
   async pairDroppedSav(sav: string): Promise<string | null> {
     const sibling = this.systems.resolveSiblingRom(sav);
     if (sibling) return sibling;
-    const rom = await this.backend.openFileBrowser({ title: "Select the ROM for this save", patterns: ROM_PATTERNS });
+    const rom = await this.backend.openFileBrowser({ title: "Select the ROM for this save", patterns: romPatterns() });
     if (rom === null) return null;
     return classifyKind(this.backend, rom) === "rom" ? rom : null;
   }
@@ -131,7 +139,7 @@ export class FileSelection {
   private async pairSav(sav: string): Promise<Pick> {
     const sibling = this.systems.resolveSiblingRom(sav);
     if (sibling) return { kind: "rom", rom: sibling, explicitSav: sav };
-    const rom = await this.backend.openFileBrowser({ title: "Select the ROM for this save", patterns: ROM_PATTERNS });
+    const rom = await this.backend.openFileBrowser({ title: "Select the ROM for this save", patterns: romPatterns() });
     if (rom === null) return { kind: "cancelled" };
     if (classifyKind(this.backend, rom) !== "rom") return { kind: "error", path: rom };
     return { kind: "rom", rom, explicitSav: sav };

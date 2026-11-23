@@ -28,7 +28,7 @@ import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsSto
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath, SAV_PATTERNS } from "../../../src/savPaths";
 import { stem, dirname, basename, extension, joinPath, sanitizeName, shortenMiddle } from "../../../src/pathUtil";
-import { ROM_PATTERNS } from "../../../src/fileSelection";
+import { romPatterns } from "../../../src/fileSelection";
 import { filesPngHost } from "../../../src/hostGroups";
 import { createUiHost, type UiHost } from "../../host/uiHost";
 import { embeddedRomOf, embeddedRoms } from "../../../src/embeds";
@@ -608,7 +608,7 @@ function patchRomInPlace(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView)
 // Export... row.
 function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): void {
   const defaultName = `${stem(sys.romPath)}-patched${extension(sys.romPath)}`;
-  const opts = { title: "Export Patched ROM", patterns: ROM_PATTERNS, saving: true, defaultName };
+  const opts = { title: "Export Patched ROM", patterns: romPatterns(), saving: true, defaultName };
   browseThen(hostOf(ctx), opts, (path) => {
     const baked = bakeRom(spec, ctx, sys);
     if (baked) ctx.stores.backend.writeFileAtomic(path, baked.bytes);
@@ -927,7 +927,7 @@ function buildContext(ctx: MenuContext): MenuBuildContext {
   return {
     systems: ctx.systems,
     assetRom: (path) => assetRomBytes(ctx.stores.backend, path),
-    romPatterns: ROM_PATTERNS,
+    romPatterns: romPatterns(),
   };
 }
 

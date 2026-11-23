@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { setKeyboardGroup } from "lvgljs";
 
 import type { SystemInfo } from "@retroplug/core/host";
+import { useContributionsVersion } from "./stores/useContributions";
 import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent, useBindings } from "./stores/useStores";
 import { useSinkGroup } from "./lvgl/FocusProvider";
 import { Box, useNativeEvent } from "@retroplug/ui-react";
@@ -48,6 +49,9 @@ const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=
 
 export function App() {
   const stores = useStores();
+  // A commit to the registries (a pack's rows, builders, actions, views) re-renders the app: the menus are built from
+  // them on every render, and the action maps below are memoised over the registry's list.
+  useContributionsVersion();
   const systems = useSystems();
   const settings = useProjectSettings();
   const userConfig = useUserConfig();
@@ -129,10 +133,10 @@ export function App() {
   // profile changes. The profile is filled with the contributed actions' defaults first (design 5.6), so an id the
   // user has never edited reads its default; a `[]` the user wrote stays empty. The value is a LIST per key: one press
   // can carry the shell's action and a package's, and each runs.
-  const actionIds = contributedActionIds(); // a module constant of the generated registry: a stable dep
+  const actionIds = contributedActionIds(); // the registry's list: the same array until a commit adds actions, so a stable dep
   const actionBindings = useMemo(
     () => withActionDefaults(bindings, contributedActions().map((entry) => entry.action)),
-    [bindings],
+    [bindings, actionIds],
   );
   const keyToAction = useMemo(
     () => buildKeyToAction(actionBindings.keyboardActions, actionIds),

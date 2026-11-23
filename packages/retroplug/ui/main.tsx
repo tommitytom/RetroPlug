@@ -11,6 +11,9 @@ import { Render } from "lvgljs-ui";
 import { StoreProvider } from "./stores/StoreProvider";
 import { FocusProvider } from "./lvgl/FocusProvider";
 import { App } from "./App";
+import { commitByName } from "../src/contributions/registry";
+import "./contributions/menus";
+import "./contributions/views";
 import { native, pluginNamespace } from "./host/nativeHooks";
 import { gridContentSize, resolveZoom, SystemLayout } from "./screens/grid/layout";
 
@@ -48,5 +51,6 @@ function initialWindowSize(): { width: number; height: number } | null {
 }
 
 native.__rp_mountUI = mountUI;
+native.__rp_commitUiContributions = commitByName;
 native.__rp_unmountUI = unmountUI;
 native.__rp_initialWindowSize = initialWindowSize;

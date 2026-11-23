@@ -6,7 +6,7 @@ import type { LoadOutcome } from "../../src/projectStore";
 import type { MissingFile } from "../../src/projectMissing";
 import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
-import { ROM_PATTERNS } from "../../src/fileSelection";
+import { romPatterns } from "../../src/fileSelection";
 import { unsavedRows } from "./unsavedRows";
 import { button, infoRow, noticeTree, type MenuTree } from "@retroplug/ui/menu";
 
@@ -115,7 +115,7 @@ export function buildProjectModal(pending: PendingModal, stores: AppStores, h: P
   const items = pending.missing.map((m, i) =>
     button(`relink-${i}`, `Locate ${basename(m.path) || m.itemKind}...`, () =>
       void stores.backend
-        .openFileBrowser({ title: `Locate ${basename(m.path) || m.itemKind}`, patterns: m.itemKind === "rom" ? ROM_PATTERNS : SRAM_PATTERNS })
+        .openFileBrowser({ title: `Locate ${basename(m.path) || m.itemKind}`, patterns: m.itemKind === "rom" ? romPatterns() : SRAM_PATTERNS })
         .then((p) => {
           if (p) handleOutcome(stores.project.relink(m, p));
         }),

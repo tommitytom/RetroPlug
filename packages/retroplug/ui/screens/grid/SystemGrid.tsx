@@ -8,6 +8,7 @@
 // clamp it, so the cap keeps everything visible either way. Empty projects and the add/duplicate actions
 // are handled by the menu (App), not here.
 
+import { useContributionsVersion } from "../../stores/useContributions";
 import { useStores, useSystems, useProjectSettings, useUserConfig } from "../../stores/useStores";
 import { Box } from "@retroplug/ui-react";
 import { useWindowSize } from "../../lvgl/useWindowSize";
@@ -32,6 +33,7 @@ export function SystemGrid({
   onMenuClose?: () => void;
 }) {
   const stores = useStores();
+  const contributions = useContributionsVersion();
   const systems = useSystems();
   const settings = useProjectSettings();
   const userConfig = useUserConfig();
@@ -60,10 +62,14 @@ export function SystemGrid({
               const showMenu = sys.id === menuSystemId && menuTree != null;
               return (
                 <StableSlot key={`slot-${sys.id}`} testId={`tile-${index}`} width={tw} height={th}>
+                  {/* The tile is keyed on the registries' commit counter: a commit can add a tile view, whose slot must sit
+                      before the border and the badge, and lv_binding_js only appends (spec/03's framework gotchas), so the
+                      tile remounts with its slots in place. A commit is a launch or a pack, never a frame. */}
                   {showMenu ? (
                     <Menu width={tw} height={th} zoom={zoom} tree={menuTree!} onClose={onMenuClose ?? (() => {})} />
                   ) : (
                     <EmulatorTile
+                      key={`tile-${sys.id}-${contributions}`}
                       systemId={sys.id}
                       host={host}
                       focused={sys.focused}

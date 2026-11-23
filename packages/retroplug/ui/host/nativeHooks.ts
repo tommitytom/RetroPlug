@@ -9,6 +9,7 @@
 //
 // `native` is globalThis itself, not a snapshot - a hook bound (or a test fake installed) after import is seen.
 
+import type { NamedAddition } from "../../src/contributions/registry";
 import type { AppStores, StoreChannel } from "../../src/appStores";
 import type {
   AudioDescription, AudioDeviceChoice, AudioDeviceStatus, AudioDriverDescription, MidiDescription, MidiSelection,
@@ -19,6 +20,9 @@ export interface RpHooks {
   // --- installed BY the UI (main.tsx, and launchpadDevices.ts for the scan hook), called by the native host --
   __rp_mountUI?: () => void;
   __rp_unmountUI?: () => void;
+  /** Commit contributions into this UI bundle's own registries, by registry name (ui, views, roles, ...): what a test
+   *  and M2b's pack loader reach the UI's copy through (docs/downloadable-packs-m2a-plan.md). Throws a check's refusal. */
+  __rp_commitUiContributions?: (additions: readonly NamedAddition[]) => void;
   /** The window size to open at for the already-loaded project (before first map), or null for the default. */
   __rp_initialWindowSize?: () => { width: number; height: number } | null;
   /** Start a control-surface scan as Settings > MIDI's row does (launchpadDevices). The SDL's harness hook reads it, so a
