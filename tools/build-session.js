@@ -1,5 +1,5 @@
 // Bundle a CLI session (TypeScript) to a self-contained ES-module .js that the standalone
-// retroplug-cli binary evals on txiki. Mirrors build-controlplane.js. (The script nodes are a bundle
+// retroplug-cli binary evals on txiki. Mirrors build-ui.js's option set. (The script nodes are a bundle
 // every Engine has embedded, so a session carries none of its own.)
 // This is the ONLY Node step — it runs at author/build time; the resulting .js runs with no Node.
 //

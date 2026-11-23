@@ -157,15 +157,16 @@ The gamepad-axis bus dispatches no app action, and the generator refuses a bindi
 ### Downloadable packs
 
 Part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md) is built in five
-milestones, and what is left of it is M2b (loading a pack's TS halves, the protocol half and the contribution kinds
-among them, with the module-linking spike first: [the M2a plan](../docs/downloadable-packs-m2a-plan.md)'s design
-questions), M3 (placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands, Settings > Packs, and
+milestones. M2b (the shared contract modules: the control plane, the UI and the CLI's dispatcher boot from one
+code-split module set per context) is done. What is left of it is M2c (loading a pack's TS halves, the protocol
+half and the contribution kinds among them, the pack-import guard: [the M2b plan](../docs/downloadable-packs-m2b-plan.md)'s
+design questions), M3 (placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands, Settings > Packs, and
 a host calling `loadLaunchPacks` at launch) and M5 (Mesen and BlipToaster loaded as packs with their suites unchanged,
 and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on Windows (the
 plan's design question 1). After part 1 the road is the design's parts 2 to 6, and the authoring loop, downloads and
 unloading a script pack (the `Engine` has `loadScriptPack` and no unload; native code is never unloaded) are what
 downloadable packs still need (the C1 design's section 8). With them come third-party controller apps: `controllerApps`
-registers from the product's package list (the kinds are M2b's), so an app from outside the tree waits for this road;
+registers from the product's package list (the kinds are M2c's), so an app from outside the tree waits for this road;
 menu rows a pack contributes go through the live UI registry. And a provider cannot be downloaded either, since it is
 reached only through the generated static table, and which of a pack's facet methods a product mounts is not yet scoped.
 Whether a downloaded pack's bytecode is stripped is the format's to say: a pack compiled from source keeps its debug
@@ -730,7 +731,9 @@ line.
   [Downloadable packs](#downloadable-packs) would carry.
 - **Savestate slots and a sav inspector**: never built; the state-snapshot machinery and the pure-TS sav codec exist, a
   multi-slot feature and a React sav view do not.
-- **A web / Emscripten port**: design only ([modular-graph-design.md](../docs/modular-graph-design.md) section 11).
+- **A web / Emscripten port**: design only ([modular-graph-design.md](../docs/modular-graph-design.md) section 11). The
+  web host must register the app set's table (`rp_app_modules`) before it evaluates `rp_cp_bundle`, and its CMake must
+  depend on `retroplug-app-modules-web` rather than the removed `retroplug-cp-bundle` / `-ui-bundle` targets (`feature/web` still uses them).
 - **`MemoryType` stays a closed wire enum, F2's item**, of nine regions
   ([MemoryType.hpp](../packages/system/native/src/system/MemoryType.hpp)): a tenth changes the wire, the debug RPCs and
   the TS mirror together, and it is not a build seam ([F2 design](../docs/modular-graph-phase-f2-design.md) section 10).

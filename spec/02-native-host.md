@@ -76,7 +76,8 @@ All three hosts compose the services, mount their facets on an rpcpp server over
 
 - **DPF plugin**: [`PluginDSP::bootControlPlane`](../packages/native/plugin/PluginDSP.cpp)
   brings up a plugin-lifetime txiki runtime, binds `__rpcSend`, sets the
-  sample rate **before** the bundle composes (systems bake SR at construct), evals the embedded
+  sample rate **before** the bundle composes (systems bake SR at construct), registers the app's shared module
+  table (`registerSharedModules`, [06](06-build-test.md#the-shared-module-sets)), evals the embedded
   control-plane bytecode, then pumps until `__rp_ready`. The editor
   ([`PluginUI.cpp`](../packages/native/plugin/PluginUI.cpp))
   attaches its LVGL display to that *same* context via the in-process handoff
@@ -1556,8 +1557,9 @@ names (`system`, `host-io`, `graph-runtime`, `core`, `dsp`, `launchpad`); the co
 the product does: `retroplug_product` links every package the product lists. The
 test host `retroplug-host` is that lib + `main.cpp`; the DPF plugin is
 [`dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)`](../packages/native/CMakeLists.txt)
-(AU is macOS-only). The control-plane and UI bytecode bundles are built by
-`tools/build-controlplane.js` + `tools/build-ui.js` piped through `tjsc`, and the script-node bundle
+(AU is macOS-only). The control-plane and UI bytecode (and the app's shared module table both link to) are built by
+`tools/build-shared-modules.mjs` through `retroplug-modc` ([06](06-build-test.md#the-shared-module-sets)), and the
+script-node bundle
 by `tools/build-session.js` (`retroplug-script-bundle`); all are **derived, never committed**.
 [06-build-test.md](06-build-test.md) is the full build/verify story.
 

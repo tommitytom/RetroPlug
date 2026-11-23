@@ -1,3 +1,6 @@
+// The UI's esbuild option set (uiBuildOptions), reused by tools/build-shared-modules.mjs, which builds the control plane
+// and the UI as the app's shared module set; CMake no longer runs this file as a script. The tests' bundleInputs
+// (bundle-views.mjs) and the CLI form below (node tools/build-ui.js OUT.js) still use it.
 const path = require("path");
 const fs = require("fs");
 const {

@@ -1,27 +1,28 @@
 #!/usr/bin/env node
-// The driver behind test/script/bundle-ui-split.test.ts: bundles each surface's entry the way the build does (through
-// tools/build-session.js and tools/build-ui.js, in memory) and prints one JSON line - per bundle, the absolute paths of
-// the modules that went in. The split is then a fact about the metafile rather than a claim about the imports: the
+// The driver behind test/script/bundle-ui-split.test.ts: bundles each surface's entry the way the build does and prints
+// one JSON line - per bundle, the absolute paths of the modules that went in. The control plane, the UI and the CLI
+// dispatcher are the hosts of the shared module sets (tools/build-shared-modules.mjs), read from the closures that
+// build reports; the other surfaces are not shared sets and go through tools/build-session.js, in memory. The split is then a fact about the metafile rather than a claim about the imports: the
 // control plane, the render worker, the script nodes, the SDK, the CLI dispatcher and the planner carry no UI code, and
 // the UI bundle carries no CLI one.
 //
 // The build is Node's (esbuild is not a txiki module), so the test runs this in a node child, as
 // bundle-protocol.test.ts does with its own driver.
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const require = createRequire(import.meta.url);
 const { bundleInputs } = require("../../../../tools/build-session.js");
-const { bundleInputs: uiBundleInputs } = require("../../../../tools/build-ui.js");
+const { buildSharedModules } = await import("../../../../tools/build-shared-modules.mjs");
 
 // The entries, and the format the build gives each: the render worker and the script nodes are iifes (a bare QuickJS
-// runtime evals them). The script-node bundle is every Engine's, so it is a non-UI surface like the rest.
+// runtime evals them). The script-node bundle is every Engine's, so it is a non-UI surface like the rest. The control
+// plane, the UI and the dispatcher are not here: they come from the shared sets' closures.
 const BUNDLES = [
-    ["control-plane", "src/pluginControlPlane.ts", "esm"],
     ["render-worker", "src/render/worker.ts", "iife"],
     ["script-nodes", "src/generated/scriptNodes.ts", "iife"],
     ["cli-sdk", "cli/sdk.ts", "esm"],
-    ["cli-dispatcher", "cli/cli.ts", "esm"],
     ["planner", "src/graph/protocolNodes.ts", "esm"],
 ];
 
@@ -62,8 +63,15 @@ try {
         const built = await bundleInputs(entry, format, productDir);
         out[name] = built.inputs.map((input) => resolve(process.cwd(), input));
     }
-    // The UI bundle's own inputs are relative to the repository root (its absWorkingDir).
-    out.ui = (await uiBundleInputs(resolve(process.cwd(), "ui/main.tsx"), undefined, productDir)).inputs;
+    // The shared sets' closures are absolute paths, as the entries above are made absolute with process.cwd().
+    const unused = join(tmpdir(), "rp-split-unused");
+    const app = await buildSharedModules({ set: "app", outDir: unused, productDir, write: false });
+    out["control-plane"] = app.closures["rp:cp"];
+    out.ui = app.closures["rp:ui"];
+    if (!productName) {
+        const cli = await buildSharedModules({ set: "cli", outDir: unused, write: false });
+        out["cli-dispatcher"] = cli.closures["rp:cli"];
+    }
 } finally {
     // A product's tree is this run's alone; a leaked temp directory per case is what the suite had before.
     if (work) (await import("node:fs")).rmSync(work, { recursive: true, force: true });
