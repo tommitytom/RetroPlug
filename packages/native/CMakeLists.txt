@@ -36,6 +36,14 @@ endif()
 # package finds its own, for r8brain, and the N8 pack its own, for N8Link's serial thread.)
 find_package(Threads REQUIRED)
 
+# --- retroplug-modc: the module compiler the shared module sets are built with (docs/downloadable-packs-m2b-plan.md).
+# A build tool, like tjsc: it links only QuickJS, and every set's target depends on it. Defined before
+# cmake/product-bundles.cmake, whose `if(TARGET ${_MODC_DEP})` edges are only added to a target that already exists.
+add_executable(retroplug-modc EXCLUDE_FROM_ALL modc/modc.c)
+target_link_libraries(retroplug-modc PRIVATE qjs)
+target_include_directories(retroplug-modc PRIVATE ${RP_QUICKJS_INCLUDE})
+set_target_properties(retroplug-modc PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 # A product's embedded bundles (the control plane, the UI, the script nodes and the render worker) are
 # cmake/product-bundles.cmake's, declared there before the first product below: the script nodes and the render worker
 # are target sources of each product now (the backend declares their arrays extern), so a product's script host loads

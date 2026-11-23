@@ -298,6 +298,21 @@ else()
     set(_TJSC_DEP tjsc)
 endif()
 
+# Cross-compile knob for retroplug-modc, the module compiler the shared module sets are built with
+# (docs/downloadable-packs-m2b-plan.md): a host build of it, as TJSC_EXECUTABLE is a host build of tjsc.
+set(RP_MODC_EXECUTABLE "" CACHE FILEPATH
+    "Path to a host-built retroplug-modc. Leave empty to use the in-tree target.")
+if(CMAKE_CROSSCOMPILING AND NOT RP_MODC_EXECUTABLE)
+    message(FATAL_ERROR "Cross-compiling: set -DRP_MODC_EXECUTABLE=/path/to/host-retroplug-modc")
+endif()
+if(RP_MODC_EXECUTABLE)
+    set(_MODC_COMMAND "${RP_MODC_EXECUTABLE}")
+    set(_MODC_DEP "${RP_MODC_EXECUTABLE}")
+else()
+    set(_MODC_COMMAND "$<TARGET_FILE:retroplug-modc>")
+    set(_MODC_DEP retroplug-modc)
+endif()
+
 # --- Catch2: the C++ unit-test framework for the on-demand plugin test binaries
 # (retroplug-plugin-test / retroplug-classid-test, built + run by `pnpm test:plugin`).
 # From the deps/catch2 submodule; EXCLUDE_FROM_ALL so the library only compiles when a

@@ -71,7 +71,9 @@ if(MSVC)
         retroplug-mqjs-host retroplug-mqjs-host-device retroplug-mqjs-run
         # The pack folder model and loader (src/host/packs), its test and the fixture pack's static library; the pack
         # modules themselves are added below, as cmake/packs.cmake records them.
-        retroplug-packs retroplug-packs-test retroplug-packfixture-nodes)
+        retroplug-packs retroplug-packs-test retroplug-packfixture-nodes
+        # The module compiler, a build tool: its Windows half (fopen_s) is only ever seen by that compiler.
+        retroplug-modc)
     # And every pack module (cmake/packs.cmake's retroplug_pack_module): the fixture's variants and a package's pack.
     get_property(_rp_pack_modules GLOBAL PROPERTY RP_PACK_TARGETS)
     list(APPEND _rp_werror_targets ${_rp_pack_modules})
