@@ -23,7 +23,7 @@ import type { SplitMode } from "./render";
 import { parseUserConfigResult, serializeUserConfig, USER_CONFIG_SCHEMA } from "./userConfigSerialization";
 import { warnStampedNewer } from "./migrate";
 import {
-  assertConfigSectionKey, configSectionDefaults, configSectionEntryOf, defaultConfigSections, putConfigSection,
+  adoptConfigSection, assertConfigSectionKey, configSectionDefaults, configSectionEntryOf, defaultConfigSections, putConfigSection,
   readableConfigSection, type ConfigSectionEntry,
 } from "./configSections";
 import { readSectionVersion } from "./projectConfig";
@@ -48,8 +48,15 @@ export class UserConfigStore {
   private raw: Record<string, unknown>;
   /** The sections this session has set: the only blocks written from their parsed value. */
   private written = new Set<string>();
-  /** The product's config sections, or a test's: what `section` and `setSection` consult. */
-  private readonly configSections: readonly ConfigSectionEntry[];
+  /** A test's fixed config sections; undefined is the registry's, adopted as it grows. */
+  private readonly fixedSections?: readonly ConfigSectionEntry[];
+  /** How many registered config sections `sections` was read with: the rest are what a commit added since. */
+  private sectionsTaken = 0;
+
+  /** The config sections this store parses, reads and writes: a test's, or the registry's as it stands. */
+  private get configSections(): readonly ConfigSectionEntry[] {
+    return this.fixedSections ?? configSectionEntries();
+  }
   /** Section keys whose stamped-newer refusal this session already warned about: one warning per key, not one per
    *  write attempt. */
   private refusedSections = new Set<string>();
@@ -71,11 +78,35 @@ export class UserConfigStore {
   constructor(
     private readonly backend: HostBackend,
     private readonly onChange: () => void = () => {},
-    configSections: readonly ConfigSectionEntry[] = configSectionEntries(),
+    configSections?: readonly ConfigSectionEntry[],
   ) {
-    this.configSections = configSections;
-    this.sections = defaultConfigSections(configSections);
+    this.fixedSections = configSections;
+    this.sections = defaultConfigSections(this.configSections);
+    this.sectionsTaken = this.configSections.length;
     this.raw = {};
+  }
+
+  /** Adopt the config sections committed since this store last looked (docs/downloadable-packs-m2a-plan.md): the block
+   *  the file carried is parsed through its new contributor; one it never carried stays absent. True when anything was
+   *  adopted. A store over a test's fixed sections adopts nothing. */
+  private adoptPending(): boolean {
+    if (this.fixedSections) return false;
+    const entries = configSectionEntries();
+    if (this.sectionsTaken >= entries.length) return false;
+    const sections = { ...this.sections };
+    for (; this.sectionsTaken < entries.length; this.sectionsTaken++) {
+      adoptConfigSection(sections, entries[this.sectionsTaken]);
+    }
+    this.sections = sections;
+    return true;
+  }
+
+  /** Adopt what was committed since this store last looked, and tell the observer: what a pack's loader calls after its
+   *  commit (M2b); a read adopts too, silently. True when anything was adopted. */
+  adoptContributions(): boolean {
+    if (!this.adoptPending()) return false;
+    this.onChange();
+    return true;
   }
 
   /** Read config.json into memory. A parsed value replaces the current config; a missing
@@ -124,6 +155,7 @@ export class UserConfigStore {
    *  callers read the file shape through here, so a package's block and the shell's fields cannot disagree about what
    *  is on disk. */
   config(): UserConfig & Readonly<Record<string, unknown>> {
+    this.adoptPending();
     return { ...this.current, ...this.sections };
   }
 
@@ -131,6 +163,7 @@ export class UserConfigStore {
    *  that is not a section - one of the shell's own keys, or `__proto__` - is refused, not answered with a shell field;
    *  a block stamped newer than its contributor reads comes back as the contributor's defaults. */
   section<T = Record<string, unknown>>(key: string): T {
+    this.adoptPending();
     assertConfigSectionKey(key);
     return readableConfigSection<T>(this.sections, key, this.configSections);
   }
@@ -309,6 +342,7 @@ export class UserConfigStore {
 
   /** The config as the store holds it, with the file's raw blocks and the keys this session set. */
   private model(): ConfigModel {
+    this.adoptPending();
     return { core: this.current, sections: this.sections, raw: this.raw, written: [...this.written] };
   }
 
@@ -340,6 +374,7 @@ export class UserConfigStore {
   private adopt(model: ConfigModel): void {
     this.current = model.core;
     this.sections = { ...model.sections };
+    this.sectionsTaken = this.configSections.length;
     this.raw = { ...(model.raw ?? {}) };
     this.written = new Set(model.written ?? []);
   }

@@ -283,16 +283,34 @@ function parseSections(raw: unknown, contributors: readonly SectionEntry[]): Rec
   return sections;
 }
 
+/** A section registered after a project's settings were read (a pack's, docs/downloadable-packs-m2a-plan.md): its block
+ *  parsed through the new contributor from what the project kept verbatim, or the contributor's defaults when the
+ *  project never carried one, as parseConfig fills a contributor's absent key. Mutates `sections`. */
+export function adoptProjectSection(sections: Record<string, unknown>, entry: SectionEntry): void {
+  const key = entry.section.key;
+  const value = Object.prototype.hasOwnProperty.call(sections, key)
+    ? parseSectionValue(key, sections[key], [entry])
+    : sectionDefaults(entry);
+  putSection(sections, key, value);
+}
+
 /** A section by key as the .rplg writes it: its contributor's stamping, or the raw value unchanged. */
 function serializeSection(key: string, value: unknown): unknown {
   const contributor = projectSectionOf(key);
   return contributor ? serializeProjectSection(contributor, value) : value;
 }
 
-export const DEFAULT_SETTINGS: ProjectSettings = {
-  ...(projectSettingsSchema.parse({}) as Omit<ProjectSettings, "sections">),
-  sections: defaultSections(),
-};
+/** The settings a new project starts with: the shell's defaults and every section registered now, its defaults. */
+export function defaultSettings(): ProjectSettings {
+  return {
+    ...(projectSettingsSchema.parse({}) as Omit<ProjectSettings, "sections">),
+    sections: defaultSections(),
+  };
+}
+
+/** The built-in product's default settings, read once at load: what tests compare a project with. A store starts a
+ *  project from defaultSettings(), which reads the sections registered at that moment. */
+export const DEFAULT_SETTINGS: ProjectSettings = defaultSettings();
 
 // A role instance: kind + an opaque config record (the record is intentionally open;
 // the role's own RoleType schema validates the config's fields).

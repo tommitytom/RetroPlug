@@ -28,7 +28,8 @@ import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
   type ProjectConfig,
   type ProjectSettings,
-  DEFAULT_SETTINGS,
+  defaultSettings,
+  adoptProjectSection,
   projectSectionOf,
   assertSectionKey,
   K_PROJECT,
@@ -144,7 +145,7 @@ const SETTING_VALUES = {
 
 export class ProjectStore {
   readonly systems: SystemsStore;
-  private projectSettings: ProjectSettings = { ...DEFAULT_SETTINGS };
+  private projectSettings: ProjectSettings = defaultSettings();
   private path = "";
   private projectName = ""; // the USER-set name (Project > Name); blank unless typed, persisted in the .rplg
   private dirty = false;
@@ -156,9 +157,22 @@ export class ProjectStore {
   private recentPending = false; // the open project's Recent row is owed, once its cart can say what it holds (see syncRecent)
   /** One instance per contributed service FACTORY, for this store's whole life: a service's state is its store's, and a
    *  plugin host's two instances share nothing. A factory's key is its model's and its section's (`controller`). */
-  private readonly services: readonly { pkg: string; key: string; service: ProjectService }[];
-  /** The product's sections, or a test's: what parseConfig and the readers below consult. */
-  private readonly sections: readonly SectionEntry[];
+  private readonly services: { pkg: string; key: string; service: ProjectService }[] = [];
+  /** A test's fixed sections and services; undefined is the registries', adopted as they grow. */
+  private readonly fixedSections?: readonly SectionEntry[];
+  private readonly fixedServices?: readonly { pkg: string; service: ProjectServiceFactory }[];
+  /** How many registered sections the current settings were read with, and how many service factories are built: the
+   *  registries only grow, so the rest are what a commit added since (adoptPending). */
+  private sectionsTaken = 0;
+  private servicesTaken = 0;
+  /** How many registered sections each pending parse was read with, so a load adopts what arrived between its parse
+   *  and its commit. */
+  private readonly parsedWith = new WeakMap<ProjectConfig, number>();
+
+  /** The sections parseConfig and the readers consult: a test's, or the registry's as it stands. */
+  private get sections(): readonly SectionEntry[] {
+    return this.fixedSections ?? projectSectionEntries();
+  }
   private systemsObservers: Array<() => void> = [];
   private onChangeCb: () => void = () => {};
   private holdGraph = false; // a load's adopts: the graph is published once they are all built
@@ -177,7 +191,9 @@ export class ProjectStore {
     registry?: RoleRegistry,
     contributions: ProjectContributions = {},
   ) {
-    this.sections = contributions.sections ?? projectSectionEntries();
+    this.fixedSections = contributions.sections;
+    this.fixedServices = contributions.services;
+    this.sectionsTaken = this.sections.length;
     this.graph = new EngineGraph(backend);
     // Any user mutation of the systems list marks the project dirty and tells the structure's observers; the systems
     // store publishes the graph itself where the edit changes it.
@@ -193,11 +209,56 @@ export class ProjectStore {
     this.systems.setOnLiveParam((systems) => this.graph.systemsMovedLive(systems));
     // Built once, here: a service's poll and model read the systems and the backend, never a file, so nothing
     // about them is per-project the way the settings are. `newProject` leaves them standing, as it leaves their state.
-    this.services = (contributions.services ?? projectServiceEntries()).map(({ pkg, service: factory }) => ({
-      pkg,
-      key: factory.key,
-      service: factory.create(),
-    }));
+    for (const { pkg, service: factory } of this.fixedServices ?? projectServiceEntries()) {
+      this.services.push({ pkg, key: factory.key, service: factory.create() });
+    }
+    this.servicesTaken = this.services.length;
+  }
+
+  /** Adopt the sections and services committed since this store last looked (docs/downloadable-packs-m2a-plan.md): a
+   *  section's block parsed from what the project kept verbatim, or defaulted; a service built. True when anything was
+   *  adopted. A store over a test's fixed contributions adopts nothing. */
+  private adoptPending(): boolean {
+    let adopted = false;
+    if (!this.fixedSections) {
+      const entries = projectSectionEntries();
+      if (this.sectionsTaken < entries.length) {
+        const sections = { ...this.projectSettings.sections };
+        for (; this.sectionsTaken < entries.length; this.sectionsTaken++) {
+          adoptProjectSection(sections, entries[this.sectionsTaken]);
+        }
+        this.projectSettings = { ...this.projectSettings, sections };
+        adopted = true;
+      }
+    }
+    if (!this.fixedServices) {
+      const factories = projectServiceEntries();
+      for (; this.servicesTaken < factories.length; this.servicesTaken++) {
+        const { pkg, service: factory } = factories[this.servicesTaken];
+        this.services.push({ pkg, key: factory.key, service: factory.create() });
+        adopted = true;
+      }
+    }
+    return adopted;
+  }
+
+  /** Adopt what was committed since this store last looked, then publish the graph and tell the observers: a new
+   *  service's model is placed and a new section is seen at once. What a pack's loader calls after its commit (M2b); a
+   *  read adopts too, without the publish. True when anything was adopted. */
+  adoptContributions(): boolean {
+    if (!this.adoptPending()) return false;
+    this.publishGraph(false);
+    this.notifySystemsChange();
+    return true;
+  }
+
+  /** Parse a project's JSON with the sections registered now, remembering how many, so a section registered between
+   *  this parse and the load's commit is adopted from the block the parse kept verbatim. */
+  private parse(json: string): ProjectConfig {
+    const sections = this.sections;
+    const cfg = parseConfig(json, sections);
+    this.parsedWith.set(cfg, sections.length);
+    return cfg;
   }
 
   // Publish the engine's graph for the systems, the audio and MIDI routing and the controller as they stand
@@ -223,6 +284,7 @@ export class ProjectStore {
    *  A service with no model of its own contributes none, so a product whose packages place nothing publishes an empty
    *  record and no node of theirs appears. */
   private graphModels(): Record<string, unknown> {
+    this.adoptPending();
     const models: Record<string, unknown> = {};
     for (const { pkg, key, service } of this.services) {
       if (!service.graphModel) continue;
@@ -258,6 +320,7 @@ export class ProjectStore {
    *  editor-driven). True = something the graph reads moved, so the graph is re-published and the observers told.
    *  Deliberately does NOT mark the project dirty: what a service notices lives in the hardware, not the .rplg. */
   pollServices(): boolean {
+    this.adoptPending();
     let moved = false;
     for (const { pkg, key, service } of this.services) {
       if (!service.poll) continue;
@@ -276,6 +339,7 @@ export class ProjectStore {
   /** What a service published (the controller cart's polled SYNC and its start anchor), or undefined for no such
    *  service - what `host.project.serviceState` answers a UI. */
   serviceState<T = unknown>(key: string): T | undefined {
+    this.adoptPending();
     const entry = this.services.find((candidate) => candidate.key === key);
     if (!entry?.service.state) return undefined;
     try {
@@ -290,6 +354,7 @@ export class ProjectStore {
    *  A key that is not a section - one of the shell's own settings, or `__proto__` - is refused, not answered
    *  undefined. */
   section<T = unknown>(key: string): T {
+    this.adoptPending();
     assertSectionKey(key);
     return readableProjectSection<T>(this.projectSettings, key, this.sections);
   }
@@ -301,6 +366,7 @@ export class ProjectStore {
    *  one warning naming the key and both versions: this build must not rewrite what it cannot read. A patch that
    *  changes nothing is not an edit: it neither dirties, nor publishes, nor notifies. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): void {
+    this.adoptPending();
     assertSectionKey(key);
     // Writing a block no package of this product contributes would create a key E5 then keeps in every save forever,
     // and a misspelt key would look like it worked: reading one is still allowed (a newer build's block), writing one
@@ -379,6 +445,7 @@ export class ProjectStore {
   }
 
   settings(): ProjectSettings {
+    this.adoptPending();
     return { ...this.projectSettings, sections: { ...this.projectSettings.sections } };
   }
   currentPath(): string {
@@ -632,7 +699,8 @@ export class ProjectStore {
   newProject(): void {
     this.projectRevision++;
     this.systems.clear();
-    this.projectSettings = { ...DEFAULT_SETTINGS, sections: defaultSections(this.sections) };
+    this.projectSettings = { ...defaultSettings(), sections: defaultSections(this.sections) };
+    this.sectionsTaken = this.sections.length;
     this.publishRouting(); // place nothing, at the default routing
     this.path = "";
     this.projectName = "";
@@ -656,6 +724,7 @@ export class ProjectStore {
   /** Save a thin `.rplg` (raw JSON, paths rebased relative to its folder). Records it
    *  in recents + as the current project, and marks clean. */
   save(path: string): boolean {
+    this.adoptPending();
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName); // blank name → omitted
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     if (!this.backend.writeFileAtomic(path, enc.encode(json))) return false;
@@ -710,6 +779,7 @@ export class ProjectStore {
    *  rebases asset paths relative to the file's directory, the DPF state chunk leaves them absolute so
    *  `loadBytes` round-trips with no rebase. Everything else was duplicated between them verbatim. */
   private buildArchive(baseDir: string): Uint8Array | null {
+    this.adoptPending();
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
     const json = serializeConfig(cfg, baseDir, (p) => this.backend.canonicalize(p));
     const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
@@ -735,7 +805,7 @@ export class ProjectStore {
     if (!entries) return { kind: "error" };
     const { config, blobs } = partitionEntries(entries);
     if (!config) return { kind: "error" }; // no project.json → not a RetroPlug archive
-    return this.beginLoad(parseConfig(dec.decode(config), this.sections), "", blobs, baseDir);
+    return this.beginLoad(this.parse(dec.decode(config)), "", blobs, baseDir);
   }
 
   /** Load a project — a thin `.rplg` (raw JSON) or an export `.rplg.zip` (PKZIP). Routing is by
@@ -777,7 +847,7 @@ export class ProjectStore {
       console.error(`.rplg is not pure JSON (a zip? zip projects must use .rplg.zip): ${path}`);
       return { kind: "error" };
     }
-    return this.beginLoad(parseConfig(text, this.sections), path, new Map(), dirname(path));
+    return this.beginLoad(this.parse(text), path, new Map(), dirname(path));
   }
 
   // Export `.rplg.zip`: PKZIP of project.json + per-system blobs that seed each emulator.
@@ -788,7 +858,7 @@ export class ProjectStore {
     if (!entries) return { kind: "error" };
     const { config, blobs } = partitionEntries(entries);
     if (!config) return { kind: "error" }; // no project.json → not a RetroPlug archive
-    return this.beginLoad(parseConfig(dec.decode(config), this.sections), path, blobs, dirname(path));
+    return this.beginLoad(this.parse(dec.decode(config)), path, blobs, dirname(path));
   }
 
   // Shared load tail: refuse-newer, absolutize, blob-aware missing scan, then pend for
@@ -850,7 +920,8 @@ export class ProjectStore {
     } finally {
       this.holdGraph = false;
     }
-    this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
+    this.projectSettings = { ...defaultSettings(), ...cfg.settings };
+    this.sectionsTaken = this.parsedWith.get(cfg) ?? this.sections.length;
     try {
       this.placeLoadedSystems(); // place the loaded systems, with the loaded project's routing
       this.systems.writeHeldBatteries(); // a working-song archive's battery, over the restored savestate's own

@@ -178,6 +178,22 @@ export function parseConfigSections(
   return sections;
 }
 
+/** A config section registered after the file was read (a pack's, docs/downloadable-packs-m2a-plan.md): the block the
+ *  file carried, kept verbatim until now, parsed through its contributor. A key the file never carried stays absent, as
+ *  parseConfigSections leaves it: a reader gets the defaults and the file is not stamped with a block nobody set. */
+export function adoptConfigSection(sections: Record<string, unknown>, entry: ConfigSectionEntry): void {
+  const key = entry.section.key;
+  if (!Object.prototype.hasOwnProperty.call(sections, key)) return;
+  let parsed: unknown;
+  try {
+    parsed = parseConfigSection(entry.section, sections[key]);
+  } catch (e) {
+    warnSectionOnce(entry, "parsing its saved block", e);
+    parsed = configSectionDefaults(entry);
+  }
+  putConfigSection(sections, key, parsed);
+}
+
 /** A section by key as config.json writes it: its contributor's stamping, or the raw value unchanged. */
 export function serializeConfigSectionValue(
   key: string,
