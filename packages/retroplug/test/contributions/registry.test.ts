@@ -89,6 +89,16 @@ test("a refused commit changes no registry, bumps no counter and notifies no one
 });
 
 test("a check on a registry the commit did not touch still runs", () => {
+  const noDurian = new Registry<string>("test.noDurian", (_entries, view) => {
+    if (view(fruit).some((entry) => entry.item === "durian")) throw new Error("a fruit list may not carry durian");
+  });
+  commitContributions([{ registry: noDurian, pkg: "zeta", items: [] }]);
+  expect(() => commitContributions([{ registry: fruit, pkg: "zeta", items: ["durian"] }])).toThrow(
+    "a fruit list may not carry durian",
+  );
+});
+
+test("a check sees its own registry's committed and staged entries whole", () => {
   // A seeded registry's rule holds whichever side a commit touched: here the fruit check refuses a duplicate even
   // though the commit's other addition is a basket.
   expect(() =>

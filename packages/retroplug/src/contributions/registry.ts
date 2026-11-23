@@ -22,7 +22,8 @@ export interface Contribution<T> {
  *  yet seeded in this bundle. */
 export type RegistryView = <U>(registry: Registry<U>) => readonly Contribution<U>[];
 
-/** A registry's rule over its whole staged list, which throws its refusal. */
+/** A registry's rule over its whole staged list, which throws its refusal. A check reads other registries through
+ *  `view` only: their `entries()`, `items()` and any `derived` value are the pre-commit lists. */
 export type RegistryCheck<T> = (entries: readonly Contribution<T>[], view: RegistryView) => void;
 
 /** One commit's additions to one registry, all from one package. */
@@ -41,6 +42,7 @@ export interface NamedAddition {
 }
 
 interface State {
+  rule?: RegistryCheck<unknown>;
   entries: readonly Contribution<unknown>[];
   items: readonly unknown[];
   seeded: boolean;
@@ -56,22 +58,28 @@ let counter = 0;
 const listeners = new Set<() => void>();
 
 function stateOf<T>(registry: Registry<T>): State {
-  return STATE.get(registry as Registry<unknown>)!;
+  const state = STATE.get(registry as Registry<unknown>);
+  if (!state) {
+    throw new Error(
+      `the registry ${registry.name} is not this bundle's (each bundle has its own registries): commit it by name`,
+    );
+  }
+  return state;
 }
 
 export class Registry<T> {
   constructor(
     readonly name: string,
-    private readonly rule?: RegistryCheck<T>,
+    rule?: RegistryCheck<T>,
   ) {
     if (BY_NAME.has(name)) throw new Error(`two registries are named ${name}`);
     BY_NAME.set(name, this as Registry<unknown>);
     ALL.push(this as Registry<unknown>);
-    STATE.set(this as Registry<unknown>, { entries: EMPTY, items: EMPTY, seeded: false });
+    STATE.set(this as Registry<unknown>, { rule: rule as RegistryCheck<unknown> | undefined, entries: EMPTY, items: EMPTY, seeded: false });
   }
 
   /** Every entry, in commit order (within a commit, the additions' order). Frozen, and the same array until the next
-   *  commit that adds to this registry. */
+   *  commit that names this registry. */
   entries(): readonly Contribution<T>[] {
     return stateOf(this).entries as readonly Contribution<T>[];
   }
@@ -86,15 +94,13 @@ export class Registry<T> {
     return stateOf(this).seeded;
   }
 
-  /** Run this registry's rule over `entries` (the module's own use: a commit calls it). */
-  checkStaged(entries: readonly Contribution<T>[], view: RegistryView): void {
-    this.rule?.(entries, view);
-  }
 }
 
 /** Commit `additions` across their registries, all or none: see the header. Throws the first refusal, in the order the
  *  registries were created, and leaves every registry, the counter and the listeners untouched. */
-export function commitContributions(additions: readonly Addition<any>[]): void {
+export function commitContributions<A extends readonly unknown[]>(
+  additions: readonly [...{ [K in keyof A]: Addition<A[K]> }],
+): void {
   const staged = new Map<Registry<unknown>, Contribution<unknown>[]>();
   for (const addition of additions) {
     const registry = addition.registry as Registry<unknown>;
@@ -112,7 +118,7 @@ export function commitContributions(additions: readonly Addition<any>[]): void {
     return (staged.get(r) ?? stateOf(r).entries) as readonly Contribution<U>[];
   };
   for (const registry of ALL) {
-    if (seededAfter(registry)) registry.checkStaged(view(registry), view);
+    if (seededAfter(registry)) stateOf(registry).rule?.(view(registry), view);
   }
   for (const [registry, list] of staged) {
     const state = stateOf(registry);
