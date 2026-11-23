@@ -16,7 +16,8 @@ import ui_alpha from "@retroplug/alpha/ui";
 export { uiRegistry };
 
 // The app's registries seed first (this module imports their seed first), because the menus' checks read the roles
-// and the trackers: refused at load if a bundle's module order moved them after this one.
+// and the trackers (one commit seeds both, so the roles stand for the two): refused at load if a bundle's module
+// order moved them after this one.
 if (!rolesRegistry.seeded) {
   throw new Error("the menu contributions were evaluated before the app's registrations (the bundle's module " +
     "order changed)");
