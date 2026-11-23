@@ -9,6 +9,9 @@ import { composeAppStores } from "../../src/appStores";
 import { commitContributions } from "../../src/contributions/registry";
 import { appAdditions } from "../../src/contributions/app";
 import { defaultSettings, K_PROJECT, projectSection } from "../../src/projectConfig";
+import { ProjectStore } from "../../src/projectStore";
+import { RecentStore } from "../../src/recentStore";
+import { gbRom } from "../systems/fixtures";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { USER_CONFIG_SCHEMA } from "../../src/userConfigSerialization";
 import { DEFAULT_USER_CONFIG } from "../../src/userConfig";
@@ -123,4 +126,74 @@ test("a store built over fixed contributions adopts nothing", () => {
   store.load();
   commitContributions(appAdditions("packfixture-g", { configSections: [markingSection("packfixtureG")] }));
   expect(store.section("packfixtureG")).toEqual({ value: 1 });
+});
+
+test("a service whose create throws is isolated and tried once", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  let created = 0;
+  const factory = {
+    key: "packfixtureI",
+    create: () => {
+      // Throws on the first call only: the registry outlives this case, and a later store's constructor builds it too.
+      if (created++ === 0) throw new Error("a broken service");
+      return {};
+    },
+  } as unknown as ProjectServiceFactory;
+  const warned: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...args: unknown[]) => warned.push(args.map(String).join(" "));
+  try {
+    commitContributions(appAdditions("packfixture-i", {
+      projectSections: [markingSection("packfixtureI")],
+      projectServices: [factory],
+    }));
+    expect(stores.project.settings()).toBeTruthy();
+    expect(stores.project.section("packfixtureI")).toEqual({ value: 7, parsed: true });
+    expect(stores.project.save("/p/i.rplg")).toBe(true);
+    expect(stores.project.serviceState("packfixtureI") === undefined).toBe(true);
+    expect(created).toBe(1);
+    expect(warned.some((line) => line.includes("a broken service"))).toBe(true);
+  } finally {
+    console.warn = realWarn;
+  }
+});
+
+test("a load held for relink adopts a section committed meanwhile from the block the parse kept", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // Author the project through a save so its system entry has the shape a load reads, then take the ROM away.
+  const author = new MockBackend("/cfg");
+  const authored = composeAppStores({ backend: author });
+  author.seed("/p/a.gb", gbRom());
+  authored.project.systems.addSystem("/p/a.gb");
+  authored.project.save("/p/h.rplg");
+  const saved = JSON.parse(author.readText("/p/h.rplg")!) as { settings: Record<string, unknown> };
+  saved.settings.packfixtureH = { value: 9 };
+  be.seed("/p/h.rplg", JSON.stringify(saved));
+  be.seed("/new/a.gb", gbRom());
+  expect(stores.project.load("/p/h.rplg").kind).toBe("missing");
+  commitContributions(appAdditions("packfixture-h", { projectSections: [markingSection("packfixtureH")] }));
+  // The outgoing project adopts it as a default; the pending one is not in the store yet.
+  expect(stores.project.section("packfixtureH")).toEqual({ value: 7, parsed: true });
+  const done = stores.project.relink({ systemIndex: 0, itemKind: "rom", path: "/p/a.gb" }, "/new/a.gb");
+  expect(done.kind).toBe("loaded");
+  expect(stores.project.section("packfixtureH")).toEqual({ value: 9, parsed: true });
+});
+
+test("a project store over fixed contributions adopts nothing", () => {
+  const be = new MockBackend("/cfg");
+  const recent = new RecentStore(be, () => {});
+  const project = new ProjectStore(be, recent, undefined, { sections: [], services: [] });
+  be.seed("/p/j.rplg", JSON.stringify({ schemaVersion: K_PROJECT, settings: { packfixtureJ: { value: 4 } }, systems: [] }));
+  project.load("/p/j.rplg");
+  let created = 0;
+  const factory = { key: "packfixtureJ", create: () => (created++, {}) } as unknown as ProjectServiceFactory;
+  commitContributions(appAdditions("packfixture-j", {
+    projectSections: [markingSection("packfixtureJ")],
+    projectServices: [factory],
+  }));
+  expect(project.adoptContributions()).toBe(false);
+  expect(project.section("packfixtureJ")).toEqual({ value: 4 });
+  expect(created).toBe(0);
 });

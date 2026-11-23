@@ -235,7 +235,14 @@ export class ProjectStore {
       const factories = projectServiceEntries();
       for (; this.servicesTaken < factories.length; this.servicesTaken++) {
         const { pkg, service: factory } = factories[this.servicesTaken];
-        this.services.push({ pkg, key: factory.key, service: factory.create() });
+        let service: ProjectService;
+        try {
+          service = factory.create();
+        } catch (e) {
+          warnServiceOnce(pkg, factory.key, "starting", e);
+          continue; // the loop's increment still runs: a factory is tried once, never again
+        }
+        this.services.push({ pkg, key: factory.key, service });
         adopted = true;
       }
     }
@@ -249,6 +256,7 @@ export class ProjectStore {
     if (!this.adoptPending()) return false;
     this.publishGraph(false);
     this.notifySystemsChange();
+    this.onChangeCb(); // the "project" channel hears an adopted section as it hears a setSection
     return true;
   }
 
