@@ -7,13 +7,20 @@
 // place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports this module: the
 // control plane, the render worker, the SDK and the planner carry no menu contribution. It seeds the app's
 // registries first, through their generated module, because the checks read the roles and the trackers.
-import "../../src/generated/packages";
+import { rolesRegistry } from "../../src/generated/packages";
 import { commitContributions } from "../../src/contributions/registry";
 import { uiRegistry } from "../contributions/uiRegistries";
 import ui_zeta from "@retroplug/zeta/ui";
 import ui_alpha from "@retroplug/alpha/ui";
 
 export { uiRegistry };
+
+// The app's registries seed first (this module imports their seed first), because the menus' checks read the roles
+// and the trackers: refused at load if a bundle's module order moved them after this one.
+if (!rolesRegistry.seeded) {
+  throw new Error("the menu contributions were evaluated before the app's registrations (the bundle's module " +
+    "order changed)");
+}
 
 commitContributions([
   { registry: uiRegistry, pkg: "retroplug", items: [] },

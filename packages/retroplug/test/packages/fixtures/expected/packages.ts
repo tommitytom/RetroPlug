@@ -10,8 +10,8 @@
 // tables and the kinds' data in ./protocol.ts and the graph placers in ./placers.ts, so a module that needs one of
 // those imports no package's app; this module imports the consoles and the placers first, for their seeds, because
 // the app's checks read them.
-import "./consoles";
-import "./placers";
+import { consolesRegistry } from "./consoles";
+import { placersRegistry } from "./placers";
 import type { PackageContributions } from "@retroplug/core/definePackage";
 import { commitContributions } from "../contributions/registry";
 import { appAdditions, rolesRegistry, romProvidersRegistry, trackerIntegrationsRegistry, kitFormatsRegistry, projectSectionsRegistry, projectServicesRegistry, configSectionsRegistry, embedsRegistry, bakedEmbedsRegistry } from "../contributions/appRegistries";
@@ -23,6 +23,14 @@ import kind_widgets_alpha from "@retroplug/alpha/kind";
 import kind_controllerApps_beta from "@retroplug/beta/kind";
 
 export { rolesRegistry, romProvidersRegistry, trackerIntegrationsRegistry, kitFormatsRegistry, projectSectionsRegistry, projectServicesRegistry, configSectionsRegistry, embedsRegistry, bakedEmbedsRegistry } from "../contributions/appRegistries";
+
+// The consoles and the placers seed first (this module imports them first), because the app's checks read them: a
+// bundle whose module order moved them after this one would check the app against two empty registries, so it is
+// refused here, at load (docs/downloadable-packs-m2b-plan.md).
+if (!consolesRegistry.seeded || !placersRegistry.seeded) {
+  throw new Error("the app's registrations were evaluated before the consoles' and the placers' (the bundle's " +
+    "module order changed)");
+}
 
 /** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the
  *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */
