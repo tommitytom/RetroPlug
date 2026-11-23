@@ -5,28 +5,21 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
 
 #include "quickjs.h"
 
-extern "C" {
-/** One module of a set, as retroplug-modc's `table` writes it. The generated C declares the same struct. */
-typedef struct rp_js_module {
-    const char* name;
-    const std::uint8_t* bytecode;
-    std::uint32_t size;
-} rp_js_module;
-}
+#include "host/js/rp_js_module.h"
 
 namespace rp::host {
 
 /** Register `modules` in `ctx`, in order, each unevaluated: deserialising a module's bytecode puts it in QuickJS's
  *  loaded-module table, where a bare import of its name finds it, and resolves its own imports, so a dependency must come
  *  first (the table's order is the build's, dependencies first). A module's body runs the first time something imports
- *  it. A context is registered once: a second call finds its mark and returns at once, so the plugin's editor, which
- *  shares the control plane's context, may call it too. Returns "" or why a module could not be registered, naming it;
- *  the modules before it stay registered. */
+ *  it. A context is registered once, and the outcome is sticky: the first call marks the context with its result, so a
+ *  second call returns that same result at once without reading (the plugin's editor, which shares the control plane's
+ *  context, calls it too; a retry after a failure would append duplicates of the modules that did register). Returns
+ *  "" or why a module could not be registered, naming it; the modules before it stay registered. */
 std::string registerSharedModules(JSContext* ctx, const rp_js_module* modules, std::size_t count);
 
 }  // namespace rp::host

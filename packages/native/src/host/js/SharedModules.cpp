@@ -23,27 +23,15 @@ std::string pendingMessage(JSContext* ctx) {
     return out;
 }
 
-}  // namespace
-
-std::string registerSharedModules(JSContext* ctx, const rp_js_module* modules, std::size_t count) {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue mark = JS_GetPropertyStr(ctx, global, kMark);
-    const bool registered = JS_ToBool(ctx, mark) > 0;
-    JS_FreeValue(ctx, mark);
-    if (registered) {
-        JS_FreeValue(ctx, global);
-        return {};
-    }
+std::string registerAll(JSContext* ctx, const rp_js_module* modules, std::size_t count) {
     for (std::size_t i = 0; i < count; ++i) {
         const rp_js_module& m = modules[i];
         JSValue mod = JS_ReadObject(ctx, m.bytecode, m.size, JS_READ_OBJ_BYTECODE);
         if (JS_IsException(mod)) {
-            JS_FreeValue(ctx, global);
             return std::string("the shared module ") + m.name + " could not be registered: " + pendingMessage(ctx);
         }
         if (JS_VALUE_GET_TAG(mod) != JS_TAG_MODULE) {
             JS_FreeValue(ctx, mod);
-            JS_FreeValue(ctx, global);
             return std::string("the shared module ") + m.name + " is not module bytecode";
         }
         // Resolved now, as registerSdkModule resolves the SDK: QuickJS frees every unresolved module in the context when a
@@ -55,13 +43,33 @@ std::string registerSharedModules(JSContext* ctx, const rp_js_module* modules, s
         const int resolved = JS_ResolveModule(ctx, mod);
         JS_FreeValue(ctx, mod);
         if (resolved < 0) {
-            JS_FreeValue(ctx, global);
             return std::string("the shared module ") + m.name + " could not be resolved: " + pendingMessage(ctx);
         }
     }
-    JS_DefinePropertyValueStr(ctx, global, kMark, JS_TRUE, 0);
-    JS_FreeValue(ctx, global);
     return {};
+}
+
+}  // namespace
+
+std::string registerSharedModules(JSContext* ctx, const rp_js_module* modules, std::size_t count) {
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue mark = JS_GetPropertyStr(ctx, global, kMark);
+    if (JS_IsString(mark)) {
+        // An earlier call's outcome, success or failure: a retry would read from index 0 and append duplicates of the
+        // modules that did register, so the same answer comes back without reading anything.
+        const char* s = JS_ToCString(ctx, mark);
+        std::string out = s ? s : "";
+        JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, mark);
+        JS_FreeValue(ctx, global);
+        return out;
+    }
+    JS_FreeValue(ctx, mark);
+    const std::string why = registerAll(ctx, modules, count);
+    JSValue value = JS_NewString(ctx, why.c_str());
+    JS_DefinePropertyValueStr(ctx, global, kMark, value, 0);
+    JS_FreeValue(ctx, global);
+    return why;
 }
 
 }  // namespace rp::host

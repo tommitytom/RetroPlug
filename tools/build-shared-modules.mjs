@@ -85,6 +85,16 @@ async function resolveContracts(base, specifiers) {
   return found;
 }
 
+/** The charset retroplug-modc accepts in a module name (modc.c's valid_name): refused here too, so a contract
+ *  specifier that modc would reject fails with its name before CMake reaches modc. */
+export const MODULE_NAME = /^[A-Za-z0-9@/:._-]+$/;
+
+export function assertModuleName(name) {
+  if (!MODULE_NAME.test(name)) {
+    throw new Error(`build-shared-modules: the module name ${JSON.stringify(name)} has a character outside [A-Za-z0-9@/:._-], which retroplug-modc refuses`);
+  }
+}
+
 const posix = (p) => p.split(path.sep).join("/");
 
 /** Build one set. Returns the shared modules in load order and the hosts, each { name, file, text, imports, exports },
@@ -163,6 +173,7 @@ export async function buildSharedModules({ set, outDir, productDir, write = true
       nameOf.set(abs, `rp:${rel}`);
     }
   }
+  for (const name of nameOf.values()) assertModuleName(name);
   const textOf = new Map(result.outputFiles.filter((f) => f.path.endsWith(".js")).map((f) => [f.path, f.text]));
 
   // Rewrite each relative import to the bare name of the output it reaches, then refuse any relative specifier left.

@@ -79,6 +79,20 @@ TEST_CASE("a table read out of order is refused naming the module", "[shared-mod
     CHECK(why.find("fx:dep") != std::string::npos);
 }
 
+TEST_CASE("a failed registration is sticky: a second call returns the same failure without reading", "[shared-modules]") {
+    TjsHostRuntime host;
+    REQUIRE(host.init());
+    JSContext* ctx = host.context();
+    const std::string first = rp::host::registerSharedModules(ctx, rp_fx_misordered, rp_fx_misordered_count);
+    REQUIRE(first.find("fx:dep") != std::string::npos);
+    // A good table would register if it were read; the same failure back proves the mark short-circuited the call,
+    // and the plugin's editor (which calls again on the shared context) cannot append duplicates of what did register.
+    CHECK(rp::host::registerSharedModules(ctx, rp_fx_modules, rp_fx_modules_count) == first);
+    CHECK(json(ctx, "Object.getOwnPropertyDescriptor(globalThis,'__rp_sharedModulesRegistered').enumerable") == "false");
+    // Nothing of the good table was registered, so a host importing it still does not evaluate.
+    CHECK(host.evalModuleBytecode(rp_fx_host_a, rp_fx_host_a_size) != 0);
+}
+
 TEST_CASE("a host whose import no table provides does not evaluate", "[shared-modules]") {
     TjsHostRuntime host;
     REQUIRE(host.init());
