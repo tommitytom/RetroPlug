@@ -212,7 +212,7 @@ set_target_properties(retroplug-render-host-test PROPERTIES
 )
 
 # The root CLI dispatcher bundle — cli/cli.ts → tjsc bytecode C array, COMPILED INTO retroplug-cli
-# (mirrors the plugin's cp-/ui-bundle recipe). It owns command routing + all help; esbuild follows its
+# (mirrors the app-modules recipe). It owns command routing + all help; esbuild follows its
 # imports (cli.ts → tools.ts → sessions/render.ts → session.ts). tjsc derives the array name from the
 # output stem → rp_cli_bundle[] +
 # rp_cli_bundle_size. Derived; never committed. Adding a command is pure TS (cli/tools.ts) — no change here.
@@ -315,7 +315,7 @@ set_target_properties(retroplug-cli PROPERTIES
 # The Node-API addon host (opt-in: -DRETROPLUG_NODE_ADDON=ON).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/node-addon.cmake)
 
-# The example sessions, esbuild-bundled to runnable .js (mirroring the cp-bundle recipe). A package's examples come
+# The example sessions, esbuild-bundled to runnable .js (mirroring the app-modules recipe). A package's examples come
 # from its manifest's `retroplug.examples` list, in product order, and the three the shell owns - the ones that name no
 # cart - stay here. A normal build yields both the binary and demos the binary can run, e.g.
 # build/bin/retroplug-cli build/cli/mgb-smoke.js.

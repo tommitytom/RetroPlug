@@ -478,8 +478,6 @@ private:
         // Systems bake the sample rate at construct — set it BEFORE the bundle composes / autoloads.
         svc_.engine.setSampleRate(getSampleRate());
 
-        // Eval the control-plane bundle (composes the stores, defines the __rp_* globals), then
-        // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
         // The app's shared modules first (docs/downloadable-packs-m2b-plan.md): the control plane's imports, and later the
         // editor's, resolve to them by name, so the two share one copy of every contract module. A failure is fatal: a
         // retry would append duplicate modules.
@@ -488,6 +486,8 @@ private:
             d_stderr("[retroplug] %s", why.c_str());
             return;
         }
+        // Eval the control-plane bundle (composes the stores, defines the __rp_* globals), then
+        // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
         host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
         for (int i = 0; i < 1000 && !readReady(); ++i) host_.pump();
         jsReady_ = readReady();

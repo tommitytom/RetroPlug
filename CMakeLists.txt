@@ -282,8 +282,9 @@ retroplug_silence_dep_warnings(efsw-static efsw)
 
 # lvgl-js-native + the framework PIC settings now come from dpf.js (above).
 
-# Cross-compile knob for tjsc (bytecode compiler). Consumed by the
-# cp-bundle / ui-bundle targets (packages/native) via _TJSC_COMMAND / _TJSC_DEP.
+# Cross-compile knob for tjsc (bytecode compiler). Consumed by the cli, ts-stripper, sdk-assets, script-bundle and
+# render-worker-bundle targets (packages/native) via _TJSC_COMMAND / _TJSC_DEP; the app's shared module set is
+# compiled by retroplug-modc instead (RP_MODC_EXECUTABLE).
 set(TJSC_EXECUTABLE "" CACHE FILEPATH
     "Path to a host-built tjsc/qjsc for bytecode compilation. \
 Leave empty to use the in-tree tjsc target.")
