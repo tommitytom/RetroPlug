@@ -50,6 +50,7 @@ TEST_CASE("two hosts over one table share one instance of each module", "[shared
     REQUIRE(host.init());
     JSContext* ctx = host.context();
     REQUIRE(rp::host::registerSharedModules(ctx, rp_fx_modules, rp_fx_modules_count).empty());
+    CHECK(json(ctx, "typeof globalThis.__fxStateRuns") == "\"undefined\"");
     REQUIRE(host.evalModuleBytecode(rp_fx_host_a, rp_fx_host_a_size) == 0);
     REQUIRE(host.evalModuleBytecode(rp_fx_host_b, rp_fx_host_b_size) == 0);
     CHECK(json(ctx, "globalThis.__fxA === globalThis.__fxB") == "true");
@@ -62,7 +63,11 @@ TEST_CASE("registering a table twice in one context does nothing the second time
     REQUIRE(host.init());
     JSContext* ctx = host.context();
     REQUIRE(rp::host::registerSharedModules(ctx, rp_fx_modules, rp_fx_modules_count).empty());
-    REQUIRE(rp::host::registerSharedModules(ctx, rp_fx_modules, rp_fx_modules_count).empty());
+    // The second table would fail if it were read, so an empty result proves the mark short-circuited the call.
+    static const std::uint8_t junk[3] = {1, 2, 3};
+    const rp_js_module bad[1] = {{"fx:bad", junk, 3}};
+    REQUIRE(rp::host::registerSharedModules(ctx, bad, 1).empty());
+    CHECK(json(ctx, "Object.getOwnPropertyDescriptor(globalThis,'__rp_sharedModulesRegistered').enumerable") == "false");
     REQUIRE(host.evalModuleBytecode(rp_fx_host_a, rp_fx_host_a_size) == 0);
     CHECK(json(ctx, "globalThis.__fxStateRuns") == "1");
 }

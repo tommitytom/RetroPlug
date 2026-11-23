@@ -11,8 +11,14 @@ constexpr const char* kMark = "__rp_sharedModulesRegistered";
 std::string pendingMessage(JSContext* ctx) {
     JSValue e = JS_GetException(ctx);
     const char* s = JS_ToCString(ctx, e);
-    std::string out = s ? s : "an exception with no message";
-    JS_FreeCString(ctx, s);
+    std::string out = "an exception with no message";
+    if (s) {
+        out = s;
+        JS_FreeCString(ctx, s);
+    } else {
+        // The conversion threw its own exception, which is pending now and would leak past this call.
+        JS_FreeValue(ctx, JS_GetException(ctx));
+    }
     JS_FreeValue(ctx, e);
     return out;
 }
@@ -40,10 +46,12 @@ std::string registerSharedModules(JSContext* ctx, const rp_js_module* modules, s
             JS_FreeValue(ctx, global);
             return std::string("the shared module ") + m.name + " is not module bytecode";
         }
-        // Marked resolved, as registerSdkModule marks the SDK: QuickJS frees every UNRESOLVED module in the context when
-        // any later module load fails (js_free_modules with JS_FREE_MODULE_NOT_RESOLVED), so a set registered by reading
-        // alone would lose the modules no host had reached yet (the UI's, until the first editor opens) to an unrelated
-        // failed load. Cheap: the imports were bound when the bytecode was read.
+        // Resolved now, as registerSdkModule resolves the SDK: QuickJS frees every unresolved module in the context when a
+        // module it has found fails to resolve (JS_ResolveModule, or a dynamic import), so a set left unresolved would
+        // lose the modules no host had reached yet (the UI's, until the first editor opens) to an unrelated failure.
+        // Marking the set resolved keeps it out of that sweep. A failed read or compile frees only its own module. The
+        // sweep is not reachable from a test short of injecting an allocation failure, so no test covers it. Cheap: the
+        // imports were bound when the bytecode was read.
         const int resolved = JS_ResolveModule(ctx, mod);
         JS_FreeValue(ctx, mod);
         if (resolved < 0) {
