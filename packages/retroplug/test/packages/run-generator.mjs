@@ -338,7 +338,9 @@ async function loadCli() {
     },
   });
   const loaded = await import(pathToFileURL(out).href);
-  return loaded.CLI_CONTRIBUTIONS.map((entry) => ({ pkg: entry.pkg, tools: entry.tools.map((tool) => tool.name) }));
+  const byPkg = new Map();
+  for (const { pkg, item } of loaded.cliToolsRegistry.entries()) byPkg.set(pkg, [...(byPkg.get(pkg) ?? []), item.name]);
+  return [...byPkg].map(([pkg, tools]) => ({ pkg, tools }));
 }
 
 // The generated entry, bundled and loaded as the build loads it. Loading it runs its checks and registers.

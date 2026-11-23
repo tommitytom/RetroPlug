@@ -8,7 +8,9 @@
 import type { CliTool as CoreCliTool } from "@retroplug/core/cliTool";
 import type { Session } from "./session";
 import { cliHost } from "./cliHost";
-import { CLI_TOOLS } from "./generated/tools";
+import "./generated/tools";
+import { cliToolsRegistry } from "./contributions/toolRegistries";
+import { derived } from "../src/contributions/registry";
 import { testTool } from "./sessions/test";
 import { runTool } from "./sessions/run";
 import { renderTool } from "./sessions/render";
@@ -33,9 +35,6 @@ function fromContribution(tool: CoreCliTool): CliTool {
   return { ...tool, run: (session, args) => tool.run(cliHost(session, args), args) };
 }
 
-/** Every contributed command, in product order. */
-const CONTRIBUTED: readonly CliTool[] = CLI_TOOLS.map(fromContribution);
-
 /** Every baked-in command, in the index's order: the shell's five, then the packages' in product order. One subcommand
  *  is one tool: a contributed name the shell already has would silently shadow it (the dispatcher finds the first), so
  *  it is refused here, where a test can show it, rather than at a user's first run. */
@@ -48,8 +47,11 @@ export function composeTools(shell: readonly CliTool[], contributed: readonly Cl
   return [...shell, ...contributed];
 }
 
-/** Every baked-in command, in the index's order. */
-export const tools: readonly CliTool[] = composeTools(SHELL_TOOLS, CONTRIBUTED);
+/** Every command, in the index's order: the shell's five, then the contributed ones in registration order (the
+ *  product's, then packs'). The same array until the next commit. */
+export const tools = derived((): readonly CliTool[] =>
+  composeTools(SHELL_TOOLS, cliToolsRegistry.items().map(fromContribution)),
+);
 
 /** The top-level command index: a version banner + the tools' own name/summary (column-aligned). Pure - the dispatcher
  *  (cli/cli.ts) supplies the banner and prints this for `retroplug-cli` / `--help`; kept here so it's testable in

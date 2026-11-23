@@ -1056,7 +1056,7 @@ function renderProductPaths(entries) {
 /** The generated CLI tools module (`<shell>/cli/generated/tools.ts`): each package's `retroplug.cli` module, in product
  *  order, with the load-time refusal of a name two packages declare (the shell's own five are refused by the dispatcher,
  *  which is where they are). Imported only by cli/, so no other bundle carries a tool. */
-function renderCliTools({ packages, outDir, product }) {
+function renderCliTools({ packages, outDir, shellDir, product }) {
   const contributors = packages.filter((p) => p.cli);
   const local = (name) => `cli_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
   const lines = [
@@ -1064,40 +1064,25 @@ function renderCliTools({ packages, outDir, product }) {
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
     "//",
     "// The product's CLI tools, in product order: each package's `retroplug.cli` module, which default-exports the",
-    "// subcommands it adds. The dispatcher appends them after the shell's own five, so a package's place in",
+    "// subcommands it adds, seeded into the live registry cli/contributions/toolRegistries.ts (which holds the checks).",
+    "// The dispatcher appends them after the shell's own five, so a package's place in",
     `// \`retroplug.products.${product}\` is where its commands land in the index. Imported only by cli/, so the control`,
     "// plane, the render worker, the SDK and the UI carry no tool.",
-    'import type { CliTool } from "@retroplug/core/cliTool";',
+    `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
+    `import { cliToolsRegistry } from "${contributionsSpecifier(outDir, shellDir, "cli/contributions/toolRegistries.ts")}";`,
   ];
   for (const p of contributors) {
     lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.cli)}";`);
   }
-  lines.push("");
-  lines.push("/** Each package's CLI tools, in product order, and the package they came from. */");
-  lines.push("export const CLI_CONTRIBUTIONS: readonly { pkg: string; tools: readonly CliTool[] }[] = [");
-  for (const p of contributors) {
-    lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, tools: ${local(p.pkg.name)} },`);
-  }
-  lines.push("];");
-  lines.push("");
-  lines.push("// One subcommand, one tool: the index is what a user types, so two packages may not declare a name (the");
-  lines.push("// shell's five are checked where they are listed).");
-  lines.push("const toolOwners = new Map<string, string>();");
-  lines.push("for (const { pkg, tools } of CLI_CONTRIBUTIONS) {");
-  lines.push("  for (const tool of tools) {");
-  lines.push("    const owner = toolOwners.get(tool.name);");
-  lines.push("    if (owner !== undefined) {");
-  lines.push("      throw new Error(owner === pkg");
-  lines.push("        ? `the package ${pkg} declares the CLI tool ${tool.name} twice`");
-  lines.push("        : `two packages declare the CLI tool ${tool.name}: ${owner} and ${pkg}`);");
-  lines.push("    }");
-  lines.push("    toolOwners.set(tool.name, pkg);");
-  lines.push("  }");
-  lines.push("}");
-  lines.push("");
-  lines.push("/** Every contributed tool, in product order. */");
-  lines.push("export const CLI_TOOLS: readonly CliTool[] = CLI_CONTRIBUTIONS.flatMap((entry) => entry.tools);");
-  lines.push("");
+  lines.push(
+    "",
+    "export { cliToolsRegistry };",
+    "",
+    ...seedLines(["cliToolsRegistry"], contributors.map((p) => ({
+      registry: "cliToolsRegistry", pkg: p.pkg.name, items: local(p.pkg.name),
+    }))),
+    "",
+  );
   return lines.join("\n");
 }
 
@@ -1725,7 +1710,7 @@ export function generate({
   if (cliOutDir) {
     files.push({
       path: join(cliOutDir, "tools.ts"),
-      content: renderCliTools({ packages: contributionsOf, outDir: cliOutDir, product }),
+      content: renderCliTools({ packages: contributionsOf, outDir: cliOutDir, shellDir: shell.dir, product }),
     });
   }
   if (product === DESKTOP) {

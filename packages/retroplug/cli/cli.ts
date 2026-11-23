@@ -28,15 +28,15 @@ if (cmd === "--version") {
   exitProcess(0);
 } else if (cmd === undefined) {
   // Bare `retroplug-cli`: show the index but signal misuse (nothing ran).
-  console.error(topLevelHelp(tools, `RetroPlug v${appVersion()}`));
+  console.error(topLevelHelp(tools(), `RetroPlug v${appVersion()}`));
   exitProcess(2);
 } else if (isHelpFlag(cmd)) {
-  console.log(topLevelHelp(tools, `RetroPlug v${appVersion()}`));
+  console.log(topLevelHelp(tools(), `RetroPlug v${appVersion()}`));
   exitProcess(0);
 } else {
-  const tool = tools.find((t) => t.name === cmd);
+  const tool = tools().find((t) => t.name === cmd);
   if (!tool) {
-    console.error(`retroplug-cli: unknown command '${cmd}'\n\n${topLevelHelp(tools, `RetroPlug v${appVersion()}`)}`);
+    console.error(`retroplug-cli: unknown command '${cmd}'\n\n${topLevelHelp(tools(), `RetroPlug v${appVersion()}`)}`);
     exitProcess(2);
   } else if (rest.some(isHelpFlag)) {
     console.log(tool.help);
