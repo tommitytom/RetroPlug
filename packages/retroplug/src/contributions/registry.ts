@@ -183,3 +183,15 @@ export function derived<R>(build: () => R): () => R {
     return value;
   };
 }
+
+/** A list built from registries, which keeps its previous array when a rebuild after a commit gives the same elements
+ *  in the same order: a commit to an unrelated registry then leaves a hook's dependency (and a memo over it) as it was. */
+export function derivedList<T>(build: () => readonly T[]): () => readonly T[] {
+  let last: readonly T[] | undefined;
+  return derived(() => {
+    const next = build();
+    if (last && last.length === next.length && last.every((item, i) => item === next[i])) return last;
+    last = next;
+    return next;
+  });
+}

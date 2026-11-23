@@ -1,21 +1,30 @@
-// The product's views (docs/modular-graph-phase-f5a-design.md section 5.3), for the shell's view slots: the generated
-// views module, in product order, is the one place a package's views are read from. Apart from menuContributions' menus
+// The product's views (docs/modular-graph-phase-f5a-design.md section 5.3), for the shell's view slots: the live
+// views registry, seeded by the generated module in product order, is the one place a package's views are read from. Apart from menuContributions' menus
 // module on purpose: a component view imports React, and only the UI bundle resolves it, so a menu module that reached
 // this one would put React in every pure-tier test that builds a menu.
 import type { TileView, ViewDef, WindowView } from "@retroplug/ui/contribution";
 import { viewsRegistry } from "../contributions/views";
-import { derived } from "../../src/contributions/registry";
+import { derivedList } from "../../src/contributions/registry";
+
+const viewWrappers = new WeakMap<object, { pkg: string; view: ViewDef }>();
 
 /** Every view with the package it came from, in registration order: the same array until the next commit. */
-const VIEWS = derived((): readonly { pkg: string; view: ViewDef }[] =>
-  viewsRegistry.entries().map(({ pkg, item }) => ({ pkg, view: item })),
+const VIEWS = derivedList((): readonly { pkg: string; view: ViewDef }[] =>
+  viewsRegistry.entries().map(({ pkg, item }) => {
+    let wrapped = viewWrappers.get(item);
+    if (!wrapped) {
+      wrapped = { pkg, view: item };
+      viewWrappers.set(item, wrapped);
+    }
+    return wrapped;
+  }),
 );
 
-const TILE_VIEWS = derived((): readonly { pkg: string; view: TileView }[] =>
+const TILE_VIEWS = derivedList((): readonly { pkg: string; view: TileView }[] =>
   VIEWS().filter((entry): entry is { pkg: string; view: TileView } => entry.view.placement === "tile"),
 );
 
-/** The view a package registers under `id`, with the package it came from, or undefined. The generated module has
+/** The view a package registers under `id`, with the package it came from, or undefined. The registry's check has
  *  already refused a duplicate id, so the first match is the only one. */
 export function viewById(id: string): { pkg: string; view: ViewDef } | undefined {
   return VIEWS().find((entry) => entry.view.id === id);
@@ -28,7 +37,7 @@ export function windowViewOf(id: string): WindowView | undefined {
   return entry?.view.placement === "window" ? entry.view : undefined;
 }
 
-/** Resolve a window open against the generated registry: the view, or the report saying why it cannot open. App's
+/** Resolve a window open against the live registry: the view, or the report saying why it cannot open. App's
  *  `views.open` runs this and then the two checks only a project can answer (a system that is gone, a view whose `when`
  *  rejects it), so the id's own refusals are worded in one place. */
 export function windowViewOrReport(id: string): { view: WindowView } | { report: string } {

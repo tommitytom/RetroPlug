@@ -26,7 +26,8 @@ function takenBindings(): { keyCodes: Set<number>; padNames: Set<string> } {
 /** Each package's UI contribution, one item per package. A row's id is unique inside its placement (the menu is keyed by
  *  id); a row's role must be registered and its key (and its gate's) one its role's schema reads; a tracker UI names a
  *  registered integration, once; a service id and an action id are unique; an action's id is prefixed by its package's
- *  name and its defaults are key and pad names the shell resolves and does not already bind; a menu builder's placement
+ *  name and its defaults are key and pad names the shell resolves and does not already bind (two contributions on one
+ *  key are allowed: the overlays' backtick); a menu builder's placement
  *  is one the shell has. */
 export const uiRegistry = new Registry<UiContribution>("ui", (entries, view) => {
   const roles = view(rolesRegistry).map((entry) => entry.item);

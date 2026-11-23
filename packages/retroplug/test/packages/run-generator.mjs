@@ -285,7 +285,7 @@ function menusImports() {
   return [...source.matchAll(/^import ui_\w+ from "@retroplug\/([^/]+)\/ui";$/gm)].map((match) => match[1]);
 }
 
-/** The generated views module's VIEWS: product order, and each view's id, placement and body kind as the registry
+/** The views registry's entries: product order, and each view's id, placement and body kind as the registry
  *  reports them. */
 async function loadViews() {
   const loaded = await importGenerated("views", "views.mjs");
@@ -293,7 +293,7 @@ async function loadViews() {
     ({ pkg, id: view.id, placement: view.placement, kind: view.body.kind }));
 }
 
-/** The generated menus module's ACTIONS: product order, and each action's id, label and default key and pad names as
+/** The ui registry's actions: product order, and each action's id, label and default key and pad names as
  *  the registry reports them. */
 async function loadActions() {
   const loaded = await importGenerated("menus", "actions.mjs");

@@ -9,6 +9,7 @@ import {
   commitContributions,
   contributionsVersion,
   derived,
+  derivedList,
   subscribeContributions,
 } from "../../src/contributions/registry";
 
@@ -189,4 +190,17 @@ test("an addition's items are typed by their registry", () => {
   void bad;
   commitContributions([{ registry: numbers, pkg: "nu", items: [1, 2] }]);
   expect(numbers.items()).toEqual([1, 2]);
+});
+
+test("derivedList keeps its array across a commit to another registry, and builds a new one when its elements change", () => {
+  const list = new Registry<string>("test.list");
+  const other = new Registry<string>("test.other");
+  commitContributions([{ registry: list, pkg: "a", items: ["x"] }]);
+  const items = derivedList(() => list.items());
+  const first = items();
+  commitContributions([{ registry: other, pkg: "a", items: ["y"] }]);
+  expect(items()).toBe(first);
+  commitContributions([{ registry: list, pkg: "b", items: ["z"] }]);
+  expect(items() === first).toBe(false);
+  expect([...items()]).toEqual(["x", "z"]);
 });

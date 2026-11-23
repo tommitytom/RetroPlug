@@ -5,13 +5,16 @@
 import { test, expect } from "@retroplug/testing";
 import type { UiContribution } from "@retroplug/ui/contribution";
 import type { RoleType } from "@retroplug/core/systemRoles";
+import { DEFAULT_KEYBOARD_ACTIONS } from "../../src/bindingMap";
 import { commitContributions } from "../../src/contributions/registry";
 import { appAdditions } from "../../src/contributions/app";
 import { uiRegistry } from "../../ui/contributions/menus";
 import {
   contributedActionIds,
   contributedActions,
+  contributedTrackerUi,
   menuPlacement,
+  menuPlacementOpen,
   roleRows,
   uiServices,
 } from "../../ui/host/menuContributions";
@@ -73,5 +76,53 @@ test("an action not prefixed by its package's name is refused", () => {
   const bad = { actions: [{ id: "other.thing", label: "Thing", run: () => {} }] } as unknown as UiContribution;
   expect(() => commitContributions([{ registry: uiRegistry, pkg: "packfixture2", items: [bad] }])).toThrow(
     'the package packfixture2 declares the action other.thing, which is not prefixed by its own name ("packfixture2.")',
+  );
+});
+
+test("the lists keep their identity across a commit that adds no action and no service", () => {
+  const ids = contributedActionIds();
+  const services = uiServices();
+  const role = { kind: "packfixture-unrelated-role", category: "feature", label: "Unrelated",
+    schema: { parse: () => ({}) } } as unknown as RoleType;
+  commitContributions(appAdditions("packfixture3", { roles: [role] }));
+  expect(contributedActionIds()).toBe(ids);
+  expect(uiServices()).toBe(services);
+});
+
+test("a tracker UI committed later is found, and its extras are held to the placement's checks", () => {
+  const integration = { id: "packfixture-tracker", markerRole: "packfixture-marker" } as never;
+  const tracker = { id: "packfixture-tracker" };
+  commitContributions([
+    ...appAdditions("packfixture4", { trackerIntegrations: [integration] }),
+    { registry: uiRegistry, pkg: "packfixture4", items: [{ trackers: [tracker] } as unknown as UiContribution] },
+  ]);
+  expect(contributedTrackerUi("packfixture-tracker")).toBe(tracker as never);
+  const bad = { trackers: [{ id: "packfixture-tracker2", extras: { rows: [{ id: "r", role: "no-such-role", key: "k",
+    label: "R", kind: "cycle", choices: [] }] } }] } as unknown as UiContribution;
+  expect(() => commitContributions([
+    ...appAdditions("packfixture5", { trackerIntegrations: [{ id: "packfixture-tracker2", markerRole: "packfixture-marker2" } as never] }),
+    { registry: uiRegistry, pkg: "packfixture5", items: [bad] },
+  ])).toThrow(
+    "the package packfixture5 declares the row r over the role no-such-role, which no registered role type has",
+  );
+});
+
+test("a builder committed later contributes its onOpen to the placement", () => {
+  let opened = 0;
+  const ui = { menus: [{ placement: "instance.tracker", build: () => [], onOpen: () => { opened += 1; } }] } as
+    unknown as UiContribution;
+  commitContributions([{ registry: uiRegistry, pkg: "packfixture6", items: [ui] }]);
+  const open = menuPlacementOpen("instance.tracker", {} as never);
+  expect(open === undefined).toBe(false);
+  open!();
+  expect(opened).toBe(1);
+});
+
+test("an action on a key the shell already binds is refused against the built-ins", () => {
+  const key = Object.values(DEFAULT_KEYBOARD_ACTIONS).flat()[0]!;
+  const ui = { actions: [{ id: "packfixture7.grab", label: "Grab", keys: [key], run: () => {} }] } as unknown as
+    UiContribution;
+  expect(() => commitContributions([{ registry: uiRegistry, pkg: "packfixture7", items: [ui] }])).toThrow(
+    "which the shell already binds",
   );
 });
