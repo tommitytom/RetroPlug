@@ -1,7 +1,8 @@
 // The kit bank formats this product compiles (docs/modular-graph-phase-f1-design.md section 3): which formats exist is
 // the packages' business (each cart's app contribution registers its own, seeded into the live registries by
 // src/generated/packages.ts), so the id to format lookup is the shell's, beside src/romProviders.ts and
-// src/trackerRegistry.ts, and the kit compile driver (src/audioDriver.ts' compileKitFormat) compiles the format it is handed.
+// src/trackerRegistry.ts, and the kit compile driver (src/audioDriver.ts' compileKitFormat) compiles the format it is
+// handed.
 import { kitFormatsRegistry } from "./contributions/app";
 import type { KitFormat } from "@retroplug/dsp/kitContract";
 

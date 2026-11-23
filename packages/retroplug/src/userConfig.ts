@@ -99,8 +99,9 @@ export const DEFAULT_USER_CONFIG: UserConfig = userConfigSchema.parse({}) as Use
 
 /** The root keys the SHELL owns, which no package may contribute a section under. Derived from the schema's own shape
  *  (so a field added above is covered without a second list to forget) plus `schemaVersion`, which is the file's stamp
- *  and belongs to no section. The generated registry refuses a contributor of one of these
- *  (`packages.mjs`'s `SHELL_CONFIG_KEYS`, which a test holds to this list). */
+ *  and belongs to no section. The app registries refuse a contributor of one of these
+ *  (SHELL_CONFIG_KEYS in src/contributions/appRegistries.ts, which test/config/config-sections.test.ts holds to this
+ *  list). */
 export const CORE_CONFIG_KEYS: readonly string[] = ["schemaVersion", ...Object.keys(userConfigSchema.shape)];
 
 /** config.json as the app holds it: the shell's own fields, and each package's section under its root key. A section

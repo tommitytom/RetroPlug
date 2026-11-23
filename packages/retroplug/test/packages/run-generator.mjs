@@ -168,8 +168,8 @@ async function loadPlacers() {
   return import(pathToFileURL(out).href);
 }
 
-/** A fixture app contributing one project section and one service, each under its own key: the generated registry
- *  collects them (packages.ts's PROJECT_SECTIONS and PROJECT_SERVICES) and refuses a key two packages share. */
+/** A fixture app contributing one project section and one service, each under its own key: the app registries
+ *  collect the section and the service, and their checks refuse a key two packages share. */
 function configSectionApp(sectionKey) {
   return (
     "export default {\n" +

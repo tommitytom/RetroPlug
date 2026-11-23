@@ -71,7 +71,7 @@ test("a pack's app contribution reaches a role registry built before it, and the
       kitFormats: [fixtureKit],
     }),
   ]);
-  expect(registry.roleType("packfixture-core")?.kind).toBe("packfixture-core");
+  expect(registry.roleType("packfixture-core")).toBe(fixtureRole);
   expect(registry.systemRoleFor("packfixture-core")?.kind).toBe("packfixture-core");
   const roles = registry.defaultRoles("packfixture-core", "packfixture", new Uint8Array(0));
   expect(roles.map((role) => role.kind)).toEqual(["packfixture-core", "packfixture-marker"]);

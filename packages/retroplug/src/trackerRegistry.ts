@@ -1,7 +1,7 @@
 // The product's tracker integrations (docs/modular-graph-phase-f1-design.md section 3): which consoles this build
 // searches songs and assets on, and the resolvers a system's roles are read through. Each console's integration is its
-// package's app contribution, so the list is seeded into the live registries by src/generated/packages.ts and this module is the shell's -
-// beside src/romProviders.ts, for the same reason: a package exports to the registry, never the other way. What an
+// package's app contribution, so the list is seeded into the live registries by src/generated/packages.ts and this
+// module is the shell's - beside src/romProviders.ts, for the same reason: a package exports to the registry, never the other way. What an
 // integration IS is tracker's contract (./tracker/trackerIntegration.ts), which reads nothing here.
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { AssetCatalog } from "@retroplug/tracker/assetCatalog";

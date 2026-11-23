@@ -6,8 +6,8 @@
 // with the graph.
 //
 // What it registers is the product's list, not a list here: each package's app contribution is seeded into the live
-// registries by src/generated/packages.ts (docs/modular-graph-phase-f1-design.md section 3), in product order, and this applies
-// it in that order.
+// registries by src/generated/packages.ts (docs/modular-graph-phase-f1-design.md section 3), in product order, and this
+// applies it in that order.
 
 import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import { AppRoleRegistry } from "./appRoleRegistry";

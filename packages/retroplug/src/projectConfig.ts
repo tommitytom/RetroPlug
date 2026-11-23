@@ -27,9 +27,9 @@ import type { ProjectSection } from "@retroplug/core/definePackage";
 // generated registry for that reason; this one also needs the project sections itself.
 import { projectSectionEntries } from "./contributions/app";
 
-/** The settings keys the SHELL owns, which no package may contribute as a section (the generated registry refuses one
- *  that does). Everything else under `settings` belongs to whichever package contributed it. Keep in step with the
- *  generated registry's SHELL_SECTION_KEYS (packages.mjs): the two lists are the one rule, checked and trusted. */
+/** The settings keys the SHELL owns, which no package may contribute as a section (the app registries refuse one
+ *  that does). Everything else under `settings` belongs to whichever package contributed it. Keep in step with
+ *  SHELL_SECTION_KEYS in src/contributions/appRegistries.ts, which test/project/sections.test.ts holds to this list. */
 export const CORE_SETTING_KEYS = ["layout", "midiRouting", "audioRouting", "zoom"] as const;
 
 /** Project-level settings. The three routing/layout enums are string-valued (see settingsEnums); `zoom` is a magnitude
