@@ -221,7 +221,7 @@ JSON**, backed by two mechanisms:
 the same shape and the same stamp rules as a project section), reached through the generic `config` host group
 (`section` / `setSection`). Three rules are config-file-specific and a pack author copying a project section must know
 them. (1) **The shell's keys are the shell's**: `CORE_CONFIG_KEYS` is derived from `userConfigSchema`'s shape plus
-`schemaVersion`, and the generated registry refuses a contributor of one. (2) **An absent key is not invented**: a
+`schemaVersion`, and the config sections registry's check refuses a contributor of one. (2) **An absent key is not invented**: a
 section this product contributes but the file has never carried reads its contributor's defaults, and a write of the
 file leaves it absent until `setSection` writes it - which is what lets a pre-section file round-trip byte for byte and
 the plugin (which lists no audio package) write a standalone's `audio` block back instead of erasing it (a

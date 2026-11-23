@@ -138,8 +138,9 @@ folds each attached role's `onConstruct` over the spec before the boot puts its 
 ## The built-in roles
 
 The control-plane registry ([appHost.ts](../packages/retroplug/src/appHost.ts) `buildAppRegistry`)
-applies the generated `ROLES` list (`src/generated/packages.ts`) and
-then the ROM providers (`registerRomProviders`). The list is every package's `app` module concatenated in the
+is an `AppRoleRegistry` over the live roles and ROM providers registries
+(`src/contributions/appRegistries.ts`, seeded by `src/generated/packages.ts`), adopting what a later commit adds at its
+next read. The list is every package's `app` module concatenated in the
 product's order (docs/modular-graph-phase-f1-design.md section 3), so a role is an object its owning package
 exports (a `RoleType`, not a `register*` call): the system roles, the sync roles, the asset and marker roles
 (`lsdj-assets`, `risa`, `risa-assets`, `bliptoaster`, `bliptoaster-assets`) and their packages' providers all
@@ -431,7 +432,7 @@ Which role kind is placed as which node, and how each type is wired, is one pure
 `protocolPipeline`, and `outNodeOf` for a type's `out`): both stores and a `DirectGraph` read it, with or
 without a role registry, and a role with no node is left out, so an edit to it (a model, a palette, an
 asset override) leaves the document as it was. `test/system-settings/registry.test.ts` holds it to the roles the
-generated `ROLES` list carries, and `test/graph/protocol-nodes.test.ts` to the ports each node module
+roles registry carries, and `test/graph/protocol-nodes.test.ts` to the ports each node module
 declares and to the bundle's node types; `golden/build-graph-roles.json` records the documents it makes
 `buildGraph` build.
 
@@ -542,7 +543,7 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   [risa](../packages/risa/ts/protocol.ts), [smsggdj](../packages/smsggdj/ts/protocol.ts),
   [lsdj](../packages/lsdj/ts/protocol.ts)), which the manifests' span labels order.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity, over the
-  generated `ROM_PROVIDERS`.
+  live `romProviders` registry.
 - [packages/launchpad/ts/nodes.ts](../packages/launchpad/ts/nodes.ts): the launchpad pack's one node type,
   `rp.controller.session` ([ts/controllerSession.ts](../packages/launchpad/ts/controllerSession.ts)).
   The MIDI routing node is [core](../packages/core/ts/protocol.ts); `lsdjSyncSettings.ts` (the `lsdj-sync` schema both

@@ -131,7 +131,7 @@ as a provider), the plugin names `n8` alone (its MIDI seam caps a message at 4 b
 `plugin.cmake` refuses, at configure, a plugin target linked to `retroplug-launchpad-desktop`. A test binary that is a
 product takes the same argument.
 
-**The registries are generated, not written.**
+**The registries are seeded by generated modules, and live.**
 [packages/retroplug/scripts/lib/packages.mjs](../packages/retroplug/scripts/lib/packages.mjs) writes the shell's
 `src/generated/{packages,consoles,protocol,scriptNodes,placers}.ts` from a product list (`retroplug.products.<name>` in
 the root [package.json](../package.json)): `packages.ts` concatenates each package's `app` contribution, `consoles.ts`
@@ -143,7 +143,26 @@ bundle's entry, in span-label order, `placers.ts` each package's `retroplug.prot
 services, actions })`: the menu contributions, the UI services and the app actions the key maps dispatch, imported only
 by the UI), `ui/generated/views.ts` each package's `retroplug.views` module (the views, imported only by the shell's
 view slots), and `cli/generated/tools.ts` is each package's `retroplug.cli` module in product order (the CLI tools,
-imported only by the dispatcher). **Every product but the desktop gets its own tree**, and its own bundles (the four
+imported only by the dispatcher).
+
+Each list is a live registry (`packages/retroplug/src/contributions/registry.ts`): the generated modules hold no
+lists and no checks, only one `commitContributions` call each, which seeds the hand-written registries
+(`src/contributions/{consoleRegistries,placerRegistries,appRegistries}.ts`, `ui/contributions/uiRegistries.ts`,
+`cli/contributions/toolRegistries.ts`) in product order. A registry only grows, a commit is all or nothing across
+registries, and every seeded registry's check runs at every commit, so a contribution committed later (a pack's,
+[downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md)) is held to what a built-in one
+is and reaches the stores, the menus, the views and the CLI. The console lookups and other derived lists are rebuilt
+on the commit counter (`derivedList` keeps a list's identity across a commit that does not change it), the project and
+config stores adopt sections and services at their next read (`adoptContributions` publishes at once, on the project
+channel too, and a project service whose `create()` throws when adopted is warned about and skipped), and the app
+re-renders on the counter; the grid remounts a tile only when the tile views change (`SystemGrid` keys `EmulatorTile`
+on `tileViews().length`). The UI bundle's seam is `__rp_commitUiContributions`, which commits by registry name
+(`commitByName`). A shell module reads a registry through its facade (`src/contributions/app.ts`,
+`src/contributions/placers.ts`, `src/consoles.ts`, `ui/contributions/menus.ts`, `ui/contributions/views.ts`), which
+imports the generated seed, never the generated module directly. `src/generated/apiLevel.ts` is `RP_API_LEVEL` read
+from `rp_pack.h`.
+
+**Every product but the desktop gets its own tree**, and its own bundles (the four
 embedded bundles: the control plane, the React UI, the script nodes and the render worker): `generate({ product })` (the
 CLI's `--product` with `--build-dir`, or `--products-dir` for the typecheck's tree) writes
 `build/products/<name>/packages/retroplug/{src,ui}/generated/`, in the shell's shape, with a `tsconfig.json` over it
@@ -165,13 +184,13 @@ ahead of a stale one, so `resolveTracker` takes the first placed marker in the S
 product order decides only when the ROM earns neither (`SystemsStore.suggestedFirst`,
 [trackerRegistry.ts](../packages/retroplug/src/trackerRegistry.ts)). A role's kind and a kit format's id are otherwise
 looked up rather than sequenced (one package's roles interleave another's without consequence), so for those a
-duplicate is the hazard: the generated module refuses a role kind, a kit format id or a marker role declared twice,
+duplicate is the hazard: the registry's check refuses a role kind, a kit format id or a marker role declared twice,
 each with its own message. The generator itself refuses a list that puts a package before a dependency, a
 dependency the product does not carry whose contribution would be lost, a dependency on the shell, a duplicate product
 entry, a node type or span label declared twice, a label that is below 16 or leaves a gap, a role naming a node no
 package wires, a manifest that names a missing module or one its `exports` do not publish, and a contributing package
 the shell does not declare. A package's `retroplug.embed` entry (the bytes a product bakes in) is paired at load with
-the `embeds` declaration its **app module** makes (`{ id, label, platform }`): the generated module refuses a manifest
+the `embeds` declaration its **app module** makes (`{ id, label, platform }`): the registry's check refuses a manifest
 entry no app module declares, a declaration no manifest bakes in (or one whose halves are in two packages), an id
 declared twice and a platform no console registers, each naming the package(s). A protocol node whose core must CAPTURE
 its serial out declares, in the manifest, what the core's capture should do in each of the cart's sync modes: `capture:
@@ -289,7 +308,7 @@ package's `tsconfig` and keeps its fixtures and goldens beside it
 (`lsdj/sav`, `risa/record`, `bliptoaster/rom`, `smsggdj/rle`, `n8/n8MidiToFifo`), so a filter's spelling follows the
 move. Tests of the stores, the menus, `buildGraph`, the engine, `test-native` and `test-ui` stay with the shell, as do
 the ones that drive its registry (`test/system-settings/*`, `test/risa/detect`, `test/bliptoaster/romDetect`,
-`test/dsp/sms-sync`), whose subjects are the shell's provider dispatch and generated lists. The skip baseline
+`test/dsp/sms-sync`), whose subjects are the shell's provider dispatch and live registries. The skip baseline
 ([scripts/skip-baseline.json](../packages/retroplug/scripts/skip-baseline.json)) records one ts-tier file,
 `lsdj/ui-views` (one of its five cases skips), so moving a file that has an entry (today only that one) moves its entry
 to the new slug.
@@ -408,7 +427,7 @@ native node types alone ([spec/02](02-native-host.md#packs-a-packages-native-hal
 5. The four members through which a package owns part of a project and of the graph. `retroplug.app` may declare
    `projectSections`: a block of a project's `settings`, as `{ key, schema, defaults, version?, migrations?, merge? }`.
    The key is the block's name under `settings`, and it is never one of the shell's own core keys
-   (`layout`, `midiRouting`, `audioRouting`, `zoom`), never two packages' (the generated registry refuses both), and
+   (`layout`, `midiRouting`, `audioRouting`, `zoom`), never two packages' (the registry's check refuses both), and
    `__proto__` is refused by the writer. `schema.parse` is the raw value's one door (defaults filled, junk clamped,
    never a throw), `defaults()` is what a fresh project reads, an optional `version` stamps the block (an unstamped one
    reads as version 1) with `migrations` keyed by FROM-version, and `merge` is how a patch lands (a shallow merge by
@@ -421,7 +440,7 @@ native node types alone ([spec/02](02-native-host.md#packs-a-packages-native-hal
    `PackageContributions`, so an app module that declares one imports `@retroplug/tracker/packageContributions` for the
    type. The manifest's `protocol.placer` names a module default-exporting `definePlacer({ key, normalize, place })`,
    which buildGraph calls at the slots it holds; its `key` is the `projectServices` factory's key whose `graphModel` is
-   the model it places (the generated registry refuses a service or placer key that is one of the shell's own or that
+   the model it places (the registry's check refuses a service or placer key that is one of the shell's own or that
    names no section). A `placer`, a kind's `control` module and a kind item's control-plane half are CONTROL-PLANE
    code: they live in the package's `ts/control/`, and they may read no node module and no zod beyond what the planner's
    bundle check allows. A device pack's scenario leaves that tree out only when its `app` entry IS `ts/control/index.ts`:
@@ -433,7 +452,7 @@ native node types alone ([spec/02](02-native-host.md#packs-a-packages-native-hal
    `section` / `setSection` group on the host (`host.config`). `setSection` answers whether the file HOLDS the patch,
    which a re-send of what it already carries is, for the reason spec/05's config section gives. Its `key` is a ROOT key
    of config.json, never one of the shell's own (`CORE_CONFIG_KEYS`, derived from `userConfigSchema`'s shape plus
-   `schemaVersion`) and never two packages' (the generated registry refuses both, and `core/ts/host.ts`'s `ConfigHost`
+   `schemaVersion`) and never two packages' (the registry's check refuses both, and `core/ts/host.ts`'s `ConfigHost`
    doc states the file rules). Two differences from a project section, both because the file is shared by builds of
    different ages: an absent key reads the defaults but is NOT written until `setSection`, and a block this session did
    not set is written back VERBATIM, so an additive field a newer build wrote survives. A section's parse should

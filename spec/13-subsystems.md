@@ -24,7 +24,7 @@ import/export paths are written once:
 - **`AssetCatalog`** — the replaceable ROM assets (kits, palettes/themes, fonts): the base ROM's
   slots, the effective merge with the per-system override list, `applyRoleConfig` and `hasEdits`.
   All four consoles implement both sides.
-- **`TRACKER_INTEGRATIONS`** — the registry that maps a system to its catalogs.
+- **`trackerIntegrations`** - the live registry (`src/contributions/appRegistries.ts`) that maps a system to its catalogs.
 - **`liveSav`** — reads the battery out of the *running* core rather than off disk, which is why
   the Songs menu acts on what the cart currently has.
 - **Kit compiles** are TypeScript (a cart's [`ts/kitFormat.ts`](../packages/lsdj/ts/kitFormat.ts) over dsp's
