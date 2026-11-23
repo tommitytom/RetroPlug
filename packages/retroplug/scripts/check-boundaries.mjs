@@ -38,11 +38,11 @@
 //      module that moved away;
 //   9. an @retroplug/<package> specifier in the shell's own src, cli or ui that is not one of that root's list
 //      (SHELL_IMPORTS for src and cli, UI_IMPORTS for ui, both declared in lib/contracts.mjs), each an explicit list
-//      of contract modules with the reason each entry is a contract rather than a cart; or a RELATIVE import from there that lands outside what that root
-//      may reach (src: src; cli: cli and src; ui: ui and src): a file of the app may reach a cart or a console only
-//      through the generated registries the generator writes, and the app's other trees are not a source's to import.
-//      Each generated/ tree is not judged (it is the one place that names every package), and an entry no import of its
-//      root uses fails the check.
+//      of contract modules with the reason each entry is a contract rather than a cart; or a RELATIVE import from
+//      there that lands outside what that root may reach (src: src; cli: cli and src; ui: ui and src): a file of the
+//      app may reach a cart or a console only through the generated registries the generator writes, and the app's
+//      other trees are not a source's to import. Each generated/ tree is not judged (it is the one place that names
+//      every package), and an entry no import of its root uses fails the check.
 //
 // A host module (the bare specifiers packages/retroplug/host-modules.json lists) is judged twice more: the package must
 // declare it in `retroplug.host`, and it is importable only from the files of the surface its entry names (a package's
