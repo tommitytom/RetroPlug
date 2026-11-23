@@ -76,7 +76,7 @@ if (require.main === module) {
 
     const entryPath = entryArg
         ? path.resolve(entryArg)
-        : path.resolve(REPO_ROOT, "packages/ui/src/PluginUI.tsx");
+        : path.resolve(REPO_ROOT, "packages/retroplug/ui/main.tsx");
 
     fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
 
