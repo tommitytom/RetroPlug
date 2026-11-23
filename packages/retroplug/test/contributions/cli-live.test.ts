@@ -15,7 +15,8 @@ const fixtureTool = {
 } as unknown as CliTool;
 
 test("the shell's tool names are the dispatcher's own five, first in the index", () => {
-  expect(tools().slice(0, SHELL_TOOL_NAMES.length).map((tool) => tool.name)).toEqual([...SHELL_TOOL_NAMES]);
+  const all = tools();
+  expect(all.slice(0, all.length - cliToolsRegistry.items().length).map((t) => t.name)).toEqual([...SHELL_TOOL_NAMES]);
 });
 
 test("a tool committed later joins the index after the built-ins", () => {

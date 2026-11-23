@@ -34,8 +34,9 @@
 //                                                    that a React view is reached only from the shell's view slots: the
 //                                                    pure tier bundles the menu modules with no alias, and a component
 //                                                    view could not resolve React there
-//   packages/retroplug/cli/generated/tools.ts         the CLI's subcommands, in product order, with the checks their
-//                                                    argument shapes are held to at load
+//   packages/retroplug/cli/generated/tools.ts         the CLI's subcommands, in product order, seeded into
+//                                                    cliToolsRegistry, whose check (cli/contributions/toolRegistries.ts)
+//                                                    refuses a duplicate or a shell name at every commit
 //
 // The product list is one of the root package.json's retroplug.products lists, the same ones the root CMakeLists.txt
 // reads into RP_PRODUCT_PACKAGES_<name> (through product-lists.mjs, because its JSON reader cannot enumerate an
@@ -1054,8 +1055,8 @@ function renderProductPaths(entries) {
 }
 
 /** The generated CLI tools module (`<shell>/cli/generated/tools.ts`): each package's `retroplug.cli` module, in product
- *  order, with the load-time refusal of a name two packages declare (the shell's own five are refused by the dispatcher,
- *  which is where they are). Imported only by cli/, so no other bundle carries a tool. */
+ *  order, seeded into cliToolsRegistry, whose check (cli/contributions/toolRegistries.ts) refuses a duplicate name or
+ *  one of the shell's own at every commit. Imported only by cli/, so no other bundle carries a tool. */
 function renderCliTools({ packages, outDir, shellDir, product }) {
   const contributors = packages.filter((p) => p.cli);
   const local = (name) => `cli_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;

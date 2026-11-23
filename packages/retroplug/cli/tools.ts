@@ -36,8 +36,8 @@ function fromContribution(tool: CoreCliTool): CliTool {
 }
 
 /** Every baked-in command, in the index's order: the shell's five, then the packages' in product order. One subcommand
- *  is one tool: a contributed name the shell already has would silently shadow it (the dispatcher finds the first), so
- *  it is refused here, where a test can show it, rather than at a user's first run. */
+ *  is one tool: a contributed name the shell already has would silently shadow it (the dispatcher finds the first).
+ *  The registry's check refuses it at the commit; this is the backstop for a caller composing lists of its own. */
 export function composeTools(shell: readonly CliTool[], contributed: readonly CliTool[]): readonly CliTool[] {
   for (const tool of contributed) {
     if (shell.some((own) => own.name === tool.name)) {
