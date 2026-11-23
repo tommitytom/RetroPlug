@@ -1,0 +1,23 @@
+{
+  "id": "packfixture-script",
+  "name": "Pack fixture (packfixture-script)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "source": "packages/native/test/packs/fixture",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": [
+      "rp.packfixture-script.tone",
+      "rp.packfixture-script.gain"
+    ],
+    "roles": []
+  },
+  "halves": {
+    "native": "rp-packfixture-script",
+    "script": "js/script.js"
+  }
+}

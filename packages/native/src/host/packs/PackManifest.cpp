@@ -256,15 +256,20 @@ bool isPackVersion(std::string_view v) {
 
 namespace {
 
-// A segment Windows cannot hold as written: a reserved device name (CON, PRN, AUX, NUL, COM1 to COM9, LPT1 to LPT9,
-// alone or before an extension, in any case), or one ending in a dot or a space, which Windows strips, so two
-// spellings would open one file.
+// A segment Windows cannot hold as written: a reserved device name (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0 to COM9,
+// LPT0 to LPT9, alone or before an extension, in any case), or one ending in a dot or a space, which Windows strips,
+// so two spellings would open one file; or one holding a character Windows refuses in any name.
 bool isWindowsReserved(std::string_view seg) {
     if (seg.back() == '.' || seg.back() == ' ') return true;
+    // Characters Windows refuses in any file name (':' and '\\' are refused for the whole path already).
+    if (seg.find_first_of("<>\"|?*") != std::string_view::npos) return true;
     std::string stem(seg.substr(0, seg.find('.')));
+    // Windows ignores spaces before the extension too, so "con .txt" is the console.
+    while (!stem.empty() && stem.back() == ' ') stem.pop_back();
     for (char& c : stem) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul") return true;
-    return stem.size() == 4 && (stem.compare(0, 3, "com") == 0 || stem.compare(0, 3, "lpt") == 0) && stem[3] >= '1' &&
+    if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul" || stem == "conin$" || stem == "conout$")
+        return true;
+    return stem.size() == 4 && (stem.compare(0, 3, "com") == 0 || stem.compare(0, 3, "lpt") == 0) && stem[3] >= '0' &&
            stem[3] <= '9';
 }
 

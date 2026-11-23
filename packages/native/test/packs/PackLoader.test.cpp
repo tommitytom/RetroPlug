@@ -197,6 +197,9 @@ TEST_CASE("a pack whose library is missing or exports no entry is refused", "[pa
     // The protocol and script halves are M2d's: a pack with one is refused whole.
     checkRefused(table, "packfixture-protocol",
                  "has a protocol half (js/protocol.js), which this RetroPlug does not load yet");
+    checkRefused(table, "packfixture-script",
+                 "has a script half (js/script.js), which this RetroPlug does not load yet; a pack loads whole or not "
+                 "at all");
 }
 
 TEST_CASE("a pack that registers what it does not declare, or what is registered already, is refused",

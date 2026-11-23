@@ -14,6 +14,7 @@
 #   packfixture-pair          two packages from one library (FixtureSecond.cpp), the second taking the good pack's types
 #   packfixture-tshalf        a TS half naming a file the pack does not have
 #   packfixture-protocol      a protocol half, which M2c does not load (M2d's)
+#   packfixture-script        a script half, likewise
 #   packfixture-duplicate     registers rp.core.add, a built-in's type
 #   packfixture-clone         registers the good pack's two types under another package id
 #   packfixture-scriptclash   types in a script pack's namespace (test.clash), for a script reload to hold and drop
@@ -85,4 +86,7 @@ retroplug_pack_module(retroplug-packfixture-tshalf-pack
     NO_LIBRARY)
 retroplug_pack_module(retroplug-packfixture-protocol-pack
     MANIFEST ${_rp_fixture_dir}/manifests/packfixture-protocol.json
+    NO_LIBRARY)
+retroplug_pack_module(retroplug-packfixture-script-pack
+    MANIFEST ${_rp_fixture_dir}/manifests/packfixture-script.json
     NO_LIBRARY)

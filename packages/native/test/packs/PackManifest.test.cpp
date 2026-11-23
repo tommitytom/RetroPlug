@@ -55,7 +55,9 @@ TEST_CASE("a half's path is printable ASCII and a name Windows can hold", "[pack
     // views is a half of its own (docs/downloadable-packs-m2c-plan.md).
     CHECK(parses(R"({"native":"rp-demo","views":"js/views.js"})"));
     for (const char* bad : {"js/con.js", "js/CON", "js/aux.txt", "js/nul", "js/com1.js", "js/LPT9", "js/app.js.",
-                            "js/app.js ", "js/app\x01.js", "js/\xc3\xa9.js"}) {
+                            "js/app.js ", R"(js/app\u0001.js)", R"(js/é.js)", "js/a?.js", "js/a<b.js",
+                            "js/a|b.js", "js/a*.js", "js/com0.js", "js/LPT0", "js/con .txt", "js/conin$.js",
+                            "js/CONOUT$"}) {
         INFO(bad);
         CHECK_FALSE(parses(std::string(R"({"native":"rp-demo","app":")") + bad + "\"}"));
     }
