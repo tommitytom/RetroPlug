@@ -22,10 +22,10 @@ extern "C" {
 
 /* The API level: one integer, bumped by hand in any commit that breaks packs (the C ABI in rp_node.h, SystemBase and
  * the contract headers, the TS contract modules). A pack records the level it was built against, in its pack.json and
- * from its entry, and is refused at any other. cmake/packs.cmake reads this line to stamp a pack's pack.json, and M2's
- * TS halves read it the same way (the generator, packages/retroplug/scripts/lib/packages.mjs, writing it into a
- * generated module), so it stays a plain decimal with a `u` suffix on a line of its own (both readers parse that line)
- * and there is one source for both languages. */
+ * from its entry, and is refused at any other. cmake/packs.cmake reads this line to stamp a pack's pack.json, and the TS
+ * halves read it the same way (the generator, packages/retroplug/scripts/lib/packages.mjs, writing it into the
+ * generated module src/generated/apiLevel.ts), so it stays a plain decimal with a `u` suffix on a line of its own
+ * (both readers parse that line) and there is one source for both languages. */
 #define RP_API_LEVEL 1u
 
 /* The symbol a pack's library exports (an rp_pack_entry_fn). */

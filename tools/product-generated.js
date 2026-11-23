@@ -28,6 +28,7 @@ const GENERATED = {
   protocol: "src",
   scriptNodes: "src",
   placers: "src",
+  apiLevel: "src",
   menus: "ui",
   views: "ui",
 };

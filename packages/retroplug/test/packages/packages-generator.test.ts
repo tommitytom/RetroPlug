@@ -1131,12 +1131,19 @@ test("an embed declared by one package and baked in by another is refused, namin
   );
 });
 
+test("the generator writes RP_API_LEVEL from rp_pack.h into apiLevel.ts", async () => {
+  const out = await drive("api-level");
+  expect(typeof out.header).toBe("number");
+  expect(out.header).toBeGreaterThan(0);
+  expect(out.file.includes(`export const API_LEVEL = ${out.header};`)).toBe(true);
+});
+
 test("an unchanged input leaves the generated files untouched", async () => {
   const report = await drive("twice");
   const [changedFirst, changedSecond] = report.changed as [boolean[], boolean[]];
   const [before, after] = report.mtimes as [number[], number[]];
-  expect(changedFirst).toEqual([true, true, true, true, true, true, true, true, true, true]);
-  expect(changedSecond).toEqual([false, false, false, false, false, false, false, false, false, false]);
+  expect(changedFirst).toEqual([true, true, true, true, true, true, true, true, true, true, true]);
+  expect(changedSecond).toEqual([false, false, false, false, false, false, false, false, false, false, false]);
   // The driver aged the files by a minute before the second run, so a rewrite would show: these are the same stamps.
   expect(after).toEqual(before);
   expect(after[0]).toBe(before[0]);
@@ -1149,6 +1156,7 @@ test("an unchanged input leaves the generated files untouched", async () => {
   expect(after[7]).toBe(before[7]);
   expect(after[8]).toBe(before[8]);
   expect(after[9]).toBe(before[9]);
+  expect(after[10]).toBe(before[10]);
 });
 
 test("the generated module refuses two control-plane halves of one id, naming both packages", async () => {

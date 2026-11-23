@@ -16,6 +16,7 @@
 //                              "scriptNodes.ts": <text>, "placers.ts": <text>, "menus.ts": <text>,
 //                              "views.ts": <text> }, packages: [...] }
 //   consoles        { consoles: [{ id, core, nodeType, platforms }], realCarts: [{ platform, cartNode }] }
+//   api-level       { header: <RP_API_LEVEL read from rp_pack.h>, file: <the generated apiLevel.ts> }
 //   twice           { mtimes: [<after one run>, <after a second>], changed: [<first run>, <second run>] }
 //   run             { registered: [<the ids the generated entry registers, in order>] }
 //   missing-node    { error: <the generated entry's own refusal> }
@@ -467,10 +468,18 @@ try {
       }
       break;
     }
+    case "api-level": {
+      generate({ root });
+      // The header's own line, read independently of the generator: the two must agree.
+      const header = readFileSync(join(HERE, "../../../node-sdk/native/src/graph/rp_pack.h"), "utf8");
+      const level = /^#define RP_API_LEVEL (\d+)u?\s*$/m.exec(header);
+      result = { header: level ? Number(level[1]) : null, file: readFileSync(join(generated, "apiLevel.ts"), "utf8") };
+      break;
+    }
     case "twice": {
       const first = generate({ root });
       const files = [
-        ...["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts", "placers.ts"].map((name) =>
+        ...["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts", "placers.ts", "apiLevel.ts"].map((name) =>
           join(generated, name)),
         join(root, "packages/retroplug/ui/generated/menus.ts"),
         join(root, "packages/retroplug/ui/generated/views.ts"),
