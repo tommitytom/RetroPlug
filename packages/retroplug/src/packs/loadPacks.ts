@@ -17,6 +17,36 @@ import { nativePackHost, type HalfKind, type PackHost, type PackInfo } from "./p
 /** A half's default export as the additions a commit takes; throws when the export is not the half's shape. */
 export type HalfBuilder = (pkg: string, exported: unknown) => Addition<any>[];
 
+/** How long a half may take to evaluate before its pack is refused: below the hosts' own ready deadline (10 s), so a
+ *  stuck top-level await names the pack instead of leaving the host without its control plane. */
+let halfTimeoutMs = 5000;
+
+/** Test seam: the half timeout in ms, returning the previous one. */
+export function setHalfTimeoutMs(ms: number): number {
+  const was = halfTimeoutMs;
+  halfTimeoutMs = ms;
+  return was;
+}
+
+/** The half's namespace, or the refusal that names it when it does not settle in time. */
+async function importWithin(host: PackHost, id: string, kind: HalfKind): Promise<unknown> {
+  // The shell's tsconfig carries no timer types (txiki provides the globals), so they are reached by name.
+  const timers = globalThis as unknown as {
+    setTimeout(fn: () => void, ms: number): unknown;
+    clearTimeout(id: unknown): void;
+  };
+  let timer: unknown;
+  const limit = halfTimeoutMs;
+  const stuck = new Promise<never>((_, reject) => {
+    timer = timers.setTimeout(() => reject(new Error(`its ${kind} half did not finish evaluating within ${limit / 1000} s`)), limit);
+  });
+  try {
+    return await Promise.race([host.importHalf(id, kind), stuck]);
+  } finally {
+    timers.clearTimeout(timer);
+  }
+}
+
 /** The default export as an object, or the refusal that names the half. */
 export function objectExport(half: HalfKind, exported: unknown): Record<string, unknown> {
   if (typeof exported !== "object" || exported === null || Array.isArray(exported)) {
@@ -183,7 +213,7 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
     try {
       const exported = new Map<HalfKind, unknown>();
       for (const kind of todo) {
-        const ns = (await host.importHalf(pack.id, kind)) as { default?: unknown };
+        const ns = (await importWithin(host, pack.id, kind)) as { default?: unknown };
         exported.set(kind, ns.default);
       }
       checkManifest(pack, exported, platforms);

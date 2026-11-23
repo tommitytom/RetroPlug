@@ -10,7 +10,7 @@
 //   __rp_newProject()           — DPF setState(""): reset to an empty project
 //   __rp_setHostOutputs(n)      - the host's output channel count: the graph's multi(n) shape
 //   __rp_packStatus()           - what the packs' halves loaded and refused
-//   __rp_ready                  - set true once composition succeeded and the packs' app halves committed
+//   __rp_ready                  - set true once composition succeeded and the packs' app halves were loaded or refused
 //
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the
 // .rplg is binary PKZIP). Every op is synchronous over the synchronous Backend RPC — the host pumps

@@ -329,7 +329,16 @@ int main(int argc, char** argv) try {
     // runs during these pumps. A normal command runs to completion + calls tjs.exit within the bounded
     // backstop; a long-running session calls __rp_keepAlive() during setup, which drops us into the unbounded
     // loop below so it can react to MIDI until tjs.exit or Ctrl-C.
-    for (int i = 0; i < 20000 && !pump.exitTaken() && !g_sigint && !g_keepAlive && !pump.threw(); ++i) pump.pumpOnce();
+    // Past those pumps a pack's half still evaluating (a top-level await) is waited for at ~1 ms a pump, up to the
+    // deadline the TS loader's own timeout sits below.
+    const auto sessionDeadline = std::chrono::steady_clock::now() + rp::host::kHostReadyDeadline;
+    for (int i = 0; !pump.exitTaken() && !g_sigint && !g_keepAlive && !pump.threw(); ++i) {
+        if (i >= 20000) {
+            if (std::chrono::steady_clock::now() >= sessionDeadline) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        pump.pumpOnce();
+    }
 
     if (g_keepAlive && !pump.threw()) {
         // Long-running session (e.g. a live MIDI bridge): pump until it exits, throws or Ctrl-C. The 250us cadence

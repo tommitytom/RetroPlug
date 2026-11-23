@@ -10,6 +10,12 @@ export const CLI_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
   ...APP_BUILDERS,
   cli: (pkg, exported) => {
     if (!Array.isArray(exported)) throw new Error("its cli half's default export is not a defineCliTools([...]) list");
+    (exported as unknown[]).forEach((t, i) => {
+      const tool = t as Partial<Record<keyof CliTool, unknown>> | null;
+      const ok = typeof tool === "object" && tool !== null && typeof tool.name === "string" && tool.name !== "" &&
+        typeof tool.summary === "string" && typeof tool.help === "string" && typeof tool.run === "function";
+      if (!ok) throw new Error(`its cli half's tool ${i} is not a CliTool (name, summary, help, run)`);
+    });
     return [{ registry: cliToolsRegistry, pkg, items: exported as CliTool[] }];
   },
 };

@@ -3,6 +3,7 @@
 // (src/packs/packHost.ts) reads.
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 
 #include "quickjs.h"
@@ -10,6 +11,12 @@
 #include "host/js/rp_js_module.h"
 
 namespace rp::host {
+
+/** How long a host waits for its entry to signal ready (or finish) while a pack's half evaluates. The wait pumps with
+ *  no sleep for its first pumps, so an empty pack list costs nothing; after that it sleeps ~1 ms a pump up to this
+ *  deadline. The TS loader refuses a half that has not settled well before it (loadPacks.ts), so a stuck pack is named
+ *  rather than leaving the host without its control plane. */
+inline constexpr std::chrono::seconds kHostReadyDeadline{10};
 
 namespace packs {
 class PackTable;

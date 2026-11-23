@@ -7,6 +7,8 @@
 #include "DistrhoPlugin.hpp"
 
 #include <array>
+#include <chrono>
+#include <thread>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -489,11 +491,19 @@ private:
             d_stderr("[retroplug] %s", why.c_str());
             return;
         }
-        // Eval the control-plane bundle (composes the stores, defines the __rp_* globals), then
-        // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
+        // The pack loader serves the packs' TS halves by name; it must be in place before the entry evaluates.
         rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_app_modules, rp_app_modules_count);
+        // Eval the control-plane bundle (composes the stores, defines the __rp_* globals), then pump until it signals
+        // ready: that covers module eval and the packs' app halves (a slow one is waited for, up to the deadline).
+        const auto readyDeadline = std::chrono::steady_clock::now() + rp::host::kHostReadyDeadline;
         host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
-        for (int i = 0; i < 1000 && !readReady(); ++i) host_.pump();
+        for (int i = 0; !readReady(); ++i) {
+            if (i >= 1000) {
+                if (std::chrono::steady_clock::now() >= readyDeadline) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            host_.pump();
+        }
         jsReady_ = readReady();
         if (!jsReady_) { d_stderr("[retroplug] control plane not ready"); return; }
         // The graph's output wiring is built for the plugin's fixed outputs (the control plane owns it).

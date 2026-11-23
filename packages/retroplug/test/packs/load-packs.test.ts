@@ -1,7 +1,7 @@
 // The pack loader (docs/downloadable-packs-m2c-plan.md): a pack's halves imported through the host, held to its
 // manifest, and committed all or nothing per pack, in one commit when every pack passes.
 import { test, expect } from "@retroplug/testing";
-import { loadPacks, packStatus, APP_BUILDERS, type HalfBuilder } from "../../src/packs/loadPacks";
+import { loadPacks, packStatus, setHalfTimeoutMs, APP_BUILDERS, type HalfBuilder } from "../../src/packs/loadPacks";
 import type { HalfKind, PackHost, PackInfo } from "../../src/packs/packHost";
 import { rolesRegistry } from "../../src/contributions/appRegistries";
 import { consolesRegistry, realCartsRegistry } from "../../src/contributions/consoleRegistries";
@@ -247,4 +247,16 @@ test("the fallback refuses a pack whose required platform's provider was refused
   await loadPacks(host, APP_BUILDERS);
   expect((refused["lp-prov"] ?? "").includes("twice")).toBe(true);
   expect((refused["lp-user"] ?? "").includes("requires the platform lp-p6")).toBe(true);
+});
+
+test("a half that never settles is refused by name within the timeout, and the load still resolves", async () => {
+  const { host, refused } = fakeHost([pack("lp-stuck")], {});
+  host.importHalf = () => new Promise(() => {});
+  const was = setHalfTimeoutMs(20);
+  try {
+    await loadPacks(host, APP_BUILDERS);
+  } finally {
+    setHalfTimeoutMs(was);
+  }
+  expect(refused["lp-stuck"]).toBe("its app half did not finish evaluating within 0.02 s");
 });

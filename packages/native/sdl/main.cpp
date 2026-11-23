@@ -78,8 +78,16 @@ bool bootControlPlane(AppState& a) {
         return false;
     }
     rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_app_modules, rp_app_modules_count);
+    const auto readyDeadline = std::chrono::steady_clock::now() + rp::host::kHostReadyDeadline;
     a.host.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
-    for (int i = 0; i < 1000 && !readReady(a.host); ++i) a.host.pump();
+    // No sleep while ready arrives within the first pumps; a pack half that is slow to evaluate is waited for.
+    for (int i = 0; !readReady(a.host); ++i) {
+        if (i >= 1000) {
+            if (std::chrono::steady_clock::now() >= readyDeadline) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        a.host.pump();
+    }
     if (!readReady(a.host)) { std::fprintf(stderr, "[retroplug-sdl] control plane not ready\n"); return false; }
     return true;
 }
@@ -172,7 +180,14 @@ int main(int argc, char** argv) {
     }
 
     if (!setupSdl(app)) return 1;
-    if (!bootControlPlane(app)) return 1;
+    if (!bootControlPlane(app)) {
+        // The control plane's module is still suspended on a pack half that never finished evaluating: freeing a QuickJS
+        // runtime with a suspended async module aborts in its finalizers (the destructors below would run that free,
+        // exit 134). Nothing has started that the OS does not release at exit but the providers, which are stopped here.
+        rp_stop_providers(app.providers);
+        std::fflush(nullptr);
+        std::_Exit(1);
+    }
 
     // Autoload a .rplg project before the audio thread takes the Engine (structural build runs direct).
     if (!autoloadPath.empty()) {
