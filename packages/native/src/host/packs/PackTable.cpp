@@ -90,6 +90,12 @@ bool trialAdd(rp::graph::NodeRegistry& trial, const rp_package* package, std::st
 PackTable::PackTable(std::span<const rp_package* const> builtIns, fs::path dataRoot)
     : builtIns_(builtIns.begin(), builtIns.end()), dataRoot_(std::move(dataRoot)) {}
 
+// The MicroQuickJS host keeps a pointer into every script half it registered for the life of the process, so a table
+// that goes away (a test's; the process table never does) leaves them alive rather than free what the host reads.
+PackTable::~PackTable() {
+    for (auto& half : scripts_) (void)half.release();
+}
+
 std::size_t PackTable::size() const {
     std::lock_guard<std::mutex> hold(mutex_);
     return packs_.size();
@@ -336,10 +342,33 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
         if (list == nullptr || count == 0) return refuseHere(id, pack + "'s library registers no package");
         loaded->packages.assign(list, list + count);
     }
+    // Who holds each type id now: the built-ins, then every pack loaded before this one.
+    std::map<std::string, std::string, std::less<>> holder;
+    const auto holdTypes = [&](const rp_package* p) {
+        if (p == nullptr) return;
+        for (std::uint32_t k = 0; k < p->node_type_count; ++k)
+            if (p->node_types && p->node_types[k] && p->node_types[k]->id)
+                holder.emplace(p->node_types[k]->id, packageIdOf(p));
+    };
+    for (const rp_package* b : builtIns_) holdTypes(b);
+    for (const auto& p : packs_)
+        for (const rp_package* q : p->packages) holdTypes(q);
     // The script half: compiled now, then registered on the MicroQuickJS host, which loads the whole pack in a control
     // context and refuses definitions that are not its type ids. Held by the table from its registration on, loaded or
     // refused (registerPack keeps a pointer to it).
     if (manifest->script) {
+        // A type the manifest names that is held already is refused before anything is compiled: a registration on the
+        // MicroQuickJS host takes one of its few pack slots for the life of the process, refused or not.
+        for (const auto& typeId : manifest->script->nodeTypes) {
+            const auto it = holder.find(typeId);
+            std::string by = it != holder.end() ? it->second : std::string();
+            for (const rp_package* p : loaded->packages)
+                for (std::uint32_t k = 0; by.empty() && p && p->node_types && k < p->node_type_count; ++k)
+                    if (p->node_types[k] && p->node_types[k]->id && typeId == p->node_types[k]->id) by = packageIdOf(p);
+            if (!by.empty())
+                return refuseHere(id, pack + " registers node type " + typeId + ", which package " + by +
+                                          " has registered already");
+        }
         auto half = compileScriptHalf(candidate.dir, *manifest, &why);
         if (!half) return refuseHere(id, pack + ": " + why);
         ScriptHalf& held = *half;
@@ -351,17 +380,6 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     // The checks every package of the pack meets, whatever half brought it: a pack's native packages first, then its
     // script package, which is the order an Engine registers them in.
     if (!loaded->packages.empty()) {
-        // Who holds each type id now: the built-ins, then every pack loaded before this one.
-        std::map<std::string, std::string, std::less<>> holder;
-        const auto holdTypes = [&](const rp_package* p) {
-            if (p == nullptr) return;
-            for (std::uint32_t k = 0; k < p->node_type_count; ++k)
-                if (p->node_types && p->node_types[k] && p->node_types[k]->id)
-                    holder.emplace(p->node_types[k]->id, packageIdOf(p));
-        };
-        for (const rp_package* b : builtIns_) holdTypes(b);
-        for (const auto& p : packs_)
-            for (const rp_package* q : p->packages) holdTypes(q);
         for (const rp_package* p : loaded->packages) {
             if (p == nullptr) return refuseHere(id, pack + "'s library returned a null package");
             if (p->abi_version != RP_ABI_VERSION) continue;  // the registry's trial below names the ABI mismatch

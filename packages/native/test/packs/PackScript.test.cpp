@@ -132,9 +132,11 @@ TEST_CASE("a script half compiles at load and its package joins the pack's", "[p
 }
 
 TEST_CASE("a script half is refused, and the pack with it, for each fault", "[packs-script]") {
-    PackTable table(rp::graph::productPackages());
-    REQUIRE(table.load(fixture("scriptfix")));
-    const auto refused = [&](const char* id, const char* reason) {
+    // Each variant but the twin is refused in a table of its own: its types would clash with scriptfix's first, which
+    // is refused before anything is compiled.
+    const auto refused = [&](const char* id, const char* reason, bool afterGood = false) {
+        PackTable table(rp::graph::productPackages());
+        if (afterGood) REQUIRE(table.load(fixture("scriptfix")));
         INFO(id);
         const PackLoad load = table.load(fixture(id));
         INFO(load.error);
@@ -143,7 +145,7 @@ TEST_CASE("a script half is refused, and the pack with it, for each fault", "[pa
         CHECK(table.find(id) == nullptr);
     };
     refused("scriptfix-twin", "registers node type rp.devtest.script-transpose, which package rp.scriptfix.script "
-                              "has registered already");
+                              "has registered already", true);
     refused("scriptfix-types", "its script half is refused");
     refused("scriptfix-syntax", "its script half (js/script.js) does not compile: scriptfix-syntax.js");
     refused("scriptfix-nofile", "script.runtime names js/missing.js, which the pack does not have");
@@ -163,4 +165,15 @@ TEST_CASE("every Engine registers a loaded script half, and a document places it
     const auto placed = e.setGraph(rp::host::test::graphRequest(doc, {}));
     INFO((placed.errors.empty() ? std::string() : placed.errors[0].message));
     CHECK(placed.ok);
+}
+
+TEST_CASE("a script half whose types clash is refused before it takes a MicroQuickJS pack slot", "[packs-script]") {
+    PackTable table(rp::graph::productPackages());
+    REQUIRE(table.load(fixture("scriptfix")));
+    // The host holds a few dozen packs for the life of the process, so a refusal that registered would run it out.
+    for (int i = 0; i < 40; ++i) CHECK_FALSE(table.load(fixture("scriptfix-twin")));
+    PackTable later(rp::graph::productPackages());
+    const PackLoad load = later.load(fixture("scriptfix"));
+    INFO(load.error);
+    CHECK(load);
 }

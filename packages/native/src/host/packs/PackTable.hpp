@@ -63,6 +63,7 @@ public:
     // `dataRoot` is the data root a process's installed packs live in (empty for none): a development folder under it
     // is held like an installed one, or refused, whoever loads it (a launch's discovery, or a live load later).
     explicit PackTable(std::span<const rp_package* const> builtIns = {}, std::filesystem::path dataRoot = {});
+    ~PackTable();
     PackTable(const PackTable&) = delete;
     PackTable& operator=(const PackTable&) = delete;
 
