@@ -1988,6 +1988,4 @@ while it ran, and why:
   ts-fixture/render/, and the CLI cases are in `tools/run-cli-ts-tests.sh`, guarded on the repo's smsggdj ROM (bfd956ce3).
 - Task 6 had already updated spec/06's targets table entry and spec/11's render worker description.
 
-Open, and carried into spec/07: a development pack whose manifest does not parse is refused under its folder's name, which
-for the `build/packs/<id>/<version>` layout is "1.0.0" (found in Task 2); `PackTable::refuse` should use the parent
-folder's name when the folder's name is a pack version, as the installed branch does.
+Fixed after the reviews (fa14ef4f0): a development pack whose manifest does not parse was refused under its folder's name, "1.0.0" for the `build/packs/<id>/<version>` layout; `PackTable::refuse` now uses the parent folder's name when the folder's name is a pack version, as the installed branch does.
