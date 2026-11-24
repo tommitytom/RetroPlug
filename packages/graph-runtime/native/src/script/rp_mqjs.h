@@ -157,6 +157,13 @@ JSValue rp_mqjs_new_uint8_view(JSContext* ctx, JSValue buffer, uint32_t offset, 
  * the table for the context's life, as its own names do. */
 void rp_mqjs_keep_bytecode_names(uint8_t* bytecode, uint32_t size);
 
+/* Zeroes the bytes past the contents of every string and byte array in a prepared bytecode's data (`data`, `size`
+ * bytes, the header not among them; with `box32`, JS_PrepareBytecode64to32's 32-bit blocks), which hold whatever the
+ * compiling heap held there before: after a collection in the compile, words of older blocks, the heap's own
+ * addresses among them (rp_mqjs_engine.c). No reader looks at them; cleared, a compile's bytes are the same wherever
+ * its heap lay. */
+void rp_mqjs_clear_bytecode_padding(uint8_t* data, uint32_t size, int box32);
+
 #ifdef __cplusplus
 }
 #endif

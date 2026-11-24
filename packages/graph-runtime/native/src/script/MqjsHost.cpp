@@ -2241,6 +2241,65 @@ const rp_package* exactPackage(const rp_mqjs_pack_source& source) { return regis
 #endif
 
 #ifndef RP_DEVICE
+std::optional<std::vector<std::uint8_t>> compileScript(std::string_view source, const char* filename, bool box32,
+                                                       std::string* why) {
+    // mqjs -o's own heap for a compile, which a pack's bundle never nears; freed before this returns.
+    constexpr std::size_t kCompileBytes = std::size_t{16} << 20;
+    std::vector<std::uint64_t> memory(kCompileBytes / sizeof(std::uint64_t));
+    JSContext* ctx = JS_NewContext2(memory.data(), kCompileBytes, &rp_mqjs_stdlib, 1);
+    if (ctx == nullptr) {
+        if (why) *why = std::string(filename) + ": no context could be made to compile it";
+        return std::nullopt;
+    }
+    // JS_Parse reads `length` bytes; mqjs hands it a whole file, NUL-terminated, which the copy keeps too.
+    const std::string text(source);
+    JSValue code = JS_Parse(ctx, text.c_str(), text.size(), filename, 0);
+    if (JS_IsException(code)) {
+        char message[512];
+        Text t(message, sizeof message);
+        describe(ctx, JS_GetException(ctx), t);
+        if (why) *why = std::string(filename) + ": " + message;
+        JS_FreeContext(ctx);
+        return std::nullopt;
+    }
+    std::vector<std::uint8_t> out;
+    const std::uint8_t* data = nullptr;
+    std::uint32_t length = 0;
+    const auto append = [&](const void* bytes, std::size_t size) {
+        const auto* b = static_cast<const std::uint8_t*>(bytes);
+        out.insert(out.end(), b, b + size);
+    };
+    if (box32) {
+#if JSW == 8
+        JSBytecodeHeader32 header{};
+        if (JS_PrepareBytecode64to32(ctx, &header, &data, &length, code) != 0) {
+            if (why) *why = std::string(filename) + ": its bytecode could not be converted to 32 bits";
+            JS_FreeContext(ctx);
+            return std::nullopt;
+        }
+        // The engine's collections in the compile (a new name collects first: rp_mqjs_engine.c) leave older blocks'
+        // words, this heap's addresses among them, in the bytes rounding a string or byte array to the word: cleared.
+        rp_mqjs_clear_bytecode_padding(const_cast<std::uint8_t*>(data), length, 1);
+        append(&header, sizeof header);
+#else
+        if (why) *why = "a 32-bit build compiles at its own width only";
+        JS_FreeContext(ctx);
+        return std::nullopt;
+#endif
+    } else {
+        JSBytecodeHeader header{};  // zeroed: mqjs writes the padding after `version` from an uninitialised union
+        JS_PrepareBytecode(ctx, &header, &data, &length, code);
+        // As the 32-bit path's: the rounding bytes cleared of the compiling heap's leftovers.
+        rp_mqjs_clear_bytecode_padding(const_cast<std::uint8_t*>(data), length, 0);
+        // Relocated to address 0, as mqjs does, so the bytes do not depend on where this heap was.
+        JS_RelocateBytecode2(ctx, &header, const_cast<std::uint8_t*>(data), length, 0, 0);
+        append(&header, sizeof header);
+    }
+    append(data, length);  // the data lives in the context's heap: copied before the context goes
+    JS_FreeContext(ctx);
+    return out;
+}
+
 std::string runScript(std::uint8_t* bytecode, std::size_t size, std::size_t contextBytes,
                       void (*log)(void* ctx, const char* text, std::size_t size), void* logCtx) {
     if (contextBytes < kLeastContextBytes) return "the context is under the least the engine sets itself up in";

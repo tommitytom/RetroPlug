@@ -280,6 +280,38 @@ void rp_mqjs_keep_bytecode_names(uint8_t* bytecode, uint32_t size) {
     }
 }
 
+/* The bytes of a string's or a byte array's block past its contents, which rounds it to the word: js_alloc_string and
+ * js_alloc_byte_array write the contents (and a string's NUL) and leave the rest as the heap held it. A collection
+ * slides the blocks it keeps down and leaves their old images above heap_free, so a block allocated there after one
+ * carries, in those bytes, words of an older block: often a pointer into the compiling heap, which differs with the
+ * heap's address. Nothing reads them (every reader stops at the string's len or the array's size, and the relocation
+ * skips both kinds of block), so they are cleared for the bytes alone. */
+void rp_mqjs_clear_bytecode_padding(uint8_t* data, uint32_t size, int box32) {
+    uint8_t* ptr = data;
+    uint8_t* end = data + size;
+    while (ptr < end) {
+        int mtag = ((JSMemBlockHeader*)ptr)->mtag, block;
+        uint32_t used = 0;
+#if JSW == 8
+        if (box32) {
+            mtag = ((JSMemBlockHeader_32*)ptr)->mtag;
+            block = get_mblock_size_32(ptr);
+            if (mtag == JS_MTAG_STRING) used = (uint32_t)(sizeof(JSString_32) + ((JSString_32*)ptr)->len);
+            if (mtag == JS_MTAG_BYTE_ARRAY) used = (uint32_t)(sizeof(JSByteArray_32) + ((JSByteArray_32*)ptr)->size);
+        } else
+#else
+        (void)box32;
+#endif
+        {
+            block = get_mblock_size(ptr);
+            if (mtag == JS_MTAG_STRING) used = (uint32_t)(sizeof(JSString) + ((JSString*)ptr)->len);
+            if (mtag == JS_MTAG_BYTE_ARRAY) used = (uint32_t)(sizeof(JSByteArray) + ((JSByteArray*)ptr)->size);
+        }
+        if (used != 0 && used < (uint32_t)block) memset(ptr + used, 0, (uint32_t)block - used);
+        ptr += block;
+    }
+}
+
 /* The host's reads and writes of its own arrays and byte views, in place: what a warmed block runs a message through
  * (rp_mqjs.h says why each exists). None allocates, so none collects. */
 

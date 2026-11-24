@@ -238,13 +238,16 @@ retroplug_add_test_binary(
              test/packs/PackEngines.test.cpp       # a pack in a running Engine, two Engines, a live load under audio
              test/packs/MesenPack.test.cpp         # the Mesen package as a pack, its PCM held to the static build's
              test/packs/BoundaryRules.test.cpp     # the host's code casts nothing by RTTI
+             test/packs/PackScript.test.cpp        # the script half: compiled at load, in the table and in Engines
     LIBS     retroplug-backend                     # Engine, the process's pack table, the folder model
              retroplug-packfixture-nodes           # the fixture's types, statically: a second copy beside the pack's
              retroplug-mesen                       # the static build MesenPack.test.cpp holds the pack to
+             retroplug-mqjs-host                   # the script compiler, compileScript
     PACKAGES ${RP_PRODUCT_PACKAGES_packs-host}
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph  # GraphDocs.hpp
     DEFS     RP_PACKS_BUILD_DIR="${RP_PACKS_DIR}"
              RP_REPO_ROOT="${CMAKE_SOURCE_DIR}"     # the trees BoundaryRules.test.cpp scans
+             RP_SCRIPT_PACKS_BUILD_DIR="${CMAKE_BINARY_DIR}/packages"
              RP_PACK_PLATFORM_CMAKE="${RP_PACK_PLATFORM}"
              RP_API_LEVEL_CMAKE=${RP_API_LEVEL}u
              RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
@@ -253,6 +256,8 @@ retroplug_add_test_binary(
 # The packs it loads are modules nothing links, built before it.
 get_property(_rp_packfixture_targets GLOBAL PROPERTY RP_PACKFIXTURE_TARGETS)
 add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})
+# The device-pack toolchain's own outputs, whose ES5 bundles PackScript.test.cpp compiles.
+add_dependencies(retroplug-packs-test retroplug-devtest-script-pack retroplug-bliptoaster-script-pack)
 if(TARGET retroplug-mesen-pack)  # absent on a platform with no pack folder (cmake/packs.cmake)
     add_dependencies(retroplug-packs-test retroplug-mesen-pack)
 endif()

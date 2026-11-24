@@ -124,7 +124,10 @@
 #include "script/rp_mqjs_pack.h"
 
 #ifndef RP_DEVICE
+#include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 #endif
 
 
@@ -271,6 +274,16 @@ const rp_package* package(const rp_mqjs_pack_source& source);
 // The desktop build's rp_package for a pack whose context is kCheckHalves halves of heapBytes: the toolchain's runner,
 // which holds a pack to its manifest. A registration of its own, beside package()'s.
 const rp_package* exactPackage(const rp_mqjs_pack_source& source);
+// `source` (ES5 global code, as the device-pack toolchain lowers a pack) compiled to MicroQuickJS bytecode in the steps
+// `mqjs -o` takes for a file: parsed in a compiling context with this host's standard library (so the bytecode's
+// references to the library's atoms are the table that runs it: mqjs's, compiled against upstream's library, differ),
+// then written at this build's width, relocated to address 0 (the same bytes every time), or, with `box32`, at the
+// box's 32 bits.
+// `filename` is the name the bytecode records (the toolchain's is the file's own name, `<pack>.js` or
+// `<pack>.device.js`). Nothing, with the parse error and the file named in *why, for a script that does not parse.
+// What a pack loaded at run time ships is source (docs/downloadable-packs-m2d-plan.md): its bytecode is made here.
+std::optional<std::vector<std::uint8_t>> compileScript(std::string_view source, const char* filename, bool box32,
+                                                       std::string* why);
 // The context a desktop host gives a pack (kDesktopHeapFactor).
 std::size_t desktopContextBytes(const rp_mqjs_pack_source& source);
 // The clock and deadline every desktop control context made from now on holds its calls to (a pack's load at its
