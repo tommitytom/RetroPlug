@@ -1427,8 +1427,9 @@ table as the loads' are, so `refusals()` is the one list; `loadAll` answers a re
 
 `PackTable` opens each pack's library once and never closes it (a refused one too: opening it ran its static
 constructors, and its installed folder stays held). A pack loads all or nothing, and is refused for, among others: its
-API level, a half the loader does not take (the `protocol` and `script` halves, M2d's; the native half and the `app`,
-`consoles`, `ui`, `views` and `cli` halves, each file present, are taken), an installed folder that is not
+API level, a half the loader does not take (the `protocol` half, M2e's; the native half, the `script` half below and the
+`app`, `consoles`, `ui`, `views` and `cli` halves, each file present, are taken), a `script` member that does not go with
+the `script` half or names a type `provides.nodeTypes` does not declare, an installed folder that is not
 `packs/<id>/<version>`, a second folder of an id already loaded, a second copy of the library of an id whose first was
 opened and refused, no library for this platform, a missing library or entry, an entry that throws (caught on the host's
 side of the entry) or returns no package or a null one, a node type its `provides.nodeTypes` does not declare or a
@@ -1450,8 +1451,32 @@ Engine that already holds one of a pack's ids (a script node's, or a test's `add
 there alone (`refusedPacks()`), and so a pack requiring one it refused; a refusal is not retried in that Engine (a new
 Engine judges afresh). The offline pool keeps its fixed `core` and `dsp` subset and registers no pack.
 
+**A pack's script half** is a device script pack (MicroQuickJS nodes, as BlipToaster's is), shipped as the ES5 source the
+device-pack toolchain writes ([06](06-build-test.md#the-ts-loader-and-its-fixture-packs)). The manifest's `halves.script`
+is the whole pack's file (the one the desktop's control context runs) and its `script` member is
+`{ runtime, heapBytes, nodeTypes }`: the runtime's file (what every node runs), the package manifest's `heapBytes`, and the
+ids the definitions register, in their order; each id is in `provides.nodeTypes`, and either member without the other is
+refused. `PackTable` refuses a script half whose node types clash with a built-in's or an earlier pack's before it compiles
+it, since a MicroQuickJS registration takes one of the process's 32 pack slots for good. It then compiles both bundles at
+load with `rp::mqjs::compileScript` (the runtime also at 32 bits, for the box's size figure only), under the toolchain's
+names `<id>.js` and `<id>.device.js`, and registers the source with `rp::mqjs::package`, whose check runs the whole pack in
+a control context against the declared type ids. The compile is against the host's own standard library
+(`rp_mqjs_stdlib`), so its bytes are not `mqjs -o`'s: a bytecode's references to the library's atoms belong to the table
+that compiled it (upstream's relocator carries an "XXX: add atom checksum" for it). `compileScript` also zeroes the bytes
+that round a string or byte array up to the word (`rp_mqjs_clear_bytecode_padding`, `rp_mqjs_engine.c`): the engine
+wrapper collects before each growth of the unique-string table, and those collections leave the compile heap's leftover
+words in them, which nothing reads, so clearing them makes a compile give the same bytes wherever its heap lay. The table
+owns every compiled half and `~PackTable` keeps them alive on purpose, because the MicroQuickJS host points into them and
+matches a pack by address. The script package (`rp.<id>.script`) joins the pack's packages, goes through a native package's
+checks and is registered by every Engine at `syncPacks`, a render job's included. Why source: it survives an `mquickjs`
+pin bump that bytecode would not, it is the design's rule for every half, MicroQuickJS does not check the bytecode it loads
+(`JS_LoadBytecode`: it "should come from a trusted source"), and a bytecode is bound to the library table that compiled
+it. Both module loaders refuse `pack:<id>/script`, as they refuse the native half.
+
 **A pack's TS halves** are ES modules (`js/<half>.js`) a txiki context imports by name.
-`installPackLoader` ([PackModules](../packages/native/src/host/js/PackModules.hpp)) runs after the host registered its
+`installPackLoader` ([PackModules](../packages/native/src/host/js/PackModules.hpp), the txiki wrapper of
+[PackLoaderCore](../packages/native/src/host/js/PackLoaderCore.hpp) in `retroplug-packs`, which holds the table pointer, the
+guard, `loadPackHalf`, the two globals below and `installBarePackLoader`) runs after the host registered its
 shared set ([06](06-build-test.md#the-shared-module-sets)) and before its entry evaluates: a module loader wrapped over
 txiki's answers `pack:<id>/<half>` from the pack's folder, compiled the first time a context imports the name (never
 cached to disk; the name is not a path, so nothing resolves relative to it), and a module named `pack:...` may import
@@ -1492,6 +1517,18 @@ on it (the session's pump sees the pending exception), the test harness records 
 and standalone keep a stale pending exception. The TS loader cancels exactly that report: it remembers a failed import's
 reason, registers its `unhandledrejection` listener when `loadPacks.ts` loads (before a later bundle's), and forgets the
 reason after the pass that would dispatch it, so an unrelated rejection of the same value later is not swallowed.
+
+**The render worker loads the packs' halves too.** A render job's worker is the `render` set's entry
+([06](06-build-test.md#the-shared-module-sets)) on a bare QuickJS runtime, so `RenderHost` installs
+`installBarePackLoader`: the same `pack:<id>/<half>` loader and the same guard as txiki's, a bare name passed through as
+written (QuickJS finds a registered module by its name) and anything else not found. It defines `__rp_packList` (with the
+process's budget skips) and no `__rp_packRefused`: a render's refusals go to the job's console, since the context that
+loaded those halves first (the control plane, the CLI's dispatcher) recorded its own. The worker's `main` awaits
+`loadAppPacks()` (`app` and `consoles`) before it composes the session, with no budget: a bare runtime has no timers, so
+the TS loader skips the budget there, and a half that never settles ends the render with "render worker did not report a
+result (it may be waiting on something that never settled)". The entry calls `main()` without a top-level await, because the
+bundles target es2020. `~RenderHost` collects before it frees the runtime, for the same QuickJS-ng defect as below
+(bellard/quickjs#280).
 
 A pack whose TS half is refused is recorded in the table's refusals and commits nothing; its node types stay registered
 in the Engines (native code is never unloaded), unreachable because nothing places them. A pack refused in its UI half

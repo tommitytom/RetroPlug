@@ -144,7 +144,8 @@ pack with a native half and no library for this platform is refused, naming the 
 **What a pack ships.** The SDK's build makes each half one ES module bundle (`app.js`, `consoles.js`, `protocol.js`,
 `ui.js`, `cli.js`, `script.js`), leaving every `@retroplug/*` import and the host modules (`react`,
 `react/jsx-runtime`, `lvgljs`, `lvgljs-ui`, `retroplug-cli`) external, so a pack never carries its own copy of the
-contract. Bundles are JavaScript source, not bytecode: source runs on txiki's QuickJS, the web's QuickJS and Node alike.
+contract. Bundles are JavaScript source, not bytecode: source runs on txiki's QuickJS, the web's QuickJS and Node alike. This holds for the `script` half too: its ES5 source is
+compiled to MicroQuickJS bytecode at load, never shipped as bytecode.
 The host compiles a bundle to bytecode at load and keeps it in the bytecode cache (section 1), keyed by the pack, its
 version and the QuickJS version.
 
@@ -160,7 +161,9 @@ version and the QuickJS version.
 
 **Where each half loads.** `app`, `consoles` and `protocol` into the control plane; `ui` into the UI's realm (the same
 txiki runtime, as the [C1 design](modular-graph-phase-c1-design.md) section 8 set out); `cli` into the CLI; `script`
-into the engine's script host through `loadScriptPack`, compiled there as script packs are today.
+is a device script pack (MicroQuickJS), shipped as ES5 source and compiled at load
+([docs/downloadable-packs-m2d-plan.md](downloadable-packs-m2d-plan.md)), and registered in every Engine; a pack's
+QuickJS script nodes are its protocol nodes, which reach the engine through `loadScriptPack`'s path (M2e).
 
 **Live registries.** A small `Registry` replaces each generated constant consumers read today: the ROM providers, the
 roles, the tracker integrations, the kit formats, the config and project sections, the project services, the embeds,

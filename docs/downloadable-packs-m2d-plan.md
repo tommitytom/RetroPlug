@@ -1956,3 +1956,38 @@ read the engine's host MIDI out say what they must assert.
 `--runner`, `<name>.types.json` (Task 4, used in Task 5); `render` set, `rp:render`, `rp_render_modules`,
 `rp_render_bundle`, `retroplug-render-modules` (Task 6); `installBarePackLoader` (Task 7, used in Task 8);
 `tsfix-render` (Task 8).
+
+## After the reviews
+
+M2d was built as `3c476512d..bfd956ce3` (Tasks 1 to 8) and the docs commit after it (Task 9); Task 10's CI gate waits for
+the user's go-ahead to push. Where the task blocks above and the tree differ, the tree wins. What changed from the plan
+while it ran, and why:
+
+- A script half is compiled against the host's own standard library (`rp_mqjs_stdlib`), so its bytes are not `mqjs -o`'s
+  (f6169f6c5, c4574aa46): a MicroQuickJS bytecode's references to the library's atoms belong to the compiling table, and
+  upstream's relocator has an "XXX: add atom checksum" comment about it. This is a further reason to ship source.
+  `compileScript` also zeroes the bytes that round a string or byte array up to the word
+  (`rp_mqjs_clear_bytecode_padding`): the engine wrapper collects before each growth of the unique-string table, and those
+  collections leave the compile heap's leftover words there, so clearing them makes a compile give the same bytes wherever
+  its heap lay.
+- `PackTable` refuses a script half whose node types clash before it compiles it, since a MicroQuickJS registration takes
+  one of 32 process slots for good, and it owns every compiled half (e5e465ab7, bc4ef0d54). `~PackTable` keeps them alive
+  on purpose, because the MicroQuickJS host points into them and matches by address.
+- The pack loader split (8591464d2): its txiki-free part is `host/js/PackLoaderCore.{hpp,cpp}` in `retroplug-packs`, which
+  now links `qjs` and `retroplug-mqjs-host` and holds the table pointer, the guard, `loadPackHalf`, `__rp_packList`,
+  `__rp_packRefused`, the globals and `installBarePackLoader`; `host/js/PackModules` is the txiki wrapper
+  (`installPackLoader`, `settleForFree`).
+- `SharedModules.cpp` moved to `retroplug-backend`, since `RenderHost` uses it, and `retroplug-classid-test` compiles it
+  itself and holds the pack-modules tests, the bare-runtime case included (3fc1ee56d, 8591464d2).
+- `retroplug-render-modules` writes `render-modules_data.c` and `render-bundle_data.c`. The worker calls `main()` without a
+  top-level await, because the bundles target es2020, and a run that never reports says so: "render worker did not
+  report a result (it may be waiting on something that never settled)" (3fc1ee56d, bfd956ce3).
+- The device-pack test slug is `graph/device-pack`; the script fixtures are `packages/native/test/packs/script-fixture/`
+  (`scriptfix`, `-twin`, `-types`, `-syntax`, `-nofile`, `bliptoaster`; target `retroplug-script-fixture-packs`), tested by
+  `PackScript.test.cpp` `[packs-script]` (f057304d7, 2ac551763); the render fixture is `tsfix-render` under
+  ts-fixture/render/, and the CLI cases are in `tools/run-cli-ts-tests.sh`, guarded on the repo's smsggdj ROM (bfd956ce3).
+- Task 6 had already updated spec/06's targets table entry and spec/11's render worker description.
+
+Open, and carried into spec/07: a development pack whose manifest does not parse is refused under its folder's name, which
+for the `build/packs/<id>/<version>` layout is "1.0.0" (found in Task 2); `PackTable::refuse` should use the parent
+folder's name when the folder's name is a pack version, as the installed branch does.

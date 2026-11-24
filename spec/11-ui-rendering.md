@@ -30,7 +30,7 @@ RenderJobs.start (src/renderJobs.ts)  ──────────────
                                        OfflineJobs (the Engine's pool): a worker runs the job to the end
                                                           │  RenderHost (bare QuickJS + the job's own Engine)
                                                           ▼
-                                       src/render/  shared library  (runRenderJob, in the render-worker bundle)
+                                       src/render/  shared library  (runRenderJob, in the render set's bundle)
 EmulatorTile badge ◀── renders.list() (the list RenderJobs keeps from the job's progress and promise)
 ```
 

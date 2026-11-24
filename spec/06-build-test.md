@@ -90,7 +90,8 @@ stereo pairs `out_1..4` ([10-multichannel-audio-out.md](10-multichannel-audio-ou
 ### The shared module sets
 
 The control plane and the UI are the two hosts of the app's **shared module set**; the CLI's dispatcher is the host of
-the `cli` set. [tools/build-shared-modules.mjs](../tools/build-shared-modules.mjs) runs one esbuild code-splitting
+the `cli` set, and a render job's worker the host of the `render` set (`rp:render`, from `src/render/worker.ts`, and
+`SHELL_IMPORTS`, as the `cli` set). [tools/build-shared-modules.mjs](../tools/build-shared-modules.mjs) runs one esbuild code-splitting
 build per set over the host entries and every contract module (`SHELL_IMPORTS`, `UI_IMPORTS` and the host modules,
 [scripts/lib/contracts.mjs](../packages/retroplug/scripts/lib/contracts.mjs); the `app` set takes all three, the `cli`
 set `SHELL_IMPORTS`). Each output is a named ES module: a contract by its specifier (`@retroplug/core/definePackage`),
@@ -98,12 +99,14 @@ a host `rp:cp` / `rp:ui` / `rp:cli`, a chunk `rp:chunks/<name>-<hash>`, and ever
 (a relative one is unsafe on Windows). `react` and `react/jsx-runtime` are CommonJS, so the build serves an ESM facade
 of each from memory. `retroplug-modc` ([packages/native/modc](../packages/native/modc/modc.c), RetroPlug's own module
 compiler: stock `tjsc` refuses a module with external imports) compiles them into the ordered table `rp_app_modules`
-(`rp_cli_modules`) and the host arrays `rp_cp_bundle` / `rp_ui_bundle` (`rp_cli_bundle`). A host calls
-`rp::host::registerSharedModules` ([host/js/SharedModules](../packages/native/src/host/js/SharedModules.hpp)) on its
+(`rp_cli_modules`, `rp_render_modules`) and the host arrays `rp_cp_bundle` / `rp_ui_bundle` (`rp_cli_bundle`,
+`rp_render_bundle`). A host calls
+`rp::host::registerSharedModules` ([host/js/SharedModules](../packages/native/src/host/js/SharedModules.hpp), in `retroplug-backend`, since `RenderHost`
+uses it; it needs QuickJS alone) on its
 context before it evaluates: each module is deserialised unevaluated, dependencies first, into the loaded-module
 table and runs the first time something imports it, so the context holds one copy of every module (one set of
-registries, one React). Registering is idempotent per context. The render worker and the script host run global code
-on bare QuickJS and are not sets.
+registries, one React). Registering is idempotent per context. The script host runs global code
+on bare QuickJS and is not a set.
 
 esbuild may reorder evaluation across chunks, so the generated seeds check their own order: `packages.ts` throws if
 the console and placer registries are not seeded when it runs, and `menus.ts` if the roles are not. A cross build runs
@@ -121,7 +124,8 @@ guard and the load budget). Each context loads the halves whose registries it ho
 a half's default export onto registry additions: the control plane `app` and `consoles` (`APP_BUILDERS`,
 `loadAppPacks`), the UI `ui` and `views` and also `app` and `consoles` when no control plane ran before it (the UI test
 harness; `ui/packs/uiPacks.ts`), the CLI's dispatcher `app`, `consoles` and `cli` (`cli/packs/cliPacks.ts`, which also
-checks every tool's shape, name, summary, help and run, since a `CliTool` list is otherwise trusted). The shell's `src`,
+checks every tool's shape, name, summary, help and run, since a `CliTool` list is otherwise trusted), and the render
+worker `app` and `consoles` (`loadAppPacks`) on a bare runtime, where there are no timers and so no budget. The shell's `src`,
 `ui` and `cli` trees each add their own builders; a half already loaded in a context is not loaded again, and CLI session
 files load no pack. Loads are serialized, and each load (one `loadPacks` call) has one 5 s budget its halves share.
 
@@ -140,13 +144,23 @@ package's views are a module, `retroplug.views`); the manifest gained it additiv
 
 [`tools/build-pack-halves.mjs`](../tools/build-pack-halves.mjs) builds a package's halves as a pack's: one ES module per
 half its `package.json` names, every contract and host module external, any other `@retroplug/*` import refused, then
-`pack.json` with this build's API level. It builds from any working directory. The fixture is
+`pack.json` with this build's API level. A package's `retroplug.script` is built through the device-pack toolchain
+(`build-device-pack.mjs`, which also writes `<name>.types.json`, the node type ids in registration order) into the pack's
+script half, its bundle and its runtime; `--only` limits the build to named halves, `--mqjs` and `--runner` name the
+`mqjs` and `retroplug-mqjs-run` binaries the toolchain's checks use. It builds from any working directory. The fixture is
 `packages/native/test/packs/ts-fixture/`: `tsfix`, built by that tool into `build/packs/tsfix/1.0.0` by
 `retroplug-ts-fixture-packs` (a prerequisite of `test:ui` and `test:cli-ts`), and its hand-written broken variants
 (`tsfix-throws`, `-guard`, `-undeclared`, `-cliclash`, `-dependent`, `-protocol`) under `build/packs`, which the tool
 would refuse; its own tsconfig puts it in `pnpm typecheck`. The target's DEPENDS covers top-level `ts/*.ts` only: a
-real package with nested modules needs an esbuild metafile-derived DEPFILE. The loader's native test uses
-`packages/native/test/plugin/pack-modules-fixture/` (`PackModules.test.cpp`: the loader and the guard).
+real package with nested modules needs an esbuild metafile-derived DEPFILE. The render worker's fixture is `tsfix-render` (under `ts-fixture/render/`), and the CLI's render-with-packs checks are in
+`tools/run-cli-ts-tests.sh`, guarded on the repo's smsggdj ROM. The script half's fixtures are
+`packages/native/test/packs/script-fixture/`: `scriptfix` (built from devtest's pack) and its variants `-twin`, `-types`,
+`-syntax` and `-nofile`, and `bliptoaster`, whose script half is BlipToaster's own (staged at `build/packs/bliptoaster/1.0.0`),
+all built by `retroplug-script-fixture-packs` and tested by `PackScript.test.cpp` (`[packs-script]`, in
+`retroplug-packs-test`). The loader's native test uses
+`packages/native/test/plugin/pack-modules-fixture/` (`PackModules.test.cpp`: the loader and the guard), which, with the
+bare-runtime case (the device-pack test slug is `graph/device-pack`), lives in `retroplug-classid-test`, which compiles
+`SharedModules.cpp` itself.
 
 **Tests never read the user's packs.** Every runner that starts a host binary sets `RETROPLUG_PACKS_DIR` to an empty
 scratch folder and clears `RETROPLUG_PACK_PATH`, unless the test names the packs it loads: a UI test of packs lists them

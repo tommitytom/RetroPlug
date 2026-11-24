@@ -157,14 +157,15 @@ The gamepad-axis bus dispatches no app action, and the generator refuses a bindi
 ### Downloadable packs
 
 Part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md) is built in milestones,
-and what is left of it is M2d (the rest of the TS halves: the protocol half, whose tables are frozen constants
-`buildGraph` and others read; the contribution kinds, whose `accept` runs once; the script half through
-`loadScriptPack`, with span labels at load; and the render worker, a bare QuickJS context a pack console's render job
-needs the app and consoles halves in; [the M2c plan](../docs/downloadable-packs-m2c-plan.md)'s design questions), M3
+and what is left of it is M2e (the protocol half, whose tables, `PROTOCOL_NODES`, `DECLARED_NODE_TYPES`, `ROLE_NODES` and
+`KIND_DATA`, are frozen constants `buildGraph` and others read, a pack's protocol nodes reaching every Engine through
+`loadScriptPack`'s path and its placer the live registry, with span labels at load; the contribution kinds, whose `accept`
+runs once and whose items' runtime halves a pack's script pack cannot reach; [the M2c plan](../docs/downloadable-packs-m2c-plan.md)'s
+design questions), M3
 (placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands and `--pack`, Settings > Packs and
 its Development packs, which feed `ensureLaunchPacks`) and M5 (Mesen and BlipToaster loaded as packs with their suites
 unchanged, and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on
-Windows (the M1 plan's design question 1). Open from M2c: a pack-carried ROM is refused by name and needs a rule of its own and a place in the pack; a pack refused in TS adds one `PackTable` refusal per context, which Settings > Packs (M4) must collapse to one; M5's real package needs an esbuild metafile-derived DEPFILE, since the fixture's CMake DEPENDS covers only top-level `ts/*.ts`; a pack's import guard trusts the `pack:` module name and
+Windows (the M1 plan's design question 1). Open from M2d ([its plan](../docs/downloadable-packs-m2d-plan.md)'s design questions): a script half is compiled at every launch and a TS half at every import (there is no bytecode cache yet); a script half refused after its registration (a type clash the early check missed) keeps one of the desktop's 32 MicroQuickJS pack slots; the render worker's guard is the shell contracts' alone, so an `app` half that imports a UI contract loads in the control plane and is refused in a render, and no rule keeps app halves from UI modules; a render's refusals are console lines, not in the table, so Settings > Packs (M4) does not show a pack refused only there; a render has no pack budget (a half that never settles ends the render with no result, and one stuck in a synchronous loop is ended only by the job's cancel interrupt); the BlipToaster fixture stages at `build/packs/bliptoaster/1.0.0`, where M5 builds the whole pack, so M5 replaces the fixture's target; the script half's toolchain checks (ES5 lowering, the library-call scan, the transcript and heap runs) run at the pack's build only; the built-in device packs are compiled by `mqjs` against upstream's `mqjs_stdlib` and run over `rp_mqjs_stdlib`, relying on the relocator's atom matching, and whether the toolchain should compile against RetroPlug's library (as a loaded pack now is) is open; and a development pack whose manifest does not parse is refused under its folder's name, which for the `build/packs/<id>/<version>` layout is "1.0.0" (the parent's name is the one to use when the folder's name is a pack version, as the installed branch does). Open from M2c: a pack-carried ROM is refused by name and needs a rule of its own and a place in the pack; a pack refused in TS adds one `PackTable` refusal per context, which Settings > Packs (M4) must collapse to one; M5's real package needs an esbuild metafile-derived DEPFILE, since the fixture's CMake DEPENDS covers only top-level `ts/*.ts`; a pack's import guard trusts the `pack:` module name and
 does not judge code a pack evaluates; the app's shared set hands a pack `@retroplug/testing` (the test harness) beside
 `react` and `lvgljs-ui`, and whether it belongs in a pack's reach is undecided; a pack refused in a later context
 keeps an earlier one's commit, and a pack refused in TS keeps its native node types registered; a half stuck in a
@@ -188,8 +189,8 @@ sections 8, 12 and 13, [E1](../docs/modular-graph-phase-e1-design.md) section 10
 ### The app loads no script pack
 
 Nothing in the app loads a pack yet: `backend.loadScriptPack` exists on every host, but no non-test caller uses it, and
-a render job's Engine has the built-in pack only (`RenderHost` loads none), so loading a pack into more than one Engine
-is unbuilt too. ([C1 design](../docs/modular-graph-phase-c1-design.md) section 12.)
+a render job's Engine has the built-in QuickJS script pack only (`RenderHost` loads none; a pack's protocol nodes are
+M2e's). Loading a device script pack into every Engine is built (`Engine::syncPacks`). ([C1 design](../docs/modular-graph-phase-c1-design.md) section 12.)
 
 ### The template gaps a second pack meets
 
