@@ -32,15 +32,19 @@ export function setLoadBudgetMs(ms: number): number {
 
 // QuickJS runs a module's body as an async function and drops that function's result promise, so a half that throws at
 // load leaves a rejection nothing can attach a handler to, besides the import() promise this loader does handle. txiki
-// reports it as an unhandled rejection, and a host with no listener stops its loop on one. The reasons of imports this
-// loader has seen fail are remembered so that report, and only that one, is cancelled. Objects are held weakly; a
-// thrown primitive is forgotten once its report is cancelled, so it cannot cancel an unrelated rejection later.
-const failedObjects = new WeakSet<object>();
-const failedPrimitives = new Set<unknown>();
+// reports it as an unhandled rejection: a session host (the CLI) fails on one, the test harness records it, and the
+// plugin and standalone are left a stale pending exception that a later JS_HasException check could raise in unrelated
+// code. A failed import's reason is remembered so that one report is cancelled, and forgotten again after the pass that
+// would dispatch it (txiki dispatches right after the microtask drain this runs in, and a timer fires only afterwards):
+// a half that throws after a top-level await never produces the report, and its reason must not cancel an unrelated
+// rejection of the same value later.
+const failedImports = new Set<unknown>();
 
 function noteFailedImport(reason: unknown): void {
-  if ((typeof reason === "object" && reason !== null) || typeof reason === "function") failedObjects.add(reason as object);
-  else failedPrimitives.add(reason);
+  failedImports.add(reason);
+  const timers = globalThis as unknown as { setTimeout?(fn: () => void, ms: number): unknown };
+  if (timers.setTimeout) timers.setTimeout(() => failedImports.delete(reason), 0);
+  else failedImports.delete(reason);
 }
 
 // Registered when the module loads, so it runs before any listener a later bundle (the test harness's) adds, and stops
@@ -51,9 +55,7 @@ function noteFailedImport(reason: unknown): void {
     fn: (e: { reason: unknown; preventDefault(): void; stopImmediatePropagation?(): void }) => void,
   ) => void;
 }).addEventListener?.("unhandledrejection", (e) => {
-  const r = e.reason;
-  const object = (typeof r === "object" && r !== null) || typeof r === "function";
-  if (!(object ? failedObjects.has(r as object) : failedPrimitives.delete(r))) return;
+  if (!failedImports.delete(e.reason)) return;
   e.preventDefault();
   e.stopImmediatePropagation?.();
 });
