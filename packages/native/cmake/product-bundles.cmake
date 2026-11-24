@@ -1,6 +1,7 @@
 # Included by packages/native/CMakeLists.txt before the first retroplug_product(), which every product's targets then
-# get two of the four embedded bundles from (the script nodes and the render worker, the render set's host): the backend declares those two
-# symbols extern, so a product that does not supply them fails to link, and a product's script host loads ITS node set.
+# get two of the four embedded bundles from (the script nodes and the render worker, the render set's host): the backend
+# declares those two symbols extern, so a product that does not supply them fails to link, and a product's script host
+# loads ITS node set.
 # The control plane and the UI are embedded by the product's own sources, through the variables this file sets.
 #
 # The desktop's four bundles are the shell's own tree's, written under the binary directory's native/, the paths every

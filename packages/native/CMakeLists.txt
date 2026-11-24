@@ -444,7 +444,7 @@ add_executable(retroplug-ui-test
 target_link_libraries(retroplug-ui-test PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
     retroplug-backend             # BackendFacade + rpcpp + the cores + the txiki host
-    retroplug-tjs-runtime)        # registerSharedModules (lvgl-js-native's own host copy and the backend lack it)
+    retroplug-tjs-runtime)        # the txiki runtime, and registerSharedModules
 retroplug_product(retroplug-ui-test PACKAGES ${RP_DESKTOP_PACKAGES})
 
 target_include_directories(retroplug-ui-test PRIVATE

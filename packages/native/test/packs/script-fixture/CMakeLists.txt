@@ -59,7 +59,8 @@ endforeach()
 # the device-pack toolchain under the pack's id: so the host's compile of it is the static build's bytecode.
 _sf_claim(bliptoaster)
 set(_bt_out "${RP_PACKS_DIR}/bliptoaster/1.0.0")
-file(GLOB_RECURSE _bt_sources CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/packages/bliptoaster/ts/*.ts")
+file(GLOB_RECURSE _bt_sources CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/packages/bliptoaster/ts/*.ts"
+     "${CMAKE_SOURCE_DIR}/packages/core/ts/*.ts")
 add_custom_command(
     OUTPUT "${_bt_out}/pack.json" "${_bt_out}/js/script.js" "${_bt_out}/js/script.device.js"
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs
@@ -68,6 +69,8 @@ add_custom_command(
     DEPENDS ${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs ${_sf_dir}/bliptoaster.pack.json
             ${CMAKE_SOURCE_DIR}/packages/bliptoaster/package.json ${_bt_sources}
             ${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/build-device-pack.mjs
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/lib/contracts.mjs
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/host-modules.json
             ${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/graph/rp_pack.h
             mqjs retroplug-mqjs-run
     COMMENT "Building BlipToaster's script half as a pack's"

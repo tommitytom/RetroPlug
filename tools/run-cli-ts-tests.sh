@@ -796,6 +796,8 @@ if [ -f "$REPO_ROM" ]; then
 	check "packs: a render beside a pack whose half throws still exits 0" 0 $?
 	cat "$RR/thrown.out" "$RR/thrown.err" >"$RR/thrown.all"
 	contains "packs: the render job's console names the refused pack" "$RR/thrown.all" "pack tsfix-throws is refused"
+else
+	echo "skip - packs render leg: the smsggdj ROM is absent"
 fi
 
 echo

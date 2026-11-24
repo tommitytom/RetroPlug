@@ -57,7 +57,7 @@ function buildScriptHalf({ packageDir, outDir, pack, script, mqjs, runner }) {
     if (runner) args.push("--runner", runner);
     const run = spawnSync(process.execPath, args, { encoding: "utf8" });
     if (run.status !== 0) {
-      throw new Error(`the device-pack toolchain refused ${pack.id}'s script half:\n${run.stderr}${run.stdout}`);
+      throw new Error(`the device-pack toolchain refused ${pack.id}'s script half:\n${run.error ? `${run.error}\n` : ""}${run.stderr}${run.stdout}`);
     }
     const types = JSON.parse(readFileSync(join(work, `${pack.id}.types.json`), "utf8"));
     const declared = pack.provides?.nodeTypes ?? [];
