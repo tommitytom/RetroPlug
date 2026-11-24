@@ -1483,11 +1483,12 @@ Two QuickJS-ng defects shape the runtime's teardown and the loader. QuickJS-ng f
 callback of a pending async module (a half parked on a top-level await and a timer) still holds a counted reference to
 one (the defect behind bellard/quickjs#280, which Bellard's QuickJS fixed by refcounting modules). `PackHostRuntime`
 (a `TjsHostRuntime` whose destructor calls `settleForFree`) destroys the runtime's timers and runs a collection before
-the runtime is freed, so the callback is garbage while the modules are alive; every host that loads packs owns one (and
-the plugin's editor, whose runtime frees settled). A chain held only by a global or a module scope still depends on free
-order. Second, QuickJS-ng runs a module's body as an async function and drops its result promise
-(`js_execute_sync_module`), so a half whose body throws synchronously at load leaves a rejection no code can reach, which
-txiki reports as an unhandled rejection: a session host (the CLI) would fail, the test harness record it, and the plugin
+the runtime is freed, so the callback is garbage while the modules are alive. The plugin, the standalone and the CLI own
+one; the plugin editor's fallback runtime and the UI harness call `settleForFree` before theirs is freed. A chain held
+only by a global or a module scope still depends on free order. Second, QuickJS-ng runs a module's body as an async
+function and drops its result promise (`js_execute_sync_module`), so a half whose body throws synchronously at load
+leaves a rejection no code can reach, which txiki reports as an unhandled rejection: a session host (the CLI) can fail
+on it (the session's pump sees the pending exception), the test harness records it, and the plugin
 and standalone keep a stale pending exception. The TS loader cancels exactly that report: it remembers a failed import's
 reason, registers its `unhandledrejection` listener when `loadPacks.ts` loads (before a later bundle's), and forgets the
 reason after the pass that would dispatch it, so an unrelated rejection of the same value later is not swallowed.
