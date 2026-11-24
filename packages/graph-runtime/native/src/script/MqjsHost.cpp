@@ -2174,7 +2174,12 @@ void setControlClock(std::uint64_t (*clock)(void* ctx), std::uint64_t deadlineMi
 
 namespace {
 
+#ifndef RP_DEVICE
+// why, when given, receives the refusal copied while the registration lock is held (gRefusal is written under it).
+const rp_package* registerPack(const rp_mqjs_pack_source& source, Sizing sizing, std::string* whyOut = nullptr) {
+#else
 const rp_package* registerPack(const rp_mqjs_pack_source& source, Sizing sizing) {
+#endif
 #ifndef RP_DEVICE
     const std::lock_guard<std::mutex> lock(gRegistration);
 #endif
@@ -2204,6 +2209,7 @@ const rp_package* registerPack(const rp_mqjs_pack_source& source, Sizing sizing)
     if (why.length != 0) {
 #ifndef RP_DEVICE
         std::fprintf(stderr, "retroplug: the \"%s\" script pack is not registered: %s\n", source.name, gRefusal);
+        if (whyOut) *whyOut = gRefusal;
 #endif
         return nullptr;
     }
@@ -2237,6 +2243,9 @@ const rp_package* registerPack(const rp_mqjs_pack_source& source, Sizing sizing)
 const rp_package* package(const rp_mqjs_pack_source& source) { return registerPack(source, Sizing::Device); }
 #else
 const rp_package* package(const rp_mqjs_pack_source& source) { return registerPack(source, Sizing::Desktop); }
+const rp_package* package(const rp_mqjs_pack_source& source, std::string* why) {
+    return registerPack(source, Sizing::Desktop, why);
+}
 const rp_package* exactPackage(const rp_mqjs_pack_source& source) { return registerPack(source, Sizing::Check); }
 #endif
 

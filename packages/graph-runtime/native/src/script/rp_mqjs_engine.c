@@ -290,7 +290,7 @@ void rp_mqjs_clear_bytecode_padding(uint8_t* data, uint32_t size, int box32) {
     uint8_t* ptr = data;
     uint8_t* end = data + size;
     while (ptr < end) {
-        int mtag = ((JSMemBlockHeader*)ptr)->mtag, block;
+        int mtag, block;
         uint32_t used = 0;
 #if JSW == 8
         if (box32) {
@@ -303,6 +303,7 @@ void rp_mqjs_clear_bytecode_padding(uint8_t* data, uint32_t size, int box32) {
         (void)box32;
 #endif
         {
+            mtag = ((JSMemBlockHeader*)ptr)->mtag;
             block = get_mblock_size(ptr);
             if (mtag == JS_MTAG_STRING) used = (uint32_t)(sizeof(JSString) + ((JSString*)ptr)->len);
             if (mtag == JS_MTAG_BYTE_ARRAY) used = (uint32_t)(sizeof(JSByteArray) + ((JSByteArray*)ptr)->size);

@@ -458,9 +458,9 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
         }
         m.halves = *raw->halves;
     }
-    // The largest heap a script half may declare: far past any box's (a box has 264 KiB of RAM), small enough that the
-    // desktop's context (desktopContextBytes: four times it at 64 bits) stays a sane allocation.
-    constexpr std::int64_t kMaxScriptHeap = std::int64_t{16} << 20;
+    // The largest heap a script half may declare: the box has 264 KiB of RAM in all, so no heap that fits it is larger
+    // (BlipToaster's is 24 KiB), and the desktop's context (desktopContextBytes: four times it at 64 bits) stays small.
+    constexpr std::int64_t kMaxScriptHeap = std::int64_t{256} << 10;
     const bool scriptHalf = m.halves.count("script") > 0;
     if (const auto& s = raw->script) {
         if (!scriptHalf) {

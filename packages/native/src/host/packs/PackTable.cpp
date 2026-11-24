@@ -206,11 +206,14 @@ LoadReport PackTable::loadAll(const std::vector<PackCandidate>& candidates) {
 PackLoad PackTable::refuse(const PackCandidate& candidate, std::string id, std::string reason,
                            std::shared_ptr<FileLock> hold) {
     if (id.empty()) id = candidate.id;
-    // An installed folder is packs/<id>/<version>: before its manifest parses, its pack is named by its folder.
-    if (id.empty())
-        id = displayPath(candidate.origin == PackOrigin::Installed && candidate.dir.has_parent_path()
-                             ? candidate.dir.parent_path().filename()
-                             : candidate.dir.filename());
+    // An installed folder is packs/<id>/<version>, and a development one often is (build/packs/<id>/<version>): before
+    // its manifest parses, its pack is named by its folder, which is the parent when the folder is a version.
+    if (id.empty()) {
+        const bool byVersion = candidate.dir.has_parent_path() &&
+                               (candidate.origin == PackOrigin::Installed ||
+                                isPackVersion(candidate.dir.filename().generic_string()));
+        id = displayPath(byVersion ? candidate.dir.parent_path().filename() : candidate.dir.filename());
+    }
     // One hold per folder, however often a load of it is retried and refused.
     if (hold) folderHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
     refusals_.push_back({id, candidate.dir, reason});
@@ -353,6 +356,30 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     for (const rp_package* b : builtIns_) holdTypes(b);
     for (const auto& p : packs_)
         for (const rp_package* q : p->packages) holdTypes(q);
+    // The checks every package of the pack meets, whatever half brought it (null, declared, held): an empty answer is a
+    // pass, otherwise the refusal's reason. Run on the native packages before the script half is compiled, so a bad
+    // native half never spends a MicroQuickJS slot, and then on the script package.
+    const auto checkPackage = [&](const rp_package* p) -> std::string {
+        if (p == nullptr) return pack + "'s library returned a null package";
+        if (p->abi_version != RP_ABI_VERSION) return {};  // the registry's trial below names the ABI mismatch
+        for (std::uint32_t k = 0; p->node_types && k < p->node_type_count; ++k) {
+            const rp_node_type* type = p->node_types[k];
+            if (type == nullptr || type->id == nullptr) continue;  // the trial names it
+            const std::string typeId = type->id;
+            registered.insert(typeId);
+            bool declared = false;
+            for (const auto& d : manifest->providesNodeTypes) declared = declared || d == typeId;
+            if (!declared)
+                return pack + " registers node type " + typeId +
+                       ", which its pack.json's provides.nodeTypes does not declare";
+            if (const auto it = holder.find(typeId); it != holder.end())
+                return pack + " registers node type " + typeId + ", which package " + it->second +
+                       " has registered already";
+        }
+        return {};
+    };
+    for (const rp_package* p : loaded->packages)
+        if (std::string bad = checkPackage(p); !bad.empty()) return refuseHere(id, bad);
     // The script half: compiled now, then registered on the MicroQuickJS host, which loads the whole pack in a control
     // context and refuses definitions that are not its type ids. Held by the table from its registration on, loaded or
     // refused (registerPack keeps a pointer to it).
@@ -363,7 +390,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
             const auto it = holder.find(typeId);
             std::string by = it != holder.end() ? it->second : std::string();
             for (const rp_package* p : loaded->packages)
-                for (std::uint32_t k = 0; by.empty() && p && p->node_types && k < p->node_type_count; ++k)
+                for (std::uint32_t k = 0; by.empty() && p && p->abi_version == RP_ABI_VERSION && p->node_types && k < p->node_type_count; ++k)
                     if (p->node_types[k] && p->node_types[k]->id && typeId == p->node_types[k]->id) by = packageIdOf(p);
             if (!by.empty())
                 return refuseHere(id, pack + " registers node type " + typeId + ", which package " + by +
@@ -374,30 +401,13 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
         ScriptHalf& held = *half;
         scripts_.push_back(std::move(half));
         if (!registerScriptHalf(held, &why)) return refuseHere(id, pack + ": " + why);
+        if (std::string bad = checkPackage(held.package); !bad.empty()) return refuseHere(id, bad);
         loaded->packages.push_back(held.package);
         loaded->script = &held;
     }
-    // The checks every package of the pack meets, whatever half brought it: a pack's native packages first, then its
-    // script package, which is the order an Engine registers them in.
+    // The trial runs a pack's native packages first, then its script package, which is the order an Engine registers
+    // them in.
     if (!loaded->packages.empty()) {
-        for (const rp_package* p : loaded->packages) {
-            if (p == nullptr) return refuseHere(id, pack + "'s library returned a null package");
-            if (p->abi_version != RP_ABI_VERSION) continue;  // the registry's trial below names the ABI mismatch
-            for (std::uint32_t k = 0; p->node_types && k < p->node_type_count; ++k) {
-                const rp_node_type* type = p->node_types[k];
-                if (type == nullptr || type->id == nullptr) continue;  // the trial names it
-                const std::string typeId = type->id;
-                registered.insert(typeId);
-                bool declared = false;
-                for (const auto& d : manifest->providesNodeTypes) declared = declared || d == typeId;
-                if (!declared)
-                    return refuseHere(id, pack + " registers node type " + typeId +
-                                              ", which its pack.json's provides.nodeTypes does not declare");
-                if (const auto it = holder.find(typeId); it != holder.end())
-                    return refuseHere(id, pack + " registers node type " + typeId + ", which package " + it->second +
-                                              " has registered already");
-            }
-        }
         // Everything else the registry checks (descriptors, layouts, package ids, the ABI version, a clash between the
         // pack's own packages), on a scratch registry holding what every Engine will hold before it, so an Engine never
         // meets a refusal the table let through.

@@ -66,9 +66,10 @@ std::unique_ptr<ScriptHalf> compileScriptHalf(const fs::path& dir, const PackMan
 }
 
 bool registerScriptHalf(ScriptHalf& half, std::string* why) {
-    half.package = rp::mqjs::package(half.source);
+    std::string refusal;
+    half.package = rp::mqjs::package(half.source, &refusal);
     if (half.package == nullptr) {
-        if (why) *why = std::string("its script half is refused: ") + rp::mqjs::packageRefusal();
+        if (why) *why = "its script half is refused: " + refusal;
         return false;
     }
     return true;

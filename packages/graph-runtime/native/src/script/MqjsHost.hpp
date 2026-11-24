@@ -271,6 +271,9 @@ inline constexpr std::uint32_t kLeastContextBytes = kBoxLeastContextBytes;
 // stderr too. The source must outlive every use of the package.
 const rp_package* package(const rp_mqjs_pack_source& source);
 #ifndef RP_DEVICE
+// The same, and on a refusal *why receives its reason, copied while the registration lock is held: packageRefusal()
+// reads the shared buffer without it, so a caller that registers from more than one thread uses this.
+const rp_package* package(const rp_mqjs_pack_source& source, std::string* why);
 // The desktop build's rp_package for a pack whose context is kCheckHalves halves of heapBytes: the toolchain's runner,
 // which holds a pack to its manifest. A registration of its own, beside package()'s.
 const rp_package* exactPackage(const rp_mqjs_pack_source& source);
