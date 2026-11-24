@@ -68,8 +68,9 @@ lands mid-render leaves no WAV).
 
 A self-contained headless render: a **bare QuickJS** runtime (the script host's pattern: raw
 `JS_NewRuntime`, **no txiki / libuv**) + its **own** `Engine` + the in-process RPC bridge, running
-`worker.ts` compiled to **global-code bytecode** (`rp_render_worker_bundle`, esbuilt to an IIFE + `tjsc`
-without `-m`, embedded in `retroplug-backend`). It reproduces the CLI's `main()` service graph minus
+`worker.ts` as the entry of the `render` shared module set (`rp_render_bundle` and the contracts' table
+`rp_render_modules`, built by `tools/build-shared-modules.mjs render`, embedded in the products' bundle objects),
+evaluated as a module. It reproduces the CLI's `main()` service graph minus
 `TjsHostRuntime`; the render path is a synchronous, pull-based loop, so none of txiki's event loop is
 needed. Beyond the ES standard library the only shims are `console` + a minimal UTF-8
 `TextEncoder`/`TextDecoder` (the two Web globals the control plane touches at load) and the

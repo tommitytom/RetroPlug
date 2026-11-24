@@ -1,6 +1,6 @@
 // The render job's body: the session an engine job's worker (the RenderHost, on a pool thread of the engine) runs,
-// which is also `retroplug-cli render`'s render path. It is compiled to a self-contained global-code bundle
-// (rp_render_worker_bundle) and run on a bare-QuickJS runtime with its own Engine. The job request arrives as JSON in
+// which is also `retroplug-cli render`'s render path. It is the entry (rp:render) of the render shared module set (built
+// by tools/build-shared-modules.mjs render), evaluated as a module on a bare-QuickJS runtime with its own Engine. The job request arrives as JSON in
 // globalThis[Symbol.for("plugin")].args[0]; the worker boots a control plane, runs the shared render library, and
 // reports progress / cancellation / completion back through native thunks the RenderHost binds:
 //   __rp_reportRenderedMs(ms)            - audio rendered so far, per rendered chunk

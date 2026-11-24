@@ -5,6 +5,7 @@
 //   app: the control plane (rp:cp) and the UI (rp:ui) and every contract specifier (SHELL_IMPORTS, UI_IMPORTS and the
 //        host modules), for the context the two share in the plugin, the SDL standalone and the UI test harness.
 //   cli: the CLI's dispatcher (rp:cli) and SHELL_IMPORTS.
+//   render: the render worker (rp:render) and SHELL_IMPORTS, for a render job's bare QuickJS runtime.
 //
 // The names: a contract module is named by its specifier, so a bare import of it needs no import map (txiki's
 // normalizer passes a bare name through and QuickJS finds it in the loaded-module table); a host by rp:<host>; a chunk by
@@ -13,7 +14,7 @@
 // every one is rewritten to the bare name of the output it reaches. The shared outputs are ordered dependencies first:
 // reading a module's bytecode resolves its imports, so a dependency must already be registered.
 //
-//   node tools/build-shared-modules.mjs <app|cli> <out-dir> [--product-dir <dir>]
+//   node tools/build-shared-modules.mjs <app|cli|render> <out-dir> [--product-dir <dir>]
 //
 // writes <out-dir>/js/** (the rewritten outputs), <out-dir>/shared.tsv (one "<name>\t<file>" per shared module, in load
 // order) and <out-dir>/hosts.tsv (the hosts), which CMake hands to retroplug-modc. buildSharedModules() is the same build
@@ -57,7 +58,16 @@ function setOf(name) {
       external: ["tjs:path", "retroplug-cli"],
     };
   }
-  throw new Error(`build-shared-modules: no set is named ${name} (the sets are app, cli)`);
+  if (name === "render") {
+    // The render worker (src/render/worker.ts): a render job's session, on a bare QuickJS runtime with no txiki
+    // (host/render/RenderHost), whose pack halves link to the shell contracts as the CLI's do.
+    return {
+      hosts: [{ name: "rp:render", entry: path.join(SHELL, "src/render/worker.ts") }],
+      contracts: [...new Set(SHELL_IMPORTS.map((e) => e.specifier))],
+      external: [],
+    };
+  }
+  throw new Error(`build-shared-modules: no set is named ${name} (the sets are app, cli, render)`);
 }
 
 /** The file esbuild resolves each specifier to, with the options the set builds with: one throwaway build of a stdin

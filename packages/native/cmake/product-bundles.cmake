@@ -1,5 +1,5 @@
 # Included by packages/native/CMakeLists.txt before the first retroplug_product(), which every product's targets then
-# get two of the four embedded bundles from (the script nodes and the render worker): the backend declares those two
+# get two of the four embedded bundles from (the script nodes and the render worker, the render set's host): the backend declares those two
 # symbols extern, so a product that does not supply them fails to link, and a product's script host loads ITS node set.
 # The control plane and the UI are embedded by the product's own sources, through the variables this file sets.
 #
@@ -135,7 +135,7 @@ function(retroplug_bundles name)
 
         # --- the script-node bundle: the product's generated scriptNodes.ts, every TS node type its packages
         # contribute, esbuilt to a global-code IIFE (each Engine's script host evaluates it on two BARE QuickJS
-        # runtimes, which have no module loader) + tjsc'd WITHOUT -m to global-code bytecode, as the render worker is.
+        # runtimes, which have no module loader) + tjsc'd WITHOUT -m to global-code bytecode.
         # The array name derives from the output stem: rp_script_bundle[] + _size, the same for every product (the
         # backend declares them extern).
         set(_script_js "${_dir}/script-bundle.js")
@@ -154,31 +154,39 @@ function(retroplug_bundles name)
         endif()
         add_dependencies(retroplug-script-bundle${_suffix} ${_generator_target})
 
-        # --- the render-worker bundle: src/render/worker.ts, the same sources for every product (it renders the plan it
-        # is handed), built against the product's registries through its generated tree.
-        set(_render_js "${_dir}/render-worker-bundle.js")
-        set(_render_c "${_dir}/render-worker-bundle_data.c")
-        set_source_files_properties(${_render_c} PROPERTIES GENERATED TRUE)
-        add_custom_target(retroplug-render-worker-bundle${_suffix}
-            BYPRODUCTS ${_render_js} ${_render_c} ${_render_c}.new
-            COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-                    ${CMAKE_SOURCE_DIR}/packages/retroplug/src/render/worker.ts ${_render_js} iife ${_product_args}
-            COMMAND ${_TJSC_COMMAND} -s -p rp_ -o ${_render_c}.new ${_render_js}
+        # --- the render worker's shared module set (docs/downloadable-packs-m2d-plan.md): src/render/worker.ts (rp:render)
+        # and the shell's contracts, one esbuild code-splitting build whose outputs are named modules, so a render job's
+        # bare QuickJS runtime (host/render/RenderHost) holds one copy of each and a pack's app and consoles halves link
+        # to them by name. retroplug-modc writes the table (rp_render_modules) and the entry's array (rp_render_bundle).
+        # The same sources for every product, built against the product's registries through its generated tree.
+        set(_render_dir "${_dir}/render-modules")
+        set(_render_c "${_dir}/render-bundle_data.c")
+        set(_render_modules_c "${_dir}/render-modules_data.c")
+        set_source_files_properties(${_render_c} ${_render_modules_c} PROPERTIES GENERATED TRUE)
+        add_custom_target(retroplug-render-modules${_suffix}
+            BYPRODUCTS ${_render_c} ${_render_modules_c} ${_render_c}.new ${_render_modules_c}.new
+                       ${_render_dir}/shared.tsv ${_render_dir}/hosts.tsv
+            COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-shared-modules.mjs render ${_render_dir}
+                    ${_product_args}
+            COMMAND ${_MODC_COMMAND} table -s rp_render_modules ${_render_dir}/shared.tsv ${_render_modules_c}.new
+            COMMAND ${_MODC_COMMAND} array -s rp:render rp_render_bundle ${_render_dir}/js/rp/render.js ${_render_c}.new
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_render_modules_c}.new ${_render_modules_c}
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_render_c}.new ${_render_c}
-            COMMENT "Bundling render worker${_suffix} (esbuild iife + global-code bytecode)"
+            COMMENT "Building the render worker's shared module set${_suffix} (esbuild split + retroplug-modc)"
             VERBATIM)
-        if(TARGET ${_TJSC_DEP})
-            add_dependencies(retroplug-render-worker-bundle${_suffix} ${_TJSC_DEP})
+        if(TARGET ${_MODC_DEP})
+            add_dependencies(retroplug-render-modules${_suffix} ${_MODC_DEP})
         endif()
-        add_dependencies(retroplug-render-worker-bundle${_suffix} ${_generator_target})
+        add_dependencies(retroplug-render-modules${_suffix} ${_generator_target})
 
         # The two arrays, compiled ONCE per set: every product target of a set uses these objects, where before each
         # one compiled its own copy (the render worker's array is 4.7 MB of C, and eight desktop products, each test
         # binary and four plugin formats compiled it). An object library keeps one definition per binary and one
         # compile per set; retroplug_product() adds its objects to each of its TARGETS.
-        add_library(retroplug-bundles${_suffix}-objects OBJECT EXCLUDE_FROM_ALL ${_script_c} ${_render_c})
+        add_library(retroplug-bundles${_suffix}-objects OBJECT EXCLUDE_FROM_ALL ${_script_c} ${_render_c} ${_render_modules_c})
+        target_include_directories(retroplug-bundles${_suffix}-objects PRIVATE ${CMAKE_SOURCE_DIR}/packages/native/src)  # host/js/rp_js_module.h, the module table's row type
         add_dependencies(retroplug-bundles${_suffix}-objects
-                         retroplug-script-bundle${_suffix} retroplug-render-worker-bundle${_suffix})
+                         retroplug-script-bundle${_suffix} retroplug-render-modules${_suffix})
         # Judged at our own warning level, as the products that compiled the arrays were (cmake/warnings.cmake reads
         # this property: a set's name is the list's, so naming them here would miss the next one).
         set_property(GLOBAL APPEND PROPERTY RP_BUNDLE_OBJECTS_TARGETS "retroplug-bundles${_suffix}-objects")
@@ -194,7 +202,7 @@ function(retroplug_bundles name)
     set(RP_BUNDLE_${name}_CP_TARGET "retroplug-app-modules${_suffix}" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_UI_TARGET "retroplug-app-modules${_suffix}" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_SCRIPT_TARGET "retroplug-script-bundle${_suffix}" PARENT_SCOPE)
-    set(RP_BUNDLE_${name}_RENDER_TARGET "retroplug-render-worker-bundle${_suffix}" PARENT_SCOPE)
+    set(RP_BUNDLE_${name}_RENDER_TARGET "retroplug-render-modules${_suffix}" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_CP_C "${_dir}/cp-bundle_data.c" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_UI_C "${_dir}/ui-bundle_data.c" PARENT_SCOPE)
     set(RP_BUNDLE_${name}_MODULES_C "${_dir}/app-modules_data.c" PARENT_SCOPE)

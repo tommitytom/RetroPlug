@@ -14,13 +14,17 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 #include "host/QuickJsGlobals.hpp"
+#include "host/js/SharedModules.hpp"
 
-// The render-worker bundle: worker.ts esbuilt to a global-code IIFE, tjsc'd to bytecode + embedded as a C
-// array (packages/native/CMakeLists.txt → retroplug-render-worker-bundle). Loaded via JS_ReadObject +
-// JS_EvalFunction (not a module — bare QuickJS has no module loader).
+// The render worker's shared module set (packages/native/cmake/product-bundles.cmake, retroplug-render-modules): the
+// shell contracts as a table of named modules, registered before the entry, and the entry, src/render/worker.ts, as
+// module bytecode (rp:render) importing them by name. Bare QuickJS has no module loader of txiki's: a registered module
+// is found by its name, and a pack's half through the bare pack loader (host/js/PackModules).
 extern "C" {
-extern const std::uint8_t  rp_render_worker_bundle[];
-extern const std::uint32_t rp_render_worker_bundle_size;
+extern const rp_js_module  rp_render_modules[];
+extern const std::uint32_t rp_render_modules_count;
+extern const std::uint8_t  rp_render_bundle[];
+extern const std::uint32_t rp_render_bundle_size;
 }
 
 namespace retroplug {
@@ -281,9 +285,10 @@ RenderHost::Result RenderHost::runWith(const std::string* source, const std::str
         JS_SetPropertyStr(ctx_, ns, "renderSerial", JS_NewInt64(ctx_, static_cast<std::int64_t>(serial)));
     });
 
-    // Run the worker bundle as global-code bytecode. Its top-level main() reads the spec, renders, and
-    // reports back through the result thunk — all synchronously on this thread.
+    // Run the worker's module (or a test's global script). The worker's top-level main() reads the spec, renders, and
+    // reports back through the result thunk, synchronously on this thread.
     JSValue res = JS_UNDEFINED;
+    JSValue entry = JS_UNDEFINED;
     // The interrupt's InternalError is reported here, as the cancel it is, rather than as a script error (dumpError).
     const auto failed = [this](JSValue v) {
         if (!JS_IsException(v)) return false;
@@ -294,15 +299,31 @@ RenderHost::Result RenderHost::runWith(const std::string* source, const std::str
     if (source) {
         res = JS_Eval(ctx_, source->c_str(), source->size(), "<render-host-script>", JS_EVAL_TYPE_GLOBAL);
     } else {
-        JSValue obj = JS_ReadObject(ctx_, rp_render_worker_bundle, rp_render_worker_bundle_size, JS_READ_OBJ_BYTECODE);
-        if (JS_IsException(obj)) {
+        // The set's contract modules first, each unevaluated, dependencies first: the entry's imports resolve to them.
+        const std::string why = rp::host::registerSharedModules(ctx_, rp_render_modules, rp_render_modules_count);
+        if (!why.empty()) {
+            result_.status = "error";
+            result_.message = "render worker: " + why;
+            return result_;
+        }
+        JSValue mod = JS_ReadObject(ctx_, rp_render_bundle, rp_render_bundle_size, JS_READ_OBJ_BYTECODE);
+        if (JS_IsException(mod)) {
             dumpError(ctx_);
-            JS_FreeValue(ctx_, obj);
             result_.status = "error";
             result_.message = "render worker bytecode read failed";
             return result_;
         }
-        res = JS_EvalFunction(ctx_, obj);
+        if (JS_ResolveModule(ctx_, mod) < 0) {
+            dumpError(ctx_);
+            JS_FreeValue(ctx_, mod);
+            result_.status = "error";
+            result_.message = "render worker's imports did not resolve";
+            return result_;
+        }
+        // A module's evaluation answers a promise, which the job loop below settles: a throw in the module's body
+        // rejects it rather than returning an exception here.
+        res = JS_EvalFunction(ctx_, mod);
+        if (!JS_IsException(res)) entry = JS_DupValue(ctx_, res);
     }
     if (failed(res)) {
         dumpError(ctx_);
@@ -317,10 +338,25 @@ RenderHost::Result RenderHost::runWith(const std::string* source, const std::str
     // script's are left to the runtime's teardown, which frees them: the handler would stop each one again.
     JSContext* jc = nullptr;
     while (!interrupted_) {
-        int r = JS_ExecutePendingJob(rt_, &jc);
+        const int r = JS_ExecutePendingJob(rt_, &jc);
         if (r == 0) break;
-        if (r < 0) { dumpError(jc ? jc : ctx_); break; }
+        if (r < 0) {
+            if (interrupted_) JS_FreeValue(jc ? jc : ctx_, JS_GetException(jc ? jc : ctx_));
+            else dumpError(jc ? jc : ctx_);
+            break;
+        }
     }
+
+    // A throw in the entry module's own body (the worker's failure: main catches the render's) rejects its evaluation.
+    if (!interrupted_ && JS_IsObject(entry) && JS_PromiseState(ctx_, entry) == JS_PROMISE_REJECTED) {
+        JS_Throw(ctx_, JS_PromiseResult(ctx_, entry));
+        dumpError(ctx_);
+        if (result_.status.empty()) {
+            result_.status = "error";
+            result_.message = "render worker eval failed";
+        }
+    }
+    JS_FreeValue(ctx_, entry);
 
     if (interrupted_) {
         result_.status = "cancelled";
@@ -329,7 +365,7 @@ RenderHost::Result RenderHost::runWith(const std::string* source, const std::str
 
     if (result_.status.empty()) {
         result_.status = "error";
-        result_.message = "render worker did not report a result";
+        result_.message = "render worker did not report a result (it may be waiting on something that never settled)";
     }
     return result_;
 }

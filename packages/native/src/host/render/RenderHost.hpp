@@ -1,8 +1,8 @@
 #pragma once
 
 // RenderHost — a self-contained, headless audio-render environment: a BARE QuickJS runtime (no txiki, no
-// libuv) + its own Engine + the in-process RPC bridge, running the render-worker bundle
-// (packages/retroplug/src/render/worker.ts) as global-code bytecode. It is the "retroplug-cli render"
+// libuv) + its own Engine + the in-process RPC bridge, running the render set's entry
+// (packages/retroplug/src/render/worker.ts, rp:render) as a module over the shared module set's contracts. It is the "retroplug-cli render"
 // pipeline, driven synchronously on the calling thread: the body of an engine job, run on a pool worker
 // (host/engine/OfflineJobs.hpp), so a fresh system renders to disk without touching the live audio-thread cores.
 // Built, run and destroyed on the one thread. The job's engine runs whole blocks whatever each of the render's calls

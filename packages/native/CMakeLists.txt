@@ -63,7 +63,6 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/product-bundles.cmake)
 # are in TjsHostRuntime's interface).
 add_library(retroplug-tjs-runtime STATIC
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp
-    src/host/js/SharedModules.cpp     # the shared module sets' loader (docs/downloadable-packs-m2b-plan.md)
     src/host/js/PackModules.cpp)      # a pack's TS halves and their import guard (docs/downloadable-packs-m2c-plan.md)
 target_include_directories(retroplug-tjs-runtime PUBLIC ${DPFJS_PATH}/src ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-tjs-runtime PUBLIC tjs PRIVATE retroplug-packs)
@@ -131,7 +130,10 @@ add_library(retroplug-backend STATIC
     src/host/IdleReclaimProbe.cpp           # hosts' idle-tick self-test (HostServices::reclaimOnIdle), smoke-driven
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (script packs' source, the tests' toys)
     src/host/script/ScriptHost.cpp          # the script-node runtimes: TS nodes behind the C ABI, a pair per pack
-    src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
+    src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the render set's entry as a module)
+    # The shared module sets' loader (docs/downloadable-packs-m2b-plan.md): QuickJS alone, so the render host's bare
+    # runtime registers its set with it as the txiki hosts register theirs.
+    src/host/js/SharedModules.cpp
 )
 target_include_directories(retroplug-backend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src

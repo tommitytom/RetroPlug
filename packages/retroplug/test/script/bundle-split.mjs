@@ -16,19 +16,18 @@ const require = createRequire(import.meta.url);
 const { bundleInputs } = require("../../../../tools/build-session.js");
 const { buildSharedModules } = await import("../../../../tools/build-shared-modules.mjs");
 
-// The entries, and the format the build gives each: the render worker and the script nodes are iifes (a bare QuickJS
-// runtime evals them). The script-node bundle is every Engine's, so it is a non-UI surface like the rest. The control
-// plane, the UI and the dispatcher are not here: they come from the shared sets' closures.
+// The entries, and the format the build gives each: the script nodes are an iife (a bare QuickJS
+// runtime evals it). The script-node bundle is every Engine's, so it is a non-UI surface like the rest. The control
+// plane, the UI, the render worker and the dispatcher are not here: they come from the shared sets' closures.
 const BUNDLES = [
-    ["render-worker", "src/render/worker.ts", "iife"],
     ["script-nodes", "src/generated/scriptNodes.ts", "iife"],
     ["cli-sdk", "cli/sdk.ts", "esm"],
     ["planner", "src/graph/protocolNodes.ts", "esm"],
 ];
 
 // A product's list may be named (its manifest name, as the root package.json declares it): the driver generates that
-// product's tree into a temporary build directory and builds its surfaces from it as the build does: the render worker
-// and the script nodes through build-session.js, the control plane and the UI as the app set
+// product's tree into a temporary build directory and builds its surfaces from it as the build does: the script nodes
+// through build-session.js, the control plane, the UI and the render worker as the shared sets
 // (tools/product-generated.js redirects the generated modules). No name is the desktop.
 const REPO = resolve(process.cwd(), "../..");
 const productName = process.argv[2];
@@ -53,7 +52,6 @@ if (productName) {
 try {
     const entries = productName
         ? [
-              ["render-worker", "src/render/worker.ts", "iife"],
               ["script-nodes", `${productDir}/src/generated/scriptNodes.ts`, "iife"],
           ]
         : BUNDLES;
@@ -66,6 +64,8 @@ try {
     const app = await buildSharedModules({ set: "app", outDir: unused, productDir, write: false });
     out["control-plane"] = app.closures["rp:cp"];
     out.ui = app.closures["rp:ui"];
+    const render = await buildSharedModules({ set: "render", outDir: unused, productDir, write: false });
+    out["render-worker"] = render.closures["rp:render"];
     if (!productName) {
         const cli = await buildSharedModules({ set: "cli", outDir: unused, write: false });
         out["cli-dispatcher"] = cli.closures["rp:cli"];
