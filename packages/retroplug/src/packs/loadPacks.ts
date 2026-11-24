@@ -30,6 +30,34 @@ export function setLoadBudgetMs(ms: number): number {
   return was;
 }
 
+// QuickJS runs a module's body as an async function and drops that function's result promise, so a half that throws at
+// load leaves a rejection nothing can attach a handler to, besides the import() promise this loader does handle. txiki
+// reports it as an unhandled rejection, and a host with no listener stops its loop on one. The reasons of imports this
+// loader has seen fail are remembered so that report, and only that one, is cancelled. Objects are held weakly; a
+// thrown primitive is forgotten once its report is cancelled, so it cannot cancel an unrelated rejection later.
+const failedObjects = new WeakSet<object>();
+const failedPrimitives = new Set<unknown>();
+
+function noteFailedImport(reason: unknown): void {
+  if ((typeof reason === "object" && reason !== null) || typeof reason === "function") failedObjects.add(reason as object);
+  else failedPrimitives.add(reason);
+}
+
+// Registered when the module loads, so it runs before any listener a later bundle (the test harness's) adds, and stops
+// the report from reaching them: the report is cancelled for everyone, not just the host's default.
+(globalThis as unknown as {
+  addEventListener?: (
+    type: string,
+    fn: (e: { reason: unknown; preventDefault(): void; stopImmediatePropagation?(): void }) => void,
+  ) => void;
+}).addEventListener?.("unhandledrejection", (e) => {
+  const r = e.reason;
+  const object = (typeof r === "object" && r !== null) || typeof r === "function";
+  if (!(object ? failedObjects.has(r as object) : failedPrimitives.delete(r))) return;
+  e.preventDefault();
+  e.stopImmediatePropagation?.();
+});
+
 /** The half's namespace, or the refusal that names it when it has not settled by `deadline` (a Date.now() time). */
 async function importBefore(host: PackHost, id: string, kind: HalfKind, deadline: number): Promise<unknown> {
   // The shell's tsconfig carries no timer types (txiki provides the globals), so they are reached by name.
@@ -43,7 +71,9 @@ async function importBefore(host: PackHost, id: string, kind: HalfKind, deadline
       `the packs' load ran past its ${loadBudgetMs / 1000} s budget in its ${kind} half`)), Math.max(0, deadline - Date.now()));
   });
   try {
-    return await Promise.race([host.importHalf(id, kind), stuck]);
+    const imported = host.importHalf(id, kind);
+    imported.catch(noteFailedImport);
+    return await Promise.race([imported, stuck]);
   } finally {
     timers.clearTimeout(timer);
   }
