@@ -132,11 +132,27 @@ jobs:
       # script builds by name in the desktop build above (it is in no default target). The Pico SDK is pinned to the
       # tag the devcontainer's is, and the check needs none of its submodules; reflect-cpp comes from the desktop build
       # above, at the desktop's pin. x86 linux alone carries it: the image is the same from any host.
+      # A stalled package mirror once held this install for 55 minutes with no output, twice in a row (2026-11-24), when
+      # it normally takes about 16: so apt drops a connection that sends nothing for a minute and retries it, a held
+      # dpkg lock fails rather than waits, each attempt is bounded and retried once, the step as a whole is bounded,
+      # and the install is not quiet, so a slow log says whether it was the download or the unpack.
       - name: Install the device toolchain (arm-none-eabi, Pico SDK 2.1.1)
+        timeout-minutes: 50
         run: |
           set -eux
-          sudo apt-get install -yqq --no-install-recommends \
-            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60
+            -o DPkg::Lock::Timeout=120"
+          sudo apt-get update -q $apt_opts
+          for attempt in 1 2; do
+            date -u
+            if sudo timeout 22m apt-get install -y --no-install-recommends $apt_opts \
+                gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib; then
+              break
+            fi
+            [ "$attempt" = 2 ] && exit 1
+            sleep 30
+          done
+          date -u
           git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
           arm-none-eabi-g++ --version
 
