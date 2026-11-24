@@ -76,10 +76,14 @@ Task 10 ends with a CI gate on Windows and macOS, which needs the user's go-ahea
   registers them in, with no JavaScript run). Each must be in `provides.nodeTypes`. Either one without the other is
   refused. The member is new and additive (a host before M2d refuses a script half anyway), so the API level does not
   move.
-- **The script half compiles under its package names.** The loader names the two bundles `<pack id>.js` and
-  `<pack id>.device.js` when it compiles them, the names the toolchain compiles them under (the bytecode records its
-  file name), so a pack whose id is its package's name compiles to the toolchain's very bytes; Task 1 holds the compiler
-  to `mqjs -o`'s output byte for byte.
+- **The script half compiles against the host's own standard library, under its package names.** A MicroQuickJS
+  bytecode's references to the standard library's atoms are the compiling table's (upstream's relocator carries an
+  "XXX: add atom checksum" for it), so a half compiled here is bound to the very table that runs it, `rp_mqjs_stdlib`;
+  `mqjs -o` compiles against upstream's `mqjs_stdlib` and its bytes differ (found by Task 1's first run, 2026-11-25:
+  same sizes, different atom references). Another reason to ship source. The loader names the two bundles
+  `<pack id>.js` and `<pack id>.device.js` when it compiles them, the toolchain's names, which the bytecode records
+  for its errors. What holds the compile is that its output is deterministic, that the host registers it (the control
+  context runs the whole pack against its type ids), and that BlipToaster's pack behaves as its static build (Task 5).
 - **The script package joins the pack's packages.** It goes through the checks a native package does (each type
   declared in `provides.nodeTypes`, none held by a built-in or an earlier pack, the scratch registry's trial), and
   every Engine registers it at `syncPacks`, so render jobs and every plugin instance get it as they get native nodes.
@@ -127,7 +131,7 @@ Created:
 | File | Responsibility |
 |---|---|
 | `packages/native/src/host/packs/PackScript.{hpp,cpp}` | `ScriptHalf`, `loadScriptHalf`: a pack's script half read, compiled and registered |
-| `packages/native/test/packs/PackScript.test.cpp` | the compiler against the toolchain's bytes; a script half in the table and in Engines; BlipToaster's pack against its static build |
+| `packages/native/test/packs/PackScript.test.cpp` | the compiler on the toolchain's bundles; a script half in the table and in Engines; BlipToaster's pack against its static build |
 | `packages/native/test/packs/script-fixture/` | the script fixture packs (`scriptfix` and its variants, from devtest's script pack; `bliptoaster`, its script half alone), with their CMake |
 | `packages/native/test/packs/ts-fixture/render/` | `tsfix-render`: an app half whose role and ROM provider a render reads |
 
@@ -158,8 +162,12 @@ Create `packages/native/test/packs/PackScript.test.cpp`:
 
 ```cpp
 // A pack's script half (docs/downloadable-packs-m2d-plan.md): a device script pack shipped as the ES5 source the
-// device-pack toolchain writes, compiled when the pack loads. Here: the host's compiler writes the bytes `mqjs -o`
-// writes for the same file, at both widths.
+// device-pack toolchain writes, compiled when the pack loads. Here: the host's compiler, run on the toolchain's own
+// bundles. Its bytes are not mqjs -o's: mqjs compiles against upstream's standard library and this host against
+// RetroPlug's (upstream's tables and the node SDK's names), and a bytecode's references to the library's atoms are the
+// table's own (deps/mquickjs's relocation: "add atom checksum to avoid problems if the stdlib is modified"). Compiled
+// here, a pack is bound to the table that runs it; what holds it is that it is the same each time and that the host
+// loads it, and BlipToaster's pack behaving as its static build (below).
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-script]"`.
 
@@ -170,10 +178,12 @@ Create `packages/native/test/packs/PackScript.test.cpp`:
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "script/MqjsHost.hpp"
+#include "script/rp_mqjs_pack.h"
 
 namespace fs = std::filesystem;
 
@@ -188,51 +198,68 @@ std::string readText(const fs::path& file) {
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
-std::vector<std::uint8_t> readBytes(const fs::path& file) {
-    const std::string s = readText(file);
-    return std::vector<std::uint8_t>(s.begin(), s.end());
-}
-
-// What `mqjs -o` wrote, held against what compileScript writes for the same file under the same name. The header is
-// compared by field: a 64-bit header has four bytes of padding after its version, which mqjs writes from an
-// uninitialised stack union and compileScript zeroes.
-void sameBytecode(const std::vector<std::uint8_t>& mine, const std::vector<std::uint8_t>& theirs, bool box32) {
-    REQUIRE(mine.size() == theirs.size());
-    const std::size_t header = box32 ? 16 : 32;
-    REQUIRE(mine.size() > header);
-    if (box32) {
-        CHECK(std::vector<std::uint8_t>(mine.begin(), mine.begin() + header) ==
-              std::vector<std::uint8_t>(theirs.begin(), theirs.begin() + header));
-    } else {
-        // magic and version, then (past the padding) base_addr, unique_strings and main_func.
-        CHECK(std::vector<std::uint8_t>(mine.begin(), mine.begin() + 4) ==
-              std::vector<std::uint8_t>(theirs.begin(), theirs.begin() + 4));
-        CHECK(std::vector<std::uint8_t>(mine.begin() + 8, mine.begin() + header) ==
-              std::vector<std::uint8_t>(theirs.begin() + 8, theirs.begin() + header));
-    }
-    CHECK(std::vector<std::uint8_t>(mine.begin() + header, mine.end()) ==
-          std::vector<std::uint8_t>(theirs.begin() + header, theirs.end()));
+// A compiled pack as the MicroQuickJS host takes it. The host keeps a pointer to the source for the life of the
+// process, so every one this file registers is kept too.
+struct Compiled {
+    std::string               name;
+    std::vector<std::uint8_t> runtime, control;
+    std::vector<std::string>  ids;
+    std::vector<const char*>  idPtrs;
+    rp_mqjs_pack_source       source{};
+};
+std::vector<std::unique_ptr<Compiled>>& kept() {
+    static std::vector<std::unique_ptr<Compiled>> all;
+    return all;
 }
 
 }  // namespace
 
-TEST_CASE("compileScript writes the bytecode mqjs -o writes, at both widths", "[packs-script]") {
-    for (const std::string name : {"devtest", "bliptoaster"}) {
-        INFO(name);
-        const fs::path out = toolchainOut(name);
-        const std::string whole = readText(out / (name + ".js"));
-        const std::string runtime = readText(out / (name + ".device.js"));
+TEST_CASE("compileScript compiles a pack's bundles to the same bytes each time, and the host registers them",
+          "[packs-script]") {
+    struct Pack {
+        std::string              name;
+        std::uint32_t            heapBytes;
+        std::vector<std::string> ids;
+    };
+    for (const Pack& pack : {Pack{"devtest", 57344,
+                                  {"rp.devtest.script-transpose", "rp.devtest.script-nest", "rp.devtest.script-loop"}},
+                             Pack{"bliptoaster", 24576, {"rp.bliptoaster.midi-policy"}}}) {
+        INFO(pack.name);
+        const fs::path out = toolchainOut(pack.name);
+        const std::string whole = readText(out / (pack.name + ".js"));
+        const std::string runtime = readText(out / (pack.name + ".device.js"));
+        const std::string wholeName = pack.name + ".js", runtimeName = pack.name + ".device.js";
         std::string why;
-        const auto control = rp::mqjs::compileScript(whole, (name + ".js").c_str(), false, &why);
+        const auto control = rp::mqjs::compileScript(whole, wholeName.c_str(), false, &why);
         INFO(why);
         REQUIRE(control);
-        sameBytecode(*control, readBytes(out / (name + ".mqjs64.bin")), false);
-        const auto device = rp::mqjs::compileScript(runtime, (name + ".device.js").c_str(), false, &why);
+        const auto device = rp::mqjs::compileScript(runtime, runtimeName.c_str(), false, &why);
         REQUIRE(device);
-        sameBytecode(*device, readBytes(out / (name + ".device64.bin")), false);
-        const auto box = rp::mqjs::compileScript(runtime, (name + ".device.js").c_str(), true, &why);
+        const auto box = rp::mqjs::compileScript(runtime, runtimeName.c_str(), true, &why);
         REQUIRE(box);
-        sameBytecode(*box, readBytes(out / (name + ".mqjs32.bin")), true);
+        // The same bytes every time: the heap's address never reaches them (relocated to 0, the header zeroed).
+        CHECK(*control == *rp::mqjs::compileScript(whole, wholeName.c_str(), false, &why));
+        CHECK(*device == *rp::mqjs::compileScript(runtime, runtimeName.c_str(), false, &why));
+        CHECK(*box == *rp::mqjs::compileScript(runtime, runtimeName.c_str(), true, &why));
+        CHECK(box->size() < device->size());  // the box's words are half the width
+
+        // Registered as a pack's are: the desktop's control context loads the whole pack and holds its definitions to
+        // the ids, and a node's context loads the runtime when a plan places one (the cases below).
+        auto c = std::make_unique<Compiled>();
+        c->name = "compiled-" + pack.name;
+        c->runtime = *device;
+        c->control = *control;
+        c->ids = pack.ids;
+        for (const auto& id : c->ids) c->idPtrs.push_back(id.c_str());
+        c->source = rp_mqjs_pack_source{c->name.c_str(), c->runtime.data(), static_cast<std::uint32_t>(c->runtime.size()),
+                                        pack.heapBytes, static_cast<std::uint32_t>(c->idPtrs.size()), c->idPtrs.data(),
+                                        static_cast<std::uint32_t>(box->size()), c->control.data(),
+                                        static_cast<std::uint32_t>(c->control.size())};
+        kept().push_back(std::move(c));
+        const rp_package* registered = rp::mqjs::package(kept().back()->source);
+        INFO(rp::mqjs::packageRefusal());
+        REQUIRE(registered != nullptr);
+        CHECK(registered->node_type_count == pack.ids.size());
     }
 }
 
@@ -249,12 +276,12 @@ In `packages/native/cmake/tests.cmake`, in `retroplug_add_test_binary(NAME retro
 `RP_SCRIPT_PACKS_BUILD_DIR="${CMAKE_BINARY_DIR}/packages"` to `DEFS`; after the binary, beside the fixture targets:
 
 ```cmake
-# The device-pack toolchain's own outputs, which PackScript.test.cpp holds the host's compiler to.
+# The device-pack toolchain's own outputs, whose ES5 bundles PackScript.test.cpp compiles.
 add_dependencies(retroplug-packs-test retroplug-devtest-script-pack retroplug-bliptoaster-script-pack)
 ```
 
-(If the 64-bit header's padding turns out to be zero in the toolchain's files, the field-wise comparison still holds;
-keep it, since mqjs does not promise it.)
+(The field order of `rp_mqjs_pack_source` is `script/rp_mqjs_pack.h`'s; if it differs from the initializer's, assign
+the members by name.)
 
 - [ ] **Step 2: Run it to see it fail**
 
@@ -267,9 +294,11 @@ In `MqjsHost.hpp`, inside `#ifndef RP_DEVICE`, beside `exactPackage` (add `<opti
 `<vector>` to its includes if they are not there):
 
 ```cpp
-// `source` (ES5 global code, as the device-pack toolchain lowers a pack) compiled to MicroQuickJS bytecode as
-// `mqjs -o` compiles a file: parsed in a compiling context with this host's standard library, then written at this
-// build's width, relocated to address 0 (the same bytes every time), or, with `box32`, at the box's 32 bits.
+// `source` (ES5 global code, as the device-pack toolchain lowers a pack) compiled to MicroQuickJS bytecode in the steps
+// `mqjs -o` takes for a file: parsed in a compiling context with this host's standard library (so the bytecode's
+// references to the library's atoms are the table that runs it: mqjs's, compiled against upstream's library, differ),
+// then written at this build's width, relocated to address 0 (the same bytes every time), or, with `box32`, at the
+// box's 32 bits.
 // `filename` is the name the bytecode records (the toolchain's is the file's own name, `<pack>.js` or
 // `<pack>.device.js`). Nothing, with the parse error and the file named in *why, for a script that does not parse.
 // What a pack loaded at run time ships is source (docs/downloadable-packs-m2d-plan.md): its bytecode is made here.
@@ -341,10 +370,10 @@ calls do; if one is not renamed there (`rp_mqjs_names.h` lists the public ones),
 binary already links (`nm build/bin/retroplug-cli | grep rp_mqjs_JS_Parse`), and the rename list gains it the way its
 siblings are listed. `deps/mquickjs` is never edited.
 
-**If the bytes differ** from the toolchain's past the header's padding, stop and report (status BLOCKED, with the first
-differing offset of each file and its width): the likely cause is that `mqjs` compiles against upstream's
-`mqjs_stdlib` and this host against `rp_mqjs_stdlib`, and the controller decides whether the compile takes upstream's
-table or the test holds the result to the toolchain's transcript instead.
+The bytes are not `mqjs -o`'s, by design: a first run found them differing from the header's `unique_strings` field on,
+with equal sizes, because `mqjs` compiles against upstream's `mqjs_stdlib` and this host against `rp_mqjs_stdlib`, and a
+bytecode's references to the library's atoms are that table's (decided 2026-11-25: a pack compiled here is bound to
+the table that runs it).
 
 - [ ] **Step 4: Run it to see it pass**
 
@@ -356,7 +385,7 @@ Expected: `All tests passed`, exit 0.
 ```bash
 git add packages/graph-runtime/native/src/script/MqjsHost.hpp packages/graph-runtime/native/src/script/MqjsHost.cpp \
   packages/native/test/packs/PackScript.test.cpp packages/native/cmake/tests.cmake
-git commit -m "script: the MicroQuickJS host compiles a script to the bytecode mqjs -o writes"
+git commit -m "script: the MicroQuickJS host compiles a script at load, against its own standard library"
 ```
 
 (If `rp_mqjs_names.h` gained a name, add it too.)
@@ -821,7 +850,7 @@ std::unique_ptr<ScriptHalf> compileScriptHalf(const fs::path& dir, const PackMan
     const auto runtime = readText(dir / fs::path(spec.runtime), why);
     if (!runtime) return nullptr;
     // The names the device-pack toolchain compiles the two bundles under (the bytecode records its file's name), so a
-    // pack whose id is its package's name compiles to the toolchain's very bytes.
+    // compile error names the file as the toolchain's would.
     const std::string wholeName = manifest.id + ".js";
     const std::string runtimeName = manifest.id + ".device.js";
     std::string err;
@@ -1176,10 +1205,7 @@ TEST_CASE("BlipToaster's script half as a pack filters MIDI exactly as its stati
     const PackLoad load = table.load(fixture("bliptoaster"));
     INFO(load.error);
     REQUIRE(load);
-    // The pack's two bytecodes are the toolchain's (Task 1's compiler, under the toolchain's names).
     REQUIRE(load.pack->script);
-    sameBytecode(load.pack->script->runtime, readBytes(toolchainOut("bliptoaster") / "bliptoaster.device64.bin"), false);
-    sameBytecode(load.pack->script->control, readBytes(toolchainOut("bliptoaster") / "bliptoaster.mqjs64.bin"), false);
 
     PackTable none(rp::graph::productPackages());
     Engine fromPack(48000.0, table);
@@ -1817,11 +1843,13 @@ git commit -m "render: a render job loads the packs' app and consoles halves bef
 
 - `spec/02-native-host.md`, the packs section: a pack's script half is a device script pack shipped as source: the
   manifest's `halves.script` (the whole pack) and `script` member (`runtime`, `heapBytes`, `nodeTypes`, each type in
-  `provides.nodeTypes`); `PackTable` compiles both bundles at load with `rp::mqjs::compileScript` (the bytes `mqjs -o`
-  writes, under the toolchain's names `<id>.js` / `<id>.device.js`), registers the source with `rp::mqjs::package` (the
+  `provides.nodeTypes`); `PackTable` compiles both bundles at load with `rp::mqjs::compileScript` (against the host's own
+  standard library, which binds the bytecode to the table that runs it, under the toolchain's names `<id>.js` /
+  `<id>.device.js`), registers the source with `rp::mqjs::package` (the
   control context's check of its definitions included), and holds every compiled half for the life of the process; its
   package (`rp.<id>.script`) goes through a native package's checks and every Engine registers it at `syncPacks`. Why
-  source: the pin, the design's rule, and MicroQuickJS's unchecked bytecode. Both module loaders refuse `pack:<id>/script`.
+  source: the pin, the design's rule, MicroQuickJS's unchecked bytecode, and bytecode bound to the library table
+  that compiled it. Both module loaders refuse `pack:<id>/script`.
   The render worker: the `render` set's entry on a bare runtime, `installBarePackLoader` (the same loader and guard, bare
   names passed through, no `__rp_packRefused`), its `main` awaiting `loadAppPacks()` with no budget, a run that never
   reports said to be one, and `~RenderHost` collecting before it frees (bellard/quickjs#280).
@@ -1898,12 +1926,19 @@ Expected: all four jobs succeed.
    scanned for library calls the engine lacks; a hand-edited half that calls one fails at its first use in a node, as a
    built-in pack would at its first run under a changed engine.
 
+8. **The built-in device packs are compiled against another library than the one that runs them.** The device-pack
+   toolchain compiles with `mqjs`, over upstream's `mqjs_stdlib`, and the host runs the bytecode over `rp_mqjs_stdlib`
+   (upstream's tables plus the node SDK's names), relying on the relocator's atom matching (`update_atoms`), which
+   upstream marks "XXX: add atom checksum". The transcript run passes today; whether the toolchain should compile against
+   RetroPlug's library (as a loaded pack now is) is open.
+
 ## Self-review
 
 **Scope** (the user's split, 2026-11-25): the device script half (Tasks 1 to 5) and the render worker (Tasks 6 to 8);
 the protocol half and the kinds are M2e's and are not touched.
 
-**Spec coverage:** compiled at load with upstream's compiler, held to `mqjs -o`'s bytes (Task 1); the manifest member
+**Spec coverage:** compiled at load with upstream's compiler against the host's library, deterministic and registered
+(Task 1); the manifest member
 and its rules (Task 2); compiled, registered, checked as a native package, every Engine (Task 3); the pack build tool
 (Task 4); a real package's script half equal to its static build (Task 5); the render worker as a set's host with its
 bytes unchanged (Task 6); the bare loader and guard (Task 7); the worker's packs, no budget, the CLI end to end
