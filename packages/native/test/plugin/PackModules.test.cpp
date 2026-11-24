@@ -157,11 +157,13 @@ TEST_CASE("only a pack that ran past the load budget is left out of the pack lis
     PackTable table;
     REQUIRE(table.load(fixture("pmgood")));
     REQUIRE(table.load(fixture("pmforeign")));
+    REQUIRE(table.load(fixture("pmdependent")));
     Runtime rt;
     REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
     rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
-    const auto lists = [&](const char* id) { return readString(rt, "globalThis.__rp_packList()").find(id) != std::string::npos; };
+    const auto lists = [&](const char* id) { return readString(rt, "globalThis.__rp_packList()").find(std::string("\"id\":\"") + id + "\"") != std::string::npos; };
     CHECK(lists("pmgood"));
+    CHECK(lists("pmdependent"));
     // The table's own refusals also name a pack that did load (a second folder of the same id): it still lists.
     table.recordRefusal({"pmgood", fixture("pmforeign"), "pack pmgood is refused: given twice"});
     CHECK(lists("pmgood"));
@@ -172,4 +174,7 @@ TEST_CASE("only a pack that ran past the load budget is left out of the pack lis
     evalModule(rt, "globalThis.__rp_packRefused('pmforeign', 'ran past the budget', true);");
     CHECK_FALSE(lists("pmforeign"));
     CHECK(lists("pmgood"));
+    // A pack that requires it is left out with it: the next runtime's TS loader has no refusal to propagate, so listing
+    // the dependent would commit it without its dependency.
+    CHECK_FALSE(lists("pmdependent"));
 }

@@ -98,6 +98,10 @@ if (Test-Path $resultPath) { Remove-Item $resultPath -Force }
 ) | Set-Content -Path $jobPath -Encoding ASCII
 
 $env:RETROPLUG_RENOISE_JOB = $jobPath
+# The plugin loads packs at launch: keep it off the user's installed packs and development folders.
+$env:RETROPLUG_PACKS_DIR = Join-Path $jobDir 'packs'
+$env:RETROPLUG_PACKS_CACHE_DIR = Join-Path $jobDir 'packs-cache'
+Remove-Item Env:RETROPLUG_PACK_PATH -ErrorAction SilentlyContinue
 Write-Host "renoise harness: job=$jobPath out=$outFull"
 
 $proc = Start-Process -FilePath $exe -PassThru

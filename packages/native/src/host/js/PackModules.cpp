@@ -16,15 +16,6 @@
 
 #include "host/packs/PackTable.hpp"
 
-// txiki's own loader and normalizer (src/private.h, not an installed header): the pack loader answers what is a pack's
-// and hands everything else to them, so every other import behaves exactly as before.
-extern "C" {
-char*        tjs_module_normalizer(JSContext* ctx, const char* base_name, const char* name, void* opaque);
-JSModuleDef* tjs_module_loader(JSContext* ctx, const char* module_name, void* opaque, JSValueConst attributes);
-int          tjs_module_attr_checker(JSContext* ctx, void* opaque, JSValueConst attributes);
-int          js_module_set_import_meta(JSContext* ctx, JSValue func_val, bool use_realpath, bool is_main);
-}
-
 namespace rp::host {
 
 namespace {
@@ -127,12 +118,19 @@ JSValue packList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
         // so without this every plugin instance, DPF's info instance and the editor would pay a stuck pack's budget
         // again. Only that refusal is kept (the table's own refusals also name packs that did load, and a
         // deterministic refusal costs nothing to repeat).
-        const std::set<std::string> skipped = [] {
+        // A pack requiring a skipped pack is left out with it (in dependency order, so transitively): the new runtime's
+        // TS loader has no refusal to propagate, and would commit it without its dependency.
+        std::set<std::string> skipped = [] {
             std::lock_guard<std::mutex> lock(g_skipMutex);
             return g_skipLater;
         }();
         for (const packs::LoadedPack* pack : table->loadedFrom(0)) {
-            if (skipped.count(pack->manifest.id)) continue;
+            const auto& req = pack->manifest.requiresPacks;
+            if (skipped.count(pack->manifest.id) ||
+                std::any_of(req.begin(), req.end(), [&](const std::string& r) { return skipped.count(r) > 0; })) {
+                skipped.insert(pack->manifest.id);
+                continue;
+            }
             std::vector<std::string> halves;
             for (const auto& [kind, file] : pack->manifest.halves)
                 if (kind != "native") halves.push_back(kind);
@@ -193,10 +191,6 @@ void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_modu
     }
     JS_FreeValue(ctx, global);
 }
-
-}  // namespace rp::host
-
-namespace rp::host {
 
 void settleForFree(TjsHostRuntime& host) {
     TJSRuntime* qrt = host.runtime();

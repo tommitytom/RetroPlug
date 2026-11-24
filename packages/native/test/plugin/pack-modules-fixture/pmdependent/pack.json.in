@@ -1,0 +1,7 @@
+{
+  "id": "pmdependent", "name": "Pack modules fixture (requires pmforeign)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/plugin/pack-modules-fixture",
+  "requires": { "packs": ["pmforeign"], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": [] },
+  "halves": { "app": "js/app.js" }
+}

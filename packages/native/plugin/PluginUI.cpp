@@ -260,6 +260,9 @@ public:
         if (ctx && !hasGlobalFunction(ctx, "__rp_mountUI")) {
             // A no-op when the DSP registered this context (every time the editor shares the DSP's host); the
             // registration that matters when the editor fell back to a host of its own.
+            // Once per process, free when the DSP already did it: the editor never depends on the DSP having filled
+            // the table first.
+            rp::host::packs::ensureLaunchPacks();
             const std::string why = rp::host::registerSharedModules(ctx, rp_app_modules, rp_app_modules_count);
             if (!why.empty()) {
                 d_stderr("[ui] %s", why.c_str());

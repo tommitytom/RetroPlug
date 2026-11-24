@@ -85,6 +85,10 @@ function Enter-ReaperEnv {
     $tagSafe = ($env:RP_JOB_TAG -replace '[^A-Za-z0-9_-]', '_')
     $cfg = Join-Path $repo ('build\reaper-cfg-win-' + $tagSafe)
     $logDir = Join-Path $cfg 'logs'
+    # The plugin loads packs at launch: keep it off the user's installed packs and development folders.
+    $env:RETROPLUG_PACKS_DIR = Join-Path $cfg 'packs'
+    $env:RETROPLUG_PACKS_CACHE_DIR = Join-Path $cfg 'packs-cache'
+    Remove-Item Env:RETROPLUG_PACK_PATH -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
     if ($env:RP_SCAN_FRESH -eq '1') {

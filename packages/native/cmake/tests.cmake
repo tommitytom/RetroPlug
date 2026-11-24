@@ -60,11 +60,11 @@ add_custom_command(
     COMMENT "Compiling the shared module loader's fixture"
     VERBATIM)
 
-# The pack loader's fixture (test/plugin/pack-modules-fixture): six development packs with JS halves alone, staged
+# The pack loader's fixture (test/plugin/pack-modules-fixture): seven development packs with JS halves alone, staged
 # with this build's API level so a level bump needs no edit there.
 set(_pm_src "${CMAKE_CURRENT_SOURCE_DIR}/test/plugin/pack-modules-fixture")
 set(_pm_out "${CMAKE_BINARY_DIR}/test/pack-modules-fixture")
-foreach(_pm pmgood pmforeign pminternal pmrelative pmthrows pmpending)
+foreach(_pm pmgood pmforeign pminternal pmrelative pmthrows pmpending pmdependent)
     configure_file("${_pm_src}/${_pm}/pack.json.in" "${_pm_out}/${_pm}/1.0.0/pack.json" @ONLY)
     file(GLOB _pm_js RELATIVE "${_pm_src}/${_pm}" CONFIGURE_DEPENDS "${_pm_src}/${_pm}/js/*.js")
     foreach(_js IN LISTS _pm_js)

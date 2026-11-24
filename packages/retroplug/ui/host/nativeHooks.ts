@@ -21,7 +21,7 @@ export interface RpHooks {
   __rp_mountUI?: () => void;
   __rp_unmountUI?: () => void;
   /** Commit contributions into this module set's registries (the one copy the control plane's stores read too), by
-   *  registry name (ui, views, roles, ...): what a test and M2c's pack loader reach them through
+   *  registry name (ui, views, roles, ...): what a test reaches them through
    *  (docs/downloadable-packs-m2a-plan.md). Throws a check's refusal. */
   __rp_commitUiContributions?: (additions: readonly NamedAddition[]) => void;
   /** What the packs' halves loaded and refused (src/packs/loadPacks.ts): a test reads it, as Settings > Packs (M4) will. */
