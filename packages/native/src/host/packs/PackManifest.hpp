@@ -10,10 +10,19 @@
 
 // A pack's manifest, pack.json (docs/downloadable-packs-loading-design.md section 1), parsed and checked: every member
 // is held to its shape here, so a manifest a later milestone reads is one this parser already accepted whole. What the
-// loader (PackTable) enforces beyond the shape is the native half, provides.nodeTypes and that each TS half's file is
-// there; it refuses the protocol and script halves, which M2d loads. provides.platforms and .roles, and
+// loader (PackTable) enforces beyond the shape is the native half, the script half (compiled and registered when the
+// pack loads), provides.nodeTypes and that each half's file is there; it refuses the protocol half, which M2e loads.
+// provides.platforms and .roles, and
 // requires.platforms, are held to the TS halves when a context loads them (src/packs/loadPacks.ts).
 namespace rp::host::packs {
+
+// A script half's member (docs/downloadable-packs-m2d-plan.md): a device script pack, its whole pack the file
+// halves.script names, compiled with its runtime when the pack loads.
+struct ScriptSpec {
+    std::string              runtime;         // the device's runtime of the pack: a file inside the version folder
+    std::uint32_t            heapBytes = 0;   // the package manifest's heapBytes: the box's context (MqjsHost.hpp)
+    std::vector<std::string> nodeTypes;       // the ids its definitions register, in their order; each in provides
+};
 
 struct PackManifest {
     std::string   id;        // a plain id: lowercase letters, digits and '-', starting with a letter
@@ -31,6 +40,8 @@ struct PackManifest {
     // bound to the id, so two packs' libraries never share a file name, which Windows matches a loaded module by), the
     // others a JS file inside the version folder. A kind no RetroPlug knows is refused here.
     std::map<std::string, std::string> halves;
+    // The script half's runtime, heap and types: present exactly when halves names a script half.
+    std::optional<ScriptSpec> script;
     // The native half's library stem, or empty for a pack with no native half.
     std::string nativeHalf() const;
 };

@@ -187,3 +187,55 @@ TEST_CASE("pack.json parses whole, and each malformed member or file is refused 
     CHECK_FALSE(readPackManifest(dir.path(), &why, std::nullopt));
     CHECK_THAT(why, ContainsSubstring("too large"));
 }
+
+namespace {
+
+// The good manifest (manifestWith's base, rp.demo.tone declared) with `halves` replaced and a `script` member added
+// (none for an empty one).
+std::string scriptManifest(const std::string& halves, const std::string& script) {
+    std::string m = manifestWith("halves", halves);
+    m.pop_back();  // the closing brace
+    if (!script.empty()) m += R"(,"script":)" + script;
+    return m + "}";
+}
+
+std::string refusedFor(const std::string& manifest) {
+    std::string why;
+    const auto m = parsePackManifest(manifest, &why, std::nullopt);
+    return m ? std::string("<parsed>") : why;
+}
+
+}  // namespace
+
+TEST_CASE("a script half names its runtime, its heap and its types, each declared", "[packs-folders]") {
+    const std::string half = R"({"script":"js/script.js"})";
+    const std::string member = R"({"runtime":"js/script.device.js","heapBytes":24576,"nodeTypes":["rp.demo.tone"]})";
+    std::string why;
+    const auto good = parsePackManifest(scriptManifest(half, member), &why, std::nullopt);
+    INFO(why);
+    REQUIRE(good);
+    REQUIRE(good->script);
+    CHECK(good->script->runtime == "js/script.device.js");
+    CHECK(good->script->heapBytes == 24576u);
+    CHECK(good->script->nodeTypes == std::vector<std::string>{"rp.demo.tone"});
+    CHECK(good->halves.at("script") == "js/script.js");
+
+    CHECK_THAT(refusedFor(scriptManifest(half, "")),
+               ContainsSubstring("halves.script needs the script member"));
+    CHECK_THAT(refusedFor(scriptManifest(R"({"native":"rp-demo"})", member)),
+               ContainsSubstring("script is set, and halves names no script half"));
+    CHECK_THAT(refusedFor(scriptManifest(half, R"({"heapBytes":24576,"nodeTypes":["rp.demo.tone"]})")),
+               ContainsSubstring("script.runtime is required"));
+    CHECK_THAT(refusedFor(scriptManifest(half, R"({"runtime":"../x.js","heapBytes":24576,"nodeTypes":["rp.demo.tone"]})")),
+               ContainsSubstring("script.runtime is \"../x.js\", which is not a path inside the pack"));
+    CHECK_THAT(refusedFor(scriptManifest(half, R"({"runtime":"js/r.js","nodeTypes":["rp.demo.tone"]})")),
+               ContainsSubstring("script.heapBytes is required"));
+    CHECK_THAT(refusedFor(scriptManifest(half, R"({"runtime":"js/r.js","heapBytes":0,"nodeTypes":["rp.demo.tone"]})")),
+               ContainsSubstring("script.heapBytes is 0"));
+    CHECK_THAT(refusedFor(scriptManifest(half, R"({"runtime":"js/r.js","heapBytes":24576,"nodeTypes":[]})")),
+               ContainsSubstring("script.nodeTypes is empty"));
+    CHECK_THAT(refusedFor(scriptManifest(half, R"({"runtime":"js/r.js","heapBytes":24576,"nodeTypes":["rp.demo.other"]})")),
+               ContainsSubstring("script.nodeTypes names rp.demo.other, which provides.nodeTypes does not declare"));
+    CHECK_THAT(refusedFor(scriptManifest(half, R"({"runtime":"js/r.js","heapBytes":24576,"nodeTypes":["rp.demo.tone"],"heap":1})")),
+               ContainsSubstring("script holds \"heap\", which is no member of it"));
+}

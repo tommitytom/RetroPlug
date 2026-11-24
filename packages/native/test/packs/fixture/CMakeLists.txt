@@ -14,7 +14,7 @@
 #   packfixture-pair          two packages from one library (FixtureSecond.cpp), the second taking the good pack's types
 #   packfixture-tshalf        a TS half naming a file the pack does not have
 #   packfixture-protocol      a protocol half, which M2c does not load (M2d's)
-#   packfixture-script        a script half, likewise
+#   packfixture-script        a script half with no script member
 #   packfixture-duplicate     registers rp.core.add, a built-in's type
 #   packfixture-clone         registers the good pack's two types under another package id
 #   packfixture-scriptclash   types in a script pack's namespace (test.clash), for a script reload to hold and drop

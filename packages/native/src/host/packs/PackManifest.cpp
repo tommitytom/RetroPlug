@@ -42,6 +42,13 @@ struct LevelPeek {
     std::optional<std::string>  id;
     std::optional<std::int64_t> apiLevel;
 };
+// `script` is closed as requires and provides are: a misspelt member would otherwise drop a field without a word.
+struct RawScript {
+    std::optional<std::string>              runtime;
+    std::optional<std::int64_t>             heapBytes;
+    std::optional<std::vector<std::string>> nodeTypes;
+    rfl::ExtraFields<rfl::Generic>          extra;
+};
 struct RawManifest {
     std::optional<std::string>                                id;
     std::optional<std::string>                                name;
@@ -52,6 +59,7 @@ struct RawManifest {
     rfl::Rename<"requires", std::optional<RawRequires>>       requirements;
     std::optional<RawProvides>                                provides;
     std::optional<std::map<std::string, std::string>>         halves;
+    std::optional<RawScript>                                  script;
 };
 
 }  // namespace detail::manifest
@@ -449,6 +457,55 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
             }
         }
         m.halves = *raw->halves;
+    }
+    // The largest heap a script half may declare: far past any box's (a box has 264 KiB of RAM), small enough that the
+    // desktop's context (desktopContextBytes: four times it at 64 bits) stays a sane allocation.
+    constexpr std::int64_t kMaxScriptHeap = std::int64_t{16} << 20;
+    const bool scriptHalf = m.halves.count("script") > 0;
+    if (const auto& s = raw->script) {
+        if (!scriptHalf) {
+            refuse(why, "script is set, and halves names no script half");
+            return std::nullopt;
+        }
+        if (const auto& extra = s->extra; !extra.empty()) {
+            refuse(why, "script holds \"" + echoed(extra.begin()->first) + "\", which is no member of it");
+            return std::nullopt;
+        }
+        ScriptSpec spec;
+        if (!s->runtime || s->runtime->empty()) {
+            refuse(why, "script.runtime is required (the device runtime's file)");
+            return std::nullopt;
+        }
+        if (!isInsidePath(*s->runtime)) {
+            refuse(why, "script.runtime is \"" + echoed(*s->runtime) + "\", which is not a path inside the pack");
+            return std::nullopt;
+        }
+        spec.runtime = *s->runtime;
+        if (!s->heapBytes) {
+            refuse(why, "script.heapBytes is required (the box's context, in bytes)");
+            return std::nullopt;
+        }
+        if (*s->heapBytes < 1 || *s->heapBytes > kMaxScriptHeap) {
+            refuse(why, "script.heapBytes is " + std::to_string(*s->heapBytes) + ", outside 1.." +
+                            std::to_string(kMaxScriptHeap));
+            return std::nullopt;
+        }
+        spec.heapBytes = static_cast<std::uint32_t>(*s->heapBytes);
+        if (!checkList(s->nodeTypes, "script.nodeTypes", false, spec.nodeTypes, why)) return std::nullopt;
+        if (spec.nodeTypes.empty()) {
+            refuse(why, "script.nodeTypes is empty: a script half registers node types");
+            return std::nullopt;
+        }
+        for (const auto& t : spec.nodeTypes) {
+            if (std::find(m.providesNodeTypes.begin(), m.providesNodeTypes.end(), t) == m.providesNodeTypes.end()) {
+                refuse(why, "script.nodeTypes names " + echoed(t) + ", which provides.nodeTypes does not declare");
+                return std::nullopt;
+            }
+        }
+        m.script = std::move(spec);
+    } else if (scriptHalf) {
+        refuse(why, "halves.script needs the script member (its runtime, heapBytes and nodeTypes)");
+        return std::nullopt;
     }
     if (m.halves.empty()) {
         refuse(why, "halves names no half: the pack would load nothing");
