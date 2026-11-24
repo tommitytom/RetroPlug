@@ -66,7 +66,7 @@ JSModuleDef* load(JSContext* ctx, const char* name, void* opaque, JSValueConst a
     if (slash == std::string_view::npos || !table) return notFound(ctx, name);
     const packs::LoadedPack* pack = table->find(rest.substr(0, slash));
     const std::string half(rest.substr(slash + 1));
-    if (!pack || half == "native") return notFound(ctx, name);
+    if (!pack || half == "native" || half == "script") return notFound(ctx, name);
     const auto file = pack->manifest.halves.find(half);
     if (file == pack->manifest.halves.end()) return notFound(ctx, name);
 

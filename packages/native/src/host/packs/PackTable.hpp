@@ -15,6 +15,7 @@
 #include "host/packs/FileLock.hpp"
 #include "host/packs/PackCandidate.hpp"
 #include "host/packs/PackManifest.hpp"
+#include "host/packs/PackScript.hpp"
 
 // The packs a process has loaded (docs/downloadable-packs-loading-design.md section 2): each pack's library opened once
 // and never closed, its manifest, and the rp_packages its entry returned. Every Engine in the process reads one table
@@ -32,7 +33,9 @@ struct LoadedPack {
     std::filesystem::path          dir;
     PackOrigin                     origin = PackOrigin::Development;
     bool                           overridesInstalled = false;
-    std::vector<const rp_package*> packages;  // what rp_pack_entry returned, in its order; empty with no native half
+    // What rp_pack_entry returned, in its order, then its script half's package; empty with neither.
+    std::vector<const rp_package*> packages;
+    const ScriptHalf*              script = nullptr;  // its script half, compiled and registered; the table owns it
     std::vector<std::string>       packageIds;  // each package's manifest id, index for index
     void*                          library = nullptr;  // never closed
     std::shared_ptr<FileLock>      lock;  // the hold on its version folder: installed, or development in the data root
@@ -93,6 +96,9 @@ private:
     mutable std::mutex                       mutex_;
     std::vector<std::unique_ptr<LoadedPack>> packs_;
     std::vector<PackRefusal>                 refusals_;
+    // Every script half this table compiled, loaded or refused: the MicroQuickJS host keeps a pointer to each one it
+    // registered for the life of the process (and compares halves by address), so none is ever freed.
+    std::vector<std::unique_ptr<ScriptHalf>> scripts_;
     // The holds on installed folders a LoadedPack does not carry, one per folder: a pack refused after its library
     // opened (the library stays open, never closed, so its folder is held for the life of the process as a loaded
     // one's is), and an installed folder whose pack this table loaded earlier as a development one.

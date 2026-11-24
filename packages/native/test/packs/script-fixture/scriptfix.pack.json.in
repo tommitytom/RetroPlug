@@ -1,0 +1,9 @@
+{
+  "id": "@FIX_ID@", "name": "Script fixture pack (@FIX_ID@)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/script-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "roles": [],
+                "nodeTypes": [@FIX_PROVIDES@] },
+  "halves": { "script": "js/script.js" },
+  "script": { "runtime": "@FIX_RUNTIME@", "heapBytes": 57344, "nodeTypes": [@FIX_TYPES@] }
+}

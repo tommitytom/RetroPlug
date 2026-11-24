@@ -13,6 +13,7 @@
 #include "graph/rp_pack.h"
 #include "host/packs/NativeLibrary.hpp"
 #include "host/packs/PackDirs.hpp"
+#include "host/packs/PackScript.hpp"
 
 namespace fs = std::filesystem;
 
@@ -258,15 +259,22 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
 
     // The TS halves load when a context imports them (host/js/PackModules, docs/downloadable-packs-m2c-plan.md), long
     // after this load, so each file the manifest names is checked here, where a refusal still leaves nothing loaded.
-    // The protocol and script halves are M2d's, and a pack loads whole or not at all.
+    // The protocol half is M2e's, and a pack loads whole or not at all.
     for (const auto& [kind, file] : manifest->halves) {
         if (kind == "native") continue;
-        if (kind == "protocol" || kind == "script")
+        if (kind == "protocol")
             return refuseHere(id, pack + " has a " + kind + " half (" + file +
                                       "), which this RetroPlug does not load yet; a pack loads whole or not at all");
         std::error_code ec;
         if (!fs::is_regular_file(candidate.dir / fs::path(file), ec))
             return refuseHere(id, pack + ": halves." + kind + " names " + file + ", which the pack does not have");
+    }
+    // A script half's runtime is a file of its own (the loop above checked the whole pack's).
+    if (manifest->script) {
+        std::error_code ec;
+        if (!fs::is_regular_file(candidate.dir / fs::path(manifest->script->runtime), ec))
+            return refuseHere(id, pack + ": script.runtime names " + manifest->script->runtime +
+                                      ", which the pack does not have");
     }
 
     for (const auto& p : packs_) {
@@ -327,7 +335,22 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
                                       levelAdvice(level));
         if (list == nullptr || count == 0) return refuseHere(id, pack + "'s library registers no package");
         loaded->packages.assign(list, list + count);
-
+    }
+    // The script half: compiled now, then registered on the MicroQuickJS host, which loads the whole pack in a control
+    // context and refuses definitions that are not its type ids. Held by the table from its registration on, loaded or
+    // refused (registerPack keeps a pointer to it).
+    if (manifest->script) {
+        auto half = compileScriptHalf(candidate.dir, *manifest, &why);
+        if (!half) return refuseHere(id, pack + ": " + why);
+        ScriptHalf& held = *half;
+        scripts_.push_back(std::move(half));
+        if (!registerScriptHalf(held, &why)) return refuseHere(id, pack + ": " + why);
+        loaded->packages.push_back(held.package);
+        loaded->script = &held;
+    }
+    // The checks every package of the pack meets, whatever half brought it: a pack's native packages first, then its
+    // script package, which is the order an Engine registers them in.
+    if (!loaded->packages.empty()) {
         // Who holds each type id now: the built-ins, then every pack loaded before this one.
         std::map<std::string, std::string, std::less<>> holder;
         const auto holdTypes = [&](const rp_package* p) {

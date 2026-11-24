@@ -9,6 +9,7 @@
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-script]"`.
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,11 @@
 #include <string>
 #include <vector>
 
+#include "GraphDocs.hpp"
+#include "PackTestSupport.hpp"
+#include "graph/Packages.hpp"
+#include "host/engine/Engine.hpp"
+#include "host/packs/PackTable.hpp"
 #include "script/MqjsHost.hpp"
 #include "script/rp_mqjs_pack.h"
 
@@ -105,4 +111,56 @@ TEST_CASE("compileScript refuses a script that does not parse, naming the file",
     std::string why;
     CHECK_FALSE(rp::mqjs::compileScript("var x = ;", "broken.js", false, &why));
     CHECK(why.find("broken.js") != std::string::npos);
+}
+
+using Catch::Matchers::ContainsSubstring;
+using rp::host::packs::PackLoad;
+using rp::host::packs::PackTable;
+using rp::host::packs::test::fixture;
+
+TEST_CASE("a script half compiles at load and its package joins the pack's", "[packs-script]") {
+    PackTable table(rp::graph::productPackages());
+    const PackLoad load = table.load(fixture("scriptfix"));
+    INFO(load.error);
+    REQUIRE(load);
+    REQUIRE(load.pack->packages.size() == 1);
+    const rp_package* p = load.pack->packages[0];
+    REQUIRE(p->node_type_count == 3);
+    CHECK(std::string(p->node_types[0]->id) == "rp.devtest.script-transpose");
+    CHECK(std::string(p->node_types[2]->id) == "rp.devtest.script-loop");
+    CHECK(load.pack->packageIds == std::vector<std::string>{"rp.scriptfix.script"});
+}
+
+TEST_CASE("a script half is refused, and the pack with it, for each fault", "[packs-script]") {
+    PackTable table(rp::graph::productPackages());
+    REQUIRE(table.load(fixture("scriptfix")));
+    const auto refused = [&](const char* id, const char* reason) {
+        INFO(id);
+        const PackLoad load = table.load(fixture(id));
+        INFO(load.error);
+        CHECK_FALSE(load);
+        CHECK_THAT(load.error, ContainsSubstring(reason));
+        CHECK(table.find(id) == nullptr);
+    };
+    refused("scriptfix-twin", "registers node type rp.devtest.script-transpose, which package rp.scriptfix.script "
+                              "has registered already");
+    refused("scriptfix-types", "its script half is refused");
+    refused("scriptfix-syntax", "its script half (js/script.js) does not compile: scriptfix-syntax.js");
+    refused("scriptfix-nofile", "script.runtime names js/missing.js, which the pack does not have");
+}
+
+TEST_CASE("every Engine registers a loaded script half, and a document places its types", "[packs-script]") {
+    PackTable table(rp::graph::productPackages());
+    PackTable none(rp::graph::productPackages());
+    REQUIRE(table.load(fixture("scriptfix")));
+    Engine bare(48000.0, none);
+    Engine e(48000.0, table);
+    CHECK(e.nodeTypeCount() == bare.nodeTypeCount() + 3);
+    const std::string doc =
+        R"({"nodes":[{"id":"in","type":"rp.host.midi-in"},{"id":"t","type":"rp.devtest.script-transpose",)"
+        R"("settings":{"semitones":12}},{"id":"out","type":"rp.host.midi-out","settings":{"systems":[1]}}],)"
+        R"("wires":[{"from":"in.midi","to":"t.in"},{"from":"t.out","to":"out.in1"}]})";
+    const auto placed = e.setGraph(rp::host::test::graphRequest(doc, {}));
+    INFO((placed.errors.empty() ? std::string() : placed.errors[0].message));
+    CHECK(placed.ok);
 }

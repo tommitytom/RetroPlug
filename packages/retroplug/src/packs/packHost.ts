@@ -2,7 +2,10 @@
 // half is imported, and where a refusal is reported. A txiki host installs the globals (host/js/PackModules.cpp)
 // before its entry evaluates; a context without them (a test's bundle, the render worker) has no packs.
 
-/** The halves a context may load (the protocol and script halves are M2d's). */
+/**
+ * The halves a context may load (the protocol half is M2e's; the script half is MicroQuickJS code the native loader
+ * registers, never a context's).
+ */
 export type HalfKind = "app" | "consoles" | "ui" | "views" | "cli";
 
 /** A pack as its pack.json declares it: what the loader holds its halves to. */

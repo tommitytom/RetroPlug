@@ -96,12 +96,13 @@ add_library(retroplug-packs STATIC
     src/host/packs/FileLock.cpp
     src/host/packs/NativeLibrary.cpp
     src/host/packs/PackTable.cpp
+    src/host/packs/PackScript.cpp
     src/host/packs/PackDiscovery.cpp
     # fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line rather than in every includer. Here
     # because state.json's write needs it; the backend's HostRpcService reaches it through this library.
     src/util/FileSync.cpp)
 target_include_directories(retroplug-packs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(retroplug-packs PUBLIC retroplug-graph PRIVATE ${CMAKE_DL_LIBS})
+target_link_libraries(retroplug-packs PUBLIC retroplug-graph retroplug-mqjs-host PRIVATE ${CMAKE_DL_LIBS})
 set_target_properties(retroplug-packs PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
