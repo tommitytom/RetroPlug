@@ -1472,7 +1472,7 @@ function(retroplug_device_script_pack name)
     set(_pack retroplug-${name}-script-pack)
     add_custom_target(${_pack}
         BYPRODUCTS ${_bytecode} ${_sources} "${_out}/${name}.js" "${_out}/${name}.device.js"
-                   "${_out}/${name}.transcript.txt"
+                   "${_out}/${name}.transcript.txt" "${_out}/${name}.types.json"
         COMMAND ${NODE_EXECUTABLE} "${RP_PACKAGES_DIR}/retroplug/scripts/build-device-pack.mjs"
                 --entry "${P_ENTRY}" --name ${name} --heap-bytes ${P_HEAP_BYTES} --out-dir "${_out}"
                 --pack-dir "${P_PACK_DIR}" --mqjs "$<TARGET_FILE:mqjs>"

@@ -1,0 +1,7 @@
+{
+  "id": "bliptoaster", "name": "BlipToaster (script fixture)", "version": "1.0.0", "apiLevel": 0,
+  "license": "MIT", "source": "packages/bliptoaster",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.bliptoaster.midi-policy"], "roles": [] },
+  "halves": {}
+}

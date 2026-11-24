@@ -1031,5 +1031,7 @@ keep(join(OUT_DIR, `${NAME}.mqjs32.bin`), bytecode32);
 keep(join(OUT_DIR, `${NAME}.pack64.c`), packSource(runtime64, 64));
 keep(join(OUT_DIR, `${NAME}.pack32.c`), packSource(bytecode32, 32));
 keep(join(OUT_DIR, `${NAME}.transcript.txt`), reference);
+// The ids the definitions register, in their order, as JSON: what a pack's script member lists (tools/build-pack-halves.mjs).
+keep(join(OUT_DIR, `${NAME}.types.json`), `${JSON.stringify(typeIds)}\n`);
 rmSync(WORK, { recursive: true, force: true });
 console.log(`device pack ${NAME} OK (${repoPath(OUT_DIR)})`);

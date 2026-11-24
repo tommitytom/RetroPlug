@@ -97,3 +97,60 @@ test("a package importing another package's module is refused, naming it", async
   const run = await runNode(script);
   expect(run.out.includes("@retroplug/sameboy/app, which is not a contract module")).toBe(true);
 });
+
+// Runs the tool's CLI from the repository root (the cases above run from the package, two levels down) and prints a
+// JSON record of the exit status, the streams and, when it wrote one, the pack's files.
+function toolScript(template: string | null, only: string): string {
+  return [
+    'const fs = require("fs"), os = require("os"), path = require("path"), cp = require("child_process");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-script-test-"));',
+    `let template = ${template === null ? 'null' : JSON.stringify(template)};`,
+    'if (template === null) {',
+    '  template = path.join(work, "template.json");',
+    '  fs.writeFileSync(template, JSON.stringify({ id: "bliptoaster", name: "x", version: "1.0.0", apiLevel: 0,',
+    '    license: "MIT", source: "x", requires: { packs: [], platforms: [] },',
+    '    provides: { platforms: [], nodeTypes: [], roles: [] }, halves: {} }));',
+    '} else { template = path.join(repo, template); }',
+    'const out = path.join(work, "v");',
+    'const r = cp.spawnSync(process.execPath, [path.join(repo, "tools/build-pack-halves.mjs"),',
+    `  path.join(repo, "packages/bliptoaster"), out, template, "--only", ${JSON.stringify(only)}], { encoding: "utf8", cwd: repo });`,
+    'const read = (f) => { try { return fs.readFileSync(path.join(out, f), "utf8"); } catch (e) { return null; } };',
+    'const rec = { status: r.status, stderr: r.stderr, pack: read("pack.json"), whole: read("js/script.js"),',
+    '  runtime: read("js/script.device.js") };',
+    'fs.rmSync(work, { recursive: true, force: true });',
+    'process.stdout.write(JSON.stringify(rec));',
+  ].join("\n");
+}
+
+interface ToolRun {
+  status: number;
+  stderr: string;
+  pack: string | null;
+  whole: string | null;
+  runtime: string | null;
+}
+
+test("a package's device script pack becomes the pack's script half: the two ES5 bundles and the script member", async () => {
+  const run = await runNode(toolScript("packages/native/test/packs/script-fixture/bliptoaster.pack.json", "script"));
+  if (run.status !== 0) throw new Error(run.err);
+  const rec = JSON.parse(run.out) as ToolRun;
+  expect(rec.status, rec.stderr).toBe(0);
+  const pack = JSON.parse(rec.pack as string);
+  expect(pack.halves).toEqual({ script: "js/script.js" });
+  expect(pack.script).toEqual({ runtime: "js/script.device.js", heapBytes: 24576, nodeTypes: ["rp.bliptoaster.midi-policy"] });
+  // The bundles are the toolchain's ES5: no module syntax, the strict directive first.
+  const whole = rec.whole as string;
+  expect(whole.startsWith('"use strict"')).toBe(true);
+  expect(/\bexport\b|\bimport\b/.test(whole)).toBe(false);
+  expect((rec.runtime as string).length).toBeGreaterThan(0);
+});
+
+test("a script half whose types the template does not declare is refused, naming the type", async () => {
+  const run = await runNode(toolScript(null, "script"));
+  if (run.status !== 0) throw new Error(run.err);
+  const rec = JSON.parse(run.out) as ToolRun;
+  expect(rec.status).toBe(1);
+  expect(rec.stderr.includes(
+    "the script half defines rp.bliptoaster.midi-policy, which the template's provides.nodeTypes does not declare")).toBe(true);
+});

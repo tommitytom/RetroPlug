@@ -6,8 +6,16 @@
 // pack may not carry a copy of and is refused. Then pack.json: the template's members, its API level this build's,
 // and its halves the ones built (a native half the template names is kept).
 //
-//   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template>
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+// A package's `retroplug.script`, a device script pack, becomes the script half: the device-pack toolchain
+// (packages/retroplug/scripts/build-device-pack.mjs, with its bundling, ES5 lowering, library-call scan and transcript
+// run) builds it under the pack's id, and the pack ships its two ES5 bundles (js/script.js, the whole pack;
+// js/script.device.js, the device's runtime), which the host compiles to bytecode when it loads the pack, and a `script`
+// member naming the runtime, the heap and the types. `--only` builds the halves it names alone.
+//
+//   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>]
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -33,15 +41,53 @@ export function packExternals() {
   return [...new Set([...SHELL_IMPORTS.map((e) => e.specifier), ...UI_IMPORTS.map((e) => e.specifier), ...hostModules])];
 }
 
-export async function buildPackHalves({ packageDir, outDir, template }) {
+/** The package's device script pack as the pack's script half (see the header). Returns the whole pack's file. */
+function buildScriptHalf({ packageDir, outDir, pack, script, mqjs, runner }) {
+  if (typeof script !== "object" || script === null || script.device !== true || typeof script.entry !== "string" ||
+      !Number.isInteger(script.heapBytes)) {
+    throw new Error("retroplug.script is not a device pack ({ entry, device: true, heapBytes }): a desktop script " +
+      "pack is reserved");
+  }
+  const work = mkdtempSync(join(tmpdir(), "rp-pack-script-"));
+  try {
+    const args = [join(REPO, "packages/retroplug/scripts/build-device-pack.mjs"),
+      "--entry", join(packageDir, script.entry), "--name", pack.id, "--heap-bytes", String(script.heapBytes),
+      "--out-dir", work, "--pack-dir", packageDir];
+    if (mqjs) args.push("--mqjs", mqjs);
+    if (runner) args.push("--runner", runner);
+    const run = spawnSync(process.execPath, args, { encoding: "utf8" });
+    if (run.status !== 0) {
+      throw new Error(`the device-pack toolchain refused ${pack.id}'s script half:\n${run.stderr}${run.stdout}`);
+    }
+    const types = JSON.parse(readFileSync(join(work, `${pack.id}.types.json`), "utf8"));
+    const declared = pack.provides?.nodeTypes ?? [];
+    for (const type of types) {
+      if (!declared.includes(type)) {
+        throw new Error(`the script half defines ${type}, which the template's provides.nodeTypes does not declare`);
+      }
+    }
+    mkdirSync(join(outDir, "js"), { recursive: true });
+    copyFileSync(join(work, `${pack.id}.js`), join(outDir, "js", "script.js"));
+    copyFileSync(join(work, `${pack.id}.device.js`), join(outDir, "js", "script.device.js"));
+    pack.script = { runtime: "js/script.device.js", heapBytes: script.heapBytes, nodeTypes: types };
+    return "js/script.js";
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner }) {
   const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   const block = manifest.retroplug ?? {};
   const externals = packExternals();
   const pack = JSON.parse(readFileSync(template, "utf8"));
   const halves = pack.halves?.native ? { native: pack.halves.native } : {};
+  // A script member a template carries is replaced when the half is built and dropped when it is not.
+  delete pack.script;
   for (const half of HALVES) {
     const entry = block[half];
     if (typeof entry !== "string") continue;
+    if (only && !only.includes(half)) continue;
     const refuseForeign = {
       name: "refuse-foreign-retroplug",
       setup(build) {
@@ -73,6 +119,9 @@ export async function buildPackHalves({ packageDir, outDir, template }) {
     });
     halves[half] = `js/${half}.js`;
   }
+  if ((!only || only.includes("script")) && block.script !== undefined) {
+    halves.script = buildScriptHalf({ packageDir, outDir, pack, script: block.script, mqjs, runner });
+  }
   pack.apiLevel = apiLevel();
   pack.halves = halves;
   mkdirSync(outDir, { recursive: true });
@@ -81,11 +130,25 @@ export async function buildPackHalves({ packageDir, outDir, template }) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [packageDir, outDir, template] = process.argv.slice(2);
-  if (!packageDir || !outDir || !template) {
-    console.error("usage: node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template>");
+  const usage = () => {
+    console.error("usage: node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> " +
+      "[--only <half,...>] [--mqjs <path>] [--runner <path>]");
     process.exit(2);
+  };
+  const positional = [];
+  const opts = {};
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith("--")) {
+      if (!["--only", "--mqjs", "--runner"].includes(argv[i]) || i + 1 >= argv.length) usage();
+      opts[argv[i].slice(2)] = argv[++i];
+    } else positional.push(argv[i]);
   }
-  buildPackHalves({ packageDir: resolve(packageDir), outDir: resolve(outDir), template: resolve(template) })
-    .catch((e) => { console.error(e?.message ?? e); process.exit(1); });
+  const [packageDir, outDir, template] = positional;
+  if (positional.length !== 3) usage();
+  buildPackHalves({
+    packageDir: resolve(packageDir), outDir: resolve(outDir), template: resolve(template),
+    only: opts.only ? opts.only.split(",") : undefined,
+    mqjs: opts.mqjs ? resolve(opts.mqjs) : undefined, runner: opts.runner ? resolve(opts.runner) : undefined,
+  }).catch((e) => { console.error(e?.message ?? e); process.exit(1); });
 }
