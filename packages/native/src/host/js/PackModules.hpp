@@ -41,6 +41,13 @@ class PackTable;
  *  that table. */
 void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count);
 
+/** installPackLoader for a bare QuickJS runtime, which has no txiki: a render job's (host/render/RenderHost). The same
+ *  `pack:<id>/<half>` loader and the same guard, after registerSharedModules registered `contracts` there; any other
+ *  name is passed through as written (QuickJS finds a registered module by its name) and is not found if no module has
+ *  it, since a bare runtime loads no file. Installs `__rp_packList` as above and no `__rp_packRefused`: a render's
+ *  refusals are its job's console lines, the context that loaded those halves first having recorded its own. */
+void installBarePackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count);
+
 /** Make `host`'s runtime safe to free while a pack's half is still pending (a top-level await parked on a timer):
  *  destroys the runtime's timers and collects, so the pending module's callbacks are freed before QuickJS frees the
  *  module structs they point at. Idempotent; ~PackHostRuntime calls it. */

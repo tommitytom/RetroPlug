@@ -81,6 +81,7 @@ retroplug_add_test_binary(
     SOURCES  test/plugin/ClassIdReserve.test.cpp
              test/plugin/SharedModules.test.cpp
              test/plugin/PackModules.test.cpp
+             src/host/js/SharedModules.cpp     # registerSharedModules: QuickJS alone, in the backend library the test does not link
              ${_fx_c}
     LIBS     retroplug-tjs-runtime retroplug-packs)     # TjsHostRuntime + ClassIdSpace.hpp (+ txiki, quickjs); PackTable for the pack loader's test
 target_compile_definitions(retroplug-classid-test PRIVATE RP_PACK_MODULES_FIXTURE="${_pm_out}")

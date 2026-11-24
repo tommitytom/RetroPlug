@@ -58,8 +58,8 @@ JSModuleDef* notFound(JSContext* ctx, const char* name) {
     return nullptr;
 }
 
-JSModuleDef* load(JSContext* ctx, const char* name, void* opaque, JSValueConst attributes) {
-    if (!startsWith(name, kPackPrefix)) return tjs_module_loader(ctx, name, opaque, attributes);
+// A `pack:<id>/<half>` name's module, compiled; `txiki` says whether the runtime is txiki's, which sets import.meta.
+JSModuleDef* loadPackHalf(JSContext* ctx, const char* name, bool txiki) {
     const std::string_view rest(name + std::strlen(kPackPrefix));
     const std::size_t slash = rest.find('/');
     packs::PackTable* table = g_table.load();
@@ -81,14 +81,34 @@ JSModuleDef* load(JSContext* ctx, const char* name, void* opaque, JSValueConst a
     // context not yet resolved (this one: the shared sets are resolved at registration, SharedModules.cpp).
     JSValue val = JS_Eval(ctx, source.c_str(), source.size(), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
     if (JS_IsException(val)) return nullptr;
-    // The name is no path, so import.meta takes it as written.
-    if (js_module_set_import_meta(ctx, val, false, false) != 0) {
+    // The name is no path, so import.meta takes it as written. A bare runtime has no txiki import.meta to set.
+    if (txiki && js_module_set_import_meta(ctx, val, false, false) != 0) {
         JS_FreeValue(ctx, val);
         return nullptr;
     }
     auto* m = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(val));
     JS_FreeValue(ctx, val);  // the module is referenced by the context's module list
     return m;
+}
+
+JSModuleDef* load(JSContext* ctx, const char* name, void* opaque, JSValueConst attributes) {
+    if (!startsWith(name, kPackPrefix)) return tjs_module_loader(ctx, name, opaque, attributes);
+    return loadPackHalf(ctx, name, true);
+}
+
+char* bareNormalize(JSContext* ctx, const char* base, const char* name, void*) {
+    if (base && startsWith(base, kPackPrefix) && !isContract(ctx, name)) {
+        JS_ThrowReferenceError(ctx, "%s imports '%s', which is not a RetroPlug contract module", base, name);
+        return nullptr;
+    }
+    // A bare runtime's modules import one another by their registered names, and the guard has judged a pack's.
+    return js_strdup(ctx, name);
+}
+
+JSModuleDef* bareLoad(JSContext* ctx, const char* name, void*, JSValueConst) {
+    if (startsWith(name, kPackPrefix)) return loadPackHalf(ctx, name, false);
+    JS_ThrowReferenceError(ctx, "could not load '%s': no module of this runtime has that name", name);
+    return nullptr;
 }
 
 std::string jsonString(const std::string& s) {
@@ -167,13 +187,8 @@ JSValue packRefused(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     return (id && reason) ? JS_UNDEFINED : JS_EXCEPTION;
 }
 
-}  // namespace
-
-void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count) {
-    g_table.store(&table);
-    // txiki's opaque is its TJSRuntime; the wrappers hand it on unchanged.
-    JS_SetModuleLoaderFunc2(JS_GetRuntime(ctx), normalize, load, tjs_module_attr_checker, TJS_GetRuntime(ctx));
-
+// The frozen contracts object and the globals, once per context; `refusals` adds __rp_packRefused (txiki's hosts).
+void installGlobals(JSContext* ctx, const rp_js_module* contracts, std::size_t count, bool refusals) {
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue mark = JS_GetPropertyStr(ctx, global, kContracts);
     const bool installed = JS_IsObject(mark);
@@ -186,10 +201,27 @@ void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_modu
         JS_FreezeObject(ctx, set);
         JS_DefinePropertyValueStr(ctx, global, kContracts, set, 0);
         JS_DefinePropertyValueStr(ctx, global, "__rp_packList", JS_NewCFunction(ctx, packList, "__rp_packList", 0), 0);
-        JS_DefinePropertyValueStr(ctx, global, "__rp_packRefused",
-                                  JS_NewCFunction(ctx, packRefused, "__rp_packRefused", 2), 0);
+        if (refusals)
+            JS_DefinePropertyValueStr(ctx, global, "__rp_packRefused",
+                                      JS_NewCFunction(ctx, packRefused, "__rp_packRefused", 2), 0);
     }
     JS_FreeValue(ctx, global);
+}
+
+}  // namespace
+
+void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count) {
+    g_table.store(&table);
+    // txiki's opaque is its TJSRuntime; the wrappers hand it on unchanged.
+    JS_SetModuleLoaderFunc2(JS_GetRuntime(ctx), normalize, load, tjs_module_attr_checker, TJS_GetRuntime(ctx));
+    installGlobals(ctx, contracts, count, true);
+}
+
+void installBarePackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts,
+                           std::size_t count) {
+    g_table.store(&table);
+    JS_SetModuleLoaderFunc2(JS_GetRuntime(ctx), bareNormalize, bareLoad, nullptr, nullptr);
+    installGlobals(ctx, contracts, count, false);
 }
 
 void settleForFree(TjsHostRuntime& host) {

@@ -178,3 +178,72 @@ TEST_CASE("only a pack that ran past the load budget is left out of the pack lis
     // the dependent would commit it without its dependency.
     CHECK_FALSE(lists("pmdependent"));
 }
+
+namespace {
+
+// A bare QuickJS runtime, as a render job's (host/render/RenderHost): no txiki, no timers, a job queue run here.
+struct BareRuntime {
+    JSRuntime* rt = JS_NewRuntime();
+    JSContext* ctx = JS_NewContext(rt);
+    ~BareRuntime() {
+        JS_RunGC(rt);  // as ~RenderHost: a pending half's callbacks go before the modules they hold (bellard/quickjs#280)
+        JS_FreeContext(ctx);
+        JS_FreeRuntime(rt);
+    }
+    void drain() {
+        JSContext* jc = nullptr;
+        while (JS_ExecutePendingJob(rt, &jc) > 0) {}
+    }
+    std::string importResult(const std::string& name) {
+        const std::string code = "import(" + quoted(name) + ").then((m) => { globalThis.__pm = 'ok ' + "
+                                 "JSON.stringify(m.default); }, (e) => { globalThis.__pm = 'error ' + e.message; });";
+        JSValue v = JS_Eval(ctx, code.c_str(), code.size(), "<bare-test>", JS_EVAL_TYPE_MODULE);
+        REQUIRE_FALSE(JS_IsException(v));
+        JS_FreeValue(ctx, v);
+        drain();
+        JSValue g = JS_GetGlobalObject(ctx);
+        JSValue s = JS_GetPropertyStr(ctx, g, "__pm");
+        const char* c = JS_ToCString(ctx, s);
+        std::string out = c ? c : "<none>";
+        JS_FreeCString(ctx, c);
+        JS_FreeValue(ctx, s);
+        JS_SetPropertyStr(ctx, g, "__pm", JS_UNDEFINED);
+        JS_FreeValue(ctx, g);
+        return out;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("on a bare runtime a pack's half loads by name, held to the same guard", "[pack-modules]") {
+    PackTable table;
+    for (const char* id : {"pmgood", "pmforeign", "pmrelative", "pmthrows", "pmpending"})
+        REQUIRE(table.load(fixture(id)));
+    BareRuntime rt;
+    REQUIRE(rp::host::registerSharedModules(rt.ctx, rp_fx_modules, rp_fx_modules_count).empty());
+    const rp_js_module contracts[] = {rp_fx_modules[0], rp_fx_modules[1], {"rp:fx-a", nullptr, 0}};
+    rp::host::installBarePackLoader(rt.ctx, table, contracts, 3);
+
+    CHECK(rt.importResult("pack:pmgood/app").rfind("ok {\"half\":\"app\"", 0) == 0);
+    CHECK(rt.importResult("pack:pmgood/cli").rfind("error could not load 'pack:pmgood/cli'", 0) == 0);
+    CHECK(rt.importResult("pack:pmforeign/app") ==
+          "error pack:pmforeign/app imports 'fx:nope', which is not a RetroPlug contract module");
+    CHECK(rt.importResult("pack:pmrelative/app") ==
+          "error pack:pmrelative/app imports './other.js', which is not a RetroPlug contract module");
+    CHECK(rt.importResult("pack:pmthrows/app") == "error the fixture half throws");
+    // A name that is neither a pack's nor registered is not found: there is no file loader on a bare runtime.
+    CHECK(rt.importResult("fx:absent").rfind("error could not load 'fx:absent'", 0) == 0);
+    // A registered module is found by its name.
+    CHECK(rt.importResult("fx:dep").rfind("ok", 0) == 0);
+    // The pack list is installed, the refusal hook is not: a render's refusals are its console's.
+    JSValue g = JS_GetGlobalObject(rt.ctx);
+    JSValue list = JS_GetPropertyStr(rt.ctx, g, "__rp_packList");
+    JSValue refused = JS_GetPropertyStr(rt.ctx, g, "__rp_packRefused");
+    CHECK(JS_IsFunction(rt.ctx, list));
+    CHECK(JS_IsUndefined(refused));
+    JS_FreeValue(rt.ctx, list);
+    JS_FreeValue(rt.ctx, refused);
+    JS_FreeValue(rt.ctx, g);
+    // A half left pending when the runtime goes: freed without a fault (the destructor collects first).
+    rt.importResult("pack:pmpending/app");
+}
