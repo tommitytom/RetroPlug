@@ -1470,9 +1470,9 @@ The TS loader (`src/packs/loadPacks.ts`, [06](06-build-test.md#the-ts-loader-and
 imports the halves; a host starts it after installing its hooks and waits for it by time, not by pump count. The control
 plane sets `__rp_ready` once its packs have committed (the stores are composed first and adopt the commit), so a project
 load, which a host makes only after ready, finds the packs' roles; the CLI routes once its packs have committed; the UI
-re-renders when its commit lands (M2a's counter). The loads share one 5 s budget (`loadPacks.ts`'s `loadBudgetMs`): a
+re-renders when its commit lands (M2a's counter). Each load (one `loadPacks` call) has one 5 s budget its halves share (`loadPacks.ts`'s `loadBudgetMs`): a
 half that has not settled in it is refused by name, and the host's own ready deadline (`kHostReadyDeadline`, 10 s) is a
-backstop for the composition and a failed boot, not what bounds a stuck pack. A pack that ran past the budget is the one
+backstop for the composition, not what bounds a stuck pack. A pack that ran past the budget is the one
 refusal reported with `skipLater`: a pack refused for the budget is not listed to a later runtime in the process (each
 plugin instance, the editor's own runtime), since repeating it costs the budget again. A refused half that timed out
 keeps evaluating in the background: it cannot commit, but its top-level code may still touch globals later. A half

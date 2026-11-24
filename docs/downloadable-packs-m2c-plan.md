@@ -1953,7 +1953,7 @@ follow.
 
 ## After the reviews
 
-M2c was built as `e9b9177fd..9073443b1` (Tasks 1 to 7; the docs after). Where the task blocks above and the tree differ,
+M2c was built as `21bffb297..9073443b1` (Tasks 1 to 7; the docs after). Where the task blocks above and the tree differ,
 the tree wins. What changed from the plan while it ran, and why:
 
 - The native loader refuses every Windows-unholdable half name, and the script half's refusal is tested (867eb58c0).
@@ -1963,7 +1963,7 @@ the tree wins. What changed from the plan while it ran, and why:
 - The TS loader never rejects, runs one load at a time, checks every manifest rule under test and refuses an unknown
   `app` member (f7f9b5dea, bea073a09: a member is a kind only by the table's own key).
 - `requires.platforms` is checked for an app-only pack, and again in the per-pack fallback, after an earlier pack's
-  refusal (f7f9b5dea, a0edf118d).
+  refusal (f7f9b5dea).
 - The fixture is staged once, built whole, type-checked by its own tsconfig, and builds the same from any working
   directory (53a51d0ad).
 - A slow or stuck half is refused by name and every host still starts: the plan's pump-count wait became a deadline by
@@ -1973,6 +1973,7 @@ the tree wins. What changed from the plan while it ran, and why:
   pending-async-module use-after-free (8df939df2).
 - Only a pack that ran past the budget is skipped process-wide (`skipLater`), and the editor's own runtime frees settled
   (b8b33ff0c), so one refused pack does not hide another's reason and the plugin's second runtime does not pay again.
+- The final review's round (806826725): a pack requiring a budget-skipped pack is left out of the pack list with it, the editor's fallback loads the launch packs itself, and the Windows Reaper and Renoise harnesses isolate their pack folders.
 - A half whose body throws synchronously no longer stops a session host with an unhandled rejection: the TS loader
   cancels that one report (1d6d74fbf), and forgets the reason after the pass that would dispatch it, so a later
   unrelated rejection is not swallowed (9073443b1).

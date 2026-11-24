@@ -164,7 +164,7 @@ needs the app and consoles halves in; [the M2c plan](../docs/downloadable-packs-
 (placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands and `--pack`, Settings > Packs and
 its Development packs, which feed `ensureLaunchPacks`) and M5 (Mesen and BlipToaster loaded as packs with their suites
 unchanged, and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on
-Windows (the M1 plan's design question 1). Open from M2c: a pack's import guard trusts the `pack:` module name and
+Windows (the M1 plan's design question 1). Open from M2c: a pack-carried ROM is refused by name and needs a rule of its own and a place in the pack; a pack refused in TS adds one `PackTable` refusal per context, which Settings > Packs (M4) must collapse to one; M5's real package needs an esbuild metafile-derived DEPFILE, since the fixture's CMake DEPENDS covers only top-level `ts/*.ts`; a pack's import guard trusts the `pack:` module name and
 does not judge code a pack evaluates; the app's shared set hands a pack `@retroplug/testing` (the test harness) beside
 `react` and `lvgljs-ui`, and whether it belongs in a pack's reach is undecided; a pack refused in a later context
 keeps an earlier one's commit, and a pack refused in TS keeps its native node types registered; a half stuck in a

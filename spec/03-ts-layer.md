@@ -413,7 +413,8 @@ RPC:
 | `__rp_loadProjectB64(b64)` | DPF `setState`: load an in-memory chunk (empty chunk = no-op) |
 | `__rp_saveProjectB64()` | DPF `getState`: export the project as a base64 `.rplg` chunk |
 | `__rp_newProject()` | DPF `setState("")`: reset to an empty project |
-| `__rp_ready` | Set true at the end of the bundle's top level, once composition has run |
+| `__rp_ready` | Set true once composition has run and the packs' app and consoles halves have committed or been refused |
+| `__rp_packStatus()` | What this module set's pack loader did: `{ loaded: { <packId>: [<half kinds>] }, refused: { <packId>: <reason> } }` |
 
 Base64 is done **here** in runtime-independent code, not native, because DPF state is NUL-terminated UTF-8 while a
 `.rplg` is binary PKZIP - the C++ boundary stays string-only.

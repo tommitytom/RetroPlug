@@ -123,7 +123,7 @@ a half's default export onto registry additions: the control plane `app` and `co
 harness; `ui/packs/uiPacks.ts`), the CLI's dispatcher `app`, `consoles` and `cli` (`cli/packs/cliPacks.ts`, which also
 checks every tool's shape, name, summary, help and run, since a `CliTool` list is otherwise trusted). The shell's `src`,
 `ui` and `cli` trees each add their own builders; a half already loaded in a context is not loaded again, and CLI session
-files load no pack. Loads are serialized and share one 5 s budget.
+files load no pack. Loads are serialized, and each load (one `loadPacks` call) has one 5 s budget its halves share.
 
 The manifest is held to the halves. With an `app` half: every role kind it contributes is in `provides.roles` and every
 kind `provides.roles` names is contributed; its `embeds` are refused (a pack cannot bake a ROM into the binary yet), and
