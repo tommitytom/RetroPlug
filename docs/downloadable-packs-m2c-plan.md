@@ -1917,9 +1917,19 @@ go-ahead, push and dispatch `build.yml`, and read every job's result. A failure 
    mistakes, not a pack set on going around it, which part 1 does not defend against (packs run in the app's realm).
 10. **A refusal is recorded once per context.** Each plugin instance's context imports a pack's halves again, so a pack
     refused in TS adds one `PackTable` refusal per instance; Settings > Packs (M4) shows a pack's refusals once.
-11. **The TS fixture is not type-checked.** Nothing compiles `packages/native/test/packs/ts-fixture/ts/*.ts` against
-    the contracts (no tsconfig reaches it, and the boundary check scans `packages/<name>/ts`); its shapes were checked
-    by hand against `MenuBuilder`, `MenuItem` and `CliTool`. M5's real packages are type-checked as packages.
+11. **The TS fixture is not type-checked.** CLOSED by the review of Task 5 (53a51d0ad): the fixture has its own
+    tsconfig, which `pnpm typecheck` runs. For M5: its CMake DEPENDS covers only top-level `ts/*.ts`, so a real package
+    with nested modules needs an esbuild metafile-derived DEPFILE.
+12. **`@retroplug/testing` is in a pack's reach.** The app shared set exposes `react`, `react/jsx-runtime`, `lvgljs`,
+    `lvgljs-ui` and `@retroplug/testing` without the `rp:` prefix, so the guard lets a pack import them; whether the test
+    harness belongs there is undecided.
+13. **A half stuck in a synchronous loop hangs its host.** A stuck half that awaits is built (refused by name after the
+    5 s budget, every host still starting); a synchronous loop needs `JS_SetInterruptHandler` on the runtimes.
+14. **Two QuickJS-ng defects are worked around, not fixed:** module structs freed while a pending async module's
+    callback holds a reference (bellard/quickjs#280; the teardown GC in `PackHostRuntime`; a chain held only by a global
+    or a module scope still depends on free order), and an unreachable rejected promise from `js_execute_sync_module`
+    when a module body throws synchronously (the loader cancels the report by reason). Port Bellard's module
+    refcounting or raise both upstream.
 
 ## Self-review
 
@@ -1940,3 +1950,30 @@ follow.
 `nativePackHost`, `HalfBuilder`, `objectExport`, `APP_BUILDERS`, `loadPacks`, `packStatus`, `loadAppPacks` (Task 4);
 `buildPackHalves`, `packExternals`, `retroplug-ts-fixture-packs`, `tsfix` and its variants (Task 5); `UI_BUILDERS`,
 `loadUiPacks`, `CLI_BUILDERS`, `loadCliPacks`, `__rp_packStatus` (Task 6); `PACK_TESTS` (Task 7).
+
+## After the reviews
+
+M2c was built as `e9b9177fd..9073443b1` (Tasks 1 to 7; the docs after). Where the task blocks above and the tree differ,
+the tree wins. What changed from the plan while it ran, and why:
+
+- The native loader refuses every Windows-unholdable half name, and the script half's refusal is tested (867eb58c0).
+- A failed launch load is reported, not thrown, and every runner that starts a host isolates its pack folders
+  (4a1a5c09f), since a throw at launch would stop a host over one bad pack.
+- The module loader's comments say how QuickJS resolves a half, and a bad refusal argument throws (b1e095fbf).
+- The TS loader never rejects, runs one load at a time, checks every manifest rule under test and refuses an unknown
+  `app` member (f7f9b5dea, bea073a09: a member is a kind only by the table's own key).
+- `requires.platforms` is checked for an app-only pack, and again in the per-pack fallback, after an earlier pack's
+  refusal (f7f9b5dea, a0edf118d).
+- The fixture is staged once, built whole, type-checked by its own tsconfig, and builds the same from any working
+  directory (53a51d0ad).
+- A slow or stuck half is refused by name and every host still starts: the plan's pump-count wait became a deadline by
+  time, and a `cli` half is held to the `CliTool` shape (df6a1bba8).
+- The load has one overall 5 s budget, the hosts' 10 s ready deadline is a backstop, a failed boot or a refused pack
+  costs no wait, and a runtime freed with a half pending first destroys its timers and collects, to avoid QuickJS-ng's
+  pending-async-module use-after-free (8df939df2).
+- Only a pack that ran past the budget is skipped process-wide (`skipLater`), and the editor's own runtime frees settled
+  (b8b33ff0c), so one refused pack does not hide another's reason and the plugin's second runtime does not pay again.
+- A half whose body throws synchronously no longer stops a session host with an unhandled rejection: the TS loader
+  cancels that one report (1d6d74fbf), and forgets the reason after the pass that would dispatch it, so a later
+  unrelated rejection is not swallowed (9073443b1).
+- The fixture pack runs end to end in the UI and the CLI with its broken variants (b2badf3e8, 9073443b1).

@@ -156,16 +156,27 @@ The gamepad-axis bus dispatches no app action, and the generator refuses a bindi
 
 ### Downloadable packs
 
-Part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md) is built in five
-milestones, and what is left of it is M2c (loading a pack's TS halves, the protocol half and the contribution kinds
-among them, the pack-import guard: [the M2b plan](../docs/downloadable-packs-m2b-plan.md)'s design questions), M3
-(placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands, Settings > Packs, and a host
-calling `loadLaunchPacks` at launch) and M5 (Mesen and BlipToaster loaded as packs with their suites unchanged,
-and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on Windows (the
-M1 plan's design question 1). After part 1 the road is the design's parts 2 to 6, and the authoring loop, downloads and
-unloading a script pack (the `Engine` has `loadScriptPack` and no unload; native code is never unloaded) are what
+Part 1 of [downloadable-packs-loading-design.md](../docs/downloadable-packs-loading-design.md) is built in milestones,
+and what is left of it is M2d (the rest of the TS halves: the protocol half, whose tables are frozen constants
+`buildGraph` and others read; the contribution kinds, whose `accept` runs once; the script half through
+`loadScriptPack`, with span labels at load; and the render worker, a bare QuickJS context a pack console's render job
+needs the app and consoles halves in; [the M2c plan](../docs/downloadable-packs-m2c-plan.md)'s design questions), M3
+(placeholders for a missing pack), M4 (`.rppack` archives, the CLI's pack commands and `--pack`, Settings > Packs and
+its Development packs, which feed `ensureLaunchPacks`) and M5 (Mesen and BlipToaster loaded as packs with their suites
+unchanged, and the plugin, Node, concurrency and sanitizer legs), plus the allocator the pinned C++ boundary needs on
+Windows (the M1 plan's design question 1). Open from M2c: a pack's import guard trusts the `pack:` module name and
+does not judge code a pack evaluates; the app's shared set hands a pack `@retroplug/testing` (the test harness) beside
+`react` and `lvgljs-ui`, and whether it belongs in a pack's reach is undecided; a pack refused in a later context
+keeps an earlier one's commit, and a pack refused in TS keeps its native node types registered; a half stuck in a
+synchronous loop hangs its host until the runtimes set `JS_SetInterruptHandler`; and two QuickJS-ng defects the loader
+works around, to port or raise upstream: it frees module structs while a pending async module's callback still holds
+a reference (bellard/quickjs#280, worked around by the teardown GC in `PackHostRuntime`; Bellard's module refcounting
+would remove it, and a chain held only by a global or a module scope still depends on free order), and
+`js_execute_sync_module` leaves an unreachable rejected promise when a module body throws synchronously (the loader
+cancels the report by reason). After part 1 the road is the design's parts 2 to 6, and the authoring loop, downloads
+and unloading a script pack (the `Engine` has `loadScriptPack` and no unload; native code is never unloaded) are what
 downloadable packs still need (the C1 design's section 8). With them come third-party controller apps: `controllerApps`
-registers from the product's package list (the kinds are M2c's), so an app from outside the tree waits for this road;
+registers from the product's package list (the kinds are M2d's), so an app from outside the tree waits for this road;
 menu rows a pack contributes go through the live UI registry. And a provider cannot be downloaded either, since it is
 reached only through the generated static table, and which of a pack's facet methods a product mounts is not yet scoped.
 Whether a downloaded pack's bytecode is stripped is the format's to say: a pack compiled from source keeps its debug

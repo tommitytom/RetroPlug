@@ -77,7 +77,8 @@ All three hosts compose the services, mount their facets on an rpcpp server over
 - **DPF plugin**: [`PluginDSP::bootControlPlane`](../packages/native/plugin/PluginDSP.cpp)
   brings up a plugin-lifetime txiki runtime, binds `__rpcSend`, sets the
   sample rate **before** the bundle composes (systems bake SR at construct), registers the app's shared module
-  table (`registerSharedModules`, [06](06-build-test.md#the-shared-module-sets)), evals the embedded
+  table (`registerSharedModules`, [06](06-build-test.md#the-shared-module-sets)) and the pack loader
+  (`installPackLoader`, [Packs](#packs-a-packages-native-half-loaded-at-run-time)), evals the embedded
   control-plane bytecode, then pumps until `__rp_ready`. The editor
   ([`PluginUI.cpp`](../packages/native/plugin/PluginUI.cpp))
   attaches its LVGL display to that *same* context via the in-process handoff
@@ -1426,7 +1427,8 @@ table as the loads' are, so `refusals()` is the one list; `loadAll` answers a re
 
 `PackTable` opens each pack's library once and never closes it (a refused one too: opening it ran its static
 constructors, and its installed folder stays held). A pack loads all or nothing, and is refused for, among others: its
-API level, a half other than the native one (M1 loads no TS half), an installed folder that is not
+API level, a half the loader does not take (the `protocol` and `script` halves, M2d's; the native half and the `app`,
+`consoles`, `ui`, `views` and `cli` halves, each file present, are taken), an installed folder that is not
 `packs/<id>/<version>`, a second folder of an id already loaded, a second copy of the library of an id whose first was
 opened and refused, no library for this platform, a missing library or entry, an entry that throws (caught on the host's
 side of the entry) or returns no package or a null one, a node type its `provides.nodeTypes` does not declare or a
@@ -1434,8 +1436,10 @@ declared one it does not register, one a built-in package or an earlier pack hol
 loaded, an installed folder that cannot be held, or anything the `NodeRegistry` refuses on a scratch registry holding
 the product's packages and the packs before it (the script node types are not in it: each Engine checks those).
 `loadAll` loads in dependency order, whatever order the candidates come in, and names a cycle. `processPacks()` is the
-process's table, seeded with the product's packages and empty until a host loads into it (no host does at launch yet: a
-native half alone has nothing the app places until M2's TS halves).
+process's table, seeded with the product's packages and empty until a host loads into it: every desktop host calls
+`ensureLaunchPacks` ([ProcessPacks](../packages/native/src/host/packs/ProcessPacks.hpp)) once per process, before its
+first context evaluates (the installed packs and `RETROPLUG_PACK_PATH`'s development folders; the CLI's session files
+load none), and a failed load is reported, not thrown.
 
 Every `Engine` registers its table's packs after the product's packages and the built-in script pack, in load order,
 which is dependency order. A pack loaded later joins each Engine on its control thread, the thread `loadScriptPack`
@@ -1445,6 +1449,53 @@ the old generation held). Every package of the pack is checked (`NodeRegistry::c
 Engine that already holds one of a pack's ids (a script node's, or a test's `addNodePackage`) refuses that pack whole,
 there alone (`refusedPacks()`), and so a pack requiring one it refused; a refusal is not retried in that Engine (a new
 Engine judges afresh). The offline pool keeps its fixed `core` and `dsp` subset and registers no pack.
+
+**A pack's TS halves** are ES modules (`js/<half>.js`) a txiki context imports by name.
+`installPackLoader` ([PackModules](../packages/native/src/host/js/PackModules.hpp)) runs after the host registered its
+shared set ([06](06-build-test.md#the-shared-module-sets)) and before its entry evaluates: a module loader wrapped over
+txiki's answers `pack:<id>/<half>` from the pack's folder, compiled the first time a context imports the name (never
+cached to disk; the name is not a path, so nothing resolves relative to it), and a module named `pack:...` may import
+only a name of the context's registered set that is not `rp:`-prefixed (a contract, or a host module's facade). The
+guard sits in the module normalizer, before txiki's import map, and refuses `rp:cp`, `rp:ui`, a chunk, `tjs:` builtins,
+relative names and every other bare name, naming the pack module and the specifier. It judges a pack module's static and
+dynamic imports, not code the pack evaluates through `eval` or `new Function` (that code has no `pack:` name): it catches
+a pack's mistakes, and part 1 does not defend against a pack set on going around it (packs run in the app's realm). The
+accepted set is a frozen object written into the context from the table `registerSharedModules` read, so it is the
+context's own: the CLI's holds the shell's contracts, the app's the UI's too. The installer also defines two globals,
+`__rp_packList()` (every pack with a half besides the native one: id, version, halves, `provides`, `requires`, in load
+order, as JSON) and `__rp_packRefused(id, reason, skipLater)` (records the refusal in the
+table, `PackTable::recordRefusal`; with `skipLater` the pack is also left out of every later list in the process).
+
+The TS loader (`src/packs/loadPacks.ts`, [06](06-build-test.md#the-ts-loader-and-its-fixture-packs)) reads the list and
+imports the halves; a host starts it after installing its hooks and waits for it by time, not by pump count. The control
+plane sets `__rp_ready` once its packs have committed (the stores are composed first and adopt the commit), so a project
+load, which a host makes only after ready, finds the packs' roles; the CLI routes once its packs have committed; the UI
+re-renders when its commit lands (M2a's counter). The loads share one 5 s budget (`loadPacks.ts`'s `loadBudgetMs`): a
+half that has not settled in it is refused by name, and the host's own ready deadline (`kHostReadyDeadline`, 10 s) is a
+backstop for the composition and a failed boot, not what bounds a stuck pack. A pack that ran past the budget is the one
+refusal reported with `skipLater`: a pack refused for the budget is not listed to a later runtime in the process (each
+plugin instance, the editor's own runtime), since repeating it costs the budget again. A refused half that timed out
+keeps evaluating in the background: it cannot commit, but its top-level code may still touch globals later. A half
+stuck in a synchronous loop is not stopped (that needs `JS_SetInterruptHandler`) and hangs its host
+([07](07-remaining-work.md#downloadable-packs)).
+
+Two QuickJS-ng defects shape the runtime's teardown and the loader. QuickJS-ng frees a context's module structs while a
+callback of a pending async module (a half parked on a top-level await and a timer) still holds a counted reference to
+one (the defect behind bellard/quickjs#280, which Bellard's QuickJS fixed by refcounting modules). `PackHostRuntime`
+(a `TjsHostRuntime` whose destructor calls `settleForFree`) destroys the runtime's timers and runs a collection before
+the runtime is freed, so the callback is garbage while the modules are alive; every host that loads packs owns one (and
+the plugin's editor, whose runtime frees settled). A chain held only by a global or a module scope still depends on free
+order. Second, QuickJS-ng runs a module's body as an async function and drops its result promise
+(`js_execute_sync_module`), so a half whose body throws synchronously at load leaves a rejection no code can reach, which
+txiki reports as an unhandled rejection: a session host (the CLI) would fail, the test harness record it, and the plugin
+and standalone keep a stale pending exception. The TS loader cancels exactly that report: it remembers a failed import's
+reason, registers its `unhandledrejection` listener when `loadPacks.ts` loads (before a later bundle's), and forgets the
+reason after the pass that would dispatch it, so an unrelated rejection of the same value later is not swallowed.
+
+A pack whose TS half is refused is recorded in the table's refusals and commits nothing; its node types stay registered
+in the Engines (native code is never unloaded), unreachable because nothing places them. A pack refused in its UI half
+after its app half committed keeps the app half's contributions (the UI evaluates at the first editor open in the
+plugin), and is reported refused. A pack refused in TS adds one refusal per context, so one per plugin instance.
 
 `retroplug_pack(<package>)` ([cmake/packs.cmake](../cmake/packs.cmake)), called from a package's own CMakeLists, builds
 its desktop entries as a MODULE (`retroplug-<package>-pack`, built by name) from its static targets and a generated

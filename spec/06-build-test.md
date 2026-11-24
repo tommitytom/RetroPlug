@@ -111,6 +111,49 @@ the host build tree's `retroplug-modc`, as it runs that tree's `tjsc` for `TJSC_
 `-DRP_MODC_EXECUTABLE=`, and the local arm64 cross build ([docs/arm64-cross-build.md](../docs/arm64-cross-build.md))
 needs the host build first.
 
+### The TS loader and its fixture packs
+
+A pack's `app`, `consoles`, `ui`, `views` and `cli` halves load through
+[`src/packs/loadPacks.ts`](../packages/retroplug/src/packs/loadPacks.ts) over `PackHost`
+([packHost.ts](../packages/retroplug/src/packs/packHost.ts): the native `__rp_packList` and `__rp_packRefused`, and the
+import by name; [spec/02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time) has the native side, the
+guard and the load budget). Each context loads the halves whose registries it holds, through an explicit table that maps
+a half's default export onto registry additions: the control plane `app` and `consoles` (`APP_BUILDERS`,
+`loadAppPacks`), the UI `ui` and `views` and also `app` and `consoles` when no control plane ran before it (the UI test
+harness; `ui/packs/uiPacks.ts`), the CLI's dispatcher `app`, `consoles` and `cli` (`cli/packs/cliPacks.ts`, which also
+checks every tool's shape, name, summary, help and run, since a `CliTool` list is otherwise trusted). The shell's `src`,
+`ui` and `cli` trees each add their own builders; a half already loaded in a context is not loaded again, and CLI session
+files load no pack. Loads are serialized and share one 5 s budget.
+
+The manifest is held to the halves. With an `app` half: every role kind it contributes is in `provides.roles` and every
+kind `provides.roles` names is contributed; its `embeds` are refused (a pack cannot bake a ROM into the binary yet), and
+so is an `app` member that is not one `appAdditions` maps, a contribution kind's name included (`controllerApps`, which
+M2d makes live). With a `consoles` half: every console's platforms are in `provides.platforms` and its node type in
+`provides.nodeTypes`, every platform `provides.platforms` names is contributed, and every platform `requires.platforms`
+names is a console platform already registered (built in, or a pack earlier in load order); a pack that declares roles or
+platforms with no half to contribute them is refused, and `requires.platforms` is checked for an app-only pack too. Every
+pack of a call goes in one `commitContributions`; if it throws, the packs commit one at a time in load order, each
+refused with the message that names it, after a re-check of `requires.packs` and `requires.platforms` against what the
+earlier ones left, so one refusal does not keep another pack's dependent in. A pack whose `requires.packs` names a
+refused pack is refused. `packStatus()` reports what a module set loaded and refused. `views` is a half of its own (a
+package's views are a module, `retroplug.views`); the manifest gained it additively, so the API level did not move.
+
+[`tools/build-pack-halves.mjs`](../tools/build-pack-halves.mjs) builds a package's halves as a pack's: one ES module per
+half its `package.json` names, every contract and host module external, any other `@retroplug/*` import refused, then
+`pack.json` with this build's API level. It builds from any working directory. The fixture is
+`packages/native/test/packs/ts-fixture/`: `tsfix`, built by that tool into `build/packs/tsfix/1.0.0` by
+`retroplug-ts-fixture-packs` (a prerequisite of `test:ui` and `test:cli-ts`), and its hand-written broken variants
+(`tsfix-throws`, `-guard`, `-undeclared`, `-cliclash`, `-dependent`, `-protocol`) under `build/packs`, which the tool
+would refuse; its own tsconfig puts it in `pnpm typecheck`. The target's DEPENDS covers top-level `ts/*.ts` only: a
+real package with nested modules needs an esbuild metafile-derived DEPFILE. The loader's native test uses
+`packages/native/test/plugin/pack-modules-fixture/` (`PackModules.test.cpp`: the loader and the guard).
+
+**Tests never read the user's packs.** Every runner that starts a host binary sets `RETROPLUG_PACKS_DIR` to an empty
+scratch folder and clears `RETROPLUG_PACK_PATH`, unless the test names the packs it loads: a UI test of packs lists them
+in `run-ui-tests.mjs`'s `PACK_TESTS` (`packs-ts-fixture.test.ts`), and the CLI's packs checks are
+`tools/run-cli-ts-tests.sh`'s section 8. The guard judges a pack module's static and dynamic imports, not code it
+evaluates through `eval` or `new Function`.
+
 ### Not yet built / deferred
 
 The build declares `clap`, `vst3`, `vst2`, `au`, and `jack` (the `dpf_add_plugin` call in
@@ -184,7 +227,7 @@ on `tileViews().length`). The UI bundle's seam is `__rp_commitUiContributions`, 
 (`commitByName`). A shell module reads a registry through its facade (`src/contributions/app.ts`,
 `src/contributions/placers.ts`, `src/consoles.ts`, `ui/contributions/menus.ts`, `ui/contributions/views.ts`, and the
 CLI's `cli/tools.ts`), which import the generated seed, never the generated module directly; `src/graph/directGraph.ts`
-is the one exception, importing `../generated/packages` only for the contribution kinds' load-time side effect (M2c
+is the one exception, importing `../generated/packages` only for the contribution kinds' load-time side effect (M2d
 makes the kinds live). `src/generated/apiLevel.ts` is `RP_API_LEVEL` read from `rp_pack.h`.
 
 **Every product but the desktop gets its own tree**, and its own bundles (the control plane and the React UI as one
