@@ -140,7 +140,8 @@ TEST_CASE("the pack list and the refusal report", "[pack-modules]") {
 TEST_CASE("a runtime freed with a pack half still pending frees cleanly", "[pack-modules]") {
     PackTable table;
     REQUIRE(table.load(fixture("pmpending")));
-    {
+    // Several runtimes: the unsettled free reads a freed module, which a single run can survive by luck.
+    for (int n = 0; n < 8; ++n) {
         Runtime rt;
         REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
         rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
@@ -148,17 +149,27 @@ TEST_CASE("a runtime freed with a pack half still pending frees cleanly", "[pack
         evalModule(rt, "import('pack:pmpending/app').catch(() => {});");
         for (int i = 0; i < 5; ++i) rt.host.pump();
         CHECK(readString(rt, "typeof globalThis.__rp_packList") == "function");
-    }  // freeing the runtime here used to touch a freed module (an ASan report; an abort in a normal build)
+    }  // each free here used to touch a freed module (an abort in a normal build, an ASan report under it)
     SUCCEED();
 }
 
-TEST_CASE("a pack this process refused is left out of the pack list", "[pack-modules]") {
+TEST_CASE("only a pack that ran past the load budget is left out of the pack list", "[pack-modules]") {
     PackTable table;
     REQUIRE(table.load(fixture("pmgood")));
+    REQUIRE(table.load(fixture("pmforeign")));
     Runtime rt;
     REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
     rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
-    CHECK(readString(rt, "globalThis.__rp_packList()").find("pmgood") != std::string::npos);
+    const auto lists = [&](const char* id) { return readString(rt, "globalThis.__rp_packList()").find(id) != std::string::npos; };
+    CHECK(lists("pmgood"));
+    // The table's own refusals also name a pack that did load (a second folder of the same id): it still lists.
+    table.recordRefusal({"pmgood", fixture("pmforeign"), "pack pmgood is refused: given twice"});
+    CHECK(lists("pmgood"));
+    // A refusal the TS loader reports without the flag is deterministic: free to repeat in the next runtime.
     evalModule(rt, "globalThis.__rp_packRefused('pmgood', 'its app half failed');");
-    CHECK(readString(rt, "globalThis.__rp_packList()") == "[]");
+    CHECK(lists("pmgood"));
+    // With the flag (a pack that ran past the budget) it is left out, and only that pack.
+    evalModule(rt, "globalThis.__rp_packRefused('pmforeign', 'ran past the budget', true);");
+    CHECK_FALSE(lists("pmforeign"));
+    CHECK(lists("pmgood"));
 }

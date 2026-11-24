@@ -29,7 +29,9 @@ namespace rpuigf {
 UiHarness::UiHarness(std::uint32_t width, std::uint32_t height) : core_(width, height) {}
 
 UiHarness::~UiHarness() {
-    rp::host::settleForFree(core_.engine().host());  // a pack half still pending must not outlive its modules
+    // Settle before anything below frees the runtime: once timers are gone no pack half can still be pending when it
+    // is freed. (The render core's own widget cleanup runs after this and can run JS, but it starts no new import.)
+    rp::host::settleForFree(core_.engine().host());
     // server_/transport_ reference the engine's JS context; reset them before core_ tears the engine
     // down (member destruction is reverse-declaration order, which already does this — explicit for
     // clarity).

@@ -22,12 +22,12 @@ export interface PackHost {
   /** The half's module namespace. */
   importHalf(id: string, half: HalfKind): Promise<unknown>;
   /** Report a refusal where Settings > Packs (M4) reads them. */
-  refuse(id: string, reason: string): void;
+  refuse(id: string, reason: string, skipLater?: boolean): void;
 }
 
 interface PackHooks {
   __rp_packList?: () => string;
-  __rp_packRefused?: (id: string, reason: string) => void;
+  __rp_packRefused?: (id: string, reason: string, skipLater?: boolean) => void;
 }
 
 // A specifier no bundler may resolve: a half is served by the host's module loader, by name.
@@ -38,6 +38,6 @@ export function nativePackHost(): PackHost {
   return {
     list: () => (g.__rp_packList ? (JSON.parse(g.__rp_packList()) as PackInfo[]) : []),
     importHalf: (id, half) => importByName(`pack:${id}/${half}`),
-    refuse: (id, reason) => g.__rp_packRefused?.(id, reason),
+    refuse: (id, reason, skipLater) => g.__rp_packRefused?.(id, reason, skipLater === true),
   };
 }

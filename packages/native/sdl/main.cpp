@@ -81,8 +81,8 @@ bool bootControlPlane(AppState& a) {
     const auto readyDeadline = std::chrono::steady_clock::now() + rp::host::kHostReadyDeadline;
     const bool evaluated = a.host.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size) == 0;
     // No sleep while ready arrives within the first pumps; a pack half that is slow to evaluate is waited for. A failed
-    // eval, or a composition that threw (__rp_bootFailed), will never become ready, so it ends the wait at once.
-    for (int i = 0; evaluated && !readReady(a.host) && !jsBootFailed(a.host.context()); ++i) {
+    // eval (a throw while composing) will never become ready, so it ends the wait at once.
+    for (int i = 0; evaluated && !readReady(a.host); ++i) {
         if (i >= 1000) {
             if (std::chrono::steady_clock::now() >= readyDeadline) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));

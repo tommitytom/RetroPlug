@@ -82,6 +82,7 @@ void clearWindowSizeHooks(JSContext* ctx, PluginUI* ui);
 class PluginUI : public UI {
     // The display layer for this editor session, riding the plugin's shared host (useExternalHost).
     LvglJsEngine jsEngine;
+    bool         ownsHost_ = false;  // the editor fell back to a runtime of its own (no shared host to attach to)
 
     // Screenshot hook (RETROPLUG_SCREENSHOT_PATH, cadence RETROPLUG_SCREENSHOT_INTERVAL_MS): dump the
     // whole LVGL screen as PNG from the UI thread. Distinct from the emulator RPC's screenshot (one core).
@@ -242,7 +243,8 @@ public:
         SharedDSP* shared = nullptr;
         if (void* dspPtr = getPluginInstancePointer()) shared = getSharedDSP(dspPtr);
         sharedDsp_ = shared;
-        if (shared && shared->host)
+        ownsHost_ = !(shared && shared->host);
+        if (!ownsHost_)
             jsEngine.useExternalHost(*shared->host);
         else
             d_stderr("[ui] no shared host — UI cannot reach the backend");
@@ -343,6 +345,10 @@ public:
         jsEngine.detachDisplay();
         lv_timer_handler();
         if (lv_obj_t* screen = lv_screen_active()) lv_obj_clean(screen);
+        // Last, after everything above that runs JS: when the editor fell back to a runtime of its own it loaded the packs'
+        // halves there, and that runtime must be settled before the engine frees it. Never on the shared host: it is the
+        // live control plane's, and destroying its timers would stop it.
+        if (ownsHost_) rp::host::settleForFree(jsEngine.host());
     }
 
 protected:

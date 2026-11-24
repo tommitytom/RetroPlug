@@ -30,22 +30,16 @@ struct JsGlobals {
     explicit operator bool() const { return ctx != nullptr && ready; }
 };
 
-/** Whether the global `name` is truthy. False on an uninitialised host. */
-inline bool jsReadFlag(JSContext* ctx, const char* name) {
+/** Whether the control plane has set its `__rp_ready` flag. False on an uninitialised host. */
+inline bool jsReadReady(JSContext* ctx) {
     if (!ctx) return false;
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue v      = JS_GetPropertyStr(ctx, global, name);
+    JSValue v      = JS_GetPropertyStr(ctx, global, "__rp_ready");
     const bool r   = JS_ToBool(ctx, v) > 0;
     JS_FreeValue(ctx, v);
     JS_FreeValue(ctx, global);
     return r;
 }
-
-/** Whether the control plane has set its `__rp_ready` flag. False on an uninitialised host. */
-inline bool jsReadReady(JSContext* ctx) { return jsReadFlag(ctx, "__rp_ready"); }
-
-/** Whether the control plane's composition threw (`__rp_bootFailed`): the host's ready wait ends at once. */
-inline bool jsBootFailed(JSContext* ctx) { return jsReadFlag(ctx, "__rp_bootFailed"); }
 
 /** Whether a global of that name exists and is callable. */
 inline bool jsHasGlobalFunction(JSContext* ctx, const char* name) {

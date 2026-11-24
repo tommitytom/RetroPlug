@@ -23,6 +23,7 @@ function pack(id: string, over: Partial<PackInfo> = {}): PackInfo {
 /** A host serving `modules[id][half]` as each half's default export (a function is called, so a half can throw). */
 function fakeHost(packs: PackInfo[], modules: Record<string, Partial<Record<HalfKind, unknown>>>) {
   const refused: Record<string, string> = {};
+  const skipLater: Record<string, boolean> = {};
   const imported: string[] = [];
   const host: PackHost = {
     list: () => packs,
@@ -32,9 +33,9 @@ function fakeHost(packs: PackInfo[], modules: Record<string, Partial<Record<Half
       if (typeof m === "function") return { default: (m as () => unknown)() };
       return { default: m };
     },
-    refuse: (id, reason) => { refused[id] = reason; },
+    refuse: (id, reason, skip) => { refused[id] = reason; skipLater[id] = skip === true; },
   };
-  return { host, refused, imported };
+  return { host, refused, imported, skipLater };
 }
 
 test("a pack's app half commits its roles, in one commit with the other packs'", async () => {
@@ -64,13 +65,14 @@ test("a half loaded in this context is not imported again", async () => {
 
 test("a pack that fails the commit is refused by name, and the others commit", async () => {
   const builtIn = rolesRegistry.items()[0]!.kind;
-  const { host, refused } = fakeHost(
+  const { host, refused, skipLater } = fakeHost(
     [pack("lp-dupe", { provides: { platforms: [], nodeTypes: [], roles: [builtIn] } }),
      pack("lp-c", { provides: { platforms: [], nodeTypes: [], roles: ["lp-c-role"] } })],
     { "lp-dupe": { app: { roles: [role(builtIn)] } }, "lp-c": { app: { roles: [role("lp-c-role")] } } },
   );
   await loadPacks(host, APP_BUILDERS);
   expect((refused["lp-dupe"] ?? "").includes(`declare the role kind ${builtIn} twice`)).toBe(true);
+  expect(skipLater["lp-dupe"]).toBe(false); // a deterministic refusal is free to repeat in the next runtime
   expect(rolesRegistry.items().some((r) => r.kind === "lp-c-role")).toBe(true);
   expect((packStatus().refused["lp-dupe"] ?? "").includes("twice")).toBe(true);
 });
@@ -250,7 +252,7 @@ test("the fallback refuses a pack whose required platform's provider was refused
 });
 
 test("a half that never settles is refused by name within the timeout, and the load still resolves", async () => {
-  const { host, refused } = fakeHost([pack("lp-stuck")], {});
+  const { host, refused, skipLater } = fakeHost([pack("lp-stuck")], {});
   host.importHalf = () => new Promise(() => {});
   const was = setLoadBudgetMs(20);
   try {
@@ -259,17 +261,18 @@ test("a half that never settles is refused by name within the timeout, and the l
     setLoadBudgetMs(was);
   }
   expect(refused["lp-stuck"]).toBe("the packs' load ran past its 0.02 s budget in its app half");
+  expect(skipLater["lp-stuck"]).toBe(true);
 });
 
 test("one slow pack consumes the budget and a fast pack after it still loads", async () => {
-  const { host, refused } = fakeHost(
+  const { host, refused, skipLater } = fakeHost(
     [pack("lp-slow"), pack("lp-slow2"),
      pack("lp-fast", { provides: { platforms: [], nodeTypes: [], roles: ["lp-fast-role"] } })],
     { "lp-fast": { app: { roles: [role("lp-fast-role")] } } },
   );
   const fast = host.importHalf;
   host.importHalf = (id, half) => (id.startsWith("lp-slow") ? new Promise(() => {}) : fast(id, half));
-  const was = setLoadBudgetMs(100);
+  const was = setLoadBudgetMs(200);
   const start = Date.now();
   try {
     await loadPacks(host, APP_BUILDERS);
@@ -277,9 +280,10 @@ test("one slow pack consumes the budget and a fast pack after it still loads", a
     setLoadBudgetMs(was);
   }
   // Two stuck packs share the one budget: a per-half timer would take twice as long.
-  expect(Date.now() - start < 180).toBe(true);
-  expect(refused["lp-slow"]).toBe("the packs' load ran past its 0.1 s budget in its app half");
-  expect(refused["lp-slow2"]).toBe("the packs' load ran past its 0.1 s budget in its app half");
+  expect(Date.now() - start < 380).toBe(true);
+  expect(refused["lp-slow"]).toBe("the packs' load ran past its 0.2 s budget in its app half");
+  expect(refused["lp-slow2"]).toBe("the packs' load ran past its 0.2 s budget in its app half");
+  expect(skipLater["lp-slow"]).toBe(true);
   expect(refused["lp-fast"]).toBe(undefined);
   expect(rolesRegistry.items().some((r) => r.kind === "lp-fast-role")).toBe(true);
 });

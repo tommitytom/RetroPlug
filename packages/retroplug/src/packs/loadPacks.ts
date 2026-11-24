@@ -39,7 +39,7 @@ async function importBefore(host: PackHost, id: string, kind: HalfKind, deadline
   };
   let timer: unknown;
   const stuck = new Promise<never>((_, reject) => {
-    timer = timers.setTimeout(() => reject(new Error(
+    timer = timers.setTimeout(() => reject(new BudgetError(
       `the packs' load ran past its ${loadBudgetMs / 1000} s budget in its ${kind} half`)), Math.max(0, deadline - Date.now()));
   });
   try {
@@ -81,11 +81,14 @@ export function packStatus(): { loaded: Record<string, HalfKind[]>; refused: Rec
   };
 }
 
-function refuse(host: PackHost, id: string, reason: string): void {
+/** A half that ran past the load budget: the one refusal worth remembering process-wide, since it cost the budget. */
+class BudgetError extends Error {}
+
+function refuse(host: PackHost, id: string, reason: string, skipLater = false): void {
   refused.set(id, reason);
   console.warn(`[packs] pack ${id} is refused: ${reason}`);
   try {
-    host.refuse(id, reason);
+    host.refuse(id, reason, skipLater);
   } catch (e) {
     console.warn(`[packs] the host could not record the refusal of ${id}: ${message(e)}`);
   }
@@ -224,7 +227,7 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
       staged.push({ pack, kinds: todo, additions, own: ownPlatforms(exported) });
       for (const id of pack.provides.platforms) platforms.add(id);
     } catch (e) {
-      refuse(host, pack.id, message(e));
+      refuse(host, pack.id, message(e), e instanceof BudgetError);
     }
   }
   if (!staged.length) return;

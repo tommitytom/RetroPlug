@@ -32,7 +32,9 @@ class PackTable;
  *    normalizer and loader as before;
  *  - `globalThis.__rp_packList()` returns, as JSON, every pack of `table` with a half other than the native one: its
  *    id, version, half kinds, provides and requires, in load order;
- *  - `globalThis.__rp_packRefused(id, reason)` records "pack <id> is refused: <reason>" in `table`'s refusals.
+ *  - `globalThis.__rp_packRefused(id, reason, skipLater)` records "pack <id> is refused: <reason>" in `table`'s
+ *    refusals; with `skipLater` true the process also leaves the pack out of every later `__rp_packList` (a pack that ran
+ *    past the load budget: the one refusal that costs time to repeat).
  *  The table is the process's (processPacks) in every host, and must outlive the runtime. Calling it again on a
  *  context is harmless. The table is process-wide: a later call with another table points every context's loader at
  *  that table. */

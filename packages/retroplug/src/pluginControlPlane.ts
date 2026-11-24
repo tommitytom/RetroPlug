@@ -10,7 +10,6 @@
 //   __rp_newProject()           — DPF setState(""): reset to an empty project
 //   __rp_setHostOutputs(n)      - the host's output channel count: the graph's multi(n) shape
 //   __rp_packStatus()           - what the packs' halves loaded and refused
-//   __rp_bootFailed             - set true when composition threw (the host stops waiting for __rp_ready)
 //   __rp_ready                  - set true once composition succeeded and the packs' app halves were loaded or refused
 //
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the
@@ -23,103 +22,96 @@ import { syncLatencyMs } from "./syncLatency";
 import { b64encode, b64decode } from "./base64";
 import { loadAppPacks, packStatus } from "./packs/loadPacks";
 
-// A composition that throws is reported as before and flagged, so the host's ready wait ends at once instead of
-// running out its deadline; nothing below is exported, so the block only scopes the composition.
-try {
-  // --- compose the app layer over the real backend ---
-  // One store graph, composed here at construct. The editor, when it attaches (same runtime, separate
-  // bundle), REUSES this graph rather than composing a second one — so the systems the UI loads are the
-  // same ones the DSP plays and getState serializes, and they survive a window close/reopen. The editor
-  // registers its React re-render fan-out through `uiNotify`; it's a mutable slot because the control
-  // plane composes long before any editor exists (and the editor comes and goes).
-  const uiNotify: { fn: (channel: StoreChannel) => void } = { fn: () => {} };
-  const stores: AppStores = composeAppStores({ notify: (channel) => uiNotify.fn(channel) });
-  const project = stores.project;
+// --- compose the app layer over the real backend ---
+// One store graph, composed here at construct. The editor, when it attaches (same runtime, separate
+// bundle), REUSES this graph rather than composing a second one — so the systems the UI loads are the
+// same ones the DSP plays and getState serializes, and they survive a window close/reopen. The editor
+// registers its React re-render fan-out through `uiNotify`; it's a mutable slot because the control
+// plane composes long before any editor exists (and the editor comes and goes).
+const uiNotify: { fn: (channel: StoreChannel) => void } = { fn: () => {} };
+const stores: AppStores = composeAppStores({ notify: (channel) => uiNotify.fn(channel) });
+const project = stores.project;
 
-  // The file watcher's TS policy half: drains native's changed paths and reacts (reload config, refresh
-  // bindings, cold-boot a ROM-changed system with reloadOnRomChange on). A bindings change re-renders the
-  // editor via the "bindings" notify. Driven from the UI idle loop through __rp_pumpWatcher below.
-  const fileWatcher = new FileWatcher(stores.backend, stores.userConfig, project.systems, () => uiNotify.fn("bindings"));
+// The file watcher's TS policy half: drains native's changed paths and reacts (reload config, refresh
+// bindings, cold-boot a ROM-changed system with reloadOnRomChange on). A bindings change re-renders the
+// editor via the "bindings" notify. Driven from the UI idle loop through __rp_pumpWatcher below.
+const fileWatcher = new FileWatcher(stores.backend, stores.userConfig, project.systems, () => uiNotify.fn("bindings"));
 
-  // Register the set of ROM files native should watch. Recomputed on every structural systems edit (the
-  // list, and thus which ROMs exist, only changes there). Native always watches config.json + bindings/.
-  const refreshWatchedRoms = (): void => {
-    const roms = project.systems.view().map((s) => s.romPath).filter((p): p is string => !!p);
-    stores.backend.setWatchedRoms(roms);
+// Register the set of ROM files native should watch. Recomputed on every structural systems edit (the
+// list, and thus which ROMs exist, only changes there). Native always watches config.json + bindings/.
+const refreshWatchedRoms = (): void => {
+  const roms = project.systems.view().map((s) => s.romPath).filter((p): p is string => !!p);
+  stores.backend.setWatchedRoms(roms);
+};
+
+// composeAppStores already routed the same signal to the editor's notify and the render list's prune; this
+// observer is added beside those, not in place of them.
+project.addOnSystemsChange(refreshWatchedRoms);
+
+// Publish the graph + the editor's notify hook on the shared plugin namespace (globalThis[Symbol.for(
+// "plugin")], where __rpcSend already lives) for the UI bundle to reuse.
+const pluginNs = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as Record<string, unknown> | undefined;
+if (pluginNs) {
+  pluginNs.stores = stores;
+  pluginNs.setUiNotify = (fn: ((channel: StoreChannel) => void) | null | undefined): void => {
+    uiNotify.fn = typeof fn === "function" ? fn : () => {};
   };
-
-  // composeAppStores already routed the same signal to the editor's notify and the render list's prune; this
-  // observer is added beside those, not in place of them.
-  project.addOnSystemsChange(refreshWatchedRoms);
-
-  // Publish the graph + the editor's notify hook on the shared plugin namespace (globalThis[Symbol.for(
-  // "plugin")], where __rpcSend already lives) for the UI bundle to reuse.
-  const pluginNs = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as Record<string, unknown> | undefined;
-  if (pluginNs) {
-    pluginNs.stores = stores;
-    pluginNs.setUiNotify = (fn: ((channel: StoreChannel) => void) | null | undefined): void => {
-      uiNotify.fn = typeof fn === "function" ? fn : () => {};
-    };
-  }
-
-  // --- the C++→JS surface ---
-  const g = globalThis as Record<string, unknown>;
-
-  // Autoload a project FILE from disk (reaper -renderproject seeds RETROPLUG_AUTOLOAD_PROJECT). Routes
-  // through load(), which dispatches by extension — a thin `.rplg` (JSON) or an export `.rplg.zip` (PKZIP).
-  g.__rp_loadProjectPath = (path: string): boolean => project.load(path).kind === "loaded";
-
-  g.__rp_loadProjectB64 = (b64: string): boolean => {
-    // Empty chunk = no-op (matches the legacy plugin): a host that saved an empty project, or the
-    // autoload path having already seeded one, must not be wiped. Explicit reset goes via __rp_newProject.
-    if (!b64) return true;
-    return project.loadBytes(b64decode(b64), "").kind === "loaded";
-  };
-
-  g.__rp_saveProjectB64 = (): string => {
-    const bytes = project.exportBytes();
-    return bytes ? b64encode(bytes) : "";
-  };
-
-  g.__rp_newProject = (): void => project.newProject();
-
-  // The host's output channels (the plugin's fixed 8, the standalone's device width), which the graph's output
-  // wiring is built for: the host calls it once the control plane is up and again whenever the count changes.
-  // "true" when the shape planned.
-  g.__rp_setHostOutputs = (n: string | number): string => String(project.graph.setShape({ kind: "multi", channels: Number(n) }));
-
-  // Drive the file watcher from the UI idle loop (PluginUI::uiIdle, throttled). Drains native's changed
-  // paths and reacts; a no-op when nothing changed. Returns void — the host ignores the result.
-  g.__rp_pumpWatcher = (): void => {
-    fileWatcher.pump();
-  };
-
-  // A cart in a host-clocked sync mode (LSDj's MidiSync / MidiSyncArduinoboy) locks its playback a fixed distance
-  // behind the DAW clock - an emulator clock->sound latency, not a drift. Reporting it as plugin latency lets the
-  // host apply PDC so the cart lands on the grid, for the DAW-timing renders and real users alike. HOW MUCH is each
-  // role's own knowledge (`RoleType.hostLatencyMs`), so this takes the maximum over the systems' PLACED roles and no cart
-  // is named here: a role a system's pipeline leaves out (on an mGB cart whose project stored an lsdj-sync, mgb is placed)
-  // runs nothing and adds nothing. The plugin queries this (as ms) after each load and converts to frames at the live
-  // sample rate.
-  g.__rp_syncLatencyMs = (): string => String(syncLatencyMs(project.systems.view(), stores.registry));
-
-  // Per-ROM DAW automation parameters. The plugin owns a fixed pool of MIDI-CC slots and re-labels them
-  // from this map whenever it changes (spec/12-dynamic-parameters.md), so a DAW shows "PU1 Pulse Width"
-  // instead of "CC 1". Polled by the plugin after each load, on activate, and from the editor's idle loop
-  // (a ROM loaded through the UI never passes through setState); it re-declares only when the JSON moves.
-  g.__rp_parameterMapJson = (): string =>
-    JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting, stores.registry));
-
-  // What the packs' halves loaded and refused, for a test and Settings > Packs (M4).
-  g.__rp_packStatus = packStatus;
-
-  // The packs' app and consoles halves commit before the host is told the control plane is ready, so the first project
-  // load (an autoload, the DAW's setState) finds their roles and consoles; the stores were composed first and adopt the
-  // commit (docs/downloadable-packs-m2a-plan.md). loadAppPacks never rejects: a pack that fails is refused and reported.
-  void loadAppPacks().then(() => {
-    g.__rp_ready = true;
-  });
-} catch (e) {
-  (globalThis as Record<string, unknown>).__rp_bootFailed = true;
-  throw e;
 }
+
+// --- the C++→JS surface ---
+const g = globalThis as Record<string, unknown>;
+
+// Autoload a project FILE from disk (reaper -renderproject seeds RETROPLUG_AUTOLOAD_PROJECT). Routes
+// through load(), which dispatches by extension — a thin `.rplg` (JSON) or an export `.rplg.zip` (PKZIP).
+g.__rp_loadProjectPath = (path: string): boolean => project.load(path).kind === "loaded";
+
+g.__rp_loadProjectB64 = (b64: string): boolean => {
+  // Empty chunk = no-op (matches the legacy plugin): a host that saved an empty project, or the
+  // autoload path having already seeded one, must not be wiped. Explicit reset goes via __rp_newProject.
+  if (!b64) return true;
+  return project.loadBytes(b64decode(b64), "").kind === "loaded";
+};
+
+g.__rp_saveProjectB64 = (): string => {
+  const bytes = project.exportBytes();
+  return bytes ? b64encode(bytes) : "";
+};
+
+g.__rp_newProject = (): void => project.newProject();
+
+// The host's output channels (the plugin's fixed 8, the standalone's device width), which the graph's output
+// wiring is built for: the host calls it once the control plane is up and again whenever the count changes.
+// "true" when the shape planned.
+g.__rp_setHostOutputs = (n: string | number): string => String(project.graph.setShape({ kind: "multi", channels: Number(n) }));
+
+// Drive the file watcher from the UI idle loop (PluginUI::uiIdle, throttled). Drains native's changed
+// paths and reacts; a no-op when nothing changed. Returns void — the host ignores the result.
+g.__rp_pumpWatcher = (): void => {
+  fileWatcher.pump();
+};
+
+// A cart in a host-clocked sync mode (LSDj's MidiSync / MidiSyncArduinoboy) locks its playback a fixed distance
+// behind the DAW clock - an emulator clock->sound latency, not a drift. Reporting it as plugin latency lets the
+// host apply PDC so the cart lands on the grid, for the DAW-timing renders and real users alike. HOW MUCH is each
+// role's own knowledge (`RoleType.hostLatencyMs`), so this takes the maximum over the systems' PLACED roles and no cart
+// is named here: a role a system's pipeline leaves out (on an mGB cart whose project stored an lsdj-sync, mgb is placed)
+// runs nothing and adds nothing. The plugin queries this (as ms) after each load and converts to frames at the live
+// sample rate.
+g.__rp_syncLatencyMs = (): string => String(syncLatencyMs(project.systems.view(), stores.registry));
+
+// Per-ROM DAW automation parameters. The plugin owns a fixed pool of MIDI-CC slots and re-labels them
+// from this map whenever it changes (spec/12-dynamic-parameters.md), so a DAW shows "PU1 Pulse Width"
+// instead of "CC 1". Polled by the plugin after each load, on activate, and from the editor's idle loop
+// (a ROM loaded through the UI never passes through setState); it re-declares only when the JSON moves.
+g.__rp_parameterMapJson = (): string =>
+  JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting, stores.registry));
+
+// What the packs' halves loaded and refused, for a test and Settings > Packs (M4).
+g.__rp_packStatus = packStatus;
+
+// The packs' app and consoles halves commit before the host is told the control plane is ready, so the first project
+// load (an autoload, the DAW's setState) finds their roles and consoles; the stores were composed first and adopt the
+// commit (docs/downloadable-packs-m2a-plan.md). loadAppPacks never rejects: a pack that fails is refused and reported.
+void loadAppPacks().then(() => {
+  g.__rp_ready = true;
+});

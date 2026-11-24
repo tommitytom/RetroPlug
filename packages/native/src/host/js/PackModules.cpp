@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <mutex>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -113,16 +115,24 @@ std::string jsonList(const std::vector<std::string>& items) {
     return out + "]";
 }
 
+// The packs a runtime refused for running past the load budget, for the whole process (see packList).
+std::mutex            g_skipMutex;
+std::set<std::string> g_skipLater;
+
 JSValue packList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     std::string out = "[";
     bool first = true;
     if (packs::PackTable* table = g_table.load()) {
-        // A pack this process already refused is left out: refusals are per runtime in the TS loader, so without this
-        // every plugin instance, DPF's info instance and the editor would pay a stuck pack's budget again.
-        std::vector<std::string> refusedIds;
-        for (const packs::PackRefusal& r : table->refusals()) refusedIds.push_back(r.id);
+        // A pack that ran past the load budget in some runtime is left out: refusals are per runtime in the TS loader,
+        // so without this every plugin instance, DPF's info instance and the editor would pay a stuck pack's budget
+        // again. Only that refusal is kept (the table's own refusals also name packs that did load, and a
+        // deterministic refusal costs nothing to repeat).
+        const std::set<std::string> skipped = [] {
+            std::lock_guard<std::mutex> lock(g_skipMutex);
+            return g_skipLater;
+        }();
         for (const packs::LoadedPack* pack : table->loadedFrom(0)) {
-            if (std::find(refusedIds.begin(), refusedIds.end(), pack->manifest.id) != refusedIds.end()) continue;
+            if (skipped.count(pack->manifest.id)) continue;
             std::vector<std::string> halves;
             for (const auto& [kind, file] : pack->manifest.halves)
                 if (kind != "native") halves.push_back(kind);
@@ -146,6 +156,10 @@ JSValue packRefused(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     const char* id = JS_ToCString(ctx, argv[0]);
     const char* reason = JS_ToCString(ctx, argv[1]);
     if (id && reason) {
+        if (argc > 2 && JS_ToBool(ctx, argv[2]) > 0) {
+            std::lock_guard<std::mutex> lock(g_skipMutex);
+            g_skipLater.insert(id);
+        }
         const packs::LoadedPack* pack = table->find(id);
         table->recordRefusal({id, pack ? pack->dir : std::filesystem::path(),
                               std::string("pack ") + id + " is refused: " + reason});
@@ -181,8 +195,6 @@ void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_modu
 }
 
 }  // namespace rp::host
-
-extern "C" void tjs__destroy_timers(TJSRuntime* qrt);
 
 namespace rp::host {
 

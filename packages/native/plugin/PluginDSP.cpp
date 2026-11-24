@@ -497,8 +497,8 @@ private:
         // ready: that covers module eval and the packs' app halves (a slow one is waited for, up to the deadline).
         const auto readyDeadline = std::chrono::steady_clock::now() + rp::host::kHostReadyDeadline;
         const bool evaluated = host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size) == 0;
-        // A failed eval, or a composition that threw (__rp_bootFailed), will never become ready: no deadline to wait out.
-        for (int i = 0; evaluated && !readReady() && !jsBootFailed(host_.context()); ++i) {
+        // A failed eval (a throw while composing) will never become ready: no deadline to wait out.
+        for (int i = 0; evaluated && !readReady(); ++i) {
             if (i >= 1000) {
                 if (std::chrono::steady_clock::now() >= readyDeadline) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
