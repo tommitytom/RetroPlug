@@ -245,6 +245,7 @@ retroplug_add_test_binary(
              retroplug-packfixture-nodes           # the fixture's types, statically: a second copy beside the pack's
              retroplug-mesen                       # the static build MesenPack.test.cpp holds the pack to
              retroplug-mqjs-host                   # the script compiler, compileScript
+             retroplug-bliptoaster-script          # BlipToaster's static script pack, which PackScript.test.cpp holds its pack half to; no engine here registers it until a case hands it over
     PACKAGES ${RP_PRODUCT_PACKAGES_packs-host}
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph  # GraphDocs.hpp
     DEFS     RP_PACKS_BUILD_DIR="${RP_PACKS_DIR}"

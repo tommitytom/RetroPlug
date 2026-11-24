@@ -177,3 +177,58 @@ TEST_CASE("a script half whose types clash is refused before it takes a MicroQui
     INFO(load.error);
     CHECK(load);
 }
+
+// BlipToaster's static script pack, as this binary links it (retroplug-bliptoaster-script), beside the pack's.
+extern "C" const rp_package* rp_bliptoaster_script_package(void);
+
+namespace {
+struct MidiOut {
+    std::uint32_t             system = 0, frame = 0;
+    std::vector<std::uint8_t> data;
+    bool operator==(const MidiOut&) const = default;
+};
+
+// One block over the staged messages, and the host MIDI the plan sent out.
+std::vector<MidiOut> runBlock(Engine& e, const std::vector<std::vector<std::uint8_t>>& messages) {
+    std::uint32_t frame = 0;
+    for (const auto& m : messages) e.stageMidi(frame++, m);
+    std::vector<float> l(256), r(256);
+    e.processBlock(256, l.data(), r.data());
+    std::vector<MidiOut> out;
+    for (const auto& m : e.midiOut()) out.push_back({m.system, m.frame, m.data});
+    return out;
+}
+}  // namespace
+
+TEST_CASE("BlipToaster's script half as a pack filters MIDI exactly as its static build does", "[packs-script]") {
+    PackTable table(rp::graph::productPackages());
+    const PackLoad load = table.load(fixture("bliptoaster"));
+    INFO(load.error);
+    REQUIRE(load);
+    REQUIRE(load.pack->script);
+
+    PackTable none(rp::graph::productPackages());
+    Engine fromPack(48000.0, table);
+    Engine fromStatic(48000.0, none);
+    REQUIRE(fromStatic.addNodePackage(rp_bliptoaster_script_package()));
+    // host MIDI in -> the policy -> host MIDI out, in both.
+    const std::string doc =
+        R"({"nodes":[{"id":"in","type":"rp.host.midi-in"},{"id":"t","type":"rp.bliptoaster.midi-policy"},)"
+        R"({"id":"out","type":"rp.host.midi-out","settings":{"systems":[1]}}],)"
+        R"("wires":[{"from":"in.midi","to":"t.in"},{"from":"t.out","to":"out.in1"}]})";
+    for (Engine* e : {&fromPack, &fromStatic}) {
+        const auto placed = e->setGraph(rp::host::test::graphRequest(doc, {}));
+        INFO((placed.errors.empty() ? std::string() : placed.errors[0].message));
+        REQUIRE(placed.ok);
+    }
+    // Each kind it drops or passes: a note on and off, poly aftertouch, a CC, channel aftertouch, a clock, a SysEx,
+    // a song position.
+    const std::vector<std::vector<std::uint8_t>> messages = {{0x90, 60, 100}, {0xA0, 60, 20}, {0xB0, 7, 99},
+                                                             {0xD0, 40},      {0xF8},         {0xF0, 0x7D, 0x01, 0xF7},
+                                                             {0xF2, 0x10, 0x00}, {0x80, 60, 0}};
+    const auto packOut = runBlock(fromPack, messages);
+    const auto staticOut = runBlock(fromStatic, messages);
+    CHECK(packOut == staticOut);
+    // The note on, the CC, the SysEx and the note off pass; aftertouch and the system messages are dropped.
+    REQUIRE(packOut.size() == 4);
+}
