@@ -772,6 +772,32 @@ contains "packs: the tool's output" "$TMP/packs-run.out" "hello from the ts fixt
 RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" render --help >/dev/null 2>&1
 check "packs: a built-in command still routes beside them" 0 $?
 
+# A render job's worker loads the packs' app and consoles halves (docs/downloadable-packs-m2d-plan.md): the fixture's
+# role reaches the system the job builds, and adds nothing to its bytes.
+if [ -f "$REPO_ROM" ]; then
+	RR="$TMP/pack-render"
+	mkdir -p "$RR"
+	cp "$REPO_ROM" "$RR/rom.sms"
+	(cd "$RR" && RETROPLUG_DETERMINISTIC=1 "$CLI" render rom.sms --duration 1s --out plain.wav >plain.out 2>plain.err)
+	check "packs: a render with no pack exits 0" 0 $?
+	(cd "$RR" && RETROPLUG_PACK_PATH="$PACKS/tsfix-render/1.0.0" RETROPLUG_DETERMINISTIC=1 \
+		"$CLI" render rom.sms --duration 1s --out packed.wav >packed.out 2>packed.err)
+	check "packs: a render with the render fixture pack exits 0" 0 $?
+	cat "$RR/packed.out" "$RR/packed.err" >"$RR/packed.all"
+	contains "packs: the render job's worker constructed the pack's role" "$RR/packed.all" "tsfix-render: constructed"
+	if cmp -s "$RR/plain.wav" "$RR/packed.wav"; then
+		echo "ok   - packs: the pack's role leaves the render's bytes as they were"
+	else
+		echo "FAIL - packs: the pack's role changed the render's bytes"
+		fails=$((fails + 1))
+	fi
+	(cd "$RR" && RETROPLUG_PACK_PATH="$PACKS/tsfix-throws/1.0.0" RETROPLUG_DETERMINISTIC=1 \
+		"$CLI" render rom.sms --duration 1s --out thrown.wav >thrown.out 2>thrown.err)
+	check "packs: a render beside a pack whose half throws still exits 0" 0 $?
+	cat "$RR/thrown.out" "$RR/thrown.err" >"$RR/thrown.all"
+	contains "packs: the render job's console names the refused pack" "$RR/thrown.all" "pack tsfix-throws is refused"
+fi
+
 echo
 if [ "$fails" = "0" ]; then
 	echo "PASS: retroplug-cli TypeScript harness"

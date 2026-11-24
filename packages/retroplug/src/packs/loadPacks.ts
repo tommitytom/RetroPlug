@@ -1,3 +1,5 @@
+// The render worker loads the control plane's halves (`loadAppPacks`) on a bare runtime with no timers
+// (docs/downloadable-packs-m2d-plan.md).
 // The pack loader (docs/downloadable-packs-m2c-plan.md): each pack's halves a context loads, imported by name, held to
 // the pack's manifest, and committed into the live registries. Every pack of a call goes in one commit; when that is
 // refused, they commit one at a time in load order, so the refused pack is named and the rest still load (all or
@@ -20,7 +22,7 @@ export type HalfBuilder = (pkg: string, exported: unknown) => Addition<any>[];
 /** The whole load's budget for the packs' halves to evaluate, in ms: one clock for every import of a call, below the
  *  hosts' own ready deadline (10 s), so a few slow packs cannot add up past it. A stuck pack is refused by name; a half
  *  with no top-level await still settles in microtasks, before a 0 ms timer, so a fast pack after the budget is spent
- *  still loads. */
+ *  still loads. A runtime with no timers has none (importBefore). */
 let loadBudgetMs = 5000;
 
 /** Test seam: the load budget in ms, returning the previous one. */
@@ -64,20 +66,23 @@ function noteFailedImport(reason: unknown): void {
 async function importBefore(host: PackHost, id: string, kind: HalfKind, deadline: number): Promise<unknown> {
   // The shell's tsconfig carries no timer types (txiki provides the globals), so they are reached by name.
   const timers = globalThis as unknown as {
-    setTimeout(fn: () => void, ms: number): unknown;
-    clearTimeout(id: unknown): void;
+    setTimeout?(fn: () => void, ms: number): unknown;
+    clearTimeout?(id: unknown): void;
   };
+  const imported = host.importHalf(id, kind);
+  imported.catch(noteFailedImport);
+  // A runtime with no timers (a render job's bare QuickJS) has no budget: a half there has no timer to wait on either,
+  // so it settles in the job queue its host runs, or never, which the host reports (host/render/RenderHost).
+  if (!timers.setTimeout || !timers.clearTimeout) return imported;
   let timer: unknown;
   const stuck = new Promise<never>((_, reject) => {
-    timer = timers.setTimeout(() => reject(new BudgetError(
+    timer = timers.setTimeout!(() => reject(new BudgetError(
       `the packs' load ran past its ${loadBudgetMs / 1000} s budget in its ${kind} half`)), Math.max(0, deadline - Date.now()));
   });
   try {
-    const imported = host.importHalf(id, kind);
-    imported.catch(noteFailedImport);
     return await Promise.race([imported, stuck]);
   } finally {
-    timers.clearTimeout(timer);
+    timers.clearTimeout!(timer);
   }
 }
 

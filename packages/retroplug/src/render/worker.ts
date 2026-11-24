@@ -1,7 +1,7 @@
 // The render job's body: the session an engine job's worker (the RenderHost, on a pool thread of the engine) runs,
 // which is also `retroplug-cli render`'s render path. It is the entry (rp:render) of the render shared module set (built
 // by tools/build-shared-modules.mjs render), evaluated as a module on a bare-QuickJS runtime with its own Engine. The job request arrives as JSON in
-// globalThis[Symbol.for("plugin")].args[0]; the worker boots a control plane, runs the shared render library, and
+// globalThis[Symbol.for("plugin")].args[0]; the worker loads the packs' app and consoles halves, boots a control plane, runs the shared render library, and
 // reports progress / cancellation / completion back through native thunks the RenderHost binds:
 //   __rp_reportRenderedMs(ms)            - audio rendered so far, per rendered chunk
 //   __rp_isRenderCancelled(): boolean    - polled between boot steps and per chunk; true aborts the render
@@ -9,6 +9,7 @@
 // (all optional-chained so the same bundle stays runnable under a plain host that binds none of them).
 
 import { bootSession } from "../bootSession";
+import { loadAppPacks } from "../packs/loadPacks";
 import { runRenderJob, RenderCancelled, type RenderOpts, type SplitMode } from "./index";
 
 declare const __rp_reportRenderedMs: ((ms: number) => void) | undefined;
@@ -63,7 +64,7 @@ function readSpec(): RenderJobSpec {
   return spec;
 }
 
-function main(): void {
+async function main(): Promise<void> {
   let opts: RenderOpts;
   try {
     opts = normalize(readSpec());
@@ -71,6 +72,11 @@ function main(): void {
     __rp_renderResult?.("error", (e as Error)?.message ?? String(e), []);
     return;
   }
+
+  // The packs' app and consoles halves (docs/downloadable-packs-m2d-plan.md), committed before the session composes,
+  // so a pack's consoles, roles and ROM providers are this render's as they are the app's. Never rejects: a refused
+  // pack is named on the job's console and the render goes on without it.
+  await loadAppPacks();
 
   const serial = pluginNamespace()?.renderSerial;
   const session = bootSession(); // structurally satisfies RenderContext (backend / project / audio / registry)
@@ -94,4 +100,6 @@ function main(): void {
   }
 }
 
-main();
+// No top-level await (the bundles target es2020): main reports its own result, and a throw it did not catch (the
+// session's boot, outside its try) is reported here rather than lost as an unhandled rejection.
+main().catch((e) => __rp_renderResult?.("error", (e as Error)?.message ?? String(e), []));

@@ -14,6 +14,8 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 #include "host/QuickJsGlobals.hpp"
+#include "host/js/PackLoaderCore.hpp"
+#include "host/packs/ProcessPacks.hpp"
 #include "host/js/SharedModules.hpp"
 
 // The render worker's shared module set (packages/native/cmake/product-bundles.cmake, retroplug-render-modules): the
@@ -222,6 +224,10 @@ RenderHost::RenderHost() {
 
 RenderHost::~RenderHost() {
     if (rt_) {
+        // A pack's half left pending (it awaited what never settled) holds module structs that QuickJS-ng frees with
+        // the context before its callbacks (bellard/quickjs#280): collected first, as settleForFree does for a txiki
+        // runtime (host/js/PackModules).
+        JS_RunGC(rt_);
         JS_FreeContext(ctx_);
         JS_FreeRuntime(rt_);
     }
@@ -306,6 +312,10 @@ RenderHost::Result RenderHost::runWith(const std::string* source, const std::str
             result_.message = "render worker: " + why;
             return result_;
         }
+        // A pack's halves, served by name and held to the set's contracts: the process's packs, as every Engine of it
+        // registers their native halves (docs/downloadable-packs-m2d-plan.md).
+        rp::host::installBarePackLoader(ctx_, rp::host::packs::processPacks(), rp_render_modules,
+                                        rp_render_modules_count);
         JSValue mod = JS_ReadObject(ctx_, rp_render_bundle, rp_render_bundle_size, JS_READ_OBJ_BYTECODE);
         if (JS_IsException(mod)) {
             dumpError(ctx_);

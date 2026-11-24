@@ -1,6 +1,7 @@
 # The TS fixture pack (docs/downloadable-packs-m2c-plan.md): tsfix, built from ts/ by tools/build-pack-halves.mjs as a
 # package's halves are, and its broken variants, hand-written (the tool would refuse them), each staged under
 # build/packs/<id>/1.0.0/ as a development pack. No product lists any of them.
+# tsfix-render  an app half whose role every ROM gets, which a render's console shows
 # Every staged folder is claimed once (cmake/packs.cmake's RP_PACK_STAGED), so two fixtures cannot stage one id: a second
 # claim is a configure error here, as retroplug_pack_module's is.
 function(_tsfix_claim id)
@@ -29,8 +30,27 @@ add_custom_command(
             ${CMAKE_SOURCE_DIR}/packages/retroplug/host-modules.json
     COMMENT "Building the TS fixture pack"
     VERBATIM)
-add_custom_target(retroplug-ts-fixture-packs DEPENDS "${_tsfix_out}/pack.json" ${_tsfix_halves})
 _tsfix_claim(tsfix)
+
+# tsfix-render: built as tsfix is, from render/ (docs/downloadable-packs-m2d-plan.md).
+set(_tsr_dir "${_tsfix_dir}/render")
+set(_tsr_out "${RP_PACKS_DIR}/tsfix-render/1.0.0")
+file(GLOB _tsr_sources CONFIGURE_DEPENDS "${_tsr_dir}/ts/*.ts")
+add_custom_command(
+    OUTPUT "${_tsr_out}/pack.json" "${_tsr_out}/js/app.js"
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs
+            ${_tsr_dir} ${_tsr_out} ${_tsr_dir}/pack.json
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs ${_tsr_dir}/package.json ${_tsr_dir}/pack.json
+            ${_tsr_sources}
+            ${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/graph/rp_pack.h
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/lib/contracts.mjs
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/host-modules.json
+    COMMENT "Building the TS render fixture pack"
+    VERBATIM)
+_tsfix_claim(tsfix-render)
+
+add_custom_target(retroplug-ts-fixture-packs DEPENDS "${_tsfix_out}/pack.json" ${_tsfix_halves}
+                  "${_tsr_out}/pack.json" "${_tsr_out}/js/app.js")
 
 foreach(_v tsfix-throws tsfix-guard tsfix-undeclared tsfix-cliclash tsfix-dependent tsfix-protocol)
     _tsfix_claim(${_v})

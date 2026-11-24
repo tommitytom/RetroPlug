@@ -1,0 +1,7 @@
+{
+  "id": "tsfix-render", "name": "TS fixture pack (render)", "version": "1.0.0", "apiLevel": 0,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture/render",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": ["tsfix-render"] },
+  "halves": {}
+}

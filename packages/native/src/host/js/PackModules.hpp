@@ -9,6 +9,7 @@
 #include "dpfjs/host/TjsHostRuntime.hpp"
 #include "quickjs.h"
 
+#include "host/js/PackLoaderCore.hpp"
 #include "host/js/rp_js_module.h"
 
 namespace rp::host {
@@ -18,10 +19,6 @@ namespace rp::host {
  *  deadline. It is a backstop: the TS loader gives the packs' halves one budget of 5 s overall (loadPacks.ts) and
  *  refuses what has not settled in it, so a stuck pack is named, and this deadline also covers the composition. */
 inline constexpr std::chrono::seconds kHostReadyDeadline{10};
-
-namespace packs {
-class PackTable;
-}
 
 /** Install the pack loader on `ctx`'s runtime, after registerSharedModules registered `contracts` there:
  *  - a module named `pack:<id>/<half>` is the file `halves.<half>` of the pack `id` in `table`, compiled the first time
@@ -40,13 +37,6 @@ class PackTable;
  *  context is harmless. The table is process-wide: a later call with another table points every context's loader at
  *  that table. */
 void installPackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count);
-
-/** installPackLoader for a bare QuickJS runtime, which has no txiki: a render job's (host/render/RenderHost). The same
- *  `pack:<id>/<half>` loader and the same guard, after registerSharedModules registered `contracts` there; any other
- *  name is passed through as written (QuickJS finds a registered module by its name) and is not found if no module has
- *  it, since a bare runtime loads no file. Installs `__rp_packList` as above and no `__rp_packRefused`: a render's
- *  refusals are its job's console lines, the context that loaded those halves first having recorded its own. */
-void installBarePackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count);
 
 /** Make `host`'s runtime safe to free while a pack's half is still pending (a top-level await parked on a timer):
  *  destroys the runtime's timers and collects, so the pending module's callbacks are freed before QuickJS frees the

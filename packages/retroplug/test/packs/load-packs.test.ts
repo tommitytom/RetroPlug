@@ -287,3 +287,22 @@ test("one slow pack consumes the budget and a fast pack after it still loads", a
   expect(refused["lp-fast"]).toBe(undefined);
   expect(rolesRegistry.items().some((r) => r.kind === "lp-fast-role")).toBe(true);
 });
+
+test("a runtime with no timers loads its packs with no budget", async () => {
+  const g = globalThis as unknown as { setTimeout?: unknown; clearTimeout?: unknown };
+  const saved = { setTimeout: g.setTimeout, clearTimeout: g.clearTimeout };
+  g.setTimeout = undefined;
+  g.clearTimeout = undefined;
+  try {
+    const { host, refused } = fakeHost(
+      [pack("lp-notimers", { provides: { platforms: [], nodeTypes: [], roles: ["lp-notimers-role"] } })],
+      { "lp-notimers": { app: { roles: [role("lp-notimers-role")] } } },
+    );
+    await loadPacks(host, APP_BUILDERS);
+    expect(refused).toEqual({});
+    expect(packStatus().loaded["lp-notimers"]).toEqual(["app"]);
+  } finally {
+    g.setTimeout = saved.setTimeout;
+    g.clearTimeout = saved.clearTimeout;
+  }
+});

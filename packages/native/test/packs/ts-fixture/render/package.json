@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug-test/ts-fixture-render",
+  "private": true,
+  "retroplug": { "app": "ts/app.ts" }
+}
