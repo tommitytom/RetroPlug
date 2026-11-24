@@ -74,6 +74,16 @@ if (!tests.length) {
   process.exit(1);
 }
 
+// A test of pack loading names the development packs it loads (docs/downloadable-packs-m2c-plan.md); every other test
+// loads none. The fixture packs are staged under build/packs by retroplug-ts-fixture-packs. tsfix-throws is not named
+// here: a dynamically imported module that throws leaves an unhandled rejection that stops this host's loop (see the
+// test's header), so it is covered by the CLI leg until the loader handles it.
+const PACK_TESTS = {
+  "packs-ts-fixture": ["tsfix", "tsfix-guard"],
+};
+const packPath = (slug) =>
+  (PACK_TESTS[slug] ?? []).map((id) => join(REPO, "build/packs", id, "1.0.0")).join(process.platform === "win32" ? ";" : ":");
+
 async function runOne({ file, slug }) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
@@ -135,6 +145,7 @@ async function runOne({ file, slug }) {
       RETROPLUG_UI_TEST_ROMS: romsDir,
       RETROPLUG_PACKS_DIR: join(cfgDir, "packs"),
       RETROPLUG_PACKS_CACHE_DIR: join(cfgDir, "packs-cache"),
+      ...(PACK_TESTS[slug] ? { RETROPLUG_PACK_PATH: packPath(slug) } : {}),
     },
   });
   flush(slug, run.output);

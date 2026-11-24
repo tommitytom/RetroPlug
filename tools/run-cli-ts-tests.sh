@@ -749,6 +749,29 @@ for f in pass.test fail.test helper; do
 	fi
 done
 
+# 8. Packs (docs/downloadable-packs-m2c-plan.md): the TS fixture pack's tool is a command, and the broken packs beside
+#    it are refused with their reasons while the CLI goes on. The fixture is built by retroplug-ts-fixture-packs.
+PACKS="$REPO/build/packs"
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) PSEP=";" ;; *) PSEP=":" ;; esac
+PACKPATH="$PACKS/tsfix/1.0.0${PSEP}$PACKS/tsfix-cliclash/1.0.0${PSEP}$PACKS/tsfix-undeclared/1.0.0"
+PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-dependent/1.0.0${PSEP}$PACKS/tsfix-throws/1.0.0${PSEP}$PACKS/tsfix-protocol/1.0.0"
+RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" --help >"$TMP/packs-help.out" 2>"$TMP/packs-help.err"
+check "packs: --help with the fixture packs" 0 $?
+contains "packs: a pack's tool is in the index" "$TMP/packs-help.out" "tsfix-hello"
+contains "packs: a tool named after a built-in is refused" "$TMP/packs-help.err" \
+	"[packs] pack tsfix-cliclash is refused:"
+contains "packs: a role its manifest does not declare is refused" "$TMP/packs-help.err" \
+	"contributes the role kind tsfix-undeclared, which its pack.json's provides.roles does not declare"
+contains "packs: a pack requiring a refused pack is refused" "$TMP/packs-help.err" \
+	"it requires the pack tsfix-throws, which is refused"
+contains "packs: a protocol half is refused by the native loader" "$TMP/packs-help.err" \
+	"[packs] pack tsfix-protocol has a protocol half"
+RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" tsfix-hello >"$TMP/packs-run.out" 2>/dev/null
+check "packs: a pack's tool runs" 0 $?
+contains "packs: the tool's output" "$TMP/packs-run.out" "hello from the ts fixture pack"
+RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" render --help >/dev/null 2>&1
+check "packs: a built-in command still routes beside them" 0 $?
+
 echo
 if [ "$fails" = "0" ]; then
 	echo "PASS: retroplug-cli TypeScript harness"
