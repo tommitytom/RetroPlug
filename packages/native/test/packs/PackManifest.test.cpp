@@ -300,9 +300,60 @@ TEST_CASE("pack.json's protocol member: its nodes and roles, held to provides", 
     refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"}],"roles":{"qq":"rp.pp.echo"}})"),
             "protocol.roles names qq, which provides.roles does not declare");
     refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"}],"roles":{},"kinds":{"controllerApps":[]}})"),
-            "protocol.kinds: a pack cannot contribute to a contribution kind yet");
+            "protocol.kinds: a pack's kind items are its top-level kinds member");
     refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"}],"roles":{},"placer":"js/p.js"})"),
             "protocol holds \"placer\", which is no member of it");
+}
+
+namespace {
+
+// A manifest with halves and a `kinds` member (none for an empty one) as given.
+std::string kindsManifest(const std::string& kinds, const std::string& halves = R"({"kinds":"js/kinds.js"})") {
+    std::string m = R"({"id":"pk","name":"P","version":"1.0.0","apiLevel":)" + std::to_string(RP_API_LEVEL) +
+                    R"(,"license":"MIT","source":"s","halves":)" + halves;
+    if (!kinds.empty()) m += R"(,"kinds":)" + kinds;
+    return m + "}";
+}
+
+}  // namespace
+
+TEST_CASE("pack.json's kinds member: each kind's items, held to their half", "[packs-manifest]") {
+    const std::string good = R"({"controllerApps":[{"id":"pk-app","syncOverride":{"node":"rp.x.sync"}}]})";
+    std::string       why;
+    const auto        m = parsePackManifest(kindsManifest(good), &why, RP_API_LEVEL);
+    INFO(why);
+    REQUIRE(m);
+    REQUIRE(m->kinds);
+    CHECK(m->kinds->kindsJson == good);
+    CHECK(m->kinds->ids == std::map<std::string, std::vector<std::string>>{{"controllerApps", {"pk-app"}}});
+    CHECK(m->halves.at("kinds") == "js/kinds.js");
+
+    const auto big = parsePackManifest(kindsManifest(R"({"k":[{"id":"a","big":18446744073709551615}]})"), &why, RP_API_LEVEL);
+    INFO(why);
+    REQUIRE(big);
+    CHECK(big->kinds->kindsJson.find("-1") == std::string::npos);
+    CHECK(big->kinds->kindsJson == R"({"k":[{"big":18446744073709552000,"id":"a"}]})");
+
+    const auto refused = [](const std::string& json, const std::string& reason) {
+        std::string w;
+        CHECK_FALSE(parsePackManifest(json, &w, RP_API_LEVEL));
+        CHECK(w == "pack.json: " + reason);
+    };
+    refused(kindsManifest(""), "halves.kinds needs the kinds member (each kind's items)");
+    refused(kindsManifest(good, R"({"app":"js/app.js"})"), "kinds is set, and halves names no kinds half");
+    refused(kindsManifest("{}"), "kinds names no kind: a kinds half registers items");
+    refused(kindsManifest(R"({"controllerApps":[]})"), "kinds.controllerApps is empty");
+    refused(kindsManifest(R"({"controllerApps":[{"syncOverride":{}}]})"), R"(kinds.controllerApps[0] has no "id")");
+    refused(kindsManifest(R"({"controllerApps":[{"id":""}]})"), R"(kinds.controllerApps[0] has no "id")");
+    refused(kindsManifest(R"({"controllerApps":[{"id":"pk-app"},{"id":"pk-app"}]})"),
+            "kinds.controllerApps names pk-app twice");
+    refused(kindsManifest(R"({"controllerApps":[7]})"), "kinds.controllerApps[0] is not an object");
+    {
+        // A kind that is not a list is the reader's own refusal.
+        std::string w;
+        CHECK_FALSE(parsePackManifest(kindsManifest(R"({"controllerApps":{"id":"a"}})"), &w, RP_API_LEVEL));
+        CHECK_THAT(w, ContainsSubstring("pack.json: "));
+    }
 }
 
 TEST_CASE("pack.json's placer half is a half like the others", "[packs-manifest]") {

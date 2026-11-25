@@ -34,6 +34,14 @@ struct ProtocolSpec {
     std::string                        nodesJson;  // protocol.nodes as canonical JSON, which the TS loader checks
 };
 
+// A kinds half's member (docs/downloadable-packs-m2f-plan.md): the items the pack contributes to contribution kinds
+// built-in packages declare, by kind, each with its id and its data. The TS loader holds them to the declared kinds;
+// the half itself (halves.kinds) is global code every Engine's built-in pack runs from construction.
+struct KindsSpec {
+    std::map<std::string, std::vector<std::string>> ids;        // kind -> its items' ids, in the manifest's order
+    std::string                                     kindsJson;  // the member as canonical JSON, read by the TS loader
+};
+
 struct PackManifest {
     std::string   id;        // a plain id: lowercase letters, digits and '-', starting with a letter
     std::string   name;      // what Settings > Packs shows
@@ -54,6 +62,8 @@ struct PackManifest {
     std::optional<ScriptSpec> script;
     // The protocol half's nodes and roles: present exactly when halves names a protocol half.
     std::optional<ProtocolSpec> protocol;
+    // The kinds half's items: present exactly when halves names a kinds half.
+    std::optional<KindsSpec> kinds;
     // The native half's library stem, or empty for a pack with no native half.
     std::string nativeHalf() const;
 };

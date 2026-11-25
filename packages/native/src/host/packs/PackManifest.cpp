@@ -56,7 +56,12 @@ struct RawProtocolNode {
     std::optional<std::string>     type;
     rfl::ExtraFields<rfl::Generic> extra;
 };
-// `protocol` is closed as `script` is, and names its one refused member, kinds, apart (M2f).
+// One kind item: its id, and everything else kept as its data, which the TS loader holds to the declared kind's keys.
+struct RawKindItem {
+    std::optional<std::string>     id;
+    rfl::ExtraFields<rfl::Generic> extra;
+};
+// `protocol` is closed as `script` is, and names its one refused member, kinds, apart (it is a top-level member).
 struct RawProtocol {
     std::optional<std::vector<rfl::Generic>>          nodes;
     std::optional<std::map<std::string, std::string>> roles;
@@ -74,6 +79,7 @@ struct RawManifest {
     std::optional<std::map<std::string, std::string>>         halves;
     std::optional<RawScript>                                  script;
     std::optional<RawProtocol>                                protocol;
+    std::optional<std::map<std::string, std::vector<rfl::Generic>>> kinds;
 };
 
 }  // namespace detail::manifest
@@ -353,7 +359,7 @@ bool checkList(const std::optional<std::vector<std::string>>& list, const char* 
 
 const std::vector<std::string>& knownHalves() {
     static const std::vector<std::string> kHalves = {"native", "app", "consoles", "protocol",
-                                                     "ui",     "views", "cli",    "script", "placer"};
+                                                     "ui",     "views", "cli",    "script", "placer", "kinds"};
     return kHalves;
 }
 
@@ -529,7 +535,7 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
         }
         if (const auto& extra = p->extra; !extra.empty()) {
             const std::string& key = extra.begin()->first;
-            refuse(why, key == "kinds" ? std::string("protocol.kinds: a pack cannot contribute to a contribution kind yet")
+            refuse(why, key == "kinds" ? std::string("protocol.kinds: a pack's kind items are its top-level kinds member")
                                        : "protocol holds \"" + echoed(key) + "\", which is no member of it");
             return std::nullopt;
         }
@@ -593,6 +599,54 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
         m.protocol = std::move(spec);
     } else if (protocolHalf) {
         refuse(why, "halves.protocol needs the protocol member (its nodes and roles)");
+        return std::nullopt;
+    }
+    const bool kindsHalf = m.halves.count("kinds") > 0;
+    if (const auto& k = raw->kinds) {
+        if (!kindsHalf) {
+            refuse(why, "kinds is set, and halves names no kinds half");
+            return std::nullopt;
+        }
+        if (k->empty()) {
+            refuse(why, "kinds names no kind: a kinds half registers items");
+            return std::nullopt;
+        }
+        KindsSpec spec;
+        for (const auto& [kind, items] : *k) {
+            if (items.empty()) {
+                refuse(why, "kinds." + echoed(kind) + " is empty");
+                return std::nullopt;
+            }
+            std::vector<std::string>& ids = spec.ids[kind];
+            for (std::size_t i = 0; i < items.size(); ++i) {
+                const auto item = rfl::from_generic<RawKindItem>(items[i]);
+                if (!item) {
+                    refuse(why, "kinds." + echoed(kind) + "[" + std::to_string(i) + "] is not an object");
+                    return std::nullopt;
+                }
+                if (!item->id || item->id->empty()) {
+                    refuse(why, "kinds." + echoed(kind) + "[" + std::to_string(i) + "] has no \"id\"");
+                    return std::nullopt;
+                }
+                if (std::find(ids.begin(), ids.end(), *item->id) != ids.end()) {
+                    refuse(why, "kinds." + echoed(kind) + " names " + echoed(*item->id) + " twice");
+                    return std::nullopt;
+                }
+                ids.push_back(*item->id);
+            }
+        }
+        // Re-read with parseJson, as the protocol nodes are, so an integer above INT64_MAX stays a number.
+        const auto whole = rp::graph::parseJson(json);
+        const auto top = whole ? whole->to_object() : rfl::Result<rfl::Generic::Object>(whole.error());
+        const auto member = top ? top->get("kinds") : rfl::Result<rfl::Generic>(top.error());
+        if (!member || !member->to_object()) {
+            refuse(why, "kinds is not a map of kind to items");
+            return std::nullopt;
+        }
+        spec.kindsJson = rp::graph::canonicalJson(*member);
+        m.kinds = std::move(spec);
+    } else if (kindsHalf) {
+        refuse(why, "halves.kinds needs the kinds member (each kind's items)");
         return std::nullopt;
     }
     if (m.halves.empty()) {
