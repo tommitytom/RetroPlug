@@ -10,6 +10,7 @@
 #include <rfl.hpp>
 #include <rfl/json.hpp>
 
+#include "graph/CanonicalJson.hpp"
 #include "host/packs/PackDirs.hpp"
 
 namespace fs = std::filesystem;
@@ -49,6 +50,18 @@ struct RawScript {
     std::optional<std::vector<std::string>> nodeTypes;
     rfl::ExtraFields<rfl::Generic>          extra;
 };
+// One protocol node: its type, and everything else kept for the TS loader, whose checks hold the wiring. Its label is
+// refused here: the host gives a pack's script nodes their span labels at load.
+struct RawProtocolNode {
+    std::optional<std::string>     type;
+    rfl::ExtraFields<rfl::Generic> extra;
+};
+// `protocol` is closed as `script` is, and names its one refused member, kinds, apart (M2f).
+struct RawProtocol {
+    std::optional<std::vector<rfl::Generic>>          nodes;
+    std::optional<std::map<std::string, std::string>> roles;
+    rfl::ExtraFields<rfl::Generic>                    extra;
+};
 struct RawManifest {
     std::optional<std::string>                                id;
     std::optional<std::string>                                name;
@@ -60,6 +73,7 @@ struct RawManifest {
     std::optional<RawProvides>                                provides;
     std::optional<std::map<std::string, std::string>>         halves;
     std::optional<RawScript>                                  script;
+    std::optional<RawProtocol>                                protocol;
 };
 
 }  // namespace detail::manifest
@@ -339,7 +353,7 @@ bool checkList(const std::optional<std::vector<std::string>>& list, const char* 
 
 const std::vector<std::string>& knownHalves() {
     static const std::vector<std::string> kHalves = {"native", "app", "consoles", "protocol",
-                                                     "ui",     "views", "cli",    "script"};
+                                                     "ui",     "views", "cli",    "script", "placer"};
     return kHalves;
 }
 
@@ -505,6 +519,69 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
         m.script = std::move(spec);
     } else if (scriptHalf) {
         refuse(why, "halves.script needs the script member (its runtime, heapBytes and nodeTypes)");
+        return std::nullopt;
+    }
+    const bool protocolHalf = m.halves.count("protocol") > 0;
+    if (const auto& p = raw->protocol) {
+        if (!protocolHalf) {
+            refuse(why, "protocol is set, and halves names no protocol half");
+            return std::nullopt;
+        }
+        if (const auto& extra = p->extra; !extra.empty()) {
+            const std::string& key = extra.begin()->first;
+            refuse(why, key == "kinds" ? std::string("protocol.kinds: a pack cannot contribute to a contribution kind yet")
+                                       : "protocol holds \"" + echoed(key) + "\", which is no member of it");
+            return std::nullopt;
+        }
+        ProtocolSpec spec;
+        const std::vector<rfl::Generic> nodes = p->nodes.value_or(std::vector<rfl::Generic>{});
+        if (nodes.empty()) {
+            refuse(why, "protocol.nodes is empty: a protocol half registers node types");
+            return std::nullopt;
+        }
+        for (std::size_t i = 0; i < nodes.size(); ++i) {
+            const auto node = rfl::from_generic<RawProtocolNode>(nodes[i]);
+            if (!node || !node->type || node->type->empty()) {
+                refuse(why, "protocol.nodes[" + std::to_string(i) + "] has no \"type\"");
+                return std::nullopt;
+            }
+            const std::string& type = *node->type;
+            if (node->extra.count("label") > 0) {
+                refuse(why, "protocol.nodes gives " + echoed(type) +
+                                " a label: a pack's script nodes take their span labels at load");
+                return std::nullopt;
+            }
+            if (std::find(spec.nodeTypes.begin(), spec.nodeTypes.end(), type) != spec.nodeTypes.end()) {
+                refuse(why, "protocol.nodes names " + echoed(type) + " twice");
+                return std::nullopt;
+            }
+            if (std::find(m.providesNodeTypes.begin(), m.providesNodeTypes.end(), type) == m.providesNodeTypes.end()) {
+                refuse(why, "protocol.nodes names " + echoed(type) + ", which provides.nodeTypes does not declare");
+                return std::nullopt;
+            }
+            if (m.script && std::find(m.script->nodeTypes.begin(), m.script->nodeTypes.end(), type) !=
+                                m.script->nodeTypes.end()) {
+                refuse(why, "protocol.nodes names " + echoed(type) + ", which script.nodeTypes names too");
+                return std::nullopt;
+            }
+            spec.nodeTypes.push_back(type);
+        }
+        for (const auto& [kind, type] : p->roles.value_or(std::map<std::string, std::string>{})) {
+            if (std::find(m.providesRoles.begin(), m.providesRoles.end(), kind) == m.providesRoles.end()) {
+                refuse(why, "protocol.roles names " + echoed(kind) + ", which provides.roles does not declare");
+                return std::nullopt;
+            }
+            if (std::find(spec.nodeTypes.begin(), spec.nodeTypes.end(), type) == spec.nodeTypes.end()) {
+                refuse(why, "protocol.roles places " + echoed(kind) + " as " + echoed(type) +
+                                ", which protocol.nodes does not declare");
+                return std::nullopt;
+            }
+            spec.roles.emplace(kind, type);
+        }
+        spec.nodesJson = rp::graph::canonicalJson(rfl::Generic(rfl::Generic::Array(nodes.begin(), nodes.end())));
+        m.protocol = std::move(spec);
+    } else if (protocolHalf) {
+        refuse(why, "halves.protocol needs the protocol member (its nodes and roles)");
         return std::nullopt;
     }
     if (m.halves.empty()) {

@@ -11,7 +11,8 @@
 // A pack's manifest, pack.json (docs/downloadable-packs-loading-design.md section 1), parsed and checked: every member
 // is held to its shape here, so a manifest a later milestone reads is one this parser already accepted whole. What the
 // loader (PackTable) enforces beyond the shape is the native half, the script half (compiled and registered when the
-// pack loads), provides.nodeTypes and that each half's file is there; it refuses the protocol half, which M2e loads.
+// pack loads), provides.nodeTypes and that each half's file is there; the protocol half's wiring is held by the TS
+// loader, and its script nodes are loaded by every Engine (docs/downloadable-packs-m2e-plan.md).
 // provides.platforms and .roles, and
 // requires.platforms, are held to the TS halves when a context loads them (src/packs/loadPacks.ts).
 namespace rp::host::packs {
@@ -22,6 +23,15 @@ struct ScriptSpec {
     std::string              runtime;         // the device's runtime of the pack: a file inside the version folder
     std::uint32_t            heapBytes = 0;   // the package manifest's heapBytes: the box's context (MqjsHost.hpp)
     std::vector<std::string> nodeTypes;       // the ids its definitions register, in their order; each in provides
+};
+
+// A protocol half's member (docs/downloadable-packs-m2e-plan.md): its QuickJS script nodes' wiring, which the TS loader
+// commits to the live protocol tables, and the role kinds placed as them. The half itself is global code
+// (halves.protocol) that every Engine loads.
+struct ProtocolSpec {
+    std::vector<std::string>           nodeTypes;  // each node's type, in the manifest's order; each in provides
+    std::map<std::string, std::string> roles;      // role kind -> the node type it is placed as
+    std::string                        nodesJson;  // protocol.nodes as canonical JSON, which the TS loader checks
 };
 
 struct PackManifest {
@@ -42,6 +52,8 @@ struct PackManifest {
     std::map<std::string, std::string> halves;
     // The script half's runtime, heap and types: present exactly when halves names a script half.
     std::optional<ScriptSpec> script;
+    // The protocol half's nodes and roles: present exactly when halves names a protocol half.
+    std::optional<ProtocolSpec> protocol;
     // The native half's library stem, or empty for a pack with no native half.
     std::string nativeHalf() const;
 };

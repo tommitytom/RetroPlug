@@ -239,3 +239,82 @@ TEST_CASE("a script half names its runtime, its heap and its types, each declare
     CHECK_THAT(refusedFor(scriptManifest(half, R"({"runtime":"js/r.js","heapBytes":24576,"nodeTypes":["rp.demo.tone"],"heap":1})")),
                ContainsSubstring("script holds \"heap\", which is no member of it"));
 }
+
+namespace {
+
+// A manifest declaring two node types (rp.pp.echo, rp.pp.idle) and the role pp, with `halves` and a `protocol`
+// member (none for an empty one) as given.
+std::string protocolManifest(const std::string& protocol,
+                             const std::string& halves = R"({"protocol":"js/protocol.js"})") {
+    std::string m = R"({"id":"pp","name":"P","version":"1.0.0","apiLevel":)" + std::to_string(RP_API_LEVEL) +
+                    R"(,"license":"MIT","source":"s","provides":{"platforms":[],"nodeTypes":["rp.pp.echo","rp.pp.idle"],)"
+                    R"("roles":["pp"]},"halves":)" + halves;
+    if (!protocol.empty()) m += R"(,"protocol":)" + protocol;
+    return m + "}";
+}
+
+}  // namespace
+
+TEST_CASE("pack.json's protocol member: its nodes and roles, held to provides", "[packs-manifest]") {
+    const std::string good =
+        R"({"nodes":[{"type":"rp.pp.echo","midiIn":"in","writes":[],"midiOut":true},{"type":"rp.pp.idle"}],)"
+        R"("roles":{"pp":"rp.pp.echo"}})";
+    std::string why;
+    const auto m = parsePackManifest(protocolManifest(good), &why, RP_API_LEVEL);
+    INFO(why);
+    REQUIRE(m);
+    REQUIRE(m->protocol);
+    CHECK(m->protocol->nodeTypes == std::vector<std::string>{"rp.pp.echo", "rp.pp.idle"});
+    CHECK(m->protocol->roles == std::map<std::string, std::string>{{"pp", "rp.pp.echo"}});
+    // The nodes as canonical JSON: keys sorted, no space, what the TS loader reads.
+    CHECK(m->protocol->nodesJson ==
+          R"([{"midiIn":"in","midiOut":true,"type":"rp.pp.echo","writes":[]},{"type":"rp.pp.idle"}])");
+
+    const auto refused = [](const std::string& json, const std::string& reason) {
+        std::string w;
+        CHECK_FALSE(parsePackManifest(json, &w, RP_API_LEVEL));
+        CHECK(w == "pack.json: " + reason);
+    };
+    refused(protocolManifest(""), "halves.protocol needs the protocol member (its nodes and roles)");
+    refused(protocolManifest(good, R"({"app":"js/app.js"})"), "protocol is set, and halves names no protocol half");
+    refused(protocolManifest(R"({"nodes":[],"roles":{}})"),
+            "protocol.nodes is empty: a protocol half registers node types");
+    refused(protocolManifest(R"({"nodes":[{"midiIn":null}],"roles":{}})"), R"(protocol.nodes[0] has no "type")");
+    refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo","label":16}],"roles":{}})"),
+            "protocol.nodes gives rp.pp.echo a label: a pack's script nodes take their span labels at load");
+    refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"},{"type":"rp.pp.echo"}],"roles":{}})"),
+            "protocol.nodes names rp.pp.echo twice");
+    refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.other"}],"roles":{}})"),
+            "protocol.nodes names rp.pp.other, which provides.nodeTypes does not declare");
+    refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"}],"roles":{"pp":"rp.pp.gone"}})"),
+            "protocol.roles places pp as rp.pp.gone, which protocol.nodes does not declare");
+    refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"}],"roles":{"qq":"rp.pp.echo"}})"),
+            "protocol.roles names qq, which provides.roles does not declare");
+    refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"}],"roles":{},"kinds":{"controllerApps":[]}})"),
+            "protocol.kinds: a pack cannot contribute to a contribution kind yet");
+    refused(protocolManifest(R"({"nodes":[{"type":"rp.pp.echo"}],"roles":{},"placer":"js/p.js"})"),
+            "protocol holds \"placer\", which is no member of it");
+}
+
+TEST_CASE("pack.json's placer half is a half like the others", "[packs-manifest]") {
+    const std::string json = R"({"id":"pl","name":"P","version":"1.0.0","apiLevel":)" + std::to_string(RP_API_LEVEL) +
+                             R"(,"license":"MIT","source":"s","halves":{"placer":"js/placer.js"}})";
+    std::string why;
+    const auto m = parsePackManifest(json, &why, RP_API_LEVEL);
+    INFO(why);
+    REQUIRE(m);
+    CHECK(m->halves.at("placer") == "js/placer.js");
+}
+
+TEST_CASE("a node type is one half's", "[packs-manifest]") {
+    // script.nodeTypes and protocol.nodes naming one type: two halves would register it.
+    const std::string json =
+        R"({"id":"pp","name":"P","version":"1.0.0","apiLevel":)" + std::to_string(RP_API_LEVEL) +
+        R"(,"license":"MIT","source":"s","provides":{"platforms":[],"nodeTypes":["rp.pp.echo"],"roles":[]},)"
+        R"("halves":{"script":"js/script.js","protocol":"js/protocol.js"},)"
+        R"("script":{"runtime":"js/script.device.js","heapBytes":24576,"nodeTypes":["rp.pp.echo"]},)"
+        R"("protocol":{"nodes":[{"type":"rp.pp.echo"}],"roles":{}}})";
+    std::string why;
+    CHECK_FALSE(parsePackManifest(json, &why, RP_API_LEVEL));
+    CHECK(why == "pack.json: protocol.nodes names rp.pp.echo, which script.nodeTypes names too");
+}
