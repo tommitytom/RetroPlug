@@ -804,30 +804,43 @@ else
 fi
 
 # A render job's worker commits a pack's protocol data and placer, and its Engine plans and runs the pack's node
-# (docs/downloadable-packs-m2e-plan.md): the fixture's placer says where its role's node was placed, and the WAV is the
-# render's without the pack, since the node writes nothing a core hears.
+# (docs/downloadable-packs-m2e-plan.md): the fixture's placer says where its role's node was placed, nothing is refused,
+# faulted or thrown, and the node writes nothing a core hears. mGB makes no sound without MIDI, so its WAV comparison
+# only shows the pack adds nothing to a silent render; the smsggdj leg (in the ROM gate above) compares real audio.
+# proto_render_leg <label> <dir> <rom file>: renders with and without the pack, then checks both.
+proto_render_leg() {
+	local label="$1" RP="$2" rom="$3"
+	(cd "$RP" && RETROPLUG_DETERMINISTIC=1 "$CLI" render "$rom" --duration 1s --out plain.wav >plain.out 2>plain.err)
+	check "packs: a render of $label with no pack exits 0" 0 $?
+	(cd "$RP" && RETROPLUG_PACK_PATH="$PACKS/tsfix-proto/1.0.0" RETROPLUG_DETERMINISTIC=1 \
+		"$CLI" render "$rom" --duration 1s --out proto.wav >proto.out 2>proto.err)
+	check "packs: a render of $label with the protocol fixture pack exits 0" 0 $?
+	cat "$RP/proto.out" "$RP/proto.err" >"$RP/proto.all"
+	contains "packs: the $label render's placer saw the pack's node placed" "$RP/proto.all" \
+		"tsfix-proto: placed rp.tsfix-proto.echo on system"
+	if cmp -s "$RP/plain.wav" "$RP/proto.wav"; then
+		echo "ok   - packs: the protocol fixture leaves the $label render's bytes as they were"
+	else
+		echo "FAIL - packs: the protocol fixture changed the $label render's bytes"
+		fails=$((fails + 1))
+	fi
+	# A node that throws as it is created still renders and exits 0; it only logs.
+	if grep -qE "refused|faulted|\[script\]" "$RP/proto.all"; then
+		echo "FAIL - packs: the $label protocol render logged a fault: $(grep -E "refused|faulted|\[script\]" "$RP/proto.all" | head -1)"
+		fails=$((fails + 1))
+	else
+		echo "ok   - packs: nothing was refused, faulted or thrown in the $label protocol render"
+	fi
+}
 RP="$TMP/proto-render"
 mkdir -p "$RP"
 cp "$REPO/packages/mgb/rom/mGB.gb" "$RP/rom.gb"
-(cd "$RP" && RETROPLUG_DETERMINISTIC=1 "$CLI" render rom.gb --duration 1s --out plain.wav >plain.out 2>plain.err)
-check "packs: a render of mGB with no pack exits 0" 0 $?
-(cd "$RP" && RETROPLUG_PACK_PATH="$PACKS/tsfix-proto/1.0.0" RETROPLUG_DETERMINISTIC=1 \
-	"$CLI" render rom.gb --duration 1s --out proto.wav >proto.out 2>proto.err)
-check "packs: a render with the protocol fixture pack exits 0" 0 $?
-cat "$RP/proto.out" "$RP/proto.err" >"$RP/proto.all"
-contains "packs: the render's placer saw the pack's node placed" "$RP/proto.all" \
-	"tsfix-proto: placed rp.tsfix-proto.echo on system"
-if cmp -s "$RP/plain.wav" "$RP/proto.wav"; then
-	echo "ok   - packs: the protocol fixture leaves the render's bytes as they were"
-else
-	echo "FAIL - packs: the protocol fixture changed the render's bytes"
-	fails=$((fails + 1))
-fi
-if grep -q "refused" "$RP/proto.all"; then
-	echo "FAIL - packs: the render refused something with the protocol fixture: $(grep refused "$RP/proto.all" | head -1)"
-	fails=$((fails + 1))
-else
-	echo "ok   - packs: nothing was refused in the protocol render"
+proto_render_leg mGB "$RP" rom.gb
+if [ -f "$REPO_ROM" ]; then
+	RP="$TMP/proto-render-sms"
+	mkdir -p "$RP"
+	cp "$REPO_ROM" "$RP/rom.sms"
+	proto_render_leg smsggdj "$RP" rom.sms
 fi
 
 echo

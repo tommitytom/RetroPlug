@@ -7,6 +7,7 @@
   "compilerOptions": {
     "paths": {
       "@retroplug/core/*": ["../../../../core/ts/*"],
+      "@retroplug/tracker/*": ["../../../../tracker/ts/*"],
       "@retroplug/ui/contribution": ["../../../../ui/ts/contribution.ts"],
       "retroplug-cli": ["../../../../retroplug/cli/sdk-types.d.ts"],
       "react": ["../../../../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react"],
