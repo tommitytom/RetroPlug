@@ -4,7 +4,9 @@
 import { test, expect } from "@retroplug/testing";
 import "../../src/generated/packages";
 import { commitContributions } from "../../src/contributions/registry";
-import { contributionKindsRegistry, declaredKind, kindData, kindDataRegistry, kindItemsRegistry } from "../../src/contributions/kindRegistries";
+import {
+  contributionKindsRegistry, declaredKind, kindData, kindDataRegistry, kindItemsRegistry,
+} from "../../src/contributions/kindRegistries";
 
 const refusal = (fn: () => void): string => {
   try {
@@ -28,7 +30,10 @@ test("the seed is the product's kinds, items and data", () => {
 test("a pack's item id and data join in one commit, and the readers see them", () => {
   commitContributions([
     { registry: kindItemsRegistry, pkg: "kl-a", items: [{ kind: "controllerApps", id: "kl-a-app" }] },
-    { registry: kindDataRegistry, pkg: "kl-a", items: [{ kind: "controllerApps", id: "kl-a-app", data: { syncOverride: { node: "x" } } }] },
+    {
+      registry: kindDataRegistry, pkg: "kl-a",
+      items: [{ kind: "controllerApps", id: "kl-a-app", data: { syncOverride: { node: "x" } } }],
+    },
   ]);
   expect(kindData("controllerApps")["kl-a-app"]).toEqual({ syncOverride: { node: "x" } });
 });

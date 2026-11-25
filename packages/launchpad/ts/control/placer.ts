@@ -13,8 +13,8 @@
 // The sync rule per app is manifest data (a contributing package's `protocol.kinds.controllerApps` entry
 // `syncOverride`), so this module names no tracker and no mode: an app declares which node type its launches need, the
 // mode that node is put in, and the polled SYNC value that counts as the cart listening. The graph reads it through
-// PlaceContext.kindData (src/contributions/kindRegistries.ts's kindData), and the menu reads the same data from the copy the kind's
-// `accept` handed this package (setControllerSyncData): one shape, one reader, two carriers.
+// PlaceContext.kindData (src/contributions/kindRegistries.ts's kindData), and the menu reads the same data from the
+// copy the kind's `accept` handed this package (setControllerSyncData): one shape, one reader, two carriers.
 import { definePlacer, type Placement, type Placed, type PlaceContext, type PlaceSystem } from "@retroplug/core/placer";
 import type { KindData } from "@retroplug/core/defineKind";
 import type { ControllerAnchor, RowTicksTable } from "@retroplug/tracker/trackerPlayback";

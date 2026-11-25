@@ -4,8 +4,8 @@
 // The protocol tables' seed: every protocol node the product's packages declare, wired or not, and the role kinds
 // placed as one, committed in span-label order into the live tables src/contributions/protocolRegistries.ts holds,
 // which a pack's protocol half adds to (docs/downloadable-packs-m2e-plan.md); then the kinds' data into
-// src/contributions/kindRegistries.ts. Only the registries are imported, so a bundle that reads it carries no node's code, no role's schema and
-// nothing of the app.
+// src/contributions/kindRegistries.ts. Only the registries are imported, so a bundle that reads it carries no
+// node's code, no role's schema and nothing of the app.
 import { commitContributions } from "../contributions/registry";
 import { protocolNodesRegistry, roleNodesRegistry } from "../contributions/protocolRegistries";
 import { kindDataRegistry } from "../contributions/kindRegistries";

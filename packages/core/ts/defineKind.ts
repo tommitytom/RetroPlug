@@ -32,7 +32,8 @@ export type KindData = Readonly<Record<string, Readonly<Record<string, unknown>>
 /** What a kind's `check` is handed beside the items and their data. */
 export interface KindCheckContext {
   /** Every protocol node type the product's graph WIRES (the live protocol tables the shell's
-   *  graph/protocolNodes.ts reads, with a pack's staged nodes beside the product's): a kind whose data names a node type to set a mode on (a cart's sync node, say)
+   *  graph/protocolNodes.ts reads, with a pack's staged nodes beside the product's): a kind whose data names a node
+   *  type to set a mode on (a cart's sync node, say)
    *  checks it here, because only the product knows which node types it places. A script node the graph does not wire -
    *  one a package's own placer places, or the routing node the shell builds - is not in the set: nothing could set a
    *  mode on it through a document's node type, so a kind naming one is refused. */
@@ -44,7 +45,8 @@ export interface KindCheckContext {
 
 /** A contribution kind, as its declaring package states it (a package's `retroplug.kinds.<kind>.control` module). */
 export interface ContributionKind<I extends KindItem = KindItem> {
-  /** Hand the declaring package the product's items once, at load, in product order: it fills its own registry (a menu's table, a
+  /** Hand the declaring package the product's items once, at load, in product order: it fills its own registry (a
+   *  menu's table, a
    *  default a section reads). Called with every declared kind, an empty list included. */
   accept(items: readonly I[], data: KindData): void;
   /** The declaring package's own checks over the items and their data, run at load before `accept`: what no generic

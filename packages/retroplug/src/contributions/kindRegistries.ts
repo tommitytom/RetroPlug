@@ -1,8 +1,8 @@
 // The contribution kinds' live tables (docs/downloadable-packs-m2f-plan.md): the kinds the product's packages declare
 // (their ContributionKind and the data keys an item may carry), the item ids taken in each, and each item's data. The
 // generated modules seed them: the data from src/generated/protocol.ts, which the planner's bundle carries with no
-// app; the kinds and the ids from src/generated/packages.ts, which is the app's. A pack's kind items add to the last
-// two at its commit (src/packs/kindsHalf.ts). Only registry.ts and core's types are imported, so the planner's bundle
+// app; the kinds and the ids from src/generated/packages.ts, which is the app's. A downloaded pack's kind items
+// (src/packs/kindsHalf.ts turns them into additions) join the last two at its commit. Only registry.ts and core's types are imported, so the planner's bundle
 // carries no schema.
 import type { ContributionKind, KindData } from "@retroplug/core/defineKind";
 import { derived, Registry } from "./registry";
@@ -59,6 +59,8 @@ export const kindItemsRegistry = new Registry<KindItemId>("kindItems", (entries,
 });
 
 export const kindDataRegistry = new Registry<KindItemData>("kindData", (entries, view) => {
+  // `seeded` is the state before this commit, so the commit that seeds the items skips this rule (the generated
+  // pairing checks cover the product's data then) and a bundle with no app skips it for good.
   if (!kindItemsRegistry.seeded) return;
   const items = new Set(view(kindItemsRegistry).map((e) => `${e.item.kind}\u0000${e.item.id}`));
   for (const { pkg, item } of entries) {

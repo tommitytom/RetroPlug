@@ -16,10 +16,10 @@
 //   packages/retroplug/src/generated/protocol.ts     seeds the live protocol tables in
 //                                                    src/contributions/protocolRegistries.ts (every protocol node, its
 //                                                    wiring, and the role kinds placed as one) that buildGraph reads,
-//                                                    and the data the contributing manifests declare for each
-//                                                    contribution kind's items (kindRegistries.ts). It imports only
-//                                                    the registries, so a bundle of buildGraph carries the tables without
-//                                                    a single node's code, no role's schema and no item's code
+//                                                    and the data the contributing manifests declare for
+//                                                    each contribution kind's items (kindRegistries.ts). It imports
+//                                                    only the registries, so a bundle of buildGraph carries the
+//                                                    tables without a single node's code, no role's schema and no item's code
 //   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, registering each contribution
 //                                                    kind's runtime halves (the manifests' entries) and then the node
 //                                                    definitions, in span-label order
@@ -770,9 +770,11 @@ function kindLocal(pkgName, kind) {
 function kindBlocks({ packages, kindDecls }) {
   const app = packages.filter((p) => p.app);
   const lines = [];
-  for (const { pkg: owner, decl } of kindDecls) {
-    const local = kindLocal(owner.pkg.name, decl.kind);
-    const item = `KindItem_${decl.kind}`;
+  const perKind = kindDecls.map(({ pkg: owner, decl }) => ({
+    owner, decl, local: kindLocal(owner.pkg.name, decl.kind), item: `KindItem_${decl.kind}`,
+  }));
+  // Every kind's sources and runtime halves first, so one commit can seed every kind at once.
+  for (const { decl, local, item } of perKind) {
     const entries = packages.flatMap((p) => p.kindEntries.filter((entry) => entry.kind === decl.kind));
     lines.push(
       `/** The ${decl.kind} items the product's packages contribute, in product order: each app module's`,
@@ -787,19 +789,33 @@ function kindBlocks({ packages, kindDecls }) {
       `const KIND_RUNTIMES_${decl.kind}: readonly { pkg: string; id: string }[] = [`,
       ...entries.map((entry) => `  { pkg: ${JSON.stringify(entry.pkg)}, id: ${JSON.stringify(entry.id)} },`),
       "];",
-      "// The declared kind and its items' ids go into the live tables in one commit: the table's check refuses a",
-      "// duplicate id naming both packages, or the one package that listed it twice (a document names an item by its",
-      "// id alone, so the second one would be unreachable without a word).",
-      "commitContributions([",
+      "",
+    );
+  }
+  // One commit seeds the declared kinds and the taken ids, whether or not the product declares a kind: an unseeded
+  // table would read as "no app" to a pack's commit. The items table's check refuses a duplicate id naming both
+  // packages, or the one package that listed it twice (a document names an item by its id alone, so the second one
+  // would be unreachable without a word). The data table's rule reads the state before the commit, where the items
+  // are unseeded, so it is skipped here and the pairing checks below cover it.
+  lines.push(
+    "commitContributions([",
+    `  { registry: contributionKindsRegistry, pkg: ${JSON.stringify(SHELL)}, items: [] },`,
+    `  { registry: kindItemsRegistry, pkg: ${JSON.stringify(SHELL)}, items: [] },`,
+  );
+  for (const { owner, decl, local } of perKind) {
+    lines.push(
       `  { registry: contributionKindsRegistry, pkg: ${JSON.stringify(owner.pkg.name)}, items: [{ ` +
         `kind: ${JSON.stringify(decl.kind)}, contribution: ${local}, data: ${JSON.stringify(decl.data)} }] },`,
-      `  { registry: kindItemsRegistry, pkg: ${JSON.stringify(SHELL)}, items: [] },`,
       `  ...KIND_SOURCES_${decl.kind}.map((source) => ({`,
       "    registry: kindItemsRegistry,",
       "    pkg: source.pkg,",
       `    items: source.items.map((item) => ({ kind: ${JSON.stringify(decl.kind)}, id: item.id })),`,
       "  })),",
-      "]);",
+    );
+  }
+  lines.push("]);", "");
+  for (const { decl, local, item } of perKind) {
+    lines.push(
       "// An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu",
       "// offers.",
       `const kindIds_${decl.kind} = new Set(KIND_SOURCES_${decl.kind}.flatMap((source) => ` +
@@ -859,6 +875,7 @@ function renderPackages({ packages, outDir, shellDir, names, product }) {
     'import type { PackageContributions } from "@retroplug/core/definePackage";',
     `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
     `import { appAdditions, ${registries.join(", ")} } from "${appRegistries}";`,
+    `import { contributionKindsRegistry, kindItemsRegistry${kindDecls.length ? ", kindData" : ""} } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/kindRegistries.ts")}";`,
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   // The kind's data and the product's node types reach the declaring package's check: a mode naming a node type no
@@ -866,7 +883,6 @@ function renderPackages({ packages, outDir, shellDir, names, product }) {
   if (kindDecls.length) {
     lines.push(
       'import "./protocol";',
-      `import { contributionKindsRegistry, kindItemsRegistry, kindData } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/kindRegistries.ts")}";`,
       `import { protocolNodes, roleNodes } from "${contributionsSpecifier(outDir, shellDir, "src/graph/protocolNodes.ts")}";`,
     );
   }
@@ -1324,8 +1340,8 @@ function renderProtocol({ byType, roles, packages, outDir, shellDir, product }) 
     "// The protocol tables' seed: every protocol node the product's packages declare, wired or not, and the role kinds",
     "// placed as one, committed in span-label order into the live tables src/contributions/protocolRegistries.ts holds,",
     "// which a pack's protocol half adds to (docs/downloadable-packs-m2e-plan.md); then the kinds' data into",
-    "// src/contributions/kindRegistries.ts. Only the registries are imported, so a bundle that reads it carries no node's code, no role's schema and",
-    "// nothing of the app.",
+    "// src/contributions/kindRegistries.ts. Only the registries are imported, so a bundle that reads it carries no",
+    "// node's code, no role's schema and nothing of the app.",
     `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
     "import { protocolNodesRegistry, roleNodesRegistry } from " +
       `"${contributionsSpecifier(outDir, shellDir, "src/contributions/protocolRegistries.ts")}";`,

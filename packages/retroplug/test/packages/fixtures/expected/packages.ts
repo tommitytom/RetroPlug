@@ -15,11 +15,11 @@ import { placersRegistry } from "./placers";
 import type { PackageContributions } from "@retroplug/core/definePackage";
 import { commitContributions } from "../contributions/registry";
 import { appAdditions, rolesRegistry, romProvidersRegistry, trackerIntegrationsRegistry, kitFormatsRegistry, projectSectionsRegistry, projectServicesRegistry, configSectionsRegistry, embedsRegistry, bakedEmbedsRegistry } from "../contributions/appRegistries";
+import { contributionKindsRegistry, kindItemsRegistry, kindData } from "../contributions/kindRegistries";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
 import "./protocol";
-import { contributionKindsRegistry, kindItemsRegistry, kindData } from "../contributions/kindRegistries";
 import { protocolNodes, roleNodes } from "../graph/protocolNodes";
 import kind_widgets_alpha from "@retroplug/alpha/kind";
 import kind_controllerApps_beta from "@retroplug/beta/kind";
@@ -74,18 +74,38 @@ const KIND_SOURCES_widgets: readonly { pkg: string; items: readonly KindItem_wid
 // registers.
 const KIND_RUNTIMES_widgets: readonly { pkg: string; id: string }[] = [
 ];
-// The declared kind and its items' ids go into the live tables in one commit: the table's check refuses a
-// duplicate id naming both packages, or the one package that listed it twice (a document names an item by its
-// id alone, so the second one would be unreachable without a word).
+
+/** The controllerApps items the product's packages contribute, in product order: each app module's
+ *  `controllerApps` list, which the declaring package accepts (its `accept`). */
+type KindItem_controllerApps = Parameters<typeof kind_controllerApps_beta.accept>[0][number];
+const KIND_SOURCES_controllerApps: readonly { pkg: string; items: readonly KindItem_controllerApps[] }[] = [
+  { pkg: "alpha", items: app_alpha.controllerApps ?? [] },
+  { pkg: "beta", items: app_beta.controllerApps ?? [] },
+  { pkg: "retroplug", items: app_retroplug.controllerApps ?? [] },
+];
+// The runtime halves the manifests declare (their protocol.kinds.controllerApps), which the script bundle
+// registers.
+const KIND_RUNTIMES_controllerApps: readonly { pkg: string; id: string }[] = [
+  { pkg: "alpha", id: "alpha-app" },
+];
+
 commitContributions([
-  { registry: contributionKindsRegistry, pkg: "alpha", items: [{ kind: "widgets", contribution: kind_widgets_alpha, data: ["mode"] }] },
+  { registry: contributionKindsRegistry, pkg: "retroplug", items: [] },
   { registry: kindItemsRegistry, pkg: "retroplug", items: [] },
+  { registry: contributionKindsRegistry, pkg: "alpha", items: [{ kind: "widgets", contribution: kind_widgets_alpha, data: ["mode"] }] },
   ...KIND_SOURCES_widgets.map((source) => ({
     registry: kindItemsRegistry,
     pkg: source.pkg,
     items: source.items.map((item) => ({ kind: "widgets", id: item.id })),
   })),
+  { registry: contributionKindsRegistry, pkg: "beta", items: [{ kind: "controllerApps", contribution: kind_controllerApps_beta, data: ["syncOverride"] }] },
+  ...KIND_SOURCES_controllerApps.map((source) => ({
+    registry: kindItemsRegistry,
+    pkg: source.pkg,
+    items: source.items.map((item) => ({ kind: "controllerApps", id: item.id })),
+  })),
 ]);
+
 // An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu
 // offers.
 const kindIds_widgets = new Set(KIND_SOURCES_widgets.flatMap((source) => source.items.map((item) => item.id)));
@@ -108,31 +128,6 @@ kind_widgets_alpha.check?.(KIND_ITEMS_widgets, KIND_DATA_widgets, {
 });
 kind_widgets_alpha.accept(KIND_ITEMS_widgets, KIND_DATA_widgets);
 
-/** The controllerApps items the product's packages contribute, in product order: each app module's
- *  `controllerApps` list, which the declaring package accepts (its `accept`). */
-type KindItem_controllerApps = Parameters<typeof kind_controllerApps_beta.accept>[0][number];
-const KIND_SOURCES_controllerApps: readonly { pkg: string; items: readonly KindItem_controllerApps[] }[] = [
-  { pkg: "alpha", items: app_alpha.controllerApps ?? [] },
-  { pkg: "beta", items: app_beta.controllerApps ?? [] },
-  { pkg: "retroplug", items: app_retroplug.controllerApps ?? [] },
-];
-// The runtime halves the manifests declare (their protocol.kinds.controllerApps), which the script bundle
-// registers.
-const KIND_RUNTIMES_controllerApps: readonly { pkg: string; id: string }[] = [
-  { pkg: "alpha", id: "alpha-app" },
-];
-// The declared kind and its items' ids go into the live tables in one commit: the table's check refuses a
-// duplicate id naming both packages, or the one package that listed it twice (a document names an item by its
-// id alone, so the second one would be unreachable without a word).
-commitContributions([
-  { registry: contributionKindsRegistry, pkg: "beta", items: [{ kind: "controllerApps", contribution: kind_controllerApps_beta, data: ["syncOverride"] }] },
-  { registry: kindItemsRegistry, pkg: "retroplug", items: [] },
-  ...KIND_SOURCES_controllerApps.map((source) => ({
-    registry: kindItemsRegistry,
-    pkg: source.pkg,
-    items: source.items.map((item) => ({ kind: "controllerApps", id: item.id })),
-  })),
-]);
 // An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu
 // offers.
 const kindIds_controllerApps = new Set(KIND_SOURCES_controllerApps.flatMap((source) => source.items.map((item) => item.id)));
