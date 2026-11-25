@@ -15,35 +15,11 @@
 // sources that can disagree about a role. The registry stays what it is to the app: each role's schema,
 // onConstruct and menu, on the control plane.
 import type { RoleInstance } from "@retroplug/core/systemRoles";
-import type { SerialOutCaptureMode } from "./serialCapture";
+import type { ProtocolNodeSpec, SystemInput } from "./protocolSpec";
+
+export type { SystemInput, ProtocolNodeSpec } from "./protocolSpec";
+
 import { PROTOCOL_NODES, ROLE_NODES } from "../generated/protocol";
-
-/** The system-node inputs a protocol node feeds, each from its output of the same name. */
-export type SystemInput = "serialIn" | "midi" | "bytes" | "buttons";
-
-/** How buildGraph wires a protocol node type. */
-export interface ProtocolNodeSpec {
-  /** The input its system's routed MIDI arrives on, or null for a node that reads only the transport. */
-  midiIn: string | null;
-  /** The system inputs it writes, each by one node of its system at most: protocolPipeline keeps that so. */
-  writes: readonly SystemInput[];
-  /** It takes the controller's launches on `launches` when its system is the controller's target. */
-  launches?: true;
-  /** It takes its Game Boy's serial out on `serialOut`, in the block the core captured it, over a forward wire from
-   *  the system, so it is placed after its system: what MI.OUT and master sync decode. */
-  serialOut?: true;
-  /** It sends host MIDI on `midiOut`, under its system's id. */
-  midiOut?: true;
-  /** The serial-out capture a system's core runs for each of this node's modes: `drive` (clock a transfer waiting on
-   *  an external clock, capturing the bytes too), `listen` (capture the bytes the core clocks out itself) or `off`. The
-   *  node's own package supplies it as data, because the mapping is the cart's, while the planner that applies it may
-   *  carry no package. A mode this does not name captures nothing. */
-  capture?: Readonly<Record<string, SerialOutCaptureMode>>;
-  /** The type of the second node buildGraph places for the role, after the systems, as sys-<id>/<kind>/out with the
-   *  same settings: a PROTOCOL_NODES type that writes no system input, so the one-writer rule below is the first
-   *  node's alone. */
-  out?: string;
-}
 
 // Each type's id as its node module spells it (the owning package's protocol module), and each port name as that
 // module declares it, which test/graph/build-graph.test.ts and test/graph/protocol-nodes.test.ts hold these to:

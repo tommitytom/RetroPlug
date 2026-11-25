@@ -9,8 +9,8 @@
 // bundle registers.
 import { test, expect } from "@retroplug/testing";
 import type { DefinedNode } from "@retroplug/core/defineNode";
-import type { PortDesc } from "@retroplug/core/descriptor";
 import { PROTOCOL_NODES, ROLE_NODES, outNodeOf, protocolNodeOf, type ProtocolNodeSpec, type ProtocolNodeType } from "../../src/graph/protocolNodes";
+import { portKey, portsOf } from "../../src/graph/protocolSpec";
 import { SCRIPT_NODES_GLOBAL } from "@retroplug/core/register";
 import { mgbMidiNode } from "@retroplug/mgb/mgbMidiNode";
 import { n8MidiToFifoNode } from "@retroplug/n8/n8MidiToFifoNode";
@@ -28,29 +28,13 @@ const moduleOf = (type: string): DefinedNode<any> | undefined => PROTOCOL_MODULE
 const registered = (): string[] =>
   ((globalThis as Record<string, unknown>)[SCRIPT_NODES_GLOBAL] as DefinedNode<any>[]).map((d) => d.id);
 
-// A port as buildGraph wires it: its name, direction and kind.
-const port = (p: Pick<PortDesc, "id" | "dir" | "kind">): string => `${p.id} ${p.dir} ${p.kind}`;
-
-/** The ports an entry says its node has, as buildGraph wires each. A system input a node writes is an output of the
- *  kind the system node takes it as: serial bytes into a Game Boy, core bytes into a NES or an SMS, the rest events. */
-function portsOf(spec: ProtocolNodeSpec): string[] {
-  const out: string[] = [];
-  if (spec.midiIn !== null) out.push(port({ id: spec.midiIn, dir: "in", kind: "events" }));
-  if (spec.launches) out.push(port({ id: "launches", dir: "in", kind: "events" }));
-  if (spec.serialOut) out.push(port({ id: "serialOut", dir: "in", kind: "bytes" }));
-  for (const input of spec.writes)
-    out.push(port({ id: input, dir: "out", kind: input === "serialIn" || input === "bytes" ? "bytes" : "events" }));
-  if (spec.midiOut) out.push(port({ id: "midiOut", dir: "out", kind: "events" }));
-  return out.sort();
-}
-
 test("every PROTOCOL_NODES entry names exactly the ports its node module declares, in the direction buildGraph wires each", () => {
   const entries = Object.entries(PROTOCOL_NODES) as [string, ProtocolNodeSpec][];
   expect(entries.map(([type]) => type).sort()).toEqual(PROTOCOL_MODULES.map((d) => d.id).sort());
   for (const [type, spec] of entries) {
     const def = moduleOf(type)!;
     // Default settings: no protocol node's ports follow its settings.
-    expect(def.descriptor().ports.map(port).sort(), type).toEqual(portsOf(spec));
+    expect(def.descriptor().ports.map(portKey).sort(), type).toEqual(portsOf(spec));
   }
 });
 
