@@ -2367,6 +2367,16 @@ Expected: all four jobs succeed.
     one of its own app half's project sections, a built-in package is not held to it.
 11. **The checks do not refuse an `out` naming itself, an `out` with its own `out`, or a role placed as an `out`
     decoder,** and the generator does not either.
+12. **A pack refused in one Engine is still placed by the TS side.** A clash there, or `loadAppPack` failing on memory or the
+    deadline, leaves that Engine refusing every document naming the pack's nodes, so the instance's project goes silent, not
+    just the pack's node. Native packs had this already; the protocol half adds ways to reach it. Should the control plane
+    leave out the roles of packs its Engine refused?
+13. **The API level's rule does not name the script host's surface.** It names the C ABI, `SystemBase`, the contract headers
+    and the TS contract modules, but a protocol half bundles its own `@retroplug/core` and so depends on the script host's
+    definition shape (`__rp_scriptNodes`) and block API. Should the rule name that surface?
+14. **The span-label case runs only in a `RETROPLUG_PROFILE` build,** which no CI leg builds.
+15. **A pack's protocol node types have no namespace rule** (only the clash checks), as native pack types have none. Should a
+    downloaded pack's types be held to a prefix of its own once part 6 moves risa and smsggdj (`rp.risa.sync`, `rp.sms.sync`)?
 
 ## Self-review
 
@@ -2425,5 +2435,5 @@ while it ran, and why:
   `projectServices` member's type; the CLI's protocol legs render mGB and smsggdj (the latter where audio is real) with and
   without the pack, byte-identical, and fail on any refused, faulted or `[script]` line (21b225b71, cf59cf47b).
 
-The design questions above gained 9 to 11 while it ran. Task 9 also updated the control plane's and the render worker's
+The design questions above gained 9 to 11 while it ran, and 12 to 15 in the final review. Task 9 also updated the control plane's and the render worker's
 comments that still said the packs' "app and consoles halves".

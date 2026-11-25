@@ -1634,7 +1634,7 @@ export function generate({
       if (node.capture === undefined) continue;
       if (node.midiIn === undefined && node.writes === undefined) {
         throw new Error(`${pkg.name}: the node ${node.type} declares a capture and is not wired (no midiIn and ` +
-          "writes), so PROTOCOL_NODES would drop it whole and nothing would decode the bytes it clocked");
+          "writes), so nothing would decode the bytes it clocked");
       }
       if (node.out === undefined) {
         throw new Error(`${pkg.name}: the node ${node.type} declares a capture and no out: a capture is for the ` +

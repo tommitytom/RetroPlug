@@ -82,15 +82,25 @@ rename), so a plugin and a standalone installing at the same moment cannot corru
   "requires": { "packs": [], "platforms": [] },
   "provides": { "platforms": ["nes", "sms", "gg", "gba"], "nodeTypes": ["rp.mesen.nes", "..."], "roles": ["mesen"] },
   "halves": { "native": "rp-mesen", "app": "js/app.js", "consoles": "js/consoles.js",
-              "ui": "js/ui.js", "cli": "js/cli.js", "protocol": "js/protocol.js", "placer": "js/placer.js" },
-  "protocol": { "nodes": [ { "type": "rp.mesen.sync", "...": "the node's wiring" } ], "roles": { "mesen": "rp.mesen.sync" } }
+              "ui": "js/ui.js", "cli": "js/cli.js" }
+}
+```
+
+A cart pack with QuickJS script nodes (a hypothetical `acme`) adds the `protocol` half and member, and a `placer`:
+
+```json
+{
+  "id": "acme", "version": "1.0.0", "apiLevel": 3,
+  "provides": { "nodeTypes": ["rp.acme.sync"], "roles": ["acme-sync"] },
+  "halves": { "app": "js/app.js", "protocol": "js/protocol.js", "placer": "js/placer.js" },
+  "protocol": { "nodes": [ { "type": "rp.acme.sync", "...": "the node's wiring" } ], "roles": { "acme-sync": "rp.acme.sync" } }
 }
 ```
 
 - `protocol` is the wiring of a pack's QuickJS script nodes (each node's `type` and its `midiIn`, `writes`, `launches`,
   `serialOut`, `midiOut`, `capture` and `out`, no `label`: the script host numbers span labels at load) and the role kinds
-  placed as them; it goes with the `protocol` half, and a `placer` half (an ES module default-exporting a `GraphPlacer`)
-  places those roles. A placer places a model only when the app half contributes a project service under its key that
+  placed as them (`buildGraph` places a role's node from that role table); it goes with the `protocol` half. A `placer`
+  half (an ES module default-exporting a `GraphPlacer`) places nodes for its project section's model, the unwired ones. A placer places a model only when the app half contributes a project service under its key that
   publishes a non-null model, and the key must be one of the app half's project sections.
 - `apiLevel` must equal RetroPlug's, or the pack is refused with a message saying which side is out of date.
 - `provides` is what part 5 resolves against, so the loader holds the pack to it: a pack that registers a platform, a

@@ -806,7 +806,7 @@ fi
 # A render job's worker commits a pack's protocol data and placer, and its Engine plans and runs the pack's node
 # (docs/downloadable-packs-m2e-plan.md): the fixture's placer says where its role's node was placed, nothing is refused,
 # faulted or thrown, and the node writes nothing a core hears. mGB makes no sound without MIDI, so its WAV comparison
-# only shows the pack adds nothing to a silent render; the smsggdj leg (in the ROM gate above) compares real audio.
+# only shows the pack adds nothing to a silent render; the smsggdj leg (in the ROM gate below) compares real audio.
 # proto_render_leg <label> <dir> <rom file>: renders with and without the pack, then checks both.
 proto_render_leg() {
 	local label="$1" RP="$2" rom="$3"

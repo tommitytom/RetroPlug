@@ -1149,7 +1149,7 @@ try {
       result = refusal();
       break;
     case "unknown-key":
-      // A misspelt wiring knob (here `launchs` for `launches`) would drop out of PROTOCOL_NODES without a word.
+      // A misspelt wiring knob (here `launchs` for `launches`) would drop out of the protocol table without a word.
       editManifest("alpha", (json) => {
         json.retroplug.protocol.nodes[0].launchs = true;
       });
@@ -1163,7 +1163,7 @@ try {
       result = refusal();
       break;
     case "half-wired":
-      // A node with midiIn and no writes is placed into PROTOCOL_NODES with half its wiring.
+      // A node with midiIn and no writes is placed into the protocol table with half its wiring.
       editManifest("alpha", (json) => {
         delete json.retroplug.protocol.nodes[0].writes;
       });
@@ -1225,7 +1225,7 @@ try {
       result = refusal();
       break;
     case "role-unwired":
-      // A node with no midiIn and no writes is not in PROTOCOL_NODES, so a role cannot be placed as it.
+      // A node with no midiIn and no writes is not in the protocol table, so a role cannot be placed as it.
       editManifest("retroplug", (json) => {
         json.retroplug.protocol.roles = { "shell-role": "rp.fixture.shell" };
       });
@@ -1842,7 +1842,7 @@ try {
       }
       break;
     case "capture-unwired":
-      // A capture on a node that is not wired: PROTOCOL_NODES drops the node whole, so the core would be clocked for
+      // A capture on a node that is not wired: the protocol table drops the node whole, so the core would be clocked for
       // bytes no decoder sees.
       editManifest("alpha", (json) => {
         const node = json.retroplug.protocol.nodes[0];

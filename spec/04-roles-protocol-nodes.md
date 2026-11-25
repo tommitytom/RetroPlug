@@ -427,7 +427,8 @@ builds holds a feedback wire: `test/graph/build-graph-role-goldens.test.ts` hold
 goldens to run forward and refuses a feedback wire among them, and `test/graph/build-graph.test.ts` checks an
 LSDj's structure for one.
 
-Which role kind is placed as which node, and how each type is wired, is one pure, zod-free table,
+Which role kind is placed as which node, and how each type is wired, is a pure, zod-free pair of live registries, which the generated module seeds and a pack's protocol half adds to
+([06](06-build-test.md#the-packages), its paragraph on the live protocol registries), read through
 [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) (`protocolNodeOf`,
 `protocolPipeline`, and `outNodeOf` for a type's `out`): both stores and a `DirectGraph` read it, with or
 without a role registry, and a role with no node is left out, so an edit to it (a model, a palette, an

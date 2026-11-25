@@ -8,10 +8,10 @@
 // protocol half, so a package's protocol member is the one statement of its nodes and what is here is the contract
 // they satisfy and the wiring the app reads them through.
 //
-// The mapping lives here rather than on RoleType because the node types are code in the script-node bundle every
-// Engine embeds: which role kinds have one is a fact of that bundle, not of whichever registry a store was handed,
-// and three publishers need it, two of which hold no registry at all (a DirectGraph, a SystemsStore built without
-// one, as the tests build them). A field on RoleType would need this table as its fallback anyway, which makes two
+// The mapping lives here rather than on RoleType because the node types are code in the script-node bundles every
+// Engine embeds (the built-in one, and each pack's protocol half): which role kinds have one is a fact of those bundles,
+// not of whichever registry a store was handed, and three publishers need it, two of which hold no registry at all (a
+// DirectGraph, a SystemsStore built without one, as the tests build them). A field on RoleType would need this table as its fallback anyway, which makes two
 // sources that can disagree about a role. The registry stays what it is to the app: each role's schema,
 // onConstruct and menu, on the control plane.
 import type { RoleInstance } from "@retroplug/core/systemRoles";
@@ -24,9 +24,10 @@ import { derived, derivedList } from "../contributions/registry";
 
 export type { SystemInput, ProtocolNodeSpec } from "./protocolSpec";
 
-// Each type's id as its node module spells it (the owning package's protocol module), and each port name as that
-// module declares it, which test/graph/build-graph.test.ts and test/graph/protocol-nodes.test.ts hold these to:
-// importing the modules would pull every protocol into whatever imports buildGraph.
+// Each entry's type id and port names are the node module's own (the owning package's protocol module, or a pack's
+// protocol half); test/graph/protocol-nodes.test.ts holds the built-ins' to their modules and the pack loader holds a
+// pack's to its descriptors (checkProtocolPorts). The entries are data, not imports of the modules, which would pull
+// every protocol into whatever imports buildGraph.
 //
 // One writer per system input: the planner refuses a second producer wired into one input, and with it the whole
 // document, so the project would go silent for one system's roles. The roles a provider attaches never collide, but a

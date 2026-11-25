@@ -1,6 +1,6 @@
-// The UI's packs (docs/downloadable-packs-m2c-plan.md): their ui and views halves, and their app, consoles, protocol and
-// placer halves when no control plane loaded them first (the UI test harness). A commit re-renders the UI (M2a), so the load runs
-// beside the first render rather than before it.
+// The UI's packs (docs/downloadable-packs-m2c-plan.md): their ui and views halves, and their app, consoles, protocol
+// and placer halves when no control plane loaded them first (the UI test harness). A commit re-renders the UI (M2a), so
+// the load runs beside the first render rather than before it.
 import "../contributions/menus";
 import "../contributions/views";
 import { uiRegistry, viewsRegistry } from "../contributions/uiRegistries";

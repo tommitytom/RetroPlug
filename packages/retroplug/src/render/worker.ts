@@ -76,8 +76,8 @@ async function main(): Promise<void> {
 
   // The packs' app, consoles, protocol and placer halves (docs/downloadable-packs-m2d-plan.md, -m2e-plan.md), committed
   // before the session composes, so a pack's consoles, roles, protocol nodes, placers and ROM providers are this
-  // render's as they are the app's. Never rejects: a refused pack is named
-  // on the job's console and the render goes on without it.
+  // render's as they are the app's. Never rejects: a refused pack is named on the job's console and the render goes on
+  // without it.
   await loadAppPacks();
 
   const serial = pluginNamespace()?.renderSerial;

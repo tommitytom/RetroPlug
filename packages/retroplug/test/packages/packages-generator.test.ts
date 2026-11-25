@@ -799,8 +799,8 @@ test("a capture is refused on a node that is not wired, or whose out decodes not
   const unwired = await drive("capture-unwired");
   console.log(`# capture on an unwired node: ${unwired.error}`);
   expect(unwired.error).toBe(
-    "alpha: the node rp.alpha.midi declares a capture and is not wired (no midiIn and writes), so PROTOCOL_NODES " +
-      "would drop it whole and nothing would decode the bytes it clocked",
+    "alpha: the node rp.alpha.midi declares a capture and is not wired (no midiIn and writes), so nothing would decode " +
+      "the bytes it clocked",
   );
   const noDecoder = await drive("capture-no-decoder");
   console.log(`# capture with no decoder: ${noDecoder.error}`);
