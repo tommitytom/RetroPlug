@@ -348,6 +348,36 @@ TEST_CASE("pack.json's kinds member: each kind's items, held to their half", "[p
     refused(kindsManifest(R"({"controllerApps":[{"id":"pk-app"},{"id":"pk-app"}]})"),
             "kinds.controllerApps names pk-app twice");
     refused(kindsManifest(R"({"controllerApps":[7]})"), "kinds.controllerApps[0] is not an object");
+    refused(kindsManifest(R"({"":[{"id":"a"}]})"), R"(kinds holds "", which is not a kind name)");
+    refused(kindsManifest(R"({"__proto__":[{"id":"a"}]})"), R"(kinds holds "__proto__", which is not a kind name)");
+    refused(kindsManifest(R"({"1k":[{"id":"a"}]})"), R"(kinds holds "1k", which is not a kind name)");
+    refused(kindsManifest(R"({"controllerApps":[{"id":"a b"}]})"), "kinds.controllerApps[0] has an id that is not an id");
+    refused(kindsManifest(R"({"controllerApps":[{"id":"a\u0001b"}]})"),
+            "kinds.controllerApps[0] has an id that is not an id");
+    refused(kindsManifest(R"({"controllerApps":[{"id":7}]})"), R"(kinds.controllerApps[0] has no "id")");
+    refused(kindsManifest(R"({"controllerApps":[{"id":"a","module":"m"}]})"),
+            R"(kinds.controllerApps[0] has "module": a pack's item runtimes are its kinds half)");
+    {
+        std::string w;
+        CHECK_FALSE(parsePackManifest(kindsManifest(R"([{"id":"a"}])"), &w, RP_API_LEVEL));
+        CHECK_THAT(w, ContainsSubstring("pack.json: "));
+    }
+    {
+        // Both a protocol and a kinds half, each re-read with parseJson.
+        const std::string both =
+            R"({"id":"pp","name":"P","version":"1.0.0","apiLevel":)" + std::to_string(RP_API_LEVEL) +
+            R"(,"license":"MIT","source":"s","provides":{"platforms":[],"nodeTypes":["rp.pp.echo"],"roles":[]},)"
+            R"("halves":{"protocol":"js/protocol.js","kinds":"js/kinds.js"},)"
+            R"("protocol":{"nodes":[{"type":"rp.pp.echo"}],"roles":{}},"kinds":)" + good + "}";
+        std::string w;
+        const auto  b = parsePackManifest(both, &w, RP_API_LEVEL);
+        INFO(w);
+        REQUIRE(b);
+        REQUIRE(b->protocol);
+        REQUIRE(b->kinds);
+        CHECK(b->protocol->nodesJson == R"([{"type":"rp.pp.echo"}])");
+        CHECK(b->kinds->kindsJson == good);
+    }
     {
         // A kind that is not a list is the reader's own refusal.
         std::string w;

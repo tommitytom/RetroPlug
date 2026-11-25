@@ -613,22 +613,39 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
         }
         KindsSpec spec;
         for (const auto& [kind, items] : *k) {
+            const bool nameOk = !kind.empty() && std::isalpha(static_cast<unsigned char>(kind[0])) &&
+                                std::all_of(kind.begin(), kind.end(),
+                                            [](char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0; });
+            if (!nameOk) {
+                refuse(why, "kinds holds \"" + echoed(kind) + "\", which is not a kind name");
+                return std::nullopt;
+            }
             if (items.empty()) {
                 refuse(why, "kinds." + echoed(kind) + " is empty");
                 return std::nullopt;
             }
             std::vector<std::string>& ids = spec.ids[kind];
+            std::unordered_set<std::string> seen;
             for (std::size_t i = 0; i < items.size(); ++i) {
+                const std::string at = "kinds." + echoed(kind) + "[" + std::to_string(i) + "]";
                 const auto item = rfl::from_generic<RawKindItem>(items[i]);
                 if (!item) {
-                    refuse(why, "kinds." + echoed(kind) + "[" + std::to_string(i) + "] is not an object");
+                    refuse(why, items[i].to_object() ? at + " has no \"id\"" : at + " is not an object");
                     return std::nullopt;
                 }
                 if (!item->id || item->id->empty()) {
-                    refuse(why, "kinds." + echoed(kind) + "[" + std::to_string(i) + "] has no \"id\"");
+                    refuse(why, at + " has no \"id\"");
                     return std::nullopt;
                 }
-                if (std::find(ids.begin(), ids.end(), *item->id) != ids.end()) {
+                if (!isPlainName(*item->id)) {
+                    refuse(why, at + " has an id that is not an id");
+                    return std::nullopt;
+                }
+                if (item->extra.count("module") > 0) {
+                    refuse(why, at + " has \"module\": a pack's item runtimes are its kinds half");
+                    return std::nullopt;
+                }
+                if (!seen.insert(*item->id).second) {
                     refuse(why, "kinds." + echoed(kind) + " names " + echoed(*item->id) + " twice");
                     return std::nullopt;
                 }
