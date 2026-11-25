@@ -1,0 +1,10 @@
+{
+  "name": "@retroplug-test/ts-fixture-kinds",
+  "private": true,
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "kinds": { "controllerApps": [{ "id": "tsfix-app", "module": "ts/appRuntime.ts" }] }
+    }
+  }
+}

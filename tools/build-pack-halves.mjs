@@ -15,11 +15,16 @@
 // A package's `retroplug.protocol` member becomes the protocol half, a global-code script-node bundle (an IIFE that
 // appends its definitions to __rp_scriptNodes, as the product's own script bundle does) carrying its own copy of
 // @retroplug/core, and pack.json's `protocol` member (the member's nodes, less their labels, and its roles).
-// `protocol.placer` becomes the placer half, an ES module like the others. A `kinds` member is refused until M2f
-// (docs/downloadable-packs-m2e-plan.md).
+// `protocol.placer` becomes the placer half, an ES module like the others.
+//
+// A package's `retroplug.protocol.kinds` (docs/downloadable-packs-m2f-plan.md) becomes pack.json's `kinds` member (each
+// entry less its module) and the kinds half, js/kinds.js: a global-code bundle that, per kind, imports its entries'
+// runtime modules and registers them through the built-in script bundle's __rp_registerKindItems. It runs in the built-in
+// script contexts, so it bundles everything its runtime imports (each @retroplug package through its exports map) and
+// refuses zod, react and the UI libraries.
 //
 //   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>]
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -83,32 +88,72 @@ function buildScriptHalf({ packageDir, outDir, pack, script, mqjs, runner }) {
   }
 }
 
-/** Resolves a protocol half's @retroplug imports: its nodes run in an Engine's script contexts, which have no module
- *  loader and no RetroPlug module, so the bundle carries its own copy of what it imports, and of RetroPlug's that is
- *  @retroplug/core alone (the node SDK). Resolved through core's own exports map, so a package outside the workspace
- *  builds the same. */
-function protocolImports() {
-  const core = join(REPO, "packages/core");
-  const exportsMap = JSON.parse(readFileSync(join(core, "package.json"), "utf8")).exports;
+/** The workspace package folder each @retroplug/<name> lives in, read from packages/*\/package.json's names. */
+function workspacePackages() {
+  const found = new Map();
+  for (const entry of readdirSync(join(REPO, "packages"), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    let name;
+    try { name = JSON.parse(readFileSync(join(REPO, "packages", entry.name, "package.json"), "utf8")).name; } catch { continue; }
+    if (typeof name === "string") found.set(name, join(REPO, "packages", entry.name));
+  }
+  return found;
+}
+
+/** Resolves a script-realm half's imports: its code runs in an Engine's script contexts, which have no module loader
+ *  and no RetroPlug module, so the bundle carries its own copy of what it imports. `packages` is the @retroplug
+ *  packages it may import (each resolved through its own exports map, so a package outside the workspace builds the
+ *  same), or null for every one; `refuse` lists specifiers (and their subpaths) it may not, with `refuseText` saying
+ *  why; `foreignText` is the reason a package outside `packages` gives. */
+function scriptRealmImports({ name, packages, refuse, refuseText, foreignText }) {
+  const workspace = workspacePackages();
   return {
-    name: "protocol-imports",
+    name,
     setup(build) {
-      build.onResolve({ filter: /^zod(\/|$)/ }, (args) => ({ errors: [{ text: `${args.importer} imports ${args.path}: ` +
-        "a protocol half's nodes run in the script contexts, which carry no schema library" }] }));
-      build.onResolve({ filter: /^@retroplug\// }, (args) => {
-        const m = /^@retroplug\/core(?:\/(.+))?$/.exec(args.path);
-        const target = m ? exportsMap[m[1] ? `./${m[1]}` : "."] : undefined;
-        if (m && typeof target !== "string") {
-          return { errors: [{ text: `${args.importer} imports ${args.path}: ${args.path} is not a module @retroplug/core exports` }] };
+      build.onResolve({ filter: /.*/ }, (args) => {
+        for (const r of refuse) {
+          if (args.path === r || args.path.startsWith(`${r}/`)) {
+            return { errors: [{ text: `${args.importer} imports ${args.path}: ${refuseText}` }] };
+          }
         }
+        const m = /^(@retroplug\/[^/]+)(?:\/(.+))?$/.exec(args.path);
+        if (!m) return undefined;
+        if (packages && !packages.includes(m[1])) {
+          return { errors: [{ text: `${args.importer} imports ${args.path}: ${foreignText}` }] };
+        }
+        const dir = workspace.get(m[1]);
+        const exportsMap = dir ? JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).exports ?? {} : {};
+        const target = exportsMap[m[2] ? `./${m[2]}` : "."];
         if (typeof target !== "string") {
-          return { errors: [{ text: `${args.importer} imports ${args.path}: a protocol half bundles @retroplug/core ` +
-            "alone (its nodes run in the script contexts, which hold no other RetroPlug module)" }] };
+          return { errors: [{ text: `${args.importer} imports ${args.path}: ${args.path} is not a module ${m[1]} exports` }] };
         }
-        return { path: join(core, target) };
+        return { path: join(dir, target) };
       });
     },
   };
+}
+
+/** The protocol half's imports: @retroplug/core alone, and no schema library. */
+function protocolImports() {
+  return scriptRealmImports({
+    name: "protocol-imports",
+    packages: ["@retroplug/core"],
+    refuse: ["zod"],
+    refuseText: "a protocol half's nodes run in the script contexts, which carry no schema library",
+    foreignText: "a protocol half bundles @retroplug/core alone (its nodes run in the script contexts, which hold no " +
+      "other RetroPlug module)",
+  });
+}
+
+/** The kinds half's imports: any @retroplug package, but no schema or UI library. */
+function kindsImports() {
+  return scriptRealmImports({
+    name: "kinds-imports",
+    packages: null,
+    refuse: ["zod", "react", "react/jsx-runtime", "lvgljs", "lvgljs-ui"],
+    refuseText: "a kinds half runs in the script contexts, which carry no schema or UI library",
+    foreignText: "",
+  });
 }
 
 /** The package's protocol member as the pack's protocol half (see the header). Returns the bundle's file. */
@@ -157,6 +202,50 @@ async function buildProtocolHalf({ packageDir, outDir, pack, protocol }) {
   return "js/protocol.js";
 }
 
+/** The package's protocol.kinds member as the pack's kinds half (see the header). Returns the bundle's file. */
+async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
+  if (typeof kinds !== "object" || kinds === null || Array.isArray(kinds)) {
+    throw new Error("retroplug.protocol.kinds is { <kind>: [{ id, module, ...data }] }");
+  }
+  const lines = [];
+  const member = {};
+  let n = 0;
+  for (const [kind, entries] of Object.entries(kinds)) {
+    if (!Array.isArray(entries)) throw new Error(`retroplug.protocol.kinds.${kind} is a list of { id, module, ...data }`);
+    const names = [];
+    const ids = [];
+    for (const entry of entries) {
+      if (typeof entry?.id !== "string" || entry.id === "") throw new Error(`a retroplug.protocol.kinds.${kind} entry has no id`);
+      if (typeof entry.module !== "string" || entry.module === "") {
+        throw new Error(`retroplug.protocol.kinds.${kind}: ${entry.id} has no module`);
+      }
+      const local = `item${n++}`;
+      lines.push(`import ${local} from ${JSON.stringify(join(packageDir, entry.module))};`);
+      names.push(local);
+      ids.push(entry.id);
+    }
+    lines.push(`globalThis.__rp_registerKindItems(${JSON.stringify(kind)}, [${names.join(", ")}], ${JSON.stringify(ids)});`);
+    member[kind] = entries.map(({ module: _module, ...rest }) => rest);
+  }
+  await esbuild.build({
+    stdin: { contents: lines.join("\n"), resolveDir: packageDir, sourcefile: "kinds-entry.js", loader: "js" },
+    bundle: true,
+    format: "iife",
+    platform: "neutral",
+    mainFields: ["module", "main"],
+    target: "es2020",
+    tsconfigRaw: tsOptions({ alwaysStrict: true }),
+    outfile: join(outDir, "js", "kinds.js"),
+    plugins: [kindsImports()],
+    absWorkingDir: packageDir,
+    define: { "process.env.NODE_ENV": '"production"' },
+    nodePaths: [join(REPO, "node_modules")],
+    logLevel: "silent",
+  });
+  pack.kinds = member;
+  return "js/kinds.js";
+}
+
 export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner }) {
   const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   const block = manifest.retroplug ?? {};
@@ -166,15 +255,17 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
   // A script member a template carries is replaced when the half is built and dropped when it is not.
   delete pack.script;
   delete pack.protocol;
-  if (block.protocol?.kinds !== undefined) {
-    throw new Error("retroplug.protocol.kinds: a pack cannot contribute to a contribution kind yet");
-  }
+  delete pack.kinds;
   for (const [half, entry] of [...HALVES.map((h) => [h, block[h]]), ["protocol", block.protocol?.module],
-    ["placer", block.protocol?.placer]]) {
+    ["kinds", block.protocol?.kinds === undefined ? undefined : "kinds"], ["placer", block.protocol?.placer]]) {
     if (typeof entry !== "string") continue;
     if (only && !only.includes(half)) continue;
     if (half === "protocol") {
       halves.protocol = await buildProtocolHalf({ packageDir, outDir, pack, protocol: block.protocol });
+      continue;
+    }
+    if (half === "kinds") {
+      halves.kinds = await buildKindsHalf({ packageDir, outDir, pack, kinds: block.protocol.kinds });
       continue;
     }
     const refuseForeign = {

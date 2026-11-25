@@ -8,6 +8,7 @@
     "paths": {
       "@retroplug/core/*": ["../../../../core/ts/*"],
       "@retroplug/tracker/*": ["../../../../tracker/ts/*"],
+      "@retroplug/launchpad/*": ["../../../../launchpad/ts/*"],
       "@retroplug/ui/contribution": ["../../../../ui/ts/contribution.ts"],
       "retroplug-cli": ["../../../../retroplug/cli/sdk-types.d.ts"],
       "react": ["../../../../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react"],
@@ -17,6 +18,6 @@
     }
   },
   "files": ["../../../../core/ts/runtime.d.ts"],
-  "include": ["ts", "render/ts", "protocol/ts"],
+  "include": ["ts", "render/ts", "protocol/ts", "kinds/ts"],
   "exclude": []
 }

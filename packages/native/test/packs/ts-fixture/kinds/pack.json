@@ -1,0 +1,7 @@
+{
+  "id": "tsfix-kind", "name": "TS fixture pack (kinds)", "version": "1.0.0", "apiLevel": 0,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture/kinds",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": [] },
+  "halves": {}
+}

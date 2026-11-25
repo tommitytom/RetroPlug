@@ -213,9 +213,9 @@ test("risa's real protocol half builds, its labels dropped, and registers its no
   expect(got.registered).toEqual(["rp.risa.sync"]);
 });
 
-test("a protocol module importing another package, or a kinds member, is refused", async () => {
-  // A scratch package: its node module imports @retroplug/sameboy, which a protocol half may not carry; then the same
-  // package with protocol.kinds.
+test("a protocol module importing another package is refused", async () => {
+  // A scratch package: its node module imports @retroplug/sameboy, which a protocol half may not carry; then zod and an
+  // unexported core subpath.
   const script = [
     'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
     'const repo = path.resolve(process.cwd(), "../..");',
@@ -231,7 +231,7 @@ test("a protocol module importing another package, or a kinds member, is refused
     '  roles: [] }, halves: {} }));',
     'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
     '  const out = {};',
-    '  for (const [name, extra] of [["foreign", {}], ["kinds", { kinds: { controllerApps: [] } }], ["zod", {}], ["subpath", {}]]) {',
+    '  for (const [name, extra] of [["foreign", {}], ["zod", {}], ["subpath", {}]]) {',
     '    if (name === "zod") fs.writeFileSync(path.join(pkg, "ts/nodes.ts"), "import { z } from \\"zod\\";\\nexport default [z];\\n");',
     '    if (name === "subpath") fs.writeFileSync(path.join(pkg, "ts/nodes.ts"), "import { x } from \\"@retroplug/core/nope\\";\\nexport default [x];\\n");',
     '    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify(manifest(extra)));',
@@ -250,5 +250,99 @@ test("a protocol module importing another package, or a kinds member, is refused
   expect(got.zod.includes("imports zod: a protocol half's nodes run in the script contexts, which carry no schema library"),
     got.zod).toBe(true);
   expect(got.subpath.includes("@retroplug/core/nope is not a module @retroplug/core exports"), got.subpath).toBe(true);
-  expect(got.kinds).toBe("retroplug.protocol.kinds: a pack cannot contribute to a contribution kind yet");
+});
+
+// A recording registrar a kinds bundle runs against, in a bare vm context: no process, and console absent.
+const RECORD = [
+  'const calls = [];',
+  'const ctx = vm.createContext({ __rp_registerKindItems(kind, items, ids) {',
+  '  calls.push({ kind, ids, itemIds: items.map((i) => i.id) });',
+  '} });',
+].join("\n");
+
+test("a package's kind items are built as a pack's kinds half and kinds member", async () => {
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url"), vm = require("vm");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-kinds-"));',
+    'const fixture = path.join(repo, "packages/native/test/packs/ts-fixture/kinds");',
+    RECORD,
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const pack = await m.buildPackHalves({ packageDir: fixture, outDir: work, template: path.join(fixture, "pack.json") });',
+    '  const bundle = fs.readFileSync(path.join(work, "js/kinds.js"), "utf8");',
+    '  vm.runInContext(bundle, ctx);',
+    '  console.log(JSON.stringify({ halves: pack.halves, kinds: pack.kinds, calls, imports: /^\\s*import\\b/m.test(bundle) }));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '}).catch((e) => { console.error(e.message); process.exit(1); });',
+  ].join("\n");
+  const r = await runNode(script);
+  expect(r.status, r.err).toBe(0);
+  const got = JSON.parse(r.out);
+  expect(got.halves).toEqual({ app: "js/app.js", kinds: "js/kinds.js" });
+  expect(got.kinds).toEqual({ controllerApps: [{ id: "tsfix-app" }] });
+  expect(got.calls).toEqual([{ kind: "controllerApps", ids: ["tsfix-app"], itemIds: ["tsfix-app"] }]);
+  expect(got.imports).toBe(false);
+});
+
+test("lsdj-launchpad's real kind items build as a pack's, with their data and their runtime", async () => {
+  // The real package (what part 6 will ship as a pack), built from a temp template with only its kinds half (its app half imports other packages, which the app half bundler refuses).
+  // Its runtime imports @retroplug/lsdj/playback/predict, which the bundle must carry; the bundle runs in a context
+  // with no process and no console.
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url"), vm = require("vm");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-lsdj-kinds-"));',
+    'const pkg = path.join(repo, "packages/lsdj-launchpad");',
+    'const template = path.join(work, "template.json");',
+    'fs.writeFileSync(template, JSON.stringify({ id: "lsdj-launchpad", name: "l", version: "1.0.0", apiLevel: 0, license: "x",',
+    '  source: "x", requires: { packs: [], platforms: [] }, provides: { platforms: [], nodeTypes: [], roles: [] }, halves: {} }));',
+    RECORD,
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const out = path.join(work, "out");',
+    '  const pack = await m.buildPackHalves({ packageDir: pkg, outDir: out, template, only: ["kinds"] });',
+    '  vm.runInContext(fs.readFileSync(path.join(out, "js/kinds.js"), "utf8"), ctx);',
+    '  const manifest = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8")).retroplug.protocol.kinds;',
+    '  console.log(JSON.stringify({ halves: Object.keys(pack.halves), kinds: pack.kinds, manifest, calls }));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '}).catch((e) => { console.error(e.message); process.exit(1); });',
+  ].join("\n");
+  const r = await runNode(script);
+  expect(r.status, r.err).toBe(0);
+  const got = JSON.parse(r.out);
+  expect(got.halves).toEqual(["kinds"]);
+  const dropModule = (entries: Record<string, unknown>[]) => entries.map(({ module: _m, ...rest }) => rest);
+  expect(got.kinds).toEqual({ controllerApps: dropModule(got.manifest.controllerApps) });
+  expect(got.calls).toEqual([{ kind: "controllerApps", ids: ["lsdj-midimap"], itemIds: ["lsdj-midimap"] }]);
+});
+
+test("a kinds half importing zod or react is refused", async () => {
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-kinds-bad-"));',
+    'const pkg = path.join(work, "pkg");',
+    'fs.mkdirSync(path.join(pkg, "ts"), { recursive: true });',
+    'fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "bad", private: true, retroplug: {',
+    '  protocol: { kinds: { controllerApps: [{ id: "bad-app", module: "ts/rt.ts" }] } } } }));',
+    'const template = path.join(work, "pack.json");',
+    'fs.writeFileSync(template, JSON.stringify({ id: "bad", name: "b", version: "1.0.0", apiLevel: 0, license: "x",',
+    '  source: "x", requires: { packs: [], platforms: [] }, provides: { platforms: [], nodeTypes: [], roles: [] }, halves: {} }));',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const out = {};',
+    '  for (const spec of ["zod", "react"]) {',
+    '    fs.writeFileSync(path.join(pkg, "ts/rt.ts"), "import { x } from \\"" + spec + "\\";\\nexport default { id: \\"bad-app\\", x };\\n");',
+    '    try { await m.buildPackHalves({ packageDir: pkg, outDir: path.join(work, spec), template }); out[spec] = "built"; }',
+    '    catch (e) { out[spec] = e.message; }',
+    '  }',
+    '  console.log(JSON.stringify(out));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '});',
+  ].join("\n");
+  const r = await runNode(script);
+  expect(r.status, r.err).toBe(0);
+  const got = JSON.parse(r.out);
+  for (const spec of ["zod", "react"]) {
+    expect(got[spec].includes(`imports ${spec}: a kinds half runs in the script contexts, which carry no schema or UI library`),
+      got[spec]).toBe(true);
+  }
 });
