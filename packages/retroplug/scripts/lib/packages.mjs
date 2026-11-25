@@ -1377,6 +1377,49 @@ function renderProtocol({ byType, roles, packages, outDir, shellDir, product }) 
   return lines.join("\n");
 }
 
+// The registrar a downloaded pack's kinds half calls (docs/downloadable-packs-m2f-plan.md), as generated TS lines. It
+// refuses a kind this product does not declare, items that are not the ids the pack's manifest declares, and an id the
+// kind already holds, which the kind's own register would replace without a word. `kinds` is each declared kind with
+// the local its runtime register function is imported under and the product's own items as { id, owner }.
+function registrarLines(kinds) {
+  const lines = [
+    "// A downloaded pack's kind items register their runtimes through this, after the product's own above",
+    "// (docs/downloadable-packs-m2f-plan.md): its kinds half runs it in both of the built-in pack's contexts. It refuses",
+    "// a kind this product does not declare, items that are not the ids the pack's manifest declares, and an id the",
+    "// kind already holds, which the kind's own register would replace without a word.",
+  ];
+  if (!kinds.length) {
+    lines.push("const KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {};");
+  } else {
+    lines.push("const KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {");
+    for (const { kind, register, owners } of kinds) {
+      lines.push(`  ${JSON.stringify(kind)}: { register: ${register}, owners: ${JSON.stringify(owners)} },`);
+    }
+    lines.push("};");
+  }
+  lines.push(
+    "(globalThis as Record<string, unknown>).__rp_registerKindItems = (",
+    "  kind: string, items: readonly { id: string }[], ids: readonly string[],",
+    "): void => {",
+    "  const entry = Object.prototype.hasOwnProperty.call(KIND_REGISTRARS, kind) ? KIND_REGISTRARS[kind] : undefined;",
+    "  if (!entry) throw new Error(`a pack's kinds half registers items of ${kind}, a contribution kind this product does not declare`);",
+    "  const got = items.map((item) => item.id);",
+    "  if (got.join(\"\\n\") !== ids.join(\"\\n\")) {",
+    "    throw new Error(`a pack's kinds half registers the ${kind} items ${got.join(\", \")}, and its manifest declares ${ids.join(\", \")}`);",
+    "  }",
+    "  for (const id of got) {",
+    "    const owner = Object.prototype.hasOwnProperty.call(entry.owners, id) ? entry.owners[id] : undefined;",
+    "    if (owner !== undefined) {",
+    "      throw new Error(`a pack's kinds half registers the ${kind} item ${id}, which ${owner === \"\" ? \"an earlier pack\" : `this product's ${owner}`} holds`);",
+    "    }",
+    "  }",
+    "  for (const id of got) entry.owners[id] = \"\";",
+    "  entry.register(items);",
+    "};",
+  );
+  return lines;
+}
+
 function renderScriptNodes({ packages, outDir, kindDecls, product }) {
   const spec = packages.filter((p) => p.protocol);
   // Each declared kind's runtime halves: the contributing manifests' entries, in product order, and the declaring
@@ -1398,13 +1441,15 @@ function renderScriptNodes({ packages, outDir, kindDecls, product }) {
     "// and embedded by each product (packages/native/cmake/bundles.cmake), so every Engine loads it into both of",
     "// its script contexts.",
   ];
-  if (!spec.length && !withKinds.length) {
+  if (!spec.length && !kindRuntimes.length) {
     return [
       ...head,
       'import { registerScriptNodes } from "@retroplug/core/register";',
       "",
       `// No package in the ${product} product contributes a protocol node or an item of a declared contribution kind.`,
       "registerScriptNodes([]);",
+      "",
+      ...registrarLines([]),
       "",
     ].join("\n");
   }
@@ -1431,7 +1476,7 @@ function renderScriptNodes({ packages, outDir, kindDecls, product }) {
   }
   // Per kind: the declaring package's runtime registry, then each contributing manifest's module, in product order.
   const kindLocals = [];
-  for (const { kind, decl, entries } of withKinds) {
+  for (const { kind, decl, entries } of kindRuntimes) {
     lines.push(`import { ${decl.runtime.register}, type ${decl.runtime.type} } from ` +
       `"${moduleSpecifier(outDir, kindDecls.get(kind).pkg, decl.runtime.module)}";`);
     const items = [];
@@ -1444,7 +1489,7 @@ function renderScriptNodes({ packages, outDir, kindDecls, product }) {
       const owner = packages.find((p) => p.pkg.name === entry.pkg);
       lines.push(`import ${name} from "${moduleSpecifier(outDir, owner.pkg, entry.file)}";`);
     }
-    kindLocals.push({ kind, decl, items });
+    if (items.length) kindLocals.push({ kind, decl, items });
   }
   lines.push(
     "",
@@ -1530,6 +1575,14 @@ function renderScriptNodes({ packages, outDir, kindDecls, product }) {
     );
   }
   lines.push("registerScriptNodes(nodes);", "");
+  lines.push(
+    ...registrarLines(kindRuntimes.map(({ kind, decl, entries }) => ({
+      kind,
+      register: decl.runtime.register,
+      owners: Object.fromEntries(entries.map((entry) => [entry.id, entry.pkg.replace(/^@[^/]+\//, "")])),
+    }))),
+    "",
+  );
   return lines.join("\n");
 }
 

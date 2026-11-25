@@ -11,6 +11,7 @@ import type { DefinedNode } from "@retroplug/core/defineNode";
 import { registerScriptNodes } from "@retroplug/core/register";
 import nodes_alpha from "@retroplug/alpha/nodes";
 import nodes_retroplug from "../script/nodes";
+import { registerWidgets, type WidgetRuntime } from "@retroplug/alpha/widgets";
 import { registerControllerApps, type ControllerAppRuntime } from "@retroplug/beta/apps";
 import item_controllerApps_alpha_alpha_app from "@retroplug/alpha/appRuntime";
 
@@ -88,3 +89,30 @@ for (let i = 0; i < kindItems_controllerApps.length; i++) {
 registerControllerApps(kindItems_controllerApps);
 
 registerScriptNodes(nodes);
+
+// A downloaded pack's kind items register their runtimes through this, after the product's own above
+// (docs/downloadable-packs-m2f-plan.md): its kinds half runs it in both of the built-in pack's contexts. It refuses
+// a kind this product does not declare, items that are not the ids the pack's manifest declares, and an id the
+// kind already holds, which the kind's own register would replace without a word.
+const KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {
+  "widgets": { register: registerWidgets, owners: {} },
+  "controllerApps": { register: registerControllerApps, owners: {"alpha-app":"alpha"} },
+};
+(globalThis as Record<string, unknown>).__rp_registerKindItems = (
+  kind: string, items: readonly { id: string }[], ids: readonly string[],
+): void => {
+  const entry = Object.prototype.hasOwnProperty.call(KIND_REGISTRARS, kind) ? KIND_REGISTRARS[kind] : undefined;
+  if (!entry) throw new Error(`a pack's kinds half registers items of ${kind}, a contribution kind this product does not declare`);
+  const got = items.map((item) => item.id);
+  if (got.join("\n") !== ids.join("\n")) {
+    throw new Error(`a pack's kinds half registers the ${kind} items ${got.join(", ")}, and its manifest declares ${ids.join(", ")}`);
+  }
+  for (const id of got) {
+    const owner = Object.prototype.hasOwnProperty.call(entry.owners, id) ? entry.owners[id] : undefined;
+    if (owner !== undefined) {
+      throw new Error(`a pack's kinds half registers the ${kind} item ${id}, which ${owner === "" ? "an earlier pack" : `this product's ${owner}`} holds`);
+    }
+  }
+  for (const id of got) entry.owners[id] = "";
+  entry.register(items);
+};
