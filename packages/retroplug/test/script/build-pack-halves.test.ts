@@ -154,3 +154,96 @@ test("a script half whose types the template does not declare is refused, naming
   expect(rec.stderr.includes(
     "the script half defines rp.bliptoaster.midi-policy, which the template's provides.nodeTypes does not declare")).toBe(true);
 });
+
+test("a package's protocol member is built as a pack's protocol and placer halves", async () => {
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url"), vm = require("vm");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-protocol-"));',
+    'const fixture = path.join(repo, "packages/native/test/packs/ts-fixture/protocol");',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const pack = await m.buildPackHalves({ packageDir: fixture, outDir: work, template: path.join(fixture, "pack.json") });',
+    '  const bundle = fs.readFileSync(path.join(work, "js/protocol.js"), "utf8");',
+    '  const ctx = vm.createContext({});',
+    '  vm.runInContext(bundle, ctx);',
+    '  console.log(JSON.stringify({ halves: pack.halves, protocol: pack.protocol,',
+    '    registered: ctx.__rp_scriptNodes.map((n) => n.id), imports: /^\\s*import\\b/m.test(bundle) }));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '}).catch((e) => { console.error(e.message); process.exit(1); });',
+  ].join("\n");
+  const r = await runNode(script);
+  expect(r.status, r.err).toBe(0);
+  const got = JSON.parse(r.out);
+  expect(got.halves).toEqual({ app: "js/app.js", protocol: "js/protocol.js", placer: "js/placer.js" });
+  expect(got.protocol).toEqual({
+    nodes: [{ type: "rp.tsfix-proto.echo", midiIn: "in", writes: [], midiOut: true }],
+    roles: { "tsfix-proto": "rp.tsfix-proto.echo" },
+  });
+  expect(got.registered).toEqual(["rp.tsfix-proto.echo"]);
+  expect(got.imports).toBe(false);
+});
+
+test("risa's real protocol half builds, its labels dropped, and registers its node", async () => {
+  // The real package (docs/downloadable-packs-m2e-plan.md): what part 6 will ship as a pack. Built alone (--only), from
+  // a template that declares its node.
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url"), vm = require("vm");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-risa-"));',
+    'const risa = path.join(repo, "packages/risa");',
+    'const template = path.join(work, "template.json");',
+    'fs.writeFileSync(template, JSON.stringify({ id: "risa", name: "risa", version: "1.0.0", apiLevel: 0, license: "x",',
+    '  source: "x", requires: { packs: [], platforms: [] },',
+    '  provides: { platforms: [], nodeTypes: ["rp.risa.sync"], roles: ["risa-sync"] }, halves: {} }));',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const out = path.join(work, "out");',
+    '  const pack = await m.buildPackHalves({ packageDir: risa, outDir: out, template, only: ["protocol"] });',
+    '  const ctx = vm.createContext({});',
+    '  vm.runInContext(fs.readFileSync(path.join(out, "js/protocol.js"), "utf8"), ctx);',
+    '  const manifest = JSON.parse(fs.readFileSync(path.join(risa, "package.json"), "utf8")).retroplug.protocol;',
+    '  console.log(JSON.stringify({ protocol: pack.protocol, manifest, registered: ctx.__rp_scriptNodes.map((n) => n.id) }));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '}).catch((e) => { console.error(e.message); process.exit(1); });',
+  ].join("\n");
+  const r = await runNode(script);
+  expect(r.status, r.err).toBe(0);
+  const got = JSON.parse(r.out);
+  expect(got.protocol.nodes).toEqual(got.manifest.nodes.map(({ label: _label, ...rest }: Record<string, unknown>) => rest));
+  expect(got.protocol.roles).toEqual(got.manifest.roles);
+  expect(got.registered).toEqual(["rp.risa.sync"]);
+});
+
+test("a protocol module importing another package, or a kinds member, is refused", async () => {
+  // A scratch package: its node module imports @retroplug/sameboy, which a protocol half may not carry; then the same
+  // package with protocol.kinds.
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-protocol-bad-"));',
+    'const pkg = path.join(work, "pkg");',
+    'fs.mkdirSync(path.join(pkg, "ts"), { recursive: true });',
+    'fs.writeFileSync(path.join(pkg, "ts/nodes.ts"), "import { x } from \\"@retroplug/sameboy/cartridge\\";\\nexport default [x];\\n");',
+    'const manifest = (extra) => ({ name: "bad", private: true, retroplug: { protocol: { module: "ts/nodes.ts",',
+    '  nodes: [{ type: "rp.bad.n" }], roles: {}, ...extra } } });',
+    'const template = path.join(work, "pack.json");',
+    'fs.writeFileSync(template, JSON.stringify({ id: "bad", name: "b", version: "1.0.0", apiLevel: 0, license: "x",',
+    '  source: "x", requires: { packs: [], platforms: [] }, provides: { platforms: [], nodeTypes: ["rp.bad.n"],',
+    '  roles: [] }, halves: {} }));',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const out = {};',
+    '  for (const [name, extra] of [["foreign", {}], ["kinds", { kinds: { controllerApps: [] } }]]) {',
+    '    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify(manifest(extra)));',
+    '    try { await m.buildPackHalves({ packageDir: pkg, outDir: path.join(work, name), template }); out[name] = "built"; }',
+    '    catch (e) { out[name] = e.message; }',
+    '  }',
+    '  console.log(JSON.stringify(out));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '});',
+  ].join("\n");
+  const r = await runNode(script);
+  expect(r.status, r.err).toBe(0);
+  const got = JSON.parse(r.out);
+  expect(got.foreign.includes("imports @retroplug/sameboy/cartridge: a protocol half bundles @retroplug/core alone"),
+    got.foreign).toBe(true);
+  expect(got.kinds).toBe("retroplug.protocol.kinds: a pack cannot contribute to a contribution kind yet");
+});

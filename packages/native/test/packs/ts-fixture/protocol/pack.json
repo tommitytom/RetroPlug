@@ -1,0 +1,7 @@
+{
+  "id": "tsfix-proto", "name": "TS fixture pack (protocol)", "version": "1.0.0", "apiLevel": 0,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture/protocol",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.tsfix-proto.echo"], "roles": ["tsfix-proto"] },
+  "halves": {}
+}

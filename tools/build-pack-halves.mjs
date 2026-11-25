@@ -12,6 +12,12 @@
 // js/script.device.js, the device's runtime), which the host compiles to bytecode when it loads the pack, and a `script`
 // member naming the runtime, the heap and the types. `--only` builds the halves it names alone.
 //
+// A package's `retroplug.protocol` member becomes the protocol half, a global-code script-node bundle (an IIFE that
+// appends its definitions to __rp_scriptNodes, as the product's own script bundle does) carrying its own copy of
+// @retroplug/core, and pack.json's `protocol` member (the member's nodes, less their labels, and its roles).
+// `protocol.placer` becomes the placer half, an ES module like the others. A `kinds` member is refused until M2f
+// (docs/downloadable-packs-m2e-plan.md).
+//
 //   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>]
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +28,7 @@ import { createRequire } from "node:module";
 import { SHELL_IMPORTS, UI_IMPORTS, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
 
 const esbuild = createRequire(import.meta.url)("esbuild");
+const { tsOptions } = createRequire(import.meta.url)("./ts-options.js");
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HALVES = ["app", "consoles", "ui", "views", "cli"];
 
@@ -76,6 +83,75 @@ function buildScriptHalf({ packageDir, outDir, pack, script, mqjs, runner }) {
   }
 }
 
+/** Resolves a protocol half's @retroplug imports: its nodes run in an Engine's script contexts, which have no module
+ *  loader and no RetroPlug module, so the bundle carries its own copy of what it imports, and of RetroPlug's that is
+ *  @retroplug/core alone (the node SDK). Resolved through core's own exports map, so a package outside the workspace
+ *  builds the same. */
+function protocolImports() {
+  const core = join(REPO, "packages/core");
+  const exportsMap = JSON.parse(readFileSync(join(core, "package.json"), "utf8")).exports;
+  return {
+    name: "protocol-imports",
+    setup(build) {
+      build.onResolve({ filter: /^@retroplug\// }, (args) => {
+        const m = /^@retroplug\/core(?:\/(.+))?$/.exec(args.path);
+        const target = m ? exportsMap[m[1] ? `./${m[1]}` : "."] : undefined;
+        if (typeof target !== "string") {
+          return { errors: [{ text: `${args.importer} imports ${args.path}: a protocol half bundles @retroplug/core ` +
+            "alone (its nodes run in the script contexts, which hold no other RetroPlug module)" }] };
+        }
+        return { path: join(core, target) };
+      });
+    },
+  };
+}
+
+/** The package's protocol member as the pack's protocol half (see the header). Returns the bundle's file. */
+async function buildProtocolHalf({ packageDir, outDir, pack, protocol }) {
+  if (typeof protocol.module !== "string" || protocol.module === "") {
+    throw new Error("retroplug.protocol needs a module, the file that default-exports its nodes");
+  }
+  // The wiring as the manifest spells it, less the labels: a pack's script nodes take theirs at load.
+  const nodes = (protocol.nodes ?? []).map(({ label: _label, ...rest }) => rest);
+  const types = nodes.map((n) => n.type);
+  const declared = pack.provides?.nodeTypes ?? [];
+  for (const type of types) {
+    if (!declared.includes(type)) {
+      throw new Error(`the protocol node ${type} is not in the template's provides.nodeTypes`);
+    }
+  }
+  // The entry registers the module's definitions in the manifest's order, and refuses a module that defines other
+  // types than the manifest declares, as the product's generated entry does.
+  const entry = [
+    `import nodes from ${JSON.stringify(join(packageDir, protocol.module))};`,
+    'import { registerScriptNodes } from "@retroplug/core/register";',
+    `const ORDER = ${JSON.stringify(types)};`,
+    "const ids = nodes.map((n) => n.id);",
+    "if (ids.length !== ORDER.length || ids.some((id) => ORDER.indexOf(id) < 0)) {",
+    '  throw new Error("the protocol module defines " + ids.join(", ") + ", and the manifest declares " + ORDER.join(", "));',
+    "}",
+    "registerScriptNodes(nodes.slice().sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id)));",
+  ].join("\n");
+  await esbuild.build({
+    stdin: { contents: entry, resolveDir: packageDir, sourcefile: "protocol-entry.js", loader: "js" },
+    bundle: true,
+    format: "iife",
+    platform: "neutral",
+    mainFields: ["module", "main"],
+    target: "es2020",
+    // As the product's own script bundle (tools/build-session.js): the directive is part of what a script host runs.
+    tsconfigRaw: tsOptions({ alwaysStrict: true }),
+    outfile: join(outDir, "js", "protocol.js"),
+    plugins: [protocolImports()],
+    absWorkingDir: packageDir,
+    define: { "process.env.NODE_ENV": '"production"' },
+    nodePaths: [join(REPO, "node_modules")],
+    logLevel: "silent",
+  });
+  pack.protocol = { nodes, roles: protocol.roles ?? {} };
+  return "js/protocol.js";
+}
+
 export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner }) {
   const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   const block = manifest.retroplug ?? {};
@@ -84,10 +160,18 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
   const halves = pack.halves?.native ? { native: pack.halves.native } : {};
   // A script member a template carries is replaced when the half is built and dropped when it is not.
   delete pack.script;
-  for (const half of HALVES) {
-    const entry = block[half];
+  delete pack.protocol;
+  if (block.protocol?.kinds !== undefined) {
+    throw new Error("retroplug.protocol.kinds: a pack cannot contribute to a contribution kind yet");
+  }
+  for (const [half, entry] of [...HALVES.map((h) => [h, block[h]]), ["protocol", block.protocol?.module],
+    ["placer", block.protocol?.placer]]) {
     if (typeof entry !== "string") continue;
     if (only && !only.includes(half)) continue;
+    if (half === "protocol") {
+      halves.protocol = await buildProtocolHalf({ packageDir, outDir, pack, protocol: block.protocol });
+      continue;
+    }
     const refuseForeign = {
       name: "refuse-foreign-retroplug",
       setup(build) {

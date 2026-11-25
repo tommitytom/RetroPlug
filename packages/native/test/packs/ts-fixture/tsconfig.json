@@ -16,6 +16,6 @@
     }
   },
   "files": ["../../../../core/ts/runtime.d.ts"],
-  "include": ["ts", "render/ts"],
+  "include": ["ts", "render/ts", "protocol/ts"],
   "exclude": []
 }

@@ -1,0 +1,13 @@
+{
+  "name": "@retroplug-test/ts-fixture-protocol",
+  "private": true,
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "module": "ts/nodes.ts",
+      "placer": "ts/placer.ts",
+      "nodes": [{ "type": "rp.tsfix-proto.echo", "midiIn": "in", "writes": [], "midiOut": true }],
+      "roles": { "tsfix-proto": "rp.tsfix-proto.echo" }
+    }
+  }
+}
