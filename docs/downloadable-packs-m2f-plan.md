@@ -1689,6 +1689,22 @@ Expected: all four jobs succeed.
    pack's chunk too, and a kind declared by one pack and filled by another needs their chunks ordered.
 5. **The host order is held by reading.** No test observes that a host loaded its launch packs before it built its
    Engine. The Engine's refusal message is what a regression would show.
+6. **The contract list is both the shell's and a pack's.** `scripts/lib/contracts.mjs` names what a pack may import, so a type
+   only packs need (the launchpad's registry and `packageContributions`, its apps' runtime types, tracker's
+   `playbackModel`) cannot be listed: the boundary check's unused-entry rule refuses it.
+7. **lsdj-launchpad's app half cannot yet build as a pack.** It value-imports `@retroplug/launchpad` once, for `MAX_PAGE` and
+   `QUANTISE_VALUES` through `lsdjMidiMap.ts`, and that import is refused. Moving those constants into a leaf module unblocks
+   it (checked in a copy).
+8. **A pack's app half bundles its own zod** (about 548 KB) and so mixes two zod instances with the host's `configFields`.
+   Whether zod should be a host module is open.
+9. **A kinds half bundling a module that holds state gets a private instance.** The kind's own registry is refused by name;
+   another stateful module is not.
+10. **Every Engine, render jobs included, runs every loaded pack's kinds half in two contexts.** The cost grows per pack
+    against the built-in pack's memory limit, and one failed half drops every pack's kind items in that Engine.
+11. **A kinds pack refused later in `syncPacks` keeps its kind items live**, since a chunk cannot be unloaded.
+12. **The script-node guard compares only the definitions' count**, so a chunk swapping an entry is not caught.
+13. **The multi-kind seed has no regression test.** A product declaring three or more kinds needs a fresh module set to
+    exercise the first-seed state; a three-kind generator fixture would do.
 
 ## Self-review
 
@@ -1723,3 +1739,30 @@ refused-packs accessor, the test bundle's name, the session's settings, the UI m
 - Task 5: `kindPacksAtBuild_`, `kindsOnEmbedded_`.
 - Task 7: `PackInfo.kinds`, `PackKindItems`, `packKindItems`, `kindAdditions`, `kindsAdded`.
 - Task 8, used in Task 9: `scriptRealmImports`, `buildKindsHalf`, `tsfix-kind`, `tsfix-app`.
+
+## After the reviews
+
+M2f was built as `9369c9285..a27b806c8` (Tasks 1 to 9) and the docs commit after it (Task 10); Task 11's CI gate waits for
+the user's go-ahead to push. Where the task blocks above and the tree differ, the tree wins. What changed from the plan
+while it ran, and why:
+
+- The seed is one commit for every kind, and every product seeds the kind tables, a kind-less one with empty ones
+  (e216ef397).
+- The registrar's owners are a null-prototype table, it compares ids exactly, and it has guards (ae1b23ca5).
+- The manifest holds the `kinds` member's kind names and item ids to a rule, and refuses a module there (f7e8968db).
+- `packs-host` gained `midi`, `launchpad` and `lsdj-launchpad`, so the packs test product declares the `controllerApps` kind
+  (42af935a6).
+- The kinds trial mirrors an Engine: the bundle, the earlier packs' chunks, a prelude and an epilogue holding the chunk to
+  its pack.json's ids (3d1d3ddcf).
+- The Engine appends a closing chunk that closes the registrar from inside, so a held reference cannot reopen it; refuses a
+  kinds half that defines script nodes; and on a failed load rebuilds its `Graph` (a `ScriptHost` loads once) and refuses
+  every kind-carrying pack with the reason (2f029974f, ddd77cd5d).
+- The hosts' order is a first member (the plugin, the SDL `AppState`, the UI harness) or a call before `HostServices` (the
+  CLI) (5a827a897).
+- The loader ties the kinds half to the app half, shape-checks items, and lets a kind's check see earlier staged packs'
+  protocol nodes (e9f313ce7, e9581d5dc).
+- The build tool resolves `@retroplug` imports through each package's exports map, and refuses `zod`, `react`, `lvgljs` and
+  the kind's own runtime registry module (f063f23a8, c8bfc65a6).
+- The end-to-end cases: the built fixture, its Engine run, the UI and the CLI legs (d80253fe9, a27b806c8).
+
+The design questions above gained 6 to 13 while it ran.

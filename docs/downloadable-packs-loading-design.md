@@ -97,6 +97,20 @@ A cart pack with QuickJS script nodes (a hypothetical `acme`) adds the `protocol
 }
 ```
 
+A pack contributing items to a contribution kind a built-in package declares (a controller app) adds the `kinds` half and
+member:
+
+```json
+{
+  "halves": { "app": "js/app.js", "kinds": "js/kinds.js" },
+  "kinds": { "controllerApps": [ { "id": "acme-app", "syncOverride": { "...": "the kind's data keys" } } ] }
+}
+```
+
+- `kinds` is the data of the pack's kind items, by kind, each entry an `id` and the data keys the kind declares; the control
+  half is in the app half under the kind's name, and the runtime is the `kinds` half. The two members go together (one
+  without the other is refused), and a pack declaring a kind of its own is refused.
+
 - `protocol` is the wiring of a pack's QuickJS script nodes (each node's `type` and its `midiIn`, `writes`, `launches`,
   `serialOut`, `midiOut`, `capture` and `out`, no `label`: the script host numbers span labels at load) and the role kinds
   placed as them (`buildGraph` places a role's node from that role table); it goes with the `protocol` half. A `placer`
@@ -182,7 +196,11 @@ is a device script pack (MicroQuickJS), shipped as ES5 source and compiled at lo
 QuickJS script nodes are its protocol nodes: the `protocol` half is global code, not a module, that every Engine loads at
 `syncPacks` as `rp.<id>.protocol` (`ScriptHost::loadAppPack`, [the M2e plan](downloadable-packs-m2e-plan.md)), and its
 wiring (pack.json's `protocol` member) commits into the live protocol registries in the control plane, the render worker
-and the CLI, with the placer half.
+and the CLI, with the placer half. The `kinds` half is global code too, but it runs in the built-in script contexts, not a
+pack's own: every Engine built on the embedded bundle loads each loaded pack's kinds chunk after the built-in bundle, from
+construction ([the M2f plan](downloadable-packs-m2f-plan.md)), so every host loads its launch packs before it builds an Engine,
+and a pack installed live gets its kind items at the next launch; its data and control half commit in the control plane, the
+render worker and the CLI with the app half.
 
 **Live registries.** A small `Registry` replaces each generated constant consumers read today: the ROM providers, the
 roles, the tracker integrations, the kit formats, the config and project sections, the project services, the embeds,

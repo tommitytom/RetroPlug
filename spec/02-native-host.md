@@ -1438,8 +1438,8 @@ loaded, an installed folder that cannot be held, or anything the `NodeRegistry` 
 the product's packages and the packs before it (the script node types are not in it: each Engine checks those).
 `loadAll` loads in dependency order, whatever order the candidates come in, and names a cycle. `processPacks()` is the
 process's table, seeded with the product's packages and empty until a host loads into it: every desktop host calls
-`ensureLaunchPacks` ([ProcessPacks](../packages/native/src/host/packs/ProcessPacks.hpp)) once per process, before its
-first context evaluates (the installed packs and `RETROPLUG_PACK_PATH`'s development folders; the CLI's session files
+`ensureLaunchPacks` ([ProcessPacks](../packages/native/src/host/packs/ProcessPacks.hpp)) once per process, before it builds an
+`Engine` and before its first context evaluates (the installed packs and `RETROPLUG_PACK_PATH`'s development folders; the CLI's session files
 load none), and a failed load is reported, not thrown.
 
 Every `Engine` registers its table's packs after the product's packages and the built-in script pack, in load order,
@@ -1488,6 +1488,26 @@ prefix except an app pack's, whose protocol nodes are named by the pack (`rp.ris
 next span labels ([08](08-profiling.md)), a render job's Engine included. The Engine refusing it (an id or type its registry
 holds) frees it there and leaves the others running. Both module loaders refuse `pack:<id>/protocol`, as they refuse `script`.
 The wiring and the optional `placer` half (an ES module whose default export is a `GraphPlacer`) commit in the TS loader.
+
+**A pack's kinds half** is the runtime of the items a pack contributes to a contribution kind a built-in package declares
+(a controller app, today's one kind; [04](04-roles-protocol-nodes.md#a-packs-items-for-a-contribution-kind)): global code
+that, per kind, imports its entries' runtime modules and calls `__rp_registerKindItems(kind, items, ids)`, with the items'
+data and ids in pack.json's top-level `kinds` member (`halves.kinds` without `kinds`, or the reverse, is refused). The
+half runs in the built-in script contexts, where the declaring package's node looks the item up, so it is not loaded as a
+script pack of its own. `PackTable` compiles it once and trial-loads it through the `KindsTrial` the backend installs
+(`host/packs/KindsTrial.cpp`, beside the protocol trial): a scratch `ScriptHost` loads the embedded bundle, the earlier
+packs' kinds chunks, a prelude, the chunk and an epilogue holding it to its pack.json's ids; an unknown kind, a taken id or a
+throwing module is refused there, naming the built-in app and its holder. Every `Engine` built on the embedded bundle then
+loads its built-in pack with that bundle followed by every loaded pack's kinds chunk, in the table's order, from
+construction, and appends a closing chunk that closes the registrar from inside (a reference a pack held cannot reopen it,
+so the two script contexts cannot diverge at block time). An Engine refuses a kinds half that defines script nodes (a count
+comparison), and if the load fails it rebuilds its `Graph` (a `ScriptHost` loads once), loads the bundle alone and
+refuses every kind-carrying pack with the reason, so one pack's runtime never takes the built-in script nodes down. A pack
+whose kinds half is not among an Engine's (it loaded after the Engine was built) is refused there ("takes effect at the next
+launch"), and so is one on an Engine built on another script bundle (a test's). Hence every host loads its launch packs
+before it builds an Engine: the plugin and the SDL standalone as a first member of the state their Engine is in, the UI
+harness likewise, and the CLI's dispatcher by a call before its `HostServices`; render jobs build theirs later. The cost is
+per Engine and per pack (two contexts, against the built-in pack's memory limit), a render job's included.
 
 **A pack's TS halves** are ES modules (`js/<half>.js`) a txiki context imports by name.
 `installPackLoader` ([PackModules](../packages/native/src/host/js/PackModules.hpp), the txiki wrapper of

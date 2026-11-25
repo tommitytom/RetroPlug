@@ -147,8 +147,7 @@ half its `package.json` names, every contract and host module external, any othe
 `pack.json` with this build's API level. A package's `retroplug.protocol` member becomes the `protocol` half, a global-code IIFE that bundles `@retroplug/core` alone
 (any other `@retroplug` import, `zod` and a core subpath core does not export are refused by name, a module defining an id
 twice too; it starts `"use strict"` like the product's script bundle), with pack.json's `protocol` member (the nodes less their
-labels, and the roles); its `placer` module becomes the `placer` half, an ES module like the others, and a `kinds` member is
-refused until M2f. A placer half places a model only when the app half contributes a project service under the same key
+labels, and the roles); its `placer` module becomes the `placer` half, an ES module like the others, and a `kinds` member becomes the `kinds` half and pack.json's `kinds` member (below). A placer half places a model only when the app half contributes a project service under the same key
 publishing a non-null model (`buildGraph` skips a placer with none), and the loader holds its key to one of the app half's
 project sections. A package's `retroplug.script` is built through the device-pack toolchain
 (`build-device-pack.mjs`, which also writes `<name>.types.json`, the node type ids in registration order) into the pack's
@@ -161,7 +160,19 @@ ports are not its wiring's) under `build/packs`, which the tool would refuse; `t
 with app, protocol and placer members that the tool builds (its app half has a project service, which a placer needs, and
 imports `@retroplug/tracker/packageContributions` for the `projectServices` member's type); its own tsconfig puts it in `pnpm typecheck`. The target's DEPENDS covers top-level `ts/*.ts` only: a
 real package with nested modules needs an esbuild metafile-derived DEPFILE. The render worker's fixture is `tsfix-render` (under `ts-fixture/render/`), and the CLI's render-with-packs checks are in
-`tools/run-cli-ts-tests.sh`, guarded on the repo's smsggdj ROM. The protocol half's hand-written fixtures are
+`tools/run-cli-ts-tests.sh`, guarded on the repo's smsggdj ROM. A package's `retroplug.protocol.kinds` becomes the `kinds` half
+(`js/kinds.js`, a global-code bundle that per kind imports its entries' runtime modules and registers them through
+`__rp_registerKindItems`) and pack.json's `kinds` member (each entry less its module). It runs in the built-in script
+contexts, which have no module loader, so the tool bundles every `@retroplug` import it makes, resolved through that package's
+exports map (lsdj-launchpad's runtime imports `@retroplug/lsdj/playback/predict`), and refuses `zod`, `react`,
+`react/jsx-runtime`, `lvgljs`, `lvgljs-ui` and the declaring kind's own runtime registry module (the half registers through the
+registrar). The kinds half's fixtures are `packages/native/test/packs/kinds-fixture/` (hand-written: `kindfix` and its variants
+`-engine-throws`, `-late`, `-missing`, `-nodes`, `-syntax`, `-taken`, `-throws`, `-twin`, `-undeclared` and `-unknown`) and
+`ts-fixture/kinds/` (`tsfix-kind`, a package with an app half and a controller app's runtime that the tool builds), tested by
+`PackKinds.test.cpp` (`[packs-kinds]`: the table, the pack list, Engines from construction, a late pack, another bundle, a
+failed load, the built `tsfix-kind`), the UI's `packs-ts-fixture` case (the fixture's app is offered by the Launchpad menu's App
+row, beside the built-in apps) and the CLI's legs (a kinds half claiming a built-in app is refused natively, naming the app and
+its holder; `tsfix-kind` is refused nowhere). The protocol half's hand-written fixtures are
 `packages/native/test/packs/protocol-fixture/` (`protofix` and its variants `-clash`, `-missing`, `-syntax`, `-throws` and
 `-undeclared`), tested by `PackProtocol.test.cpp` (`[packs-protocol]`: the table, the pack list, every Engine, a refusal in one
 Engine, a load under a live audio thread, the built `tsfix-proto`; the span-label case runs only in a `RETROPLUG_PROFILE`
@@ -231,7 +242,7 @@ product takes the same argument.
 the root [package.json](../package.json)): `packages.ts` concatenates each package's `app` contribution, `consoles.ts`
 each package's `retroplug.consoles` module (its console descriptors and the physical carts one of them can drive, kept
 apart from the app because the planner reads them and must carry no role schema), `protocol.ts` seeds the live protocol
-registries `buildGraph` and the stores wire a role through, which a pack's protocol half adds to (the paragraph below on the live protocol registries), and holds the contribution kinds' data, `scriptNodes.ts` is the script-node
+registries `buildGraph` and the stores wire a role through, which a pack's protocol half adds to (the paragraph below on the live protocol registries), and seeds the kind data table (`kindDataRegistry`; [04](04-roles-protocol-nodes.md#a-packs-items-for-a-contribution-kind)), `scriptNodes.ts` is the script-node
 bundle's entry, in span-label order, `placers.ts` each package's `retroplug.protocol.placer` module,
 `ui/generated/menus.ts` is each package's `retroplug.ui` module in product order (its `defineUi({ rows, menus, trackers,
 services, actions })`: the menu contributions, the UI services and the app actions the key maps dispatch, imported only
@@ -262,7 +273,7 @@ The protocol tables are two more: `protocolNodesRegistry` (every declared node, 
 read through `protocolNodes()`, `roleNodes()`, `declaredNodeTypes()` and `protocolSpecOf()` (`graph/protocolNodes.ts`,
 rebuilt after each commit). Their checks are `graph/protocolSpec.ts`'s, run at every commit over the whole staged list, so
 the product's own tables pass through the rules a pack's do; the generator keeps its build-time checks beside them.
-`KIND_DATA` stays a generated constant until M2f.
+The kind tables are three more (`kindDataRegistry`, `kindItemsRegistry`, `contributionKindsRegistry`, in `src/contributions/kindRegistries.ts`), seeded by `protocol.ts` and `packages.ts` and read through `kindData()` and `declaredKind()`; a pack's kind items join them at its commit.
 
 **Every product but the desktop gets its own tree**, and its own bundles (the control plane and the React UI as one
 shared module set, plus the script nodes and the render worker): `generate({ product })` (the

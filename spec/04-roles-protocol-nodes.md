@@ -437,6 +437,30 @@ roles registry carries, and `test/graph/protocol-nodes.test.ts` to the ports eac
 declares and to the bundle's node types; `golden/build-graph-roles.json` records the documents it makes
 `buildGraph` build.
 
+<a id="a-packs-items-for-a-contribution-kind"></a>**A pack's items for a contribution kind.** A pack contributes to a kind a
+built-in package declares (a pack declaring a kind stays refused) with the three halves a built-in item has: the control half
+in its app half under the kind's name (`controllerApps: [{ id, label, config, menu }]`), the data in pack.json's top-level
+`kinds` member (`{ "<kind>": [{ id, ...data keys }] }`, the manifest's `protocol.kinds` less each entry's `module`; top level
+because a pack may contribute items with no protocol nodes), and the runtime in the kinds half
+([02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)). The generated `scriptNodes.ts` defines
+`globalThis.__rp_registerKindItems` after it registers the product's own items: for each kind the product declares it calls
+the kind's runtime `register`, and it refuses an undeclared kind, ids that are not the `ids` given and an id the kind already
+holds (`registerControllerApps` would replace one silently, so a pack could shadow a built-in app); a product with no kinds
+refuses every call. The tables are live: `kindDataRegistry` (`{ kind, id, data }`, seeded by `protocol.ts`, so the planner's
+bundle carries no app), `kindItemsRegistry` (the taken ids) and `contributionKindsRegistry` (`{ kind, contribution, data }`),
+the last two seeded by `packages.ts`, all in
+[contributions/kindRegistries.ts](../packages/retroplug/src/contributions/kindRegistries.ts), read through `kindData(kind)`
+and `declaredKind(kind)` (rebuilt after a commit; `PlaceContext.kindData` is what the placers read). One generated seed commit
+covers every kind, and a product with no kind seeds the empty tables. A kind takes a later commit's items through
+`ContributionKind.add?(items, data)` ([core/ts/defineKind.ts](../packages/core/ts/defineKind.ts)): it is called after the
+pack's commit with that pack's items and their data alone, and must not throw (its `check` runs first, at staging, where a
+refusal belongs); a kind without `add` takes none, and the pack is refused. The loader
+([packs/kindsHalf.ts](../packages/retroplug/src/packs/kindsHalf.ts)) holds a pack's items to the kind's rules: the kind is
+declared and has `add`, the app half's ids and the `kinds` entries' ids pair in both directions, every data key is one the
+kind declares, no id is another package's, and the kind's `check` runs over the pack's items with the live protocol tables
+plus the pack's own staged nodes and roles (so an app whose `syncOverride` names the pack's own sync node is accepted). The
+registrar's owners are a null-prototype table and it compares ids exactly.
+
 **One writer per system input.** Two roles whose nodes write the same system input (a project stored with `mgb`
 whose ROM path now holds LSDj gains `lsdj-sync`, both writing `serialIn`; or a hand-edited file naming a kind twice)
 would make the planner refuse the whole document (`input-taken`). `protocolPipeline` places the first in role order
