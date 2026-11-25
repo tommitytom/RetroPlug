@@ -42,6 +42,7 @@ than work.
 - [ ] [Threaded engine cases are smoke runs](#threaded-engine-cases-are-smoke-runs)
 - [ ] [A plugin with its editor closed has no idle reclaim](#a-plugin-with-its-editor-closed-has-no-idle-reclaim)
 - [ ] [A silent plugin after an editor-close suspend](#a-silent-plugin-after-an-editor-close-suspend)
+- [ ] [A rate change with the editor closed parks the plugin](#a-rate-change-with-the-editor-closed-parks-the-plugin)
 - [ ] [The script node Block has no resource accessor](#the-script-node-block-has-no-resource-accessor)
 - [ ] [The command ring and the adoption wait](#the-command-ring-and-the-adoption-wait)
 - [ ] [Serial capacities past large blocks](#serial-capacities-past-large-blocks)
@@ -385,6 +386,24 @@ leaves it mute. The give cannot be made on the foreign thread: handing the engin
 would put two threads in the command and release rings, and the policy cannot tell a host with no tick from one between
 blocks. A fix would need a way to take the engine there that is safe for both rings, or a tick the format promises.
 ([Known bugs batch 4 design](../docs/known-bugs-batch-4-design.md) section 3.)
+
+### A rate change with the editor closed parks the plugin
+
+A sample-rate change, or a buffer size above the plan's (`Engine::kDefaultMaxBlockFrames`), that a host makes off the
+plugin's control thread parks `run()`, silent with its MIDI held, until the control thread's idle tick applies it
+(`packages/native/plugin/LifecycleHandoff.hpp`). That tick is the editor's per-frame `reclaimReleased`, so with the
+editor closed only the DAW's next `getState`/`setState` applies it, and a park nobody applies is only reported after a
+second. The formats that can deliver the change off the control thread are VST2 (whichever thread its host dispatches
+the sample-rate, block-size and suspend opcodes on) and DPF's JACK target (from JACK's notification callback, but that
+target is the standalone, whose window keeps the tick running); CLAP, VST3 and AU make these calls on the control
+thread. Two steps, in order: measure first, with the VST2 build in the Reaper and Renoise harnesses (spec/14), the
+editor closed, a project rate change, and which thread each lifecycle call arrives on and whether the output goes
+silent; and only if a host is found calling off its main thread, have the DPF fork's VST2 wrapper ask that host for
+main-thread idle while a park is pending (`audioMasterNeedIdle`, then `effIdle`, which it does not handle today: it
+forwards only `effEditIdle`, with an editor) and run the handoff's tick from it, a change to the vendored DPF that needs
+a deliberate dpf.js pointer bump. Neither a plugin-owned thread nor the audio thread may apply the park: it flips the
+engine's owner, drains, reclaims and runs the control plane's JS, which race the DAW's own state calls on its main
+thread.
 
 ### The script node Block has no resource accessor
 
