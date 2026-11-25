@@ -6,11 +6,13 @@
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-protocol]"`.
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
 
+#include "GraphDocs.hpp"
 #include "PackTestSupport.hpp"
 #include "host/js/PackLoaderCore.hpp"
 #include "host/packs/PackTable.hpp"
@@ -21,6 +23,8 @@
 namespace fs = std::filesystem;
 using rp::host::packs::PackTable;
 using rp::host::packs::test::fixture;
+using rp::host::packs::test::MidiOut;
+using rp::host::packs::test::runBlock;
 using rp::host::packs::test::TempDir;
 
 namespace {
@@ -166,4 +170,68 @@ TEST_CASE("an app pack is loaded once and never reloaded", "[packs-protocol]") {
     CHECK(error == "the app pack rp.protofix.protocol is loaded already: an app pack is never reloaded");
     CHECK(host.loadAppPack("protofix", {&chunk, 1}, 0, &error) == nullptr);
     host.discardPack(first);
+}
+
+namespace {
+
+// Host MIDI in -> rp.protofix.up -> host MIDI out, under system 1.
+const char* kUpDocument =
+    R"({"nodes":[{"id":"in","type":"rp.host.midi-in"},{"id":"up","type":"rp.protofix.up"},)"
+    R"({"id":"out","type":"rp.host.midi-out","settings":{"systems":[1]}}],)"
+    R"("wires":[{"from":"in.midi","to":"up.in"},{"from":"up.midiOut","to":"out.in1"}]})";
+
+}  // namespace
+
+TEST_CASE("an Engine registers a pack's protocol nodes, and its node runs", "[packs-protocol]") {
+    PackTable table;
+    withTrial(table);
+    REQUIRE(table.load(fixture("protofix")));
+    Engine e(48000.0, table);
+    const auto r = e.setGraph(rp::host::test::graphRequest(kUpDocument, {}));
+    INFO((r.errors.empty() ? std::string() : r.errors.front().message));
+    REQUIRE(r.ok);
+    CHECK(runBlock(e, {{0x90, 60, 100}}) == std::vector<MidiOut>{{1, 0, {0x90, 72, 100}}});
+    // Its pack is the engine's app pack, beside the built-in one.
+    bool listed = false;
+    for (const auto& p : e.scriptPacks()) listed = listed || p.id == "rp.protofix.protocol";
+    CHECK(listed);
+}
+
+TEST_CASE("two Engines each load it, and one built before the load takes it at its next setGraph", "[packs-protocol]") {
+    PackTable table;
+    withTrial(table);
+    Engine early(48000.0, table);
+    REQUIRE(table.load(fixture("protofix")));
+    Engine late(48000.0, table);
+    for (Engine* e : {&early, &late}) {
+        REQUIRE(e->setGraph(rp::host::test::graphRequest(kUpDocument, {})).ok);
+        CHECK(runBlock(*e, {{0x90, 64, 1}}) == std::vector<MidiOut>{{1, 0, {0x90, 76, 1}}});
+    }
+}
+
+TEST_CASE("a pack's protocol nodes take the span labels after the built-ins'", "[packs-protocol]") {
+    PackTable table;
+    withTrial(table);
+    REQUIRE(table.load(fixture("protofix")));
+    Engine e(48000.0, table);
+    const auto names = e.dspTraceNames();
+    if (names.empty()) SKIP("this build names no span labels (RETROPLUG_PROFILE is off)");
+    const auto at = [&](const std::string& type) {
+        return static_cast<std::size_t>(std::find(names.begin(), names.end(), type) - names.begin());
+    };
+    REQUIRE(at("rp.protofix.up") < names.size());
+    CHECK(at("rp.protofix.idle") == at("rp.protofix.up") + 1);
+    // Every built-in script node's label is below the pack's.
+    CHECK(at("rp.midi.route") < at("rp.protofix.up"));
+    CHECK(at("rp.lsdj.serial-out") < at("rp.protofix.up"));
+}
+
+TEST_CASE("no caller of loadScriptPack can take a pack's protocol id", "[packs-protocol]") {
+    PackTable table;
+    withTrial(table);
+    REQUIRE(table.load(fixture("protofix")));
+    Engine e(48000.0, table);
+    const auto r = e.loadScriptPack("rp.protofix.protocol", "var x = 1;");
+    CHECK_FALSE(r.ok);
+    CHECK(r.error.find("is the app's to give") != std::string::npos);
 }

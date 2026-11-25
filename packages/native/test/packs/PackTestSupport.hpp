@@ -4,11 +4,14 @@
 // packs (build/packs/<id>/1.0.0/, test/packs/fixture/CMakeLists.txt), and an environment variable set for one case.
 
 #include <atomic>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include "host/engine/Engine.hpp"
 #include "host/packs/PackDirs.hpp"
 #include "util/ProcessId.hpp"
 
@@ -103,5 +106,23 @@ private:
     const char*                name_;
     std::optional<std::string> old_;
 };
+
+// One host MIDI message an Engine sent out in a block: its system, frame and bytes.
+struct MidiOut {
+    std::uint32_t             system = 0, frame = 0;
+    std::vector<std::uint8_t> data;
+    bool operator==(const MidiOut&) const = default;
+};
+
+// One block over the staged messages, and the host MIDI the plan sent out.
+inline std::vector<MidiOut> runBlock(Engine& e, const std::vector<std::vector<std::uint8_t>>& messages) {
+    std::uint32_t frame = 0;
+    for (const auto& m : messages) e.stageMidi(frame++, m);
+    std::vector<float> l(256), r(256);
+    e.processBlock(256, l.data(), r.data());
+    std::vector<MidiOut> out;
+    for (const auto& m : e.midiOut()) out.push_back({m.system, m.frame, m.data});
+    return out;
+}
 
 }  // namespace rp::host::packs::test

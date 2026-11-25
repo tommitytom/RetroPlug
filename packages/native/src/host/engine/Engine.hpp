@@ -573,7 +573,8 @@ private:
     rp::host::packs::PackTable* packs_ = nullptr;
     std::size_t                 packsSeen_ = 0;
     std::vector<std::string>    packsRefused_;
-    // Each pack the table loaded since the last call, registered whole or not at all: from the constructor, and from
+    // Each pack the table loaded since the last call (its packages and its protocol half, which goes into the script
+    // host as an app pack), registered whole or not at all: from the constructor, and from
     // each setGraph before it plans, on the control thread, as loadScriptPack changes the registry.
     void syncPacks();
 

@@ -655,9 +655,21 @@ void Engine::syncPacks() {
                 break;
             }
         }
+        // Its protocol half: the pack's QuickJS script nodes, loaded into this engine's script host as an app pack of its
+        // own (rp.<id>.protocol), whose runtimes are this engine's as the built-in pack's are, and whose types take the
+        // script host's next span labels. Loaded before the checks, so its package is checked with the pack's others, and
+        // freed again when the pack is refused here.
+        const rp_package* protocol = nullptr;
+        if (fits && pack->protocol) {
+            const rp::host::ScriptHost::Chunk chunk{pack->protocol->bytecode};
+            protocol = graph_->script.loadAppPack(pack->protocol->scriptId, {&chunk, 1}, 0, &why);
+            fits = protocol != nullptr;
+        }
         for (const rp_package* p : pack->packages)
             fits = fits && registry.canAdd(p, &why);
+        if (fits && protocol) fits = registry.canAdd(protocol, &why);
         if (!fits) {
+            if (protocol) graph_->script.discardPack(protocol);
             std::fprintf(stderr, "[engine] pack %s was refused here: %s\n", pack->manifest.id.c_str(), why.c_str());
             packsRefused_.push_back(pack->manifest.id);
             continue;
@@ -667,6 +679,10 @@ void Engine::syncPacks() {
         for (const rp_package* p : pack->packages) {
             [[maybe_unused]] const bool added = registry.addPackage(p, &why);
             assert(added && "a package canAdd passed and the table's trial registered after its siblings");
+        }
+        if (protocol) {
+            [[maybe_unused]] const bool added = registry.addPackage(protocol, &why);
+            assert(added && "the protocol package canAdd passed, and the table refused a clash with the pack's own");
         }
     }
 }

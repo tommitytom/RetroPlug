@@ -181,24 +181,7 @@ TEST_CASE("a script half whose types clash is refused before it takes a MicroQui
 // BlipToaster's static script pack, as this binary links it (retroplug-bliptoaster-script), beside the pack's.
 extern "C" const rp_package* rp_bliptoaster_script_package(void);
 
-namespace {
-struct MidiOut {
-    std::uint32_t             system = 0, frame = 0;
-    std::vector<std::uint8_t> data;
-    bool operator==(const MidiOut&) const = default;
-};
-
-// One block over the staged messages, and the host MIDI the plan sent out.
-std::vector<MidiOut> runBlock(Engine& e, const std::vector<std::vector<std::uint8_t>>& messages) {
-    std::uint32_t frame = 0;
-    for (const auto& m : messages) e.stageMidi(frame++, m);
-    std::vector<float> l(256), r(256);
-    e.processBlock(256, l.data(), r.data());
-    std::vector<MidiOut> out;
-    for (const auto& m : e.midiOut()) out.push_back({m.system, m.frame, m.data});
-    return out;
-}
-}  // namespace
+using rp::host::packs::test::runBlock;
 
 TEST_CASE("BlipToaster's script half as a pack filters MIDI exactly as its static build does", "[packs-script]") {
     PackTable table(rp::graph::productPackages());
