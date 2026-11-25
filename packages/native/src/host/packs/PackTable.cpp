@@ -426,8 +426,8 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     }
     // The kinds half: read, compiled and run after the built-in script nodes by the backend's trial, which refuses a
     // runtime that throws, registers an id a built-in package holds or names a kind the product does not declare. An id
-    // an earlier pack holds is the TS loader's to refuse (kindItemsRegistry), and every Engine's registrar refuses it
-    // too.
+    // an earlier pack holds is refused by this trial itself, which runs the earlier packs' chunks first (every Engine's
+    // registrar refuses it too).
     if (manifest->kinds) {
         if (!kindsTrial_) return refuseHere(id, pack + " has a kinds half, and this host loads none");
         const auto source = readTextFile(candidate.dir / fs::path(manifest->halves.at("kinds")), &why);

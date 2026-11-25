@@ -14,7 +14,7 @@ namespace {
 const char* const kPrelude =
     "(function () {\n"
     "  var real = globalThis.__rp_registerKindItems;\n"
-    "  var calls = {};\n"
+    "  var calls = Object.create(null);\n"
     "  globalThis.__rpKindsTrialCalls = calls;\n"
     "  globalThis.__rpKindsNodeCount = (globalThis.__rp_scriptNodes || []).length;\n"
     "  globalThis.__rp_registerKindItems = function (kind, items, ids) {\n"
@@ -36,7 +36,7 @@ std::string epilogue(const std::map<std::string, std::vector<std::string>>& decl
     }
     want += "}";
     return "(function () {\n"
-           "  var want = " + want + ";\n"
+           "  var want = Object.assign(Object.create(null), " + want + ");\n"
            "  var got = globalThis.__rpKindsTrialCalls;\n"
            "  var nodes = (globalThis.__rp_scriptNodes || []).length;\n"
            "  if (nodes !== globalThis.__rpKindsNodeCount) {\n"

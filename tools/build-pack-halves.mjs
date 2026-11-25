@@ -27,7 +27,7 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { SHELL_IMPORTS, UI_IMPORTS, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
@@ -242,8 +242,9 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
     lines.push(`globalThis.__rp_registerKindItems(${JSON.stringify(kind)}, [${names.join(", ")}], ${JSON.stringify(ids)});`);
     member[kind] = entries.map(({ module: _module, ...rest }) => rest);
   }
-  await esbuild.build({
+  const result = await esbuild.build({
     stdin: { contents: lines.join("\n"), resolveDir: packageDir, sourcefile: "kinds-entry.js", loader: "js" },
+    metafile: true,
     bundle: true,
     format: "iife",
     platform: "neutral",
@@ -257,6 +258,25 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
     nodePaths: [join(REPO, "node_modules")],
     logLevel: "silent",
   });
+  // A module the entries import in turn can reach a kind's runtime module (launchpad's controllerSession imports ./apps),
+  // which the resolver cannot see: the bundle's inputs say so. The refusal names the entry module whose imports lead there.
+  const runtimeModules = kindRuntimeModules();
+  const inputs = result.metafile.inputs;
+  const keyOf = (file) => relative(packageDir, file).split(sep).join("/");
+  const wanted = new Set([...runtimeModules].map(keyOf));
+  const reaches = (key, seen) => {
+    if (wanted.has(key)) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return (inputs[key]?.imports ?? []).some((i) => reaches(i.path, seen));
+  };
+  for (const entry of Object.values(kinds).flat()) {
+    const key = keyOf(join(packageDir, entry.module));
+    if (reaches(key, new Set())) {
+      throw new Error(`${join(packageDir, entry.module)} imports a kind's own registry module: a kinds half registers its ` +
+        "items through __rp_registerKindItems, never the kind's own registry");
+    }
+  }
   pack.kinds = member;
   return "js/kinds.js";
 }
@@ -264,6 +284,9 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
 export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner }) {
   const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   const block = manifest.retroplug ?? {};
+  if (block.kinds !== undefined) {
+    throw new Error("retroplug.kinds: a pack cannot declare a contribution kind of its own (docs/downloadable-packs-m2f-plan.md)");
+  }
   const externals = packExternals();
   const pack = JSON.parse(readFileSync(template, "utf8"));
   const halves = pack.halves?.native ? { native: pack.halves.native } : {};

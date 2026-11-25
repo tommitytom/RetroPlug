@@ -3,7 +3,7 @@
 // that imports this runs in the script node's bundle, where there is no schema library.
 //
 // The entries are REGISTERED, not listed here: the generated script entry (src/generated/scriptNodes.ts) registers every
-// package's runtime before it registers the session node, and the node looks an app up by id. That is what keeps a
+// package's runtime before it registers the session node (a pack's kinds half then adds its own), and the node looks an app up by id. That is what keeps a
 // tracker's app out of this package (an app that drives an LSDj cart lives with the tracker's bridge) while the node
 // still runs it, and what makes the bundle carry exactly the apps the product's manifests declare.
 //
@@ -38,8 +38,9 @@ export interface ControllerAppRuntime {
 
 const runtimes: ControllerAppRuntime[] = [];
 
-/** Register every app's runtime, in the order the product lists them. The generated script entry calls this once,
- *  before the session node can run, so a document naming an app finds it from its first block. */
+/** Register every app's runtime, in the order the product lists them. The generated script entry calls this with the
+ *  product's own apps, and its registrar once more for each downloaded pack's kinds half, all before the session node
+ *  can run, so a document naming an app finds it from its first block. */
 export function registerControllerApps(apps: readonly ControllerAppRuntime[]): void {
   for (let i = 0; i < apps.length; i++) {
     const app = apps[i];

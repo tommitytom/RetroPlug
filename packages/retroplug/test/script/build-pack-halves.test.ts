@@ -380,3 +380,35 @@ test("a kinds entry with no id or no module is refused", async () => {
   expect(got.noId).toBe("a retroplug.protocol.kinds.controllerApps entry has no id");
   expect(got.noModule).toBe("retroplug.protocol.kinds.controllerApps: bad-app has no module");
 });
+
+test("a package declaring a contribution kind of its own, and a runtime reaching a kind's registry through another module, are refused", async () => {
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-kinds-own-"));',
+    'const pkg = path.join(work, "pkg");',
+    'fs.mkdirSync(path.join(pkg, "ts"), { recursive: true });',
+    'const template = path.join(work, "pack.json");',
+    'fs.writeFileSync(template, JSON.stringify({ id: "bad", name: "b", version: "1.0.0", apiLevel: 0, license: "x",',
+    '  source: "x", requires: { packs: [], platforms: [] }, provides: { platforms: [], nodeTypes: [], roles: [] }, halves: {} }));',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const out = {};',
+    '  const run = async (name, retroplug) => {',
+    '    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "bad", private: true, retroplug }));',
+    '    try { await m.buildPackHalves({ packageDir: pkg, outDir: path.join(work, name), template }); out[name] = "built"; }',
+    '    catch (e) { out[name] = e.message; }',
+    '  };',
+    '  await run("own", { kinds: { thing: {} } });',
+    '  fs.writeFileSync(path.join(pkg, "ts/rt.ts"), "import { controllerSessionNode as x } from \\"@retroplug/launchpad/controllerSession\\";\\nexport default { id: \\"bad-app\\", x };\\n");',
+    '  await run("transitive", { protocol: { kinds: { controllerApps: [{ id: "bad-app", module: "ts/rt.ts" }] } } });',
+    '  console.log(JSON.stringify(out));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '});',
+  ].join("\n");
+  const r = await runNode(script);
+  expect(r.status, r.err).toBe(0);
+  const got = JSON.parse(r.out);
+  expect(got.own).toBe("retroplug.kinds: a pack cannot declare a contribution kind of its own (docs/downloadable-packs-m2f-plan.md)");
+  expect(got.transitive.includes("rt.ts imports a kind's own registry module: a kinds half registers its items through " +
+    "__rp_registerKindItems, never the kind's own registry"), got.transitive).toBe(true);
+});

@@ -3,31 +3,37 @@
 // manifests, writes the eight gitignored modules the shell builds against.
 //
 //   packages/retroplug/src/generated/packages.ts     the app's registrations, in product order (the list's, then the
-//                                                    shell): the roles buildAppRegistry applies, the ROM providers,
-//                                                    the tracker integrations, the kit formats, the project sections
-//                                                    and services, the contribution kinds' items, and a duplicate in
-//                                                    list a key or a marker role identifies refused at load
+//                                                    shell): the roles buildAppRegistry applies, the ROM
+//                                                    providers, the tracker integrations, the kit formats,
+//                                                    the project sections and services, the contribution
+//                                                    kinds' items, and a duplicate in list a key or a
+//                                                    marker role identifies refused at load
 //   packages/retroplug/src/generated/consoles.ts      seeds the live registries in
-//                                                    src/contributions/consoleRegistries.ts (where the checks live) with the consoles the shell classifies a
-//                                                    ROM with and places systems by, and the physical carts a project
-//                                                    can drive, from each package's retroplug.consoles module. It
-//                                                    imports only those modules and the registries, so a bundle of
-//                                                    the planner carries the descriptors without an app module or zod
+//                                                    src/contributions/consoleRegistries.ts (where the
+//                                                    checks live) with the consoles the shell classifies
+//                                                    a ROM with and places systems by, and the physical
+//                                                    carts a project can drive, from each package's
+//                                                    retroplug.consoles module. It imports only those
+//                                                    modules and the registries, so a bundle of the
+//                                                    planner carries the descriptors without an app
+//                                                    module or zod
 //   packages/retroplug/src/generated/protocol.ts     seeds the live protocol tables in
 //                                                    src/contributions/protocolRegistries.ts (every protocol node, its
 //                                                    wiring, and the role kinds placed as one) that buildGraph reads,
 //                                                    and the data the contributing manifests declare for
-//                                                    each contribution kind's items (kindRegistries.ts). It imports
-//                                                    only the registries, so a bundle of buildGraph carries the
-//                                                    tables without a single node's code, no role's schema and no item's code
+//                                                    each contribution kind's items (kindRegistries.ts). It
+//                                                    imports only the registries, so a bundle of
+//                                                    buildGraph carries the tables without a single
+//                                                    node's code, no role's schema and no item's code
 //   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, registering each contribution
 //                                                    kind's runtime halves (the manifests' entries) and then the node
 //                                                    definitions, in span-label order
 //   packages/retroplug/src/generated/placers.ts      seeds the live registry in
-//                                                    src/contributions/placerRegistries.ts (where the checks live) with the graph placers buildGraph reads,
-//                                                    one import per declaring package, in product order. Types and
-//                                                    constants alone, so the planner's bundle carries no node module
-//                                                    and no schema
+//                                                    src/contributions/placerRegistries.ts (where the
+//                                                    checks live) with the graph placers buildGraph
+//                                                    reads, one import per declaring package, in product
+//                                                    order. Types and constants alone, so the planner's
+//                                                    bundle carries no node module and no schema
 //   packages/retroplug/ui/generated/menus.ts          the packages' UI contributions, in product order, and the checks
 //                                                    their rows and builders are held to at load. Imported only by
 //                                                    ui/, so no other bundle carries a menu contribution
@@ -1384,9 +1390,9 @@ function renderProtocol({ byType, roles, packages, outDir, shellDir, product }) 
 function registrarLines(kinds) {
   const lines = [
     "// A downloaded pack's kind items register their runtimes through this, after the product's own above",
-    "// (docs/downloadable-packs-m2f-plan.md): its kinds half runs it in both of the built-in pack's contexts. It refuses",
-    "// a kind this product does not declare, items that are not the ids the pack's manifest declares, and an id the",
-    "// kind already holds, which the kind's own register would replace without a word.",
+    "// (docs/downloadable-packs-m2f-plan.md): its kinds half runs it in both of the built-in pack's contexts. It",
+    "// refuses a kind this product does not declare, items that are not the ids the pack's manifest declares, and an",
+    "// id the kind already holds, which the kind's own register would replace without a word.",
   ];
   if (!kinds.length) {
     lines.push("const KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {};");

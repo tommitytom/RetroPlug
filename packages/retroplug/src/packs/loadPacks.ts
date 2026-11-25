@@ -285,15 +285,14 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
     // builder set holding only one, or an app half an earlier call loaded) would only misfire later as a mismatch.
     if (pack.halves.includes("app") && pack.halves.includes("kinds") && builders.kinds) {
       const at = todo.indexOf("kinds");
-      if (todo.includes("app") && at < 0 && !loaded.get(pack.id)?.has("kinds")) todo.push("kinds");
-      else if (!todo.includes("app") && at >= 0) todo.splice(at, 1);
+      if (!todo.includes("app") && at >= 0) todo.splice(at, 1);
     }
     if (!todo.length) continue;
     try {
       const exported = new Map<HalfKind, unknown>();
       for (const kind of todo) {
         if (DATA_HALVES.has(kind)) {
-          exported.set(kind, pack.protocol);
+          exported.set(kind, kind === "kinds" ? pack.kinds : pack.protocol);
           continue;
         }
         const ns = (await importBefore(host, pack.id, kind, deadline)) as { default?: unknown };

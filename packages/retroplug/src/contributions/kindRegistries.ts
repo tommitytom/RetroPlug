@@ -2,8 +2,8 @@
 // (their ContributionKind and the data keys an item may carry), the item ids taken in each, and each item's data. The
 // generated modules seed them: the data from src/generated/protocol.ts, which the planner's bundle carries with no
 // app; the kinds and the ids from src/generated/packages.ts, which is the app's. A downloaded pack's kind items
-// (src/packs/kindsHalf.ts turns them into additions) join the last two at its commit. Only registry.ts and core's types are imported, so the planner's bundle
-// carries no schema.
+// (src/packs/kindsHalf.ts turns them into additions) join the last two at its commit. Only registry.ts and core's
+// types are imported, so the planner's bundle carries no schema.
 import type { ContributionKind, KindData } from "@retroplug/core/defineKind";
 import { derived, Registry } from "./registry";
 

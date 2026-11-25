@@ -161,8 +161,6 @@ std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
     return chunks;
 }
 
-
-
 // The two global-code chunks around a pack's kinds halves in the built-in load, each compiled once. The guard, before
 // them, records how many script node definitions the bundle holds; the closer, after them, closes the bundle's kind
 // registrar (a pack's runtime code runs in these contexts at block time, and must not add items later and make the
@@ -170,24 +168,24 @@ std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
 // replaced as well) and throws if a kinds half defined script nodes, which would join rp.script before the host reads
 // them and could take the whole package down. A throw makes the load fall back to the bundle alone. Empty if one does
 // not compile (reported once).
-std::span<const std::uint8_t> compiledChunk(const char* source, std::vector<std::uint8_t>& slot) {
-    if (slot.empty()) {
-        std::string error;
-        auto compiled = dsp::compileToBytecode(source, rp::host::ScriptHost::kStackBytes, &error);
-        if (compiled) slot = std::move(*compiled);
-        else std::fprintf(stderr, "[engine] a kinds guard chunk did not compile (%s)\n", error.c_str());
-    }
-    return slot;
+std::vector<std::uint8_t> compileChunk(const char* source) {
+    std::string error;
+    auto compiled = dsp::compileToBytecode(source, rp::host::ScriptHost::kStackBytes, &error);
+    if (compiled) return std::move(*compiled);
+    std::fprintf(stderr, "[engine] a kinds guard chunk did not compile (%s)\n", error.c_str());
+    return {};
 }
 
-std::span<const std::uint8_t> kindsGuard() {
-    static std::vector<std::uint8_t> bytecode;
-    return compiledChunk("globalThis.__rpKindsNodeCount = (globalThis.__rp_scriptNodes || []).length;\n", bytecode);
+// Each is a function-local static const, initialised by the call: C++11 magic statics make two Engines built at once
+// compile it once, with no race. An empty one is never loaded (see the Engine constructor).
+const std::vector<std::uint8_t>& kindsGuard() {
+    static const std::vector<std::uint8_t> bytecode =
+        compileChunk("globalThis.__rpKindsNodeCount = (globalThis.__rp_scriptNodes || []).length;\n");
+    return bytecode;
 }
 
-std::span<const std::uint8_t> registrarCloser() {
-    static std::vector<std::uint8_t> bytecode;
-    return compiledChunk(
+const std::vector<std::uint8_t>& registrarCloser() {
+    static const std::vector<std::uint8_t> bytecode = compileChunk(
         "(function () {\n"
         "  var was = globalThis.__rpKindsNodeCount;\n"
         "  delete globalThis.__rpKindsNodeCount;\n"
@@ -199,8 +197,8 @@ std::span<const std::uint8_t> registrarCloser() {
         "construction\");\n"
         "  };\n"
         "  if (now !== was) throw new Error(\"a pack's kinds half defines script nodes, which a kinds half may not\");\n"
-        "})();\n",
-        bytecode);
+        "})();\n");
+    return bytecode;
 }
 
 } // namespace
@@ -273,13 +271,24 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     std::vector<std::string> kindPacks;
     const bool embedded = scriptBundle.data() == embeddedScripts().data();
     if (embedded) {
-        chunks.push_back(kindsGuard());
+        // An empty chunk is never loaded (it would fail the fallback load too): if a guard chunk did not compile, no
+        // kinds half joins, and the built-in script nodes load alone.
+        const auto& guard = kindsGuard();
+        const auto& closer = registrarCloser();
+        const bool guarded = !guard.empty() && !closer.empty();
+        if (guarded) chunks.push_back(rp::host::ScriptHost::Chunk{guard});
         for (const auto* pack : packs.loadedFrom(0)) {
             if (!pack->kinds) continue;
+            if (!guarded) {
+                kindsFailedAtBuild_ = "a guard chunk did not compile";
+                kindsTriedAtBuild_.push_back(pack->manifest.id);
+                continue;
+            }
             chunks.push_back(rp::host::ScriptHost::Chunk{pack->kinds->bytecode});
             kindPacks.push_back(pack->manifest.id);
         }
-        chunks.push_back(registrarCloser());
+        if (guarded) chunks.push_back(rp::host::ScriptHost::Chunk{closer});
+        else chunks.assign(scriptBundle.begin(), scriptBundle.end());
     }
     bool loaded = graph_->script.load(chunks, &why);
     if (!loaded && !kindPacks.empty()) {
@@ -288,11 +297,12 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                      "alone\n",
                      why.c_str());
         kindsFailedAtBuild_ = why;
+        kindsTriedAtBuild_ = kindPacks;
         kindPacks.clear();
         makeGraph();
         chunks.assign(scriptBundle.begin(), scriptBundle.end());
-        chunks.push_back(kindsGuard());
-        chunks.push_back(registrarCloser());
+        chunks.push_back(rp::host::ScriptHost::Chunk{kindsGuard()});
+        chunks.push_back(rp::host::ScriptHost::Chunk{registrarCloser()});
         loaded = graph_->script.load(chunks, &why);
     }
     if (!loaded)
@@ -737,7 +747,8 @@ void Engine::syncPacks() {
         // ids stay taken in this Engine.)
         if (pack->kinds && std::find(kindPacksAtBuild_.begin(), kindPacksAtBuild_.end(), pack->manifest.id) ==
                                kindPacksAtBuild_.end()) {
-            if (!kindsFailedAtBuild_.empty())
+            if (std::find(kindsTriedAtBuild_.begin(), kindsTriedAtBuild_.end(), pack->manifest.id) !=
+                kindsTriedAtBuild_.end())
                 why = "its kinds half did not load beside the built-in script nodes in this engine (" + kindsFailedAtBuild_ + ")";
             else if (kindsOnEmbedded_)
                 why = "its kind items reach an Engine built after it loaded; they take effect at the next launch";
@@ -771,6 +782,7 @@ void Engine::syncPacks() {
             if (protocol) graph_->script.discardPack(protocol);
             std::fprintf(stderr, "[engine] pack %s was refused here: %s\n", pack->manifest.id.c_str(), why.c_str());
             packsRefused_.push_back(pack->manifest.id);
+            packsRefusedWhy_.push_back(why);
             continue;
         }
         // Each add then succeeds: canAdd proved each package against this registry, and the only thing an earlier add

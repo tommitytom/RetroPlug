@@ -385,6 +385,12 @@ public:
     // one a test added with addNodePackage). Control thread.
     std::size_t              packsRegistered() const { return packsSeen_ - packsRefused_.size(); }
     std::vector<std::string> refusedPacks() const { return packsRefused_; }
+    // Why this engine refused the pack with this id (empty if it did not).
+    std::string              refusalReason(std::string_view packId) const {
+        for (std::size_t i = 0; i < packsRefused_.size(); ++i)
+            if (packsRefused_[i] == packId) return packsRefusedWhy_[i];
+        return {};
+    }
     // The registry's entries a reload swapped out whose generation the script host has not yet freed.
     std::size_t retiredNodeTypeCount() const;
     // Script node instances whose JS is made and not yet released (ScriptHost::liveInstances): any thread, as
@@ -575,6 +581,7 @@ private:
     rp::host::packs::PackTable* packs_ = nullptr;
     std::size_t                 packsSeen_ = 0;
     std::vector<std::string>    packsRefused_;
+    std::vector<std::string>    packsRefusedWhy_; // parallel to packsRefused_
     // The packs whose kinds halves this engine's built-in pack loaded at construction, and whether it ran the embedded
     // bundle (the only one a kinds half is loaded beside): syncPacks refuses any other pack carrying one, with the
     // reason each case calls for.
@@ -582,6 +589,8 @@ private:
     bool                        kindsOnEmbedded_ = false;
     // Why the built-in load with the kinds halves failed (the fallback loaded the bundle alone), empty if it did not.
     std::string                 kindsFailedAtBuild_;
+    // The packs whose kinds halves were in that failed load (the only ones the failure reason is told to).
+    std::vector<std::string>    kindsTriedAtBuild_;
     // Each pack the table loaded since the last call (its packages and its protocol half, which goes into the script
     // host as an app pack), registered whole or not at all: from the constructor, and from each setGraph before it
     // plans, on the control thread, as loadScriptPack changes the registry.

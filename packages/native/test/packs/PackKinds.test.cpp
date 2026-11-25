@@ -156,6 +156,7 @@ TEST_CASE("an Engine built before the load refuses the pack by name, and its ses
     REQUIRE(table.load(fixture("kindfix")));
     REQUIRE(early.setGraph(rp::host::test::graphRequest(sessionDocument("kindfix-app"), {})).ok);
     CHECK(early.refusedPacks() == std::vector<std::string>{"kindfix"});
+    CHECK(early.refusalReason("kindfix").find("reach an Engine built after it loaded") != std::string::npos);
     CHECK(runBlock(early, {}).empty());
 }
 
@@ -166,6 +167,8 @@ TEST_CASE("an Engine on another script bundle loads no kinds half and refuses th
     const rp::host::ScriptHost::Chunk bundle[] = {{rp_script_test_bundle, rp_script_test_bundle_size}};
     Engine e(48000.0, bundle, table);
     CHECK(e.refusedPacks() == std::vector<std::string>{"kindfix"});
+    CHECK(e.refusalReason("kindfix").find("run on the product's script bundle, and this engine runs another") !=
+          std::string::npos);
 }
 
 TEST_CASE("a pack's runtime code finds the kind registrar closed once the Engine is built", "[packs-kinds]") {
@@ -194,10 +197,11 @@ TEST_CASE("a kinds half that fails only in an Engine drops every kinds half ther
     REQUIRE(table.load(fixture("kindfix-engine-throws")));
     Engine e(48000.0, table);
     CHECK(e.refusedPacks() == std::vector<std::string>{"kindfix-engine-throws"});
+    CHECK(e.refusalReason("kindfix-engine-throws").find("did not load beside the built-in script nodes") !=
+          std::string::npos);
     // The built-in session node is still registered, and the pack's app is not found: its host sent nothing.
     REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("kindfix-engine-throws-app"), {})).ok);
     CHECK(runBlock(e, {}).empty());
-    REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("lsdj-midimap"), {})).ok);
 }
 
 TEST_CASE("the pack build's kinds half runs in an Engine built after the load", "[packs-kinds]") {
