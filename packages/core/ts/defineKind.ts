@@ -30,13 +30,13 @@ export type KindData = Readonly<Record<string, Readonly<Record<string, unknown>>
 
 /** What a kind's `check` is handed beside the items and their data. */
 export interface KindCheckContext {
-  /** Every protocol node type the product's graph WIRES (the generated protocol module's PROTOCOL_NODES, which is data
-   *  alone): a kind whose data names a node type to set a mode on (a cart's sync node, say) checks it here, because
-   *  only the product knows which node types it places. A script node the graph does not wire - one a package's own
+  /** Every protocol node type the product's graph WIRES (the live protocol table the shell's
+   *  graph/protocolNodes.ts reads): a kind whose data names a node type to set a mode on (a cart's sync node, say)
+   *  checks it here, because only the product knows which node types it places. A script node the graph does not wire - one a package's own
    *  placer places, or the routing node the shell builds - is not in the set: nothing could set a mode on it through a
    *  document's node type, so a kind naming one is refused. */
   readonly nodeTypes: readonly string[];
-  /** The protocol node type each role kind is placed as (the generated protocol module's ROLE_NODES), for a kind whose
+  /** The protocol node type each role kind is placed as (the live role table the shell reads), for a kind whose
    *  data names a role beside the node it belongs to and must find the two agree. */
   readonly roleNodes: Readonly<Record<string, string>>;
 }

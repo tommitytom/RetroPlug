@@ -28,8 +28,8 @@ export interface ProtocolNodeSpec {
    *  carry no package. A mode this does not name captures nothing. */
   capture?: Readonly<Record<string, SerialOutCaptureMode>>;
   /** The type of the second node buildGraph places for the role, after the systems, as sys-<id>/<kind>/out with the
-   *  same settings: a PROTOCOL_NODES type that writes no system input, so the one-writer rule below is the first
-   *  node's alone. */
+   *  same settings: a protocol node type that writes no system input, so protocolPipeline's one-writer rule
+   *  (protocolNodes.ts) is the first node's alone. */
   out?: string;
 }
 
@@ -181,7 +181,11 @@ export function checkRoleNodes(roles: readonly Owned<RoleNodeEntry>[], nodes: re
       throw new Error(`${pkg}: a role's kind and node must be non-empty strings`);
     }
     const at = owners.get(item.kind);
-    if (at !== undefined) throw new Error(`two packages declare the role kind ${item.kind}: ${at} and ${pkg}`);
+    if (at !== undefined) {
+      throw new Error(at === pkg
+        ? `the package ${pkg} declares the role kind ${item.kind} twice`
+        : `two packages declare the role kind ${item.kind}: ${at} and ${pkg}`);
+    }
     owners.set(item.kind, pkg);
     const declared = nodes.find((n) => n.item.type === item.node)?.item;
     if (!declared) throw new Error(`${pkg}: the role ${item.kind} names ${item.node}, which no package declares`);

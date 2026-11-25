@@ -15,12 +15,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SHELL = resolve(HERE, "../..");
 
 /** Copy the shell's hand-written contribution modules (src/contributions, ui/contributions, cli/contributions) into a
- *  fixture tree at `root`: the generated modules import them by a path relative to the tree's own shell, and the checks
- *  a fixture's refusal comes from are the real ones. */
+ *  fixture tree at `root`, with the two graph modules the protocol tables' checks and readers live in: the generated
+ *  modules import them by a path relative to the tree's own shell, and the checks a fixture's refusal comes from are
+ *  the real ones. */
 export function copyShellContributions(root) {
   for (const tree of ["src", "ui", "cli"]) {
     const from = join(SHELL, tree, "contributions");
     if (existsSync(from)) cpSync(from, join(root, "packages/retroplug", tree, "contributions"), { recursive: true });
+  }
+  for (const file of ["protocolSpec.ts", "protocolNodes.ts"]) {
+    cpSync(join(SHELL, "src/graph", file), join(root, "packages/retroplug/src/graph", file));
   }
 }
 

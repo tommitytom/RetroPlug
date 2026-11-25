@@ -1,9 +1,9 @@
 // What a Game Boy captures of its serial out for the mode its cart's sync node runs
 // (docs/modular-graph-phase-c2-design.md section 5), which is the shell's rather than a package's: it reads
-// PROTOCOL_NODES, the generated table every product carries, so naming a cart's capture table here names no package.
+// the protocol tables, which every product carries, so naming a cart's capture table here names no package.
 // The controller's placement needs it the same way any other override does (docs/modular-graph-phase-f5a-design.md
 // section 6.3), and the placement itself is a package's.
-import { PROTOCOL_NODES, type ProtocolNodeSpec, type ProtocolRole } from "./protocolNodes";
+import { protocolSpecOf, type ProtocolRole } from "./protocolNodes";
 
 /** What a Game Boy captures of its serial out for LSDj's decoder (its node's `serialOutCapture` setting, as the C++
  *  node spells it), which the node gives the core when it takes it, before the core first runs, and at the start of
@@ -30,9 +30,9 @@ export function serialOutCaptureFor(
   // table is its package's data: the mapping of a mode to what the core does is the cart's, while this runs in the
   // planner, which may carry no cart at all. A pipeline with no such node captures nothing, whatever a role left out of
   // it says - what a capture delivers is decoded by that role's node, which is not placed.
-  const role = pipeline.find((r) => (PROTOCOL_NODES[r.node] as ProtocolNodeSpec).capture !== undefined);
+  const role = pipeline.find((r) => protocolSpecOf(r.node)?.capture !== undefined);
   if (!role) return "off";
-  const capture = (PROTOCOL_NODES[role.node] as ProtocolNodeSpec).capture!;
+  const capture = protocolSpecOf(role.node)!.capture!;
   const mode: unknown = forced ?? (role.config as { mode?: unknown }).mode;
   // An OWN key, not a bare index: the record's prototype would answer "constructor" or "toString" with a function,
   // and a mode is only ever one of the cart's own strings. (hasOwnProperty.call, because the shell's lib target is

@@ -15,11 +15,14 @@
 // sources that can disagree about a role. The registry stays what it is to the app: each role's schema,
 // onConstruct and menu, on the control plane.
 import type { RoleInstance } from "@retroplug/core/systemRoles";
-import type { ProtocolNodeSpec, SystemInput } from "./protocolSpec";
+import { isWired, type ProtocolNodeSpec, type SystemInput } from "./protocolSpec";
+// The live tables, seeded by the generated module this imports first (docs/downloadable-packs-m2e-plan.md): a pack's
+// protocol half adds to them, so they are read through the functions below, each rebuilt after a commit.
+import "../generated/protocol";
+import { protocolNodesRegistry, roleNodesRegistry } from "../contributions/protocolRegistries";
+import { derived, derivedList } from "../contributions/registry";
 
 export type { SystemInput, ProtocolNodeSpec } from "./protocolSpec";
-
-import { PROTOCOL_NODES, ROLE_NODES } from "../generated/protocol";
 
 // Each type's id as its node module spells it (the owning package's protocol module), and each port name as that
 // module declares it, which test/graph/build-graph.test.ts and test/graph/protocol-nodes.test.ts hold these to:
@@ -36,20 +39,41 @@ import { PROTOCOL_NODES, ROLE_NODES } from "../generated/protocol";
 //
 // An lsdj-sync role is two nodes: rp.lsdj.sync, before its Game Boy, takes the host's side into the cart (the routed
 // MIDI and the launches in, serial in and buttons out), and rp.lsdj.serial-out, after it, the cart's side to the host
-// (the Game Boy's serial out in, host MIDI out). The generated module holds the literals as a package's manifest
-// spells them, so ProtocolNodeType stays the union of the ids a product has.
-//
-// Both tables are re-exported as live bindings: PROTOCOL_NODES is the spec per type, ROLE_NODES the type per role kind
-// (exported for test/graph/protocol-nodes.test.ts, which holds each type to one the script bundle registers; everything
-// else reads it through protocolNodeOf).
-export { PROTOCOL_NODES, ROLE_NODES };
+// (the Game Boy's serial out in, host MIDI out). The tables hold the literals as a package's manifest spells them.
 
-export type ProtocolNodeType = keyof typeof PROTOCOL_NODES;
+/** A protocol node type: any id a package or a loaded pack declares. */
+export type ProtocolNodeType = string;
+
+/** Every wired protocol node's spec, by type: the product's and each loaded pack's. */
+export const protocolNodes = derived((): Readonly<Record<string, ProtocolNodeSpec>> => {
+  const out: Record<string, ProtocolNodeSpec> = Object.create(null);
+  for (const entry of protocolNodesRegistry.items()) {
+    if (!isWired(entry)) continue;
+    const { type, ...spec } = entry;
+    out[type] = spec as ProtocolNodeSpec;
+  }
+  return out;
+});
+
+/** The node type each role kind is placed as. */
+export const roleNodes = derived((): Readonly<Record<string, string>> => {
+  const out: Record<string, string> = Object.create(null);
+  for (const { kind, node } of roleNodesRegistry.items()) out[kind] = node;
+  return out;
+});
+
+/** Every protocol node type declared, wired or not, in commit order (the seed's span-label order, then the packs'). */
+export const declaredNodeTypes = derivedList((): readonly string[] => protocolNodesRegistry.items().map((e) => e.type));
+
+/** A wired node type's spec, or undefined for one that is not wired or not declared. */
+export function protocolSpecOf(type: string): ProtocolNodeSpec | undefined {
+  const table = protocolNodes();
+  return Object.prototype.hasOwnProperty.call(table, type) ? table[type] : undefined;
+}
 
 /** The type of the node placed after its system for a role whose node is of type `node`, or undefined for none. */
 export function outNodeOf(node: ProtocolNodeType): ProtocolNodeType | undefined {
-  // A PROTOCOL_NODES key, which test/graph/protocol-nodes.test.ts holds every `out` to.
-  return (PROTOCOL_NODES[node] as ProtocolNodeSpec).out as ProtocolNodeType | undefined;
+  return protocolSpecOf(node)?.out;
 }
 
 /** A role on a system as buildGraph places it: its node, `sys-<id>/<kind>`, of type `node`, with the role's config as
@@ -65,13 +89,14 @@ export interface ProtocolRole {
 /** The node type a role of `kind` is placed as, or undefined for a role with none: a core's config role, and the
  *  features with no DSP behaviour (asset overrides, a ROM's facts). */
 export function protocolNodeOf(kind: string): ProtocolNodeType | undefined {
-  return Object.prototype.hasOwnProperty.call(ROLE_NODES, kind) ? ROLE_NODES[kind] : undefined;
+  const table = roleNodes();
+  return Object.prototype.hasOwnProperty.call(table, kind) ? table[kind] : undefined;
 }
 
 /** The system inputs the node a role of `kind` is placed as writes; none for a role with no node. */
 export function protocolWrites(kind: string): readonly SystemInput[] {
   const node = protocolNodeOf(kind);
-  return node ? PROTOCOL_NODES[node].writes : [];
+  return node ? (protocolSpecOf(node)?.writes ?? []) : [];
 }
 
 /** A role protocolPipeline leaves out: its node would write `input`, which the node of `by`, earlier in its system's
@@ -85,7 +110,7 @@ export interface LeftOutRole {
 /** `roles`, in order, as the protocol nodes they are placed as; a role with none is left out, so an edit to it (a
  *  model, a palette, an asset override) leaves the document as it was. So is a role whose kind is already placed, or
  *  whose node would write a system input an earlier role's node already writes (one writer per input, beside
- *  PROTOCOL_NODES), and `leftOut` hears of each of those. */
+ *  the protocol table), and `leftOut` hears of each of those. */
 export function protocolPipeline(
   roles: readonly RoleInstance[],
   leftOut?: (role: LeftOutRole) => void,
@@ -99,7 +124,7 @@ export function protocolPipeline(
       leftOut?.({ kind: r.kind, input: null, by: r.kind });
       continue;
     }
-    const writes: readonly SystemInput[] = PROTOCOL_NODES[node].writes;
+    const writes: readonly SystemInput[] = protocolSpecOf(node)!.writes;
     const taken = writes.find((input) => writer[input] !== undefined);
     if (taken !== undefined) {
       leftOut?.({ kind: r.kind, input: taken, by: writer[taken]! });

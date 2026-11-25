@@ -21,7 +21,7 @@ import { test, expect } from "@retroplug/testing";
 import { consoleDescriptors } from "../../src/consoles";
 import { PACKAGE_IDS } from "../../src/generated/packages";
 import { embedsRegistry, kitFormatsRegistry, trackerIntegrationsRegistry } from "../../src/contributions/app";
-import { DECLARED_NODE_TYPES } from "../../src/generated/protocol";
+import { declaredNodeTypes } from "../../src/graph/protocolNodes";
 
 /** The console registry's platform ids, ROM extensions, cores and node types: the descriptors' own, so nothing here is a
  *  second copy. */
@@ -41,7 +41,7 @@ const SHELL_NODE_TYPES = ["rp.midi.route"];
  *  declares (its script nodes), but for the shell's own. Both are the registries', so a package a product adds is
  *  guarded without an edit here. */
 const NODE_TYPES = [
-  ...new Set([...consoleDescriptors().map((console) => console.nodeType), ...DECLARED_NODE_TYPES]),
+  ...new Set([...consoleDescriptors().map((console) => console.nodeType), ...declaredNodeTypes()]),
 ].filter((type) => !SHELL_NODE_TYPES.includes(type)).sort();
 /** The shell's own node vocabulary: the nodes it builds itself (rp.core.split and -add, rp.host.midi-in/-out and
  *  audio-out) and the MIDI routing node it names as a constant, which is why those three packages' families are not
@@ -162,7 +162,7 @@ test("the shell's sources, cli/ and ui/ spell no platform, ROM extension or cart
   );
   expect(stale).toEqual([]);
   // The node-type exception names a type the manifests really declare: one that stopped naming it is stale too.
-  expect(DECLARED_NODE_TYPES.includes("rp.midi.route")).toBe(true);
+  expect(declaredNodeTypes().includes("rp.midi.route")).toBe(true);
 });
 
 test("the walk reads a table's keys, a pattern and a template tail, not a comment or a property access", async () => {

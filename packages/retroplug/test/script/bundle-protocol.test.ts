@@ -107,8 +107,9 @@ test("graph/protocolNodes.ts reads the generated protocol data and nothing else"
   const { inputs, bytes } = await bundle("src/graph/protocolNodes.ts");
   console.log(`# protocolNodes.ts: ${inputs.length} modules, ${bytes} bytes: ${inputs.join(", ")}`);
   expect(inputs.includes("src/generated/protocol.ts")).toBe(true);
-  // The module and the data it reads: the tables are apart from the node modules that describe them.
-  expect(inputs.length).toBe(2);
+  // The module, the data it reads, the registries that hold it and the checks they run: the tables are apart from the
+  // node modules that describe them.
+  expect(inputs.length).toBe(5);
   expect(forbidden(inputs, await nodeModules())).toEqual([]);
 });
 
@@ -133,9 +134,9 @@ test("the planner's bundle carries the protocol tables, and no node module, for 
   }
   const { inputs, bytes } = JSON.parse(out) as { inputs: string[]; bytes: number };
   console.log(`# the plugin's planner: ${inputs.length} modules, ${bytes} bytes: ${inputs.join(", ")}`);
-  // The shell's entry and the product's table: the redirect answered the shell's `../generated/protocol` with the
-  // plugin's file, and nothing else came with it.
-  expect(inputs.length).toBe(2);
+  // The shell's entry, the product's table and the registries and checks around it: the redirect answered the shell's
+  // `../generated/protocol` with the plugin's file, and no node module came with it.
+  expect(inputs.length).toBe(5);
   expect(inputs.some((path) => path.includes("/products/plugin/"))).toBe(true);
   expect(forbidden(inputs, await nodeModules("plugin"))).toEqual([]);
 });
@@ -147,11 +148,11 @@ test("graph/buildGraph.ts carries the protocol tables but neither zod nor the ap
   // The positive control the placers need: the generated placer table IS carried, so the case is not vacuous.
   expect(inputs.includes("src/generated/placers.ts")).toBe(true);
   // The planner, its own helpers, the consoles' descriptors it reads, core's placer types, the one package placer the
-  // product ships and that package's node-type constants: 25 modules today (the console and placer registries and
-  // their primitive among them), and not one of them is a node module. The ceiling is the count plus one, so a whole
+  // product ships and that package's node-type constants: 27 modules today (the console, placer and protocol registries
+  // and their primitive among them), and not one of them is a node module. The ceiling is the count plus one, so a whole
   // package's app or a node module dragged in by a placer fails by NAME (forbidden, below) and a quiet arrival of
   // anything else fails by count.
-  expect(inputs.length <= 26, `${inputs.length} modules went in`).toBe(true);
+  expect(inputs.length <= 28, `${inputs.length} modules went in`).toBe(true);
   expect(bytes < 64 * 1024, `the bundle is ${bytes} bytes`).toBe(true);
   expect(forbidden(inputs, await nodeModules())).toEqual([]);
 });

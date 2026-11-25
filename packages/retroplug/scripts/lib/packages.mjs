@@ -13,11 +13,13 @@
 //                                                    can drive, from each package's retroplug.consoles module. It
 //                                                    imports only those modules and the registries, so a bundle of
 //                                                    the planner carries the descriptors without an app module or zod
-//   packages/retroplug/src/generated/protocol.ts     PROTOCOL_NODES, ROLE_NODES and DECLARED_NODE_TYPES, the wiring
-//                                                    buildGraph reads, and KIND_DATA, the data the contributing
-//                                                    manifests declare for each contribution kind's items. It imports
-//                                                    nothing but types, so a bundle of buildGraph carries the tables
-//                                                    without a single node's code, no role's schema and no item's code
+//   packages/retroplug/src/generated/protocol.ts     seeds the live protocol tables in
+//                                                    src/contributions/protocolRegistries.ts (every protocol node, its
+//                                                    wiring, and the role kinds placed as one) that buildGraph reads,
+//                                                    and KIND_DATA, the data the contributing manifests declare for
+//                                                    each contribution kind's items. It imports only the registries
+//                                                    and a type, so a bundle of buildGraph carries the tables without
+//                                                    a single node's code, no role's schema and no item's code
 //   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, registering each contribution
 //                                                    kind's runtime halves (the manifests' entries) and then the node
 //                                                    definitions, in span-label order
@@ -817,8 +819,8 @@ function kindBlocks({ packages, kindDecls }) {
       "// The declaring package's own checks over the items and the manifests' data, then its registry.",
       `const KIND_DATA_${decl.kind} = KIND_DATA.${decl.kind};`,
       `${local}.check?.(KIND_ITEMS_${decl.kind}, KIND_DATA_${decl.kind}, {`,
-      "  nodeTypes: Object.keys(PROTOCOL_NODES),",
-      "  roleNodes: ROLE_NODES,",
+      "  nodeTypes: Object.keys(protocolNodes()),",
+      "  roleNodes: roleNodes(),",
       "});",
       `${local}.accept(KIND_ITEMS_${decl.kind}, KIND_DATA_${decl.kind});`,
       "",
@@ -861,7 +863,12 @@ function renderPackages({ packages, outDir, shellDir, names, product }) {
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   // The kind's data and the product's node types reach the declaring package's check: a mode naming a node type no
   // package declares would place nothing.
-  if (kindDecls.length) lines.push('import { KIND_DATA, PROTOCOL_NODES, ROLE_NODES } from "./protocol";');
+  if (kindDecls.length) {
+    lines.push(
+      'import { KIND_DATA } from "./protocol";',
+      `import { protocolNodes, roleNodes } from "${contributionsSpecifier(outDir, shellDir, "src/graph/protocolNodes.ts")}";`,
+    );
+  }
   for (const { pkg: owner, decl } of kindDecls) {
     lines.push(
       `import ${kindLocal(owner.pkg.name, decl.kind)} from "${moduleSpecifier(outDir, owner.pkg, decl.control)}";`,
@@ -1307,54 +1314,40 @@ function literal(value) {
   return JSON.stringify(value);
 }
 
-function renderProtocol({ byType, roles, kindDecls, packages, outDir, shellSrc, product }) {
+function renderProtocol({ byType, roles, kindDecls, packages, outDir, shellDir, product }) {
   const lines = [];
   lines.push(
     `${generatedFrom(product)} and the`,
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
     "//",
-    "// The protocol tables buildGraph, the stores and a DirectGraph wire a system's roles through, as the manifests",
-    "// spell them. Nothing but a type is imported here: the data is apart from the node modules it describes, so a",
-    "// bundle that reads it carries no node's code, no role's schema and nothing of the app.",
-    `import type { ProtocolNodeSpec } from "${specifier(outDir, join(shellSrc, "graph/protocolNodes.ts"))}";`,
+    "// The protocol tables' seed: every protocol node the product's packages declare, wired or not, and the role kinds",
+    "// placed as one, committed in span-label order into the live tables src/contributions/protocolRegistries.ts holds,",
+    "// which a pack's protocol half adds to (docs/downloadable-packs-m2e-plan.md); then the kinds' data. Only the",
+    "// registries and a type are imported, so a bundle that reads it carries no node's code, no role's schema and",
+    "// nothing of the app.",
     'import type { KindData } from "@retroplug/core/defineKind";',
+    `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
+    "import { protocolNodesRegistry, roleNodesRegistry } from " +
+      `"${contributionsSpecifier(outDir, shellDir, "src/contributions/protocolRegistries.ts")}";`,
     "",
-    "/** How buildGraph and the stores wire each protocol node type (graph/protocolNodes.ts's ProtocolNodeSpec): the",
-    " *  input its system's routed MIDI arrives on, the system inputs it writes, and the wires it takes or makes. In",
-    " *  span-label order, so which package declares a node changes nothing here. */",
   );
   const specs = [...byType.values()].sort((a, b) => a.node.label - b.node.label);
-  const wired = specs.filter(({ node }) => node.midiIn !== undefined || node.writes !== undefined);
-  if (!wired.length) {
-    lines.push("export const PROTOCOL_NODES = {} as const satisfies Record<string, ProtocolNodeSpec>;");
-  } else {
-    lines.push("export const PROTOCOL_NODES = {");
-    for (const { node } of wired) {
-      const fields = [];
-      for (const key of ["midiIn", "writes", "launches", "serialOut", "midiOut", "capture", "out"]) {
-        if (node[key] === undefined) continue;
-        fields.push(`${key}: ${literal(node[key])}`);
-      }
-      lines.push(`  ${JSON.stringify(node.type)}: { ${fields.join(", ")} },`);
+  const additions = [];
+  for (const { node, pkg } of specs) {
+    const fields = [`type: ${JSON.stringify(node.type)}`];
+    for (const key of ["midiIn", "writes", "launches", "serialOut", "midiOut", "capture", "out"]) {
+      if (node[key] === undefined) continue;
+      fields.push(`${key}: ${literal(node[key])}`);
     }
-    lines.push("} as const satisfies Record<string, ProtocolNodeSpec>;");
+    additions.push({ registry: "protocolNodesRegistry", pkg, items: `[{ ${fields.join(", ")} }]` });
   }
+  for (const { kind, type, pkg } of roles) {
+    additions.push({
+      registry: "roleNodesRegistry", pkg, items: `[{ kind: ${JSON.stringify(kind)}, node: ${JSON.stringify(type)} }]`,
+    });
+  }
+  lines.push(...seedLines(["protocolNodesRegistry", "roleNodesRegistry"], additions), "");
   lines.push(
-    "",
-    "/** Every protocol node type the product's packages declare, wired or not, in label order (a package's own placer",
-    " *  places the ones the graph does not wire). */",
-    "export const DECLARED_NODE_TYPES: readonly string[] = [",
-    ...specs.map(({ node }) => `  ${JSON.stringify(node.type)},`),
-    "];",
-    "",
-    "/** The role kinds that have a protocol node, each with the type it is placed as (the ids PROTOCOL_NODES wires),",
-    " *  in the order of the labels they are placed at. */",
-    "export const ROLE_NODES: Readonly<Record<string, keyof typeof PROTOCOL_NODES>> = {",
-  );
-  for (const { kind, type } of roles) lines.push(`  ${JSON.stringify(kind)}: ${JSON.stringify(type)},`);
-  lines.push(
-    "};",
-    "",
     "/** The data the contributing manifests declare for each contribution kind's items, by kind and then item id (a",
     " *  controller app's sync override, say): only the keys the declaring manifest lists as data, and nothing else.",
     " *  DATA, so a planner applies it with no item code and no schema - an app module has both - and what a key means",
@@ -1735,7 +1728,6 @@ export function generate({
     }
   }
 
-  const shellSrc = join(shell.dir, "src");
   const files = [
     {
       path: join(outDir, "packages.ts"),
@@ -1747,7 +1739,7 @@ export function generate({
     },
     {
       path: join(outDir, "protocol.ts"),
-      content: renderProtocol({ byType, roles, kindDecls, packages: contributionsOf, outDir, shellSrc, product }),
+      content: renderProtocol({ byType, roles, kindDecls, packages: contributionsOf, outDir, shellDir: shell.dir, product }),
     },
     {
       path: join(outDir, "scriptNodes.ts"),

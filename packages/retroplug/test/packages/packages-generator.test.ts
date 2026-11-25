@@ -833,8 +833,8 @@ test("the generated table spells a capture table like the fields around it", asy
   const line = files["protocol.ts"]!.split("\n").find((l) => l.includes('"rp.alpha.midi"'))!;
   console.log(`# emitted capture: ${line}`);
   expect(line).toBe(
-    '  "rp.alpha.midi": { midiIn: "midi", writes: ["serialIn"], capture: { "midiMap": "drive", "off": "listen" }, ' +
-      'out: "rp.alpha.serial" },',
+    '  { registry: protocolNodesRegistry, pkg: "alpha", items: [{ type: "rp.alpha.midi", midiIn: "midi", ' +
+      'writes: ["serialIn"], capture: { "midiMap": "drive", "off": "listen" }, out: "rp.alpha.serial" }] },',
   );
 });
 

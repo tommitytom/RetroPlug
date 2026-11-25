@@ -27,7 +27,7 @@ import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { z } from "zod";
 import { clampedInt } from "@retroplug/core/configFields";
 import type { DefinedNode } from "@retroplug/core/defineNode";
-import { ROLE_NODES, type LeftOutRole } from "../../src/graph/protocolNodes";
+import { roleNodes as roleNodesTable, type LeftOutRole } from "../../src/graph/protocolNodes";
 import { resolveTracker } from "../../src/trackerRegistry";
 import { SCRIPT_NODES_GLOBAL } from "@retroplug/core/register";
 import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
@@ -859,7 +859,7 @@ test("whatever a loaded project stores for a protocol role, the store hands its 
     "sms-sync": { romPath: "/roms/smsggdj.sms" },
     "lsdj-sync": { romPath: "/roms/lsdj.gb" },
   };
-  expect(Object.keys(carts).sort()).toEqual(Object.keys(ROLE_NODES).sort());
+  expect(Object.keys(carts).sort()).toEqual(Object.keys(roleNodesTable()).sort());
   for (const [kind, cart] of Object.entries(carts)) {
     for (const config of ADVERSARIAL) {
       const what = `${kind} ${JSON.stringify(config)}`;
@@ -867,7 +867,7 @@ test("whatever a loaded project stores for a protocol role, the store hands its 
       const id = warned(() => sys.adopt({ ...cart, roles })).result;
       expect(id !== null, what).toBe(true);
       const node = be.graphNode(`sys-${id}/${kind}`);
-      expect(node?.type, what).toBe(ROLE_NODES[kind]);
+      expect(node?.type, what).toBe(roleNodesTable()[kind]);
       expect(refusals(be.lastDocument()!), what).toEqual([]);
       sys.removeSystem(id!);
     }

@@ -22,7 +22,7 @@ import { resourceRef, type SystemResources } from "./systemResources";
 import type { GraphDocument, NodeDoc, WireDoc } from "@retroplug/core/graphDocument";
 import {
   outNodeOf,
-  PROTOCOL_NODES,
+  protocolSpecOf,
   type ProtocolNodeSpec,
   type ProtocolRole,
   type SystemInput,
@@ -490,7 +490,7 @@ export function buildGraph(
   for (const s of systems) {
     const n = systemNodeId(s.id);
     for (const role of s.pipeline) {
-      const spec: ProtocolNodeSpec = PROTOCOL_NODES[role.node];
+      const spec: ProtocolNodeSpec = protocolSpecOf(role.node)!;
       const id = protocolId(s.id, role.kind);
       const override = overrideFor(s.id, role.node);
       const settings = override ? { ...role.config, ...override.settings } : role.config;
@@ -508,7 +508,7 @@ export function buildGraph(
       // included. One that reads a serial out is placed only on a Game Boy, the one system that has one.
       const outType = outNodeOf(role.node);
       if (outType === undefined) continue;
-      const out: ProtocolNodeSpec = PROTOCOL_NODES[outType];
+      const out: ProtocolNodeSpec = protocolSpecOf(outType)!;
       if (out.serialOut && capabilitiesOf(s.type).serialOut !== true) continue;
       const outId = `${id}/out`;
       after.push({ node: { id: outId, type: outType, settings }, reads: out.serialOut ? `${n}.serialOut` : null });
@@ -553,7 +553,7 @@ export function buildGraph(
     const nodeType = realCartOf(cart.platform)!.cartNode;
     nodes.push({ id, type: nodeType, ...(expansionVolume === undefined ? {} : { params: { expansionVolume } }) });
     for (const role of cart.pipeline)
-      for (const input of PROTOCOL_NODES[role.node].writes as readonly SystemInput[])
+      for (const input of protocolSpecOf(role.node)!.writes as readonly SystemInput[])
         if (input === "midi" || input === "bytes") wire(`${protocolId(cart.id, role.kind)}.${input}`, `${id}.${input}`);
   }
   // Host MIDI out, an input a producer, and the session's traffic back to the device. With no producer the systems list
