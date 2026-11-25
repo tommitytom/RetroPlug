@@ -91,9 +91,9 @@ registerControllerApps(kindItems_controllerApps);
 registerScriptNodes(nodes);
 
 // A downloaded pack's kind items register their runtimes through this, after the product's own above
-// (docs/downloadable-packs-m2f-plan.md): its kinds half runs it in both of the built-in pack's contexts. It refuses
-// a kind this product does not declare, items that are not the ids the pack's manifest declares, and an id the
-// kind already holds, which the kind's own register would replace without a word.
+// (docs/downloadable-packs-m2f-plan.md): its kinds half runs it in both of the built-in pack's contexts. It
+// refuses a kind this product does not declare, items that are not the ids the pack's manifest declares, and an
+// id the kind already holds, which the kind's own register would replace without a word.
 const KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {
   "widgets": { register: registerWidgets, owners: Object.assign(Object.create(null), {}) },
   "controllerApps": { register: registerControllerApps, owners: Object.assign(Object.create(null), {"alpha-app":"alpha"}) },
