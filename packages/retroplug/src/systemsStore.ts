@@ -1194,7 +1194,7 @@ export class SystemsStore {
       ? this.suggestedFirst(this.withMissingFeatureRoles(stored, core, suggested, romPath, embeddedRom), suggested)
       : suggested;
     // A loaded system's roles can hold two whose nodes write one input, or a kind twice (graph/protocolNodes.ts,
-    // beside PROTOCOL_NODES), and every publish leaves the later one out of its pipeline, quietly; this notes it
+    // beside the protocol tables), and every publish leaves the later one out of its pipeline, quietly; this notes it
     // for the log, which is written once the core has built, where the roles enter.
     protocolPipeline(roles, (r) =>
       notes.push(

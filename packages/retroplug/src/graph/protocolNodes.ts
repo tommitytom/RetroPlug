@@ -3,10 +3,10 @@
 // system and the host. A role's node is placed before the systems, feeding its system's inputs; its type may name one
 // more for the role, placed after the systems, which reads what its system sent in the same block (`out`: LSDj's
 // serial-out decoder, docs/lsdj-serial-out-design.md section 3). Pure and zod-free, so buildGraph, both stores and a
-// DirectGraph read the same table, with or without a role registry: the tables are generated into
-// src/generated/protocol.ts (docs/modular-graph-phase-f1-design.md section 3), a module that imports nothing but a
-// type, so a package's protocol member is the one statement of its nodes and what is here is the contract they
-// satisfy and the wiring the app reads them through.
+// DirectGraph read the same table, with or without a role registry: the tables are live registries
+// (contributions/protocolRegistries.ts), seeded by the generated src/generated/protocol.ts and added to by a pack's
+// protocol half, so a package's protocol member is the one statement of its nodes and what is here is the contract
+// they satisfy and the wiring the app reads them through.
 //
 // The mapping lives here rather than on RoleType because the node types are code in the script-node bundle every
 // Engine embeds: which role kinds have one is a fact of that bundle, not of whichever registry a store was handed,

@@ -76,6 +76,8 @@ test("the roles: one owner per kind, each placed as a declared, wired node", () 
   const nodes = [node("a", SYNC), node("a", { type: "rp.x.idle" })];
   expect(refusal(() => checkRoleNodes([role("a", { kind: "k", node: "rp.x.sync" }), role("b", { kind: "k", node: "rp.x.sync" })], nodes)))
     .toBe("two packages declare the role kind k: a and b");
+  expect(refusal(() => checkRoleNodes([role("a", { kind: "k", node: "rp.x.sync" }), role("a", { kind: "k", node: "rp.x.sync" })], nodes)))
+    .toBe("the package a declares the role kind k twice");
   expect(refusal(() => checkRoleNodes([role("a", { kind: "k", node: "rp.x.gone" })], nodes))).toBe(
     "a: the role k names rp.x.gone, which no package declares");
   expect(refusal(() => checkRoleNodes([role("a", { kind: "k", node: "rp.x.idle" })], nodes))).toBe(

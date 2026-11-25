@@ -1,8 +1,9 @@
 // The protocol tables are import-free (docs/modular-graph-phase-f1-design.md section 3): buildGraph, both stores and a
 // DirectGraph read the wiring with or without a role registry, and a bundle of the planner must not pull in a node's
-// code, a role's zod schema or the app. The tables are generated into src/generated/protocol.ts, a module that imports
-// nothing but a type, and graph/protocolNodes.ts reads only that one (src/generated/packages.ts, which imports every
-// package's app module, is where they used to live and must not be in this graph).
+// code, a role's zod schema or the app. The tables are live registries seeded by src/generated/protocol.ts, and
+// graph/protocolNodes.ts reads the generated seed, the registries and their checks, and nothing else
+// (src/generated/packages.ts, which imports every package's app module, is where they used to live and must not be in
+// this graph).
 //
 // The graph placers are the same rule (docs/modular-graph-phase-f5a-design.md section 6.3): buildGraph reads
 // src/generated/placers.ts, which imports one module per declaring package, so that module must carry types and
@@ -103,7 +104,7 @@ function forbidden(inputs: readonly string[], nodeModules: readonly string[]): s
   });
 }
 
-test("graph/protocolNodes.ts reads the generated protocol data and nothing else", async () => {
+test("graph/protocolNodes.ts reads the generated seed, the registries and their checks, and nothing else", async () => {
   const { inputs, bytes } = await bundle("src/graph/protocolNodes.ts");
   console.log(`# protocolNodes.ts: ${inputs.length} modules, ${bytes} bytes: ${inputs.join(", ")}`);
   expect(inputs.includes("src/generated/protocol.ts")).toBe(true);

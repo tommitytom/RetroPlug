@@ -539,7 +539,7 @@ function contributions(pkg) {
     if (node.writes !== undefined && !Array.isArray(node.writes)) {
       throw new Error(`${pkg.name}: the node ${node.type}'s writes is not a list`);
     }
-    // Wired or not is one decision: renderProtocol emits a node into PROTOCOL_NODES on either field, so a node with
+    // Wired or not is one decision: renderProtocol seeds a node as wired on either field, so a node with
     // one and not the other would be placed with a hole (a MIDI route into no input, or an input nothing routes to)
     // that only tsc's `satisfies` would see, and esbuild builds through that.
     const midiIn = Object.hasOwn(node, "midiIn");
@@ -678,8 +678,8 @@ function validateKinds(packages) {
 }
 
 /** The role kinds the protocol members declare, each with its node type and the package that declares it: a kind has
- *  one owner, as a node type and a span label do, since the generated ROLE_NODES object would otherwise keep whichever
- *  package came last (or fail tsc, and esbuild only warns). */
+ *  one owner, as a node type and a span label do, since the role table would otherwise hold two owners for one
+ *  kind. */
 function roleTable(packages) {
   const kinds = new Map();
   for (const { pkg, roles } of packages) {
@@ -1626,7 +1626,7 @@ export function generate({
 
   // A capture is for the node whose package DECODES the bytes: the core is clocked and its serial out captured, and
   // the decoder is the second node the capture-carrier names as its `out` (rp.lsdj.serial-out for rp.lsdj.sync). Each
-  // misuse here would arm a core whose bytes nothing reads: an unwired node is dropped out of PROTOCOL_NODES whole, and
+  // misuse here would arm a core whose bytes nothing reads: an unwired node is dropped from the wired nodes whole, and
   // an `out` that is no serial-out node decodes nothing, so the core would be clocked under the bytes the placed role
   // writes.
   for (const { pkg, nodes } of contributionsOf) {
@@ -1652,7 +1652,7 @@ export function generate({
     }
   }
 
-  // A role's node must be one PROTOCOL_NODES wires, or buildGraph would place a node it cannot lay out.
+  // A role's node must be one the protocol table wires, or buildGraph would place a node it cannot lay out.
   for (const { kind, type, pkg } of kinds.values()) {
     if (!byType.has(type)) throw new Error(`${pkg}: the role ${kind} names ${type}, which no package declares`);
     if (!wiresNode(type, byType)) {
@@ -1801,7 +1801,7 @@ export function generate({
   return { packages: ordered.map((p) => p.name), files: written };
 }
 
-// Whether `type` is a node type PROTOCOL_NODES wires: a role is placed as one, so its manifest entry carries its
+// Whether `type` is a node type the protocol table wires: a role is placed as one, so its manifest entry carries its
 // midiIn and writes.
 function wiresNode(type, byType) {
   const entry = byType.get(type);

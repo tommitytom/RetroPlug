@@ -10,7 +10,7 @@ import { controllerApps, type ControllerAppContribution } from "../registry";
 // The product's wired node types, as the generated registry hands them: the sync node an override names is a node the
 // graph places, so a type no product wires can never be set.
 const NODE_TYPES = ["rp.lsdj.sync", "rp.mgb.midi"];
-// The protocol node each role kind is placed as (the generated ROLE_NODES): the rule's role must be the kind of the
+// The protocol node each role kind is placed as (the live role table): the rule's role must be the kind of the
 // role its node belongs to.
 const ROLE_NODES = { "lsdj-sync": "rp.lsdj.sync", "mgb-midi": "rp.mgb.midi" };
 
