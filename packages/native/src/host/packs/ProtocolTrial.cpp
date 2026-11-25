@@ -26,7 +26,11 @@ ProtocolTrial protocolTrial() {
         if (!package) return fail("its protocol half did not load: " + error);
         rp::graph::NodeRegistry registry;
         std::string clash;
-        const bool added = registry.addPackage(host.package(), &clash) && registry.addPackage(package, &clash);
+        if (!registry.addPackage(host.package(), &clash)) {
+            host.discardPack(package);
+            return fail("the built-in script nodes did not register beside it: " + clash);
+        }
+        const bool added = registry.addPackage(package, &clash);
         ProtocolHalf half{scriptId, std::move(*bytecode), {}, {}};
         if (added) {
             for (std::uint32_t k = 0; k < package->node_type_count; ++k) {

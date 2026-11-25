@@ -393,10 +393,6 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
             for (std::uint32_t k = 0; by.empty() && p && p->abi_version == RP_ABI_VERSION && p->node_types &&
                                       k < p->node_type_count; ++k)
                 if (p->node_types[k] && p->node_types[k]->id && typeId == p->node_types[k]->id) by = packageIdOf(p);
-        if (by.empty() && loaded->protocol &&
-            std::find(loaded->protocol->typeIds.begin(), loaded->protocol->typeIds.end(), typeId) !=
-                loaded->protocol->typeIds.end())
-            by = loaded->protocol->scriptId;
         return by;
     };
     // The protocol half: read, compiled and trial-loaded beside the built-in script nodes by the backend's trial, which

@@ -1,7 +1,7 @@
 // A pack's protocol half (docs/downloadable-packs-m2e-plan.md): its global-code node bundle compiled and trial-loaded
 // once by the table, beside the built-in script nodes, and refused for a type it does not declare, one it declares and
 // does not define, a clash, a bundle that does not compile or throws; its data in the pack list the TS loader reads.
-// Every Engine's own load of it is the next step's.
+// Every Engine's own load of it (Engine::syncPacks) is tested with the Engine.
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-protocol]"`.
 #include <catch2/catch_test_macros.hpp>
@@ -15,6 +15,7 @@
 #include "host/js/PackLoaderCore.hpp"
 #include "host/packs/PackTable.hpp"
 #include "host/packs/ProtocolTrial.hpp"
+#include "host/script/ScriptHost.hpp"
 #include "quickjs.h"
 
 namespace fs = std::filesystem;
@@ -148,4 +149,21 @@ TEST_CASE("the pack list carries a protocol half's data, and pack:<id>/protocol 
     CHECK(list.find(expected, halves) != std::string::npos);
 
     CHECK(rt.importResult("pack:protofix/protocol").rfind("error could not load 'pack:protofix/protocol'", 0) == 0);
+}
+
+TEST_CASE("an app pack is loaded once and never reloaded", "[packs-protocol]") {
+    PackTable table;
+    withTrial(table);
+    const auto load = table.load(fixture("protofix"));
+    REQUIRE(load);
+    rp::host::ScriptHost host;
+    const rp::host::ScriptHost::Chunk chunk{load.pack->protocol->bytecode};
+    std::string error;
+    const rp_package* first = host.loadAppPack("rp.protofix.protocol", {&chunk, 1}, 0, &error);
+    INFO(error);
+    REQUIRE(first != nullptr);
+    CHECK(host.loadAppPack("rp.protofix.protocol", {&chunk, 1}, 0, &error) == nullptr);
+    CHECK(error == "the app pack rp.protofix.protocol is loaded already: an app pack is never reloaded");
+    CHECK(host.loadAppPack("protofix", {&chunk, 1}, 0, &error) == nullptr);
+    host.discardPack(first);
 }

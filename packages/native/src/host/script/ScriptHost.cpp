@@ -388,8 +388,9 @@ struct ScriptHost::Pack {
     std::vector<std::unique_ptr<Type>> types;
     std::vector<const rp_node_type*>   typeList;
     rp_package    package{};
+    // loadAppPack's: its types are named by the pack that brought them, not under its id.
+    bool          appOwned = false;
     // Its load, or a release of one of its instances, since its last collect (whoever released it).
-    bool          appOwned = false;  // loadAppPack's: its types are named by the pack that brought them, not under its id
     bool          garbage = false;
     // Its audio runtime's heap, adding to the host's counters once it joins (to a load's own before), and its control
     // runtime's, held to the same limit with a refusal noted the same way, so a load or a settings check it fails says
@@ -1914,6 +1915,10 @@ const rp_package* ScriptHost::loadAppPack(const std::string& id, std::span<const
             *error = "an app pack's id is \"rp.\" and more, and never the built-in pack's: " + graph::jsonString(id);
         return nullptr;
     }
+    if (currentPack(id)) {
+        if (error) *error = "the app pack " + id + " is loaded already: an app pack is never reloaded";
+        return nullptr;
+    }
     return loadChecked(id, chunks, memoryLimit, true, error);
 }
 
@@ -2136,10 +2141,11 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         }
         JS_FreeValue(control, id);
         if (type.id.empty()) return fail(at + " has no id");
-        // A loaded pack's types are named under its id (the built-in pack's predate the rule: rp.midi.route, ...; an app
-        // pack's, a downloaded pack's protocol half, are named by the pack that brought them, which the table held to
-        // its manifest), so its namespace meets another's only where one pack's id runs on into another's ("a" beside "a.b", or "rp.midi"
-        // beside the built-in rp.midi.route), and there the registry refuses the type a second pack would take.
+        // A loaded pack's types are named under its id (the built-in pack's predate the rule: rp.midi.route, ...), so its
+        // namespace meets another's only where one pack's id runs on into another's ("a" beside "a.b", or "rp.midi"
+        // beside the built-in rp.midi.route), and there the registry refuses the type a second pack would take. An app
+        // pack's types (a downloaded pack's protocol half) are the exception: they are named by the pack that brought
+        // them, which the table held to its manifest.
         if (pack.id != kBuiltInPack && !pack.appOwned &&
             (type.id.size() <= pack.id.size() + 1 || type.id.compare(0, pack.id.size(), pack.id) != 0 ||
              type.id[pack.id.size()] != '.'))
