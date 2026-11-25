@@ -12,7 +12,7 @@
 // which is what lets the planner place an override with no app and no zod in its bundle.
 import { defineKind, type KindCheckContext, type KindData } from "@retroplug/core/defineKind";
 import { controllerApps, type ControllerAppContribution } from "../registry";
-import { setControllerSyncData } from "./placer";
+import { addControllerSyncData, setControllerSyncData } from "./placer";
 
 /** The sync override's fields: the node type it applies to, the kind of the role that node belongs to (what a menu
  *  asks a view's placed kinds), the mode it sets, the polled SYNC value that counts as the
@@ -75,7 +75,7 @@ function checkSyncOverride(appId: string, sync: unknown, ctx: KindCheckContext):
   // setting's name or nothing: a number here would be read as no setting and leave the session walking every tick.
   // That the name is one of the node's settings is not checked here (the kind sees the node's type and no schema); a
   // misspelt one reads as 1 at the placer. What holds the real name is the exact assertion on lsdj-launchpad's
-  // KIND_DATA in build-graph.test.ts and store-graph.test.ts's end-to-end case, where a changed divisor reaches the
+  // the kind's data in build-graph.test.ts and store-graph.test.ts's end-to-end case, where a changed divisor reaches the
   // session.
   if (rule.divisor !== undefined && (typeof rule.divisor !== "string" || rule.divisor === "")) {
     throw new Error(
@@ -113,6 +113,10 @@ export const controllerAppsKind = defineKind<ControllerAppContribution>({
   accept(items: readonly ControllerAppContribution[], data: KindData): void {
     for (const item of items) controllerApps.register(item);
     setControllerSyncData(data);
+  },
+  add(items: readonly ControllerAppContribution[], data: KindData): void {
+    for (const item of items) controllerApps.register(item);
+    addControllerSyncData(data);
   },
   check(items: readonly ControllerAppContribution[], data: KindData, ctx: KindCheckContext): void {
     for (const item of items) {

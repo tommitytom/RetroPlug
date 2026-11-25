@@ -892,10 +892,13 @@ test("a controller app entry with a key no runtime reads is refused", async () =
 
 test("the generated module refuses a controller app with only one half", async () => {
   // A manifest's runtime that no app module's control-plane half contributes: the id would reach the script bundle and
-  // run an app no menu offers.
+  // run an app no menu offers. The fixture's entry carries data, so the live data table refuses it first, as data for
+  // an item no package contributes (an entry with no data reaches the pairing check below, as the widgets case does).
   const runtimeOnly = await drive("app-unpaired-runtime");
   console.log(`# app with no control-plane half: ${runtimeOnly.error}`);
-  expect(runtimeOnly.error).toBe("the controllerApps item alpha-app has no control-plane half");
+  expect(runtimeOnly.error).toBe(
+    "alpha declares data for the controllerApps item alpha-app, which no package contributes",
+  );
   // A control-plane half no manifest declares a runtime for: the menu would offer an app nothing runs.
   const controlOnly = await drive("app-unpaired-control");
   console.log(`# app with no runtime half: ${controlOnly.error}`);

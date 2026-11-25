@@ -77,7 +77,7 @@ export interface GraphPlacer<M = unknown> {
 
 /** What a placer may read of the model it is placing into: the systems in slot order, and the manifest data the
  *  packages contribute to the kinds they declare, by kind and then by item id (docs/modular-graph-phase-f5a-design.md
- *  section 6.5: generated/protocol.ts's KIND_DATA). */
+ *  section 6.5: the live kind data, contributions/kindRegistries.ts's kindData). */
 export interface PlaceContext {
   readonly systems: readonly PlaceSystem[];
   /** The data the contributing manifests carry under `kind`, by item id, or an empty record for a kind nothing

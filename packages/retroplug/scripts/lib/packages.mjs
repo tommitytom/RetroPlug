@@ -16,9 +16,9 @@
 //   packages/retroplug/src/generated/protocol.ts     seeds the live protocol tables in
 //                                                    src/contributions/protocolRegistries.ts (every protocol node, its
 //                                                    wiring, and the role kinds placed as one) that buildGraph reads,
-//                                                    and KIND_DATA, the data the contributing manifests declare for
-//                                                    each contribution kind's items. It imports only the registries
-//                                                    and a type, so a bundle of buildGraph carries the tables without
+//                                                    and the data the contributing manifests declare for each
+//                                                    contribution kind's items (kindRegistries.ts). It imports only
+//                                                    the registries, so a bundle of buildGraph carries the tables without
 //                                                    a single node's code, no role's schema and no item's code
 //   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, registering each contribution
 //                                                    kind's runtime halves (the manifests' entries) and then the node
@@ -787,29 +787,29 @@ function kindBlocks({ packages, kindDecls }) {
       `const KIND_RUNTIMES_${decl.kind}: readonly { pkg: string; id: string }[] = [`,
       ...entries.map((entry) => `  { pkg: ${JSON.stringify(entry.pkg)}, id: ${JSON.stringify(entry.id)} },`),
       "];",
-      "// A duplicate item id is refused naming both packages, or the one package that listed it twice: a document",
-      "// names an item by its id alone, so the second one would be unreachable without a word.",
-      `const kindOwners_${decl.kind} = new Map<string, string>();`,
-      `for (const source of KIND_SOURCES_${decl.kind}) {`,
-      "  for (const item of source.items) {",
-      "    const id = item.id;",
-      `    const owner = kindOwners_${decl.kind}.get(id);`,
-      "    if (owner !== undefined) {",
-      "      throw new Error(owner === source.pkg",
-      `        ? \`the package \${source.pkg} contributes the ${decl.kind} item \${id} twice\``,
-      `        : \`two packages contribute the ${decl.kind} item \${id}: \${owner} and \${source.pkg}\`);`,
-      "    }",
-      `    kindOwners_${decl.kind}.set(id, source.pkg);`,
-      "  }",
-      "}",
+      "// The declared kind and its items' ids go into the live tables in one commit: the table's check refuses a",
+      "// duplicate id naming both packages, or the one package that listed it twice (a document names an item by its",
+      "// id alone, so the second one would be unreachable without a word).",
+      "commitContributions([",
+      `  { registry: contributionKindsRegistry, pkg: ${JSON.stringify(owner.pkg.name)}, items: [{ ` +
+        `kind: ${JSON.stringify(decl.kind)}, contribution: ${local}, data: ${JSON.stringify(decl.data)} }] },`,
+      `  { registry: kindItemsRegistry, pkg: ${JSON.stringify(SHELL)}, items: [] },`,
+      `  ...KIND_SOURCES_${decl.kind}.map((source) => ({`,
+      "    registry: kindItemsRegistry,",
+      "    pkg: source.pkg,",
+      `    items: source.items.map((item) => ({ kind: ${JSON.stringify(decl.kind)}, id: item.id })),`,
+      "  })),",
+      "]);",
       "// An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu",
       "// offers.",
+      `const kindIds_${decl.kind} = new Set(KIND_SOURCES_${decl.kind}.flatMap((source) => ` +
+        "source.items.map((item) => item.id)));",
       `for (const runtime of KIND_RUNTIMES_${decl.kind}) {`,
-      `  if (!kindOwners_${decl.kind}.has(runtime.id)) {`,
+      `  if (!kindIds_${decl.kind}.has(runtime.id)) {`,
       `    throw new Error(\`the ${decl.kind} item \${runtime.id} has no control-plane half\`);`,
       "  }",
       "}",
-      `for (const id of kindOwners_${decl.kind}.keys()) {`,
+      `for (const id of kindIds_${decl.kind}) {`,
       `  if (!KIND_RUNTIMES_${decl.kind}.some((runtime) => runtime.id === id)) {`,
       `    throw new Error(\`the ${decl.kind} item \${id} has no runtime half\`);`,
       "  }",
@@ -817,7 +817,7 @@ function kindBlocks({ packages, kindDecls }) {
       `const KIND_ITEMS_${decl.kind}: readonly ${item}[] = ` +
         `KIND_SOURCES_${decl.kind}.flatMap((source) => source.items);`,
       "// The declaring package's own checks over the items and the manifests' data, then its registry.",
-      `const KIND_DATA_${decl.kind} = KIND_DATA.${decl.kind};`,
+      `const KIND_DATA_${decl.kind} = kindData(${JSON.stringify(decl.kind)});`,
       `${local}.check?.(KIND_ITEMS_${decl.kind}, KIND_DATA_${decl.kind}, {`,
       "  nodeTypes: Object.keys(protocolNodes()),",
       "  roleNodes: roleNodes(),",
@@ -865,7 +865,8 @@ function renderPackages({ packages, outDir, shellDir, names, product }) {
   // package declares would place nothing.
   if (kindDecls.length) {
     lines.push(
-      'import { KIND_DATA } from "./protocol";',
+      'import "./protocol";',
+      `import { contributionKindsRegistry, kindItemsRegistry, kindData } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/kindRegistries.ts")}";`,
       `import { protocolNodes, roleNodes } from "${contributionsSpecifier(outDir, shellDir, "src/graph/protocolNodes.ts")}";`,
     );
   }
@@ -1314,7 +1315,7 @@ function literal(value) {
   return JSON.stringify(value);
 }
 
-function renderProtocol({ byType, roles, kindDecls, packages, outDir, shellDir, product }) {
+function renderProtocol({ byType, roles, packages, outDir, shellDir, product }) {
   const lines = [];
   lines.push(
     `${generatedFrom(product)} and the`,
@@ -1322,13 +1323,13 @@ function renderProtocol({ byType, roles, kindDecls, packages, outDir, shellDir, 
     "//",
     "// The protocol tables' seed: every protocol node the product's packages declare, wired or not, and the role kinds",
     "// placed as one, committed in span-label order into the live tables src/contributions/protocolRegistries.ts holds,",
-    "// which a pack's protocol half adds to (docs/downloadable-packs-m2e-plan.md); then the kinds' data. Only the",
-    "// registries and a type are imported, so a bundle that reads it carries no node's code, no role's schema and",
+    "// which a pack's protocol half adds to (docs/downloadable-packs-m2e-plan.md); then the kinds' data into",
+    "// src/contributions/kindRegistries.ts. Only the registries are imported, so a bundle that reads it carries no node's code, no role's schema and",
     "// nothing of the app.",
-    'import type { KindData } from "@retroplug/core/defineKind";',
     `import { commitContributions } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/registry.ts")}";`,
     "import { protocolNodesRegistry, roleNodesRegistry } from " +
       `"${contributionsSpecifier(outDir, shellDir, "src/contributions/protocolRegistries.ts")}";`,
+    `import { kindDataRegistry } from "${contributionsSpecifier(outDir, shellDir, "src/contributions/kindRegistries.ts")}";`,
     "",
   );
   const specs = [...byType.values()].sort((a, b) => a.node.label - b.node.label);
@@ -1346,26 +1347,17 @@ function renderProtocol({ byType, roles, kindDecls, packages, outDir, shellDir, 
       registry: "roleNodesRegistry", pkg, items: `[{ kind: ${JSON.stringify(kind)}, node: ${JSON.stringify(type)} }]`,
     });
   }
-  lines.push(...seedLines(["protocolNodesRegistry", "roleNodesRegistry"], additions), "");
-  lines.push(
-    "/** The data the contributing manifests declare for each contribution kind's items, by kind and then item id (a",
-    " *  controller app's sync override, say): only the keys the declaring manifest lists as data, and nothing else.",
-    " *  DATA, so a planner applies it with no item code and no schema - an app module has both - and what a key means",
-    " *  is its declaring package's check's. */",
-    "export const KIND_DATA: Readonly<Record<string, KindData>> = {",
-  );
-  for (const [kind, { decl }] of kindDecls) {
-    lines.push(`  ${JSON.stringify(kind)}: {`);
-    for (const { pkg, kindEntries } of packages) {
-      for (const entry of kindEntries) {
-        if (entry.kind !== kind) continue;
-        if (Object.keys(entry.data).length === 0) continue;
-        lines.push(`    ${JSON.stringify(entry.id)}: ${JSON.stringify(entry.data)},`);
-      }
-    }
-    lines.push("  },");
+  // The kinds' data, per contributing package in product order: an entry only when its data is non-empty. DATA, so a
+  // planner applies it with no item code and no schema - an app module has both - and what a key means is its
+  // declaring package's check's.
+  for (const { pkg, kindEntries } of packages) {
+    const withData = kindEntries.filter((entry) => Object.keys(entry.data).length > 0);
+    if (withData.length === 0) continue;
+    const items = withData.map((entry) =>
+      `{ kind: ${JSON.stringify(entry.kind)}, id: ${JSON.stringify(entry.id)}, data: ${JSON.stringify(entry.data)} }`);
+    additions.push({ registry: "kindDataRegistry", pkg: pkg.name, items: `[${items.join(", ")}]` });
   }
-  lines.push("};", "");
+  lines.push(...seedLines(["protocolNodesRegistry", "roleNodesRegistry", "kindDataRegistry"], additions), "");
   return lines.join("\n");
 }
 

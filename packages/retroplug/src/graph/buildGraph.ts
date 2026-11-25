@@ -29,9 +29,8 @@ import {
 } from "./protocolNodes";
 import { serialOutCaptureFor, type SerialOutCaptureMode } from "./serialCapture";
 import type { GraphPlacer, PlaceContext, Placement, Placed } from "@retroplug/core/placer";
-import type { KindData } from "@retroplug/core/defineKind";
 import { placerEntries } from "../contributions/placers";
-import { KIND_DATA } from "../generated/protocol";
+import { kindData } from "../contributions/kindRegistries";
 
 /** A placer's throw is one package's fault: it is warned about once per package and model key, and the placement is
  *  treated as none, so the rest of the graph still builds. */
@@ -130,11 +129,6 @@ const ADD_INPUTS = 16;
 // The project's script node type, as its module spells it (@retroplug/core's midiRoute.ts, which
 // test/graph/build-graph.test.ts holds this to).
 const MIDI_ROUTE = "rp.midi.route";
-
-/** What a placer reads through PlaceContext.kindData: generated/protocol.ts's KIND_DATA, the data each contributing
- *  manifest declares for a kind, by kind and then item id (docs/modular-graph-phase-f5a-design.md section 6.5). A kind
- *  nothing contributes reads as an empty record, so a placer sees no item rather than an error. */
-const kindData = (kind: string): KindData => KIND_DATA[kind] ?? {};
 
 // A system's node id in the documents buildGraph builds (`sys-<id>`), which the store and `DirectGraph` address a
 // system node by.

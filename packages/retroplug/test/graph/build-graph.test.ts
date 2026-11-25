@@ -19,7 +19,7 @@ import {
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
 import { serialOutCaptureFor } from "../../src/graph/serialCapture";
 import { controllerSyncOverride, setControllerSyncData, type GraphController } from "@retroplug/launchpad/placer";
-import { KIND_DATA } from "../../src/generated/protocol";
+import { kindData } from "../../src/contributions/kindRegistries";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
 import { MIDI_ROUTE_NODE_TYPE } from "@retroplug/core/midiRoute";
@@ -48,7 +48,7 @@ const multi = (channels: number): HostShape => ({ kind: "multi", channels });
 // The manifest data the placer reads, handed over as the kind's `accept` hands it over at load (the template literal
 // stays the data's one home: generated/protocol.ts). The graph's own read goes through buildGraph's kindData; this is
 // the menu's carrier, which controllerSyncOverride reads.
-setControllerSyncData(KIND_DATA.controllerApps);
+setControllerSyncData(kindData("controllerApps"));
 
 const AROUND_THE_AUDIO = new Set(["midi-in", "surface-in", "routing", "controller", "midi-out", "surface-out"]);
 const aroundTheAudio = (id: string): boolean => AROUND_THE_AUDIO.has(id) || id.startsWith("cart-") || id.includes("/");
@@ -567,8 +567,8 @@ test("the sync override is the app's DATA: a node type, a mode, and what counts 
   // Nothing in the shell names an app, a mode or a node type: the bridge's manifest carries them
   // (protocol.kinds.controllerApps[].syncOverride), the generator renders them into generated/protocol.ts, and this is
   // the whole rule. A second app with a different cart sync node type is a manifest entry, not a branch here.
-  expect(Object.keys(KIND_DATA.controllerApps)).toEqual(["lsdj-midimap"]);
-  expect(KIND_DATA.controllerApps["lsdj-midimap"])
+  expect(Object.keys(kindData("controllerApps"))).toEqual(["lsdj-midimap"]);
+  expect(kindData("controllerApps")["lsdj-midimap"])
     .toEqual({
       syncOverride: {
         node: "rp.lsdj.sync", role: "lsdj-sync", mode: "midiMap", listening: "MidiMap", off: "off",

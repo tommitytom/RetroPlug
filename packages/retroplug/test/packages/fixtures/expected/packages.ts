@@ -18,7 +18,8 @@ import { appAdditions, rolesRegistry, romProvidersRegistry, trackerIntegrationsR
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
-import { KIND_DATA } from "./protocol";
+import "./protocol";
+import { contributionKindsRegistry, kindItemsRegistry, kindData } from "../contributions/kindRegistries";
 import { protocolNodes, roleNodes } from "../graph/protocolNodes";
 import kind_widgets_alpha from "@retroplug/alpha/kind";
 import kind_controllerApps_beta from "@retroplug/beta/kind";
@@ -73,36 +74,34 @@ const KIND_SOURCES_widgets: readonly { pkg: string; items: readonly KindItem_wid
 // registers.
 const KIND_RUNTIMES_widgets: readonly { pkg: string; id: string }[] = [
 ];
-// A duplicate item id is refused naming both packages, or the one package that listed it twice: a document
-// names an item by its id alone, so the second one would be unreachable without a word.
-const kindOwners_widgets = new Map<string, string>();
-for (const source of KIND_SOURCES_widgets) {
-  for (const item of source.items) {
-    const id = item.id;
-    const owner = kindOwners_widgets.get(id);
-    if (owner !== undefined) {
-      throw new Error(owner === source.pkg
-        ? `the package ${source.pkg} contributes the widgets item ${id} twice`
-        : `two packages contribute the widgets item ${id}: ${owner} and ${source.pkg}`);
-    }
-    kindOwners_widgets.set(id, source.pkg);
-  }
-}
+// The declared kind and its items' ids go into the live tables in one commit: the table's check refuses a
+// duplicate id naming both packages, or the one package that listed it twice (a document names an item by its
+// id alone, so the second one would be unreachable without a word).
+commitContributions([
+  { registry: contributionKindsRegistry, pkg: "alpha", items: [{ kind: "widgets", contribution: kind_widgets_alpha, data: ["mode"] }] },
+  { registry: kindItemsRegistry, pkg: "retroplug", items: [] },
+  ...KIND_SOURCES_widgets.map((source) => ({
+    registry: kindItemsRegistry,
+    pkg: source.pkg,
+    items: source.items.map((item) => ({ kind: "widgets", id: item.id })),
+  })),
+]);
 // An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu
 // offers.
+const kindIds_widgets = new Set(KIND_SOURCES_widgets.flatMap((source) => source.items.map((item) => item.id)));
 for (const runtime of KIND_RUNTIMES_widgets) {
-  if (!kindOwners_widgets.has(runtime.id)) {
+  if (!kindIds_widgets.has(runtime.id)) {
     throw new Error(`the widgets item ${runtime.id} has no control-plane half`);
   }
 }
-for (const id of kindOwners_widgets.keys()) {
+for (const id of kindIds_widgets) {
   if (!KIND_RUNTIMES_widgets.some((runtime) => runtime.id === id)) {
     throw new Error(`the widgets item ${id} has no runtime half`);
   }
 }
 const KIND_ITEMS_widgets: readonly KindItem_widgets[] = KIND_SOURCES_widgets.flatMap((source) => source.items);
 // The declaring package's own checks over the items and the manifests' data, then its registry.
-const KIND_DATA_widgets = KIND_DATA.widgets;
+const KIND_DATA_widgets = kindData("widgets");
 kind_widgets_alpha.check?.(KIND_ITEMS_widgets, KIND_DATA_widgets, {
   nodeTypes: Object.keys(protocolNodes()),
   roleNodes: roleNodes(),
@@ -122,36 +121,34 @@ const KIND_SOURCES_controllerApps: readonly { pkg: string; items: readonly KindI
 const KIND_RUNTIMES_controllerApps: readonly { pkg: string; id: string }[] = [
   { pkg: "alpha", id: "alpha-app" },
 ];
-// A duplicate item id is refused naming both packages, or the one package that listed it twice: a document
-// names an item by its id alone, so the second one would be unreachable without a word.
-const kindOwners_controllerApps = new Map<string, string>();
-for (const source of KIND_SOURCES_controllerApps) {
-  for (const item of source.items) {
-    const id = item.id;
-    const owner = kindOwners_controllerApps.get(id);
-    if (owner !== undefined) {
-      throw new Error(owner === source.pkg
-        ? `the package ${source.pkg} contributes the controllerApps item ${id} twice`
-        : `two packages contribute the controllerApps item ${id}: ${owner} and ${source.pkg}`);
-    }
-    kindOwners_controllerApps.set(id, source.pkg);
-  }
-}
+// The declared kind and its items' ids go into the live tables in one commit: the table's check refuses a
+// duplicate id naming both packages, or the one package that listed it twice (a document names an item by its
+// id alone, so the second one would be unreachable without a word).
+commitContributions([
+  { registry: contributionKindsRegistry, pkg: "beta", items: [{ kind: "controllerApps", contribution: kind_controllerApps_beta, data: ["syncOverride"] }] },
+  { registry: kindItemsRegistry, pkg: "retroplug", items: [] },
+  ...KIND_SOURCES_controllerApps.map((source) => ({
+    registry: kindItemsRegistry,
+    pkg: source.pkg,
+    items: source.items.map((item) => ({ kind: "controllerApps", id: item.id })),
+  })),
+]);
 // An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu
 // offers.
+const kindIds_controllerApps = new Set(KIND_SOURCES_controllerApps.flatMap((source) => source.items.map((item) => item.id)));
 for (const runtime of KIND_RUNTIMES_controllerApps) {
-  if (!kindOwners_controllerApps.has(runtime.id)) {
+  if (!kindIds_controllerApps.has(runtime.id)) {
     throw new Error(`the controllerApps item ${runtime.id} has no control-plane half`);
   }
 }
-for (const id of kindOwners_controllerApps.keys()) {
+for (const id of kindIds_controllerApps) {
   if (!KIND_RUNTIMES_controllerApps.some((runtime) => runtime.id === id)) {
     throw new Error(`the controllerApps item ${id} has no runtime half`);
   }
 }
 const KIND_ITEMS_controllerApps: readonly KindItem_controllerApps[] = KIND_SOURCES_controllerApps.flatMap((source) => source.items);
 // The declaring package's own checks over the items and the manifests' data, then its registry.
-const KIND_DATA_controllerApps = KIND_DATA.controllerApps;
+const KIND_DATA_controllerApps = kindData("controllerApps");
 kind_controllerApps_beta.check?.(KIND_ITEMS_controllerApps, KIND_DATA_controllerApps, {
   nodeTypes: Object.keys(protocolNodes()),
   roleNodes: roleNodes(),

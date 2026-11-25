@@ -3,29 +3,19 @@
 //
 // The protocol tables' seed: every protocol node the product's packages declare, wired or not, and the role kinds
 // placed as one, committed in span-label order into the live tables src/contributions/protocolRegistries.ts holds,
-// which a pack's protocol half adds to (docs/downloadable-packs-m2e-plan.md); then the kinds' data. Only the
-// registries and a type are imported, so a bundle that reads it carries no node's code, no role's schema and
+// which a pack's protocol half adds to (docs/downloadable-packs-m2e-plan.md); then the kinds' data into
+// src/contributions/kindRegistries.ts. Only the registries are imported, so a bundle that reads it carries no node's code, no role's schema and
 // nothing of the app.
-import type { KindData } from "@retroplug/core/defineKind";
 import { commitContributions } from "../contributions/registry";
 import { protocolNodesRegistry, roleNodesRegistry } from "../contributions/protocolRegistries";
+import { kindDataRegistry } from "../contributions/kindRegistries";
 
 commitContributions([
   { registry: protocolNodesRegistry, pkg: "retroplug", items: [] },
   { registry: roleNodesRegistry, pkg: "retroplug", items: [] },
+  { registry: kindDataRegistry, pkg: "retroplug", items: [] },
   { registry: protocolNodesRegistry, pkg: "alpha", items: [{ type: "rp.alpha.midi", midiIn: "midi", writes: ["serialIn"] }] },
   { registry: protocolNodesRegistry, pkg: "retroplug", items: [{ type: "rp.fixture.shell" }] },
   { registry: roleNodesRegistry, pkg: "alpha", items: [{ kind: "alpha-midi", node: "rp.alpha.midi" }] },
+  { registry: kindDataRegistry, pkg: "alpha", items: [{ kind: "controllerApps", id: "alpha-app", data: {"syncOverride":{"node":"rp.alpha.midi","role":"alpha-midi","mode":"midiMap","listening":"MidiMap","off":"off","divisor":"tempoDivisor"}} }] },
 ]);
-
-/** The data the contributing manifests declare for each contribution kind's items, by kind and then item id (a
- *  controller app's sync override, say): only the keys the declaring manifest lists as data, and nothing else.
- *  DATA, so a planner applies it with no item code and no schema - an app module has both - and what a key means
- *  is its declaring package's check's. */
-export const KIND_DATA: Readonly<Record<string, KindData>> = {
-  "widgets": {
-  },
-  "controllerApps": {
-    "alpha-app": {"syncOverride":{"node":"rp.alpha.midi","role":"alpha-midi","mode":"midiMap","listening":"MidiMap","off":"off","divisor":"tempoDivisor"}},
-  },
-};

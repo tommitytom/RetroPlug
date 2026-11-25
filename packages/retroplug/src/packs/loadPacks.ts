@@ -12,7 +12,7 @@
 import { commitContributions, type Addition } from "../contributions/registry";
 import { appAdditions } from "../contributions/app";
 import { consolesRegistry, realCartsRegistry } from "../contributions/consoleRegistries";
-import { KIND_DATA } from "../generated/protocol";
+import { contributionKindsRegistry } from "../contributions/kindRegistries";
 import type { PackageContributions } from "@retroplug/core/definePackage";
 import type { ConsoleDescriptor, ConsolesContribution } from "@retroplug/core/consoles";
 import { placersRegistry } from "../contributions/placers";
@@ -180,13 +180,14 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
       throw new Error("its app half declares embeds, and a pack cannot carry an embedded ROM yet (it would be baked " +
         "into the RetroPlug binary)");
     }
-    for (const kind of Object.keys(KIND_DATA)) {
+    const declaredKinds = contributionKindsRegistry.items().map((k) => k.kind);
+    for (const kind of declaredKinds) {
       if (Array.isArray(app[kind]) && (app[kind] as unknown[]).length) {
         throw new Error(`its app half contributes ${kind}, a contribution kind a pack cannot add to yet`);
       }
     }
     for (const member of Object.keys(app)) {
-      if (!APP_MEMBERS.has(member) && !Object.prototype.hasOwnProperty.call(KIND_DATA, member)) {
+      if (!APP_MEMBERS.has(member) && !declaredKinds.includes(member)) {
         throw new Error(`its app half exports ${member}, which is not something an app half contributes`);
       }
     }

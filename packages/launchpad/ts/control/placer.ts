@@ -13,7 +13,7 @@
 // The sync rule per app is manifest data (a contributing package's `protocol.kinds.controllerApps` entry
 // `syncOverride`), so this module names no tracker and no mode: an app declares which node type its launches need, the
 // mode that node is put in, and the polled SYNC value that counts as the cart listening. The graph reads it through
-// PlaceContext.kindData (generated/protocol.ts's KIND_DATA), and the menu reads the same data from the copy the kind's
+// PlaceContext.kindData (src/contributions/kindRegistries.ts's kindData), and the menu reads the same data from the copy the kind's
 // `accept` handed this package (setControllerSyncData): one shape, one reader, two carriers.
 import { definePlacer, type Placement, type Placed, type PlaceContext, type PlaceSystem } from "@retroplug/core/placer";
 import type { KindData } from "@retroplug/core/defineKind";
@@ -85,10 +85,16 @@ export function controllerTarget(
  *  cart mode, which is what an app that launches out of the host wants anyway. */
 let syncData: KindData = {};
 
-/** Install the kind's data (each item's `syncOverride`, by app id), as the generated registry hands it at load.
- *  Replaces it: a reload's rules are the product's current ones. */
+/** Install the kind's data (each item's `syncOverride`, by app id), as the generated registry hands it at load: the
+ *  kind's `accept`, once. Replaces what is held; a pack's apps merge in through `addControllerSyncData`. */
 export function setControllerSyncData(data: KindData): void {
   syncData = data;
+}
+
+/** Merge more items' data into the menu's copy: a pack's apps, after the product's (the kind's `add`). An id already
+ *  held is never passed: the shell's registry refuses a taken id before `add` runs. */
+export function addControllerSyncData(data: KindData): void {
+  syncData = { ...syncData, ...data };
 }
 
 /** An app's rule from a kind's data: the item's `syncOverride`, or null when the app declares none. */

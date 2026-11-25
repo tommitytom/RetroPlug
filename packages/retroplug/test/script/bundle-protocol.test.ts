@@ -108,9 +108,9 @@ test("graph/protocolNodes.ts reads the generated seed, the registries and their 
   const { inputs, bytes } = await bundle("src/graph/protocolNodes.ts");
   console.log(`# protocolNodes.ts: ${inputs.length} modules, ${bytes} bytes: ${inputs.join(", ")}`);
   expect(inputs.includes("src/generated/protocol.ts")).toBe(true);
-  // The module, the data it reads, the registries that hold it and the checks they run: the tables are apart from the
-  // node modules that describe them.
-  expect(inputs.length).toBe(5);
+  // The module, the data it reads, the registries that hold it (the kind tables among them) and the checks they run:
+  // the tables are apart from the node modules that describe them.
+  expect(inputs.length).toBe(6);
   expect(forbidden(inputs, await nodeModules())).toEqual([]);
 });
 
@@ -135,9 +135,9 @@ test("the planner's bundle carries the protocol tables, and no node module, for 
   }
   const { inputs, bytes } = JSON.parse(out) as { inputs: string[]; bytes: number };
   console.log(`# the plugin's planner: ${inputs.length} modules, ${bytes} bytes: ${inputs.join(", ")}`);
-  // The shell's entry, the product's table and the registries and checks around it: the redirect answered the shell's
-  // `../generated/protocol` with the plugin's file, and no node module came with it.
-  expect(inputs.length).toBe(5);
+  // The shell's entry, the product's table and the registries (the kind tables included) and checks around it: the
+  // redirect answered the shell's `../generated/protocol` with the plugin's file, and no node module came with it.
+  expect(inputs.length).toBe(6);
   expect(inputs.some((path) => path.includes("/products/plugin/"))).toBe(true);
   expect(forbidden(inputs, await nodeModules("plugin"))).toEqual([]);
 });
