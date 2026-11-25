@@ -249,6 +249,7 @@ retroplug_add_test_binary(
              test/packs/PackScript.test.cpp        # the script half: compiled at load, in the table and in Engines
              test/packs/PackProtocol.test.cpp      # the protocol half: the table's trial, the pack list, every Engine
              test/packs/PackKinds.test.cpp         # the kinds half: the table's trial, the pack list, Engines
+             ${SCRIPT_TEST_BUNDLE_C}               # rp_script_test_bundle: the other script bundle PackKinds.test.cpp builds an Engine on
     LIBS     retroplug-backend                     # Engine, the process's pack table, the folder model
              retroplug-packfixture-nodes           # the fixture's types, statically: a second copy beside the pack's
              retroplug-mesen                       # the static build MesenPack.test.cpp holds the pack to

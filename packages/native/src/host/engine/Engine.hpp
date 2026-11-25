@@ -573,6 +573,11 @@ private:
     rp::host::packs::PackTable* packs_ = nullptr;
     std::size_t                 packsSeen_ = 0;
     std::vector<std::string>    packsRefused_;
+    // The packs whose kinds halves this engine's built-in pack loaded at construction, and whether it ran the embedded
+    // bundle (the only one a kinds half is loaded beside): syncPacks refuses any other pack carrying one, with the
+    // reason each case calls for.
+    std::vector<std::string>    kindPacksAtBuild_;
+    bool                        kindsOnEmbedded_ = false;
     // Each pack the table loaded since the last call (its packages and its protocol half, which goes into the script
     // host as an app pack), registered whole or not at all: from the constructor, and from each setGraph before it
     // plans, on the control thread, as loadScriptPack changes the registry.

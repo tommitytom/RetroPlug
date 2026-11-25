@@ -6,19 +6,30 @@
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-kinds]"`.
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "BareRuntime.hpp"
 #include "PackTestSupport.hpp"
+#include "GraphDocs.hpp"
 #include "host/js/PackLoaderCore.hpp"
 #include "host/packs/KindsTrial.hpp"
 #include "host/packs/PackTable.hpp"
 #include "host/packs/ProtocolTrial.hpp"
+#include "host/script/ScriptHost.hpp"
 #include "quickjs.h"
 
 using rp::host::packs::PackTable;
 using rp::host::packs::test::BareRuntime;
 using rp::host::packs::test::fixture;
+using rp::host::packs::test::MidiOut;
+using rp::host::packs::test::runBlock;
+
+extern "C" {
+extern const std::uint8_t  rp_script_test_bundle[];
+extern const std::uint32_t rp_script_test_bundle_size;
+}
 
 namespace {
 
@@ -114,4 +125,54 @@ TEST_CASE("a kinds half that does not compile, or whose file is missing, is refu
     CHECK_FALSE(missing);
     INFO(missing.error);
     CHECK(missing.error.find("halves.kinds names js/gone.js, which the pack does not have") != std::string::npos);
+}
+
+namespace {
+
+// The session, out of the host: host MIDI out is what its app's target sends. No surface is wired, and the session
+// builds its app on its first block whatever the link says.
+std::string sessionDocument(const std::string& app) {
+    return R"({"nodes":[{"id":"s","type":"rp.controller.session","settings":{"app":")" + app +
+           R"(","target":"midiOut","systemId":1}},{"id":"out","type":"rp.host.midi-out","settings":{"systems":[1]}}],)"
+           R"("wires":[{"from":"s.midiOut","to":"out.in1"}]})";
+}
+
+}  // namespace
+
+TEST_CASE("an Engine built after the load runs the pack's kind item's runtime", "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    REQUIRE(table.load(fixture("kindfix")));
+    Engine e(48000.0, table);
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("kindfix-app"), {})).ok);
+    CHECK(runBlock(e, {}) == std::vector<MidiOut>{{1, 0, {0xB0, 0x7F, 0x2A}}});
+    CHECK(e.refusedPacks().empty());
+}
+
+TEST_CASE("an Engine built before the load refuses the pack by name, and its session finds no app", "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    Engine early(48000.0, table);
+    REQUIRE(table.load(fixture("kindfix")));
+    REQUIRE(early.setGraph(rp::host::test::graphRequest(sessionDocument("kindfix-app"), {})).ok);
+    CHECK(early.refusedPacks() == std::vector<std::string>{"kindfix"});
+    CHECK(runBlock(early, {}).empty());
+}
+
+TEST_CASE("an Engine on another script bundle loads no kinds half and refuses the pack", "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    REQUIRE(table.load(fixture("kindfix")));
+    const rp::host::ScriptHost::Chunk bundle[] = {{rp_script_test_bundle, rp_script_test_bundle_size}};
+    Engine e(48000.0, bundle, table);
+    CHECK(e.refusedPacks() == std::vector<std::string>{"kindfix"});
+}
+
+TEST_CASE("a pack's runtime code finds the kind registrar closed once the Engine is built", "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    REQUIRE(table.load(fixture("kindfix-late")));
+    Engine e(48000.0, table);
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("kindfix-late-app"), {})).ok);
+    CHECK(runBlock(e, {}) == std::vector<MidiOut>{{1, 0, {0xB0, 0x7F, 1}}});
 }

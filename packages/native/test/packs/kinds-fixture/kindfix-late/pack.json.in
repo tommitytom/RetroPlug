@@ -1,0 +1,8 @@
+{
+  "id": "kindfix-late", "name": "Kinds fixture (kindfix-late)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/kinds-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": [] },
+  "halves": { "kinds": "js/kinds.js" },
+  "kinds": { "controllerApps": [{ "id": "kindfix-late-app" }] }
+}
