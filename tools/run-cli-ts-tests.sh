@@ -755,6 +755,7 @@ PACKS="$REPO/build/packs"
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) PSEP=";" ;; *) PSEP=":" ;; esac
 PACKPATH="$PACKS/tsfix/1.0.0${PSEP}$PACKS/tsfix-cliclash/1.0.0${PSEP}$PACKS/tsfix-undeclared/1.0.0"
 PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-dependent/1.0.0${PSEP}$PACKS/tsfix-throws/1.0.0${PSEP}$PACKS/tsfix-protocol/1.0.0"
+PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-proto/1.0.0${PSEP}$PACKS/tsfix-proto-ports/1.0.0"
 RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" --help >"$TMP/packs-help.out" 2>"$TMP/packs-help.err"
 check "packs: --help with the fixture packs" 0 $?
 contains "packs: a pack's tool is in the index" "$TMP/packs-help.out" "tsfix-hello"
@@ -764,8 +765,10 @@ contains "packs: a role its manifest does not declare is refused" "$TMP/packs-he
 	"contributes the role kind tsfix-undeclared, which its pack.json's provides.roles does not declare"
 contains "packs: a pack requiring a refused pack is refused" "$TMP/packs-help.err" \
 	"it requires the pack tsfix-throws, which is refused"
-contains "packs: a protocol half is refused by the native loader" "$TMP/packs-help.err" \
-	"[packs] pack tsfix-protocol has a protocol half"
+contains "packs: a protocol half with no protocol member is refused" "$TMP/packs-help.err" \
+	"halves.protocol needs the protocol member"
+contains "packs: a protocol node whose ports are not its wiring is refused in TS" "$TMP/packs-help.err" \
+	"[packs] pack tsfix-proto-ports is refused: its protocol node rp.tsfix-proto-ports.echo has the ports"
 RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" tsfix-hello >"$TMP/packs-run.out" 2>/dev/null
 check "packs: a pack's tool runs" 0 $?
 contains "packs: the tool's output" "$TMP/packs-run.out" "hello from the ts fixture pack"
@@ -798,6 +801,33 @@ if [ -f "$REPO_ROM" ]; then
 	contains "packs: the render job's console names the refused pack" "$RR/thrown.all" "pack tsfix-throws is refused"
 else
 	echo "skip - packs render leg: the smsggdj ROM is absent"
+fi
+
+# A render job's worker commits a pack's protocol data and placer, and its Engine plans and runs the pack's node
+# (docs/downloadable-packs-m2e-plan.md): the fixture's placer says where its role's node was placed, and the WAV is the
+# render's without the pack, since the node writes nothing a core hears.
+RP="$TMP/proto-render"
+mkdir -p "$RP"
+cp "$REPO/packages/mgb/rom/mGB.gb" "$RP/rom.gb"
+(cd "$RP" && RETROPLUG_DETERMINISTIC=1 "$CLI" render rom.gb --duration 1s --out plain.wav >plain.out 2>plain.err)
+check "packs: a render of mGB with no pack exits 0" 0 $?
+(cd "$RP" && RETROPLUG_PACK_PATH="$PACKS/tsfix-proto/1.0.0" RETROPLUG_DETERMINISTIC=1 \
+	"$CLI" render rom.gb --duration 1s --out proto.wav >proto.out 2>proto.err)
+check "packs: a render with the protocol fixture pack exits 0" 0 $?
+cat "$RP/proto.out" "$RP/proto.err" >"$RP/proto.all"
+contains "packs: the render's placer saw the pack's node placed" "$RP/proto.all" \
+	"tsfix-proto: placed rp.tsfix-proto.echo on system"
+if cmp -s "$RP/plain.wav" "$RP/proto.wav"; then
+	echo "ok   - packs: the protocol fixture leaves the render's bytes as they were"
+else
+	echo "FAIL - packs: the protocol fixture changed the render's bytes"
+	fails=$((fails + 1))
+fi
+if grep -q "refused" "$RP/proto.all"; then
+	echo "FAIL - packs: the render refused something with the protocol fixture: $(grep refused "$RP/proto.all" | head -1)"
+	fails=$((fails + 1))
+else
+	echo "ok   - packs: nothing was refused in the protocol render"
 fi
 
 echo

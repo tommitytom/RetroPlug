@@ -1,0 +1,11 @@
+{
+  "id": "tsfix-proto-ports", "name": "TS fixture variant tsfix-proto-ports", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.tsfix-proto-ports.echo"], "roles": ["tsfix-proto-ports"] },
+  "halves": { "app": "js/app.js", "protocol": "js/protocol.js" },
+  "protocol": {
+    "nodes": [{ "type": "rp.tsfix-proto-ports.echo", "midiIn": "in", "writes": [], "midiOut": true }],
+    "roles": { "tsfix-proto-ports": "rp.tsfix-proto-ports.echo" }
+  }
+}

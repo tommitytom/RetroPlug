@@ -301,3 +301,21 @@ TEST_CASE("a protocol half loads while an audio thread renders, and the next pla
     e.reclaim();
     CHECK(placed);
 }
+
+TEST_CASE("the pack build's protocol half runs in an Engine", "[packs-protocol]") {
+    // tsfix-proto, built from its package by tools/build-pack-halves.mjs: what a real pack's protocol half is.
+    PackTable table;
+    withTrial(table);
+    const auto load = table.load(fixture("tsfix-proto"));
+    INFO(load.error);
+    REQUIRE(load);
+    Engine e(48000.0, table);
+    const char* doc =
+        R"({"nodes":[{"id":"in","type":"rp.host.midi-in"},{"id":"echo","type":"rp.tsfix-proto.echo"},)"
+        R"({"id":"out","type":"rp.host.midi-out","settings":{"systems":[1]}}],)"
+        R"("wires":[{"from":"in.midi","to":"echo.in"},{"from":"echo.midiOut","to":"out.in1"}]})";
+    const auto r = e.setGraph(rp::host::test::graphRequest(doc, {}));
+    INFO((r.errors.empty() ? std::string() : r.errors.front().message));
+    REQUIRE(r.ok);
+    CHECK(runBlock(e, {{0x90, 60, 100}}) == std::vector<MidiOut>{{1, 0, {0x90, 67, 100}}});
+}
