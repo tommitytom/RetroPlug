@@ -82,10 +82,16 @@ rename), so a plugin and a standalone installing at the same moment cannot corru
   "requires": { "packs": [], "platforms": [] },
   "provides": { "platforms": ["nes", "sms", "gg", "gba"], "nodeTypes": ["rp.mesen.nes", "..."], "roles": ["mesen"] },
   "halves": { "native": "rp-mesen", "app": "js/app.js", "consoles": "js/consoles.js",
-              "ui": "js/ui.js", "cli": "js/cli.js" }
+              "ui": "js/ui.js", "cli": "js/cli.js", "protocol": "js/protocol.js", "placer": "js/placer.js" },
+  "protocol": { "nodes": [ { "type": "rp.mesen.sync", "...": "the node's wiring" } ], "roles": { "mesen": "rp.mesen.sync" } }
 }
 ```
 
+- `protocol` is the wiring of a pack's QuickJS script nodes (each node's `type` and its `midiIn`, `writes`, `launches`,
+  `serialOut`, `midiOut`, `capture` and `out`, no `label`: the script host numbers span labels at load) and the role kinds
+  placed as them; it goes with the `protocol` half, and a `placer` half (an ES module default-exporting a `GraphPlacer`)
+  places those roles. A placer places a model only when the app half contributes a project service under its key that
+  publishes a non-null model, and the key must be one of the app half's project sections.
 - `apiLevel` must equal RetroPlug's, or the pack is refused with a message saying which side is out of date.
 - `provides` is what part 5 resolves against, so the loader holds the pack to it: a pack that registers a platform, a
   node type or a role it does not declare is refused.
@@ -159,11 +165,14 @@ version and the QuickJS version.
   the host modules of [host-modules.json](../packages/retroplug/host-modules.json)). A pack importing anything else is
   refused by the SDK's build and again at load. That list is the contract the API level guards.
 
-**Where each half loads.** `app`, `consoles` and `protocol` into the control plane; `ui` into the UI's realm (the same
+**Where each half loads.** `app`, `consoles` and `placer` into the control plane, the render worker and the CLI; `ui` into the UI's realm (the same
 txiki runtime, as the [C1 design](modular-graph-phase-c1-design.md) section 8 set out); `cli` into the CLI; `script`
 is a device script pack (MicroQuickJS), shipped as ES5 source and compiled at load
 ([docs/downloadable-packs-m2d-plan.md](downloadable-packs-m2d-plan.md)), and registered in every Engine; a pack's
-QuickJS script nodes are its protocol nodes, which reach the engine through `loadScriptPack`'s path (M2e).
+QuickJS script nodes are its protocol nodes: the `protocol` half is global code, not a module, that every Engine loads at
+`syncPacks` as `rp.<id>.protocol` (`ScriptHost::loadAppPack`, [the M2e plan](downloadable-packs-m2e-plan.md)), and its
+wiring (pack.json's `protocol` member) commits into the live protocol registries in the control plane, the render worker
+and the CLI, with the placer half.
 
 **Live registries.** A small `Registry` replaces each generated constant consumers read today: the ROM providers, the
 roles, the tracker integrations, the kit formats, the config and project sections, the project services, the embeds,

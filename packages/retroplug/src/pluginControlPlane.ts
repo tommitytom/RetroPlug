@@ -109,9 +109,9 @@ g.__rp_parameterMapJson = (): string =>
 // What the packs' halves loaded and refused, for a test and Settings > Packs (M4).
 g.__rp_packStatus = packStatus;
 
-// The packs' app and consoles halves commit before the host is told the control plane is ready, so the first project
-// load (an autoload, the DAW's setState) finds their roles and consoles; the stores were composed first and adopt the
-// commit (docs/downloadable-packs-m2a-plan.md). loadAppPacks never rejects: a pack that fails is refused and reported.
+// The packs' app, consoles, protocol and placer halves commit before the host is told the control plane is ready, so the
+// first project load (an autoload, the DAW's setState) finds their roles, consoles, protocol nodes and placers; the stores were composed first and
+// adopt the commit (docs/downloadable-packs-m2a-plan.md). loadAppPacks never rejects: a pack that fails is refused and reported.
 void loadAppPacks().then(() => {
   g.__rp_ready = true;
 });

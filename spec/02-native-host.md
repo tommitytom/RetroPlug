@@ -1427,8 +1427,8 @@ table as the loads' are, so `refusals()` is the one list; `loadAll` answers a re
 
 `PackTable` opens each pack's library once and never closes it (a refused one too: opening it ran its static
 constructors, and its installed folder stays held). A pack loads all or nothing, and is refused for, among others: its
-API level, a half the loader does not take (the `protocol` half, M2e's; the native half, the `script` half below and the
-`app`, `consoles`, `ui`, `views` and `cli` halves, each file present, are taken), a `script` member that does not go with
+API level, a half the loader does not take (the native half, the `script` and `protocol` halves below and the
+`app`, `consoles`, `ui`, `views`, `cli` and `placer` halves, each file present, are taken), a `protocol` member without its half or the half without the member, a `script` member that does not go with
 the `script` half or names a type `provides.nodeTypes` does not declare, an installed folder that is not
 `packs/<id>/<version>`, a second folder of an id already loaded, a second copy of the library of an id whose first was
 opened and refused, no library for this platform, a missing library or entry, an entry that throws (caught on the host's
@@ -1472,6 +1472,22 @@ checks and is registered by every Engine at `syncPacks`, a render job's included
 pin bump that bytecode would not, it is the design's rule for every half, MicroQuickJS does not check the bytecode it loads
 (`JS_LoadBytecode`: it "should come from a trusted source"), and a bytecode is bound to the library table that compiled
 it. Both module loaders refuse `pack:<id>/script`, as they refuse the native half.
+
+**A pack's protocol half** is the global-code bundle of its QuickJS script nodes (an IIFE appending its definitions to
+`__rp_scriptNodes`, as the built-in script bundle does; it bundles `@retroplug/core` alone, since the script contexts have no
+module loader), with the wiring in pack.json's `protocol` member (`nodes`, each a type and its wiring, and `roles`; no
+`label`, no `kinds`). `PackTable` compiles the bundle once and trial-loads it through the `ProtocolTrial` the backend
+installs (`host/packs/ProtocolTrial.cpp`; `retroplug-packs` cannot reach the script host): a scratch `ScriptHost` loads the
+built-in script nodes and then the pack, both are registered on a scratch `NodeRegistry` (so a clash with a built-in
+script node is refused, and the registration that failed is named), and the trial returns the bytecode, the type ids in
+registration order and each type's descriptor. The table refuses a bundle that defines a type `protocol.nodes` does not
+declare, or the reverse. Every Engine then loads the bytecode at `syncPacks` with `ScriptHost::loadAppPack` as
+`rp.<id>.protocol`, an id under `rp.` that `loadScriptPack` refuses to a caller, so no RPC can reload or shadow it; an app
+pack is never reloaded (`loadAppPack` refuses an id already current), and the host holds a loaded pack's types to its id's
+prefix except an app pack's, whose protocol nodes are named by the pack (`rp.risa.sync`). Its types take the script host's
+next span labels ([08](08-profiling.md)), a render job's Engine included. The Engine refusing it (an id or type its registry
+holds) frees it there and leaves the others running. Both module loaders refuse `pack:<id>/protocol`, as they refuse `script`.
+The wiring and the optional `placer` half (an ES module whose default export is a `GraphPlacer`) commit in the TS loader.
 
 **A pack's TS halves** are ES modules (`js/<half>.js`) a txiki context imports by name.
 `installPackLoader` ([PackModules](../packages/native/src/host/js/PackModules.hpp), the txiki wrapper of

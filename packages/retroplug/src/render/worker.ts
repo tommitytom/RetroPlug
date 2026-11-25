@@ -1,8 +1,8 @@
 // The render job's body: the session an engine job's worker (the RenderHost, on a pool thread of the engine) runs,
 // which is also `retroplug-cli render`'s render path. It is the entry (rp:render) of the render shared module set
 // (built by tools/build-shared-modules.mjs render), evaluated as a module on a bare-QuickJS runtime with its own Engine.
-// The job request arrives as JSON in globalThis[Symbol.for("plugin")].args[0]; the worker loads the packs' app and
-// consoles halves, boots a control plane, runs the shared render library, and reports progress /
+// The job request arrives as JSON in globalThis[Symbol.for("plugin")].args[0]; the worker loads the packs' app, consoles,
+// protocol and placer halves, boots a control plane, runs the shared render library, and reports progress /
 // cancellation / completion back through native thunks the RenderHost binds:
 //   __rp_reportRenderedMs(ms)            - audio rendered so far, per rendered chunk
 //   __rp_isRenderCancelled(): boolean    - polled between boot steps and per chunk; true aborts the render
@@ -74,9 +74,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // The packs' app and consoles halves (docs/downloadable-packs-m2d-plan.md), committed before the session composes,
-  // so a pack's consoles, roles and ROM providers are this render's as they are the app's. Never rejects: a refused
-  // pack is named on the job's console and the render goes on without it.
+  // The packs' app, consoles, protocol and placer halves (docs/downloadable-packs-m2d-plan.md, -m2e-plan.md), committed
+  // before the session composes, so a pack's consoles, roles, protocol nodes, placers and ROM providers are this
+  // render's as they are the app's. Never rejects: a refused pack is named
+  // on the job's console and the render goes on without it.
   await loadAppPacks();
 
   const serial = pluginNamespace()?.renderSerial;

@@ -2361,6 +2361,12 @@ Expected: all four jobs succeed.
 8. **The protocol half's `@retroplug/core` copy is the pack's build's,** not the host's: a pack built against an older
    core runs that core's node helpers in its script contexts. The API level covers the node ABI, not those helpers'
    behaviour.
+9. **A pack's placer runs only with a project service publishing its model.** `buildGraph` skips a placer whose key has no
+   non-null model, and no pack doc said so; the pack docs now state it (spec/06, the loading design's section 1).
+10. **The shell's placer-key check exempts a package with no project sections;** the loader now holds a pack's placer to
+    one of its own app half's project sections, a built-in package is not held to it.
+11. **The checks do not refuse an `out` naming itself, an `out` with its own `out`, or a role placed as an `out`
+    decoder,** and the generator does not either.
 
 ## Self-review
 
@@ -2391,3 +2397,33 @@ follow.
 `HalfKind` with `protocol` and `placer`, `DATA_HALVES`, `protocolAdditions`, `placerExport` (Task 6);
 `buildProtocolHalf`, `protocolImports`, `tsfix-proto`, `rp.tsfix-proto.echo`, `tsfixProto` (Task 7, used in Task 8);
 `tsfix-proto-ports` (Task 8).
+
+## After the reviews
+
+M2e was built as `3de7fe7ec..cf59cf47b` (Tasks 1 to 8) and the docs commit after it (Task 9); Task 10's CI gate waits for
+the user's go-ahead to push. Where the task blocks above and the tree differ, the tree wins. What changed from the plan
+while it ran, and why:
+
+- The planner bundle's module counts moved (2 to 5, the ceiling 26 to 28), since the readers now import the registries
+  and the checks (d330d7d96).
+- `checkRoleNodes` refuses one package declaring a kind twice, by name (a761f950a).
+- The manifest's `nodesJson` is re-read with `parseJson`, so an integer above INT64_MAX is not wrapped (95aaec484).
+- `ScriptHost` requires a loaded pack's types to sit under its id; an app pack (`loadAppPack`) is exempt, since a pack's
+  protocol nodes are named by the pack (`rp.risa.sync`, `rp.sms.sync`), and the table and the registry hold them.
+  `loadAppPack` refuses an id already current, so an app pack is never reloaded, and the trial names whether the
+  built-ins or the pack's nodes failed to register (cb5e713df, e2f80b39a).
+- `readTextFile` moved to `PackDirs`, and one `heldBy` pre-check serves the script and protocol halves (cb5e713df).
+- `runBlock` and `MidiOut` moved to `PackTestSupport.hpp`; the Engine refused-here path and a live-audio-thread load
+  are tested; the span-label case runs only in a `RETROPLUG_PROFILE` build (it passed in one during review) (3b4437bed,
+  3cd4c2f70).
+- The loader guards malformed host data by name, and a pack's placer half must place one of its own app half's project
+  sections (5826248a6).
+- The protocol half's bundle starts `"use strict"` like the product's script bundle; `zod` and core subpaths core does
+  not export are refused by name, and a module defining an id twice is refused (9b0f59de8, aa5a098ae).
+- A placer runs only when a project service publishes a non-null model under its key (`buildGraph` skips one with none),
+  so the fixture's app half has a project service, and it imports `@retroplug/tracker/packageContributions` for the
+  `projectServices` member's type; the CLI's protocol legs render mGB and smsggdj (the latter where audio is real) with and
+  without the pack, byte-identical, and fail on any refused, faulted or `[script]` line (21b225b71, cf59cf47b).
+
+The design questions above gained 9 to 11 while it ran. Task 9 also updated the control plane's and the render worker's
+comments that still said the packs' "app and consoles halves".

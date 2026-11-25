@@ -78,7 +78,7 @@ CMakeLists of [node-sdk](../packages/node-sdk/native/CMakeLists.txt),
 | `retroplug-example-session` | custom | The CLI example sessions under `build/cli/`. | yes |
 | `retroplug-render-host-test` | executable | A manual smoke of engine jobs on `rp::host::OfflineJobs` ([11-ui-rendering.md](11-ui-rendering.md)): `<job-json>` runs one render (and is `cmp`-identical to `retroplug-cli render`), `--parallel <j>...` runs N concurrently on one pool, `--cancel <j>` cancels mid-render. Not a CI step (`[engine-jobs]` carries that coverage). `EXCLUDE_FROM_ALL`. | no |
 | `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test` / `-audio-host-test` | executable | Fourteen of the seventeen Catch2 binaries `pnpm test:plugin` builds and runs (the N8 pack's two are the row after next, the packs' one the next row). Each is made by `retroplug_add_test_binary` ([cmake/test-binary.cmake](../cmake/test-binary.cmake)) and links `Catch2::Catch2WithMain`. `EXCLUDE_FROM_ALL`; the console packages', the midi package's and the launchpad pack's are declared in their own `native/CMakeLists.txt` (`retroplug-midi-test` holds `MidiStream` and `PortWriter` over `FakeMidiBackend`, the port filters and the ring - a slow port's write off the caller's thread, a slow port not delaying a fast one, the push that lands as the writer goes idle (the lost wake, which only ThreadSanitizer's window makes fail), a full ring dropping whole messages, a stop's flush and its deadline (a wedged port's `stop` returns by `kFlushDeadline` plus the two sends it can be inside, abandoning the rest), a writer whose port never opened starting no thread, the stream's one drop line when it lets a writer go, and neither a push nor a threaded `send` allocating, all of them in the thread sanitizer leg of [run-sanitizer.sh](../tools/run-sanitizer.sh) too, and with the five concurrency cases (the exclusive port's re-pick, a close under a send in flight, an output swap under a send, a diff's close before its open, a swap behind back-to-back sends) run in BOTH output modes through `GENERATE`; `retroplug-audio-host-test` holds `AudioHost` over `FakeAudioBackend` and the run-override rule). | no |
-| `retroplug-packs-test` | executable | The packs ([spec/02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)), 54 cases (53 on macOS, 48 on Windows: the platform-gated ones differ): the folder model on a temporary root (`PackRoots`, `PackManifest` and `PackState` cases, the version locks and a launch's settle among them), the loader's refusals against the fixture pack's variants (`packages/native/test/packs/fixture`, `[packs-loader]`), which folders a launch loads (`[packs-discovery]`), packs in running Engines, a live load under an audio thread and a script reload (`[packs-engines]`), the Mesen package as a pack (`[packs-mesen]`) and the RTTI rule (`[packs-boundary]`). Its product is the `packs-host` list, the plugin's without `mesen` and `bliptoaster`. | no |
+| `retroplug-packs-test` | executable | The packs ([spec/02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)), 54 cases (53 on macOS, 48 on Windows: the platform-gated ones differ): the folder model on a temporary root (`PackRoots`, `PackManifest` and `PackState` cases, the version locks and a launch's settle among them), the loader's refusals against the fixture pack's variants (`packages/native/test/packs/fixture`, `[packs-loader]`), which folders a launch loads (`[packs-discovery]`), packs in running Engines, a live load under an audio thread and a script reload (`[packs-engines]`), a pack's protocol half (`[packs-protocol]`), the Mesen package as a pack (`[packs-mesen]`) and the RTTI rule (`[packs-boundary]`). Its product is the `packs-host` list, the plugin's without `mesen` and `bliptoaster`. | no |
 | `retroplug-n8-test` / `-serial-test` / `-n8-hwtest` | executable | The Everdrive N8 pack's protocol and serial checks (`packages/n8/native/test/`), the first two `pnpm test:n8`'s; `-hwtest` needs the physical console and links no Catch2 (`NO_CATCH2`). `EXCLUDE_FROM_ALL`. | no |
 
 The plugin's identity is vendor-owned (not the DPF example namespace):
@@ -144,16 +144,29 @@ package's views are a module, `retroplug.views`); the manifest gained it additiv
 
 [`tools/build-pack-halves.mjs`](../tools/build-pack-halves.mjs) builds a package's halves as a pack's: one ES module per
 half its `package.json` names, every contract and host module external, any other `@retroplug/*` import refused, then
-`pack.json` with this build's API level. A package's `retroplug.script` is built through the device-pack toolchain
+`pack.json` with this build's API level. A package's `retroplug.protocol` member becomes the `protocol` half, a global-code IIFE that bundles `@retroplug/core` alone
+(any other `@retroplug` import, `zod` and a core subpath core does not export are refused by name, a module defining an id
+twice too; it starts `"use strict"` like the product's script bundle), with pack.json's `protocol` member (the nodes less their
+labels, and the roles); its `placer` module becomes the `placer` half, an ES module like the others, and a `kinds` member is
+refused until M2f. A placer half places a model only when the app half contributes a project service under the same key
+publishing a non-null model (`buildGraph` skips a placer with none), and the loader holds its key to one of the app half's
+project sections. A package's `retroplug.script` is built through the device-pack toolchain
 (`build-device-pack.mjs`, which also writes `<name>.types.json`, the node type ids in registration order) into the pack's
 script half, its bundle and its runtime; `--only` limits the build to named halves, `--mqjs` and `--runner` name the
 `mqjs` and `retroplug-mqjs-run` binaries the toolchain's checks use. It builds from any working directory. The fixture is
 `packages/native/test/packs/ts-fixture/`: `tsfix`, built by that tool into `build/packs/tsfix/1.0.0` by
 `retroplug-ts-fixture-packs` (a prerequisite of `test:ui` and `test:cli-ts`), and its hand-written broken variants
-(`tsfix-throws`, `-guard`, `-undeclared`, `-cliclash`, `-dependent`, `-protocol`) under `build/packs`, which the tool
-would refuse; its own tsconfig puts it in `pnpm typecheck`. The target's DEPENDS covers top-level `ts/*.ts` only: a
+(`tsfix-throws`, `-guard`, `-undeclared`, `-cliclash`, `-dependent`, `-protocol`, `-proto-ports`, the last a protocol node whose
+ports are not its wiring's) under `build/packs`, which the tool would refuse; `ts-fixture/protocol/` is `tsfix-proto`, a package
+with app, protocol and placer members that the tool builds (its app half has a project service, which a placer needs, and
+imports `@retroplug/tracker/packageContributions` for the `projectServices` member's type); its own tsconfig puts it in `pnpm typecheck`. The target's DEPENDS covers top-level `ts/*.ts` only: a
 real package with nested modules needs an esbuild metafile-derived DEPFILE. The render worker's fixture is `tsfix-render` (under `ts-fixture/render/`), and the CLI's render-with-packs checks are in
-`tools/run-cli-ts-tests.sh`, guarded on the repo's smsggdj ROM. The script half's fixtures are
+`tools/run-cli-ts-tests.sh`, guarded on the repo's smsggdj ROM. The protocol half's hand-written fixtures are
+`packages/native/test/packs/protocol-fixture/` (`protofix` and its variants `-clash`, `-missing`, `-syntax`, `-throws` and
+`-undeclared`), tested by `PackProtocol.test.cpp` (`[packs-protocol]`: the table, the pack list, every Engine, a refusal in one
+Engine, a load under a live audio thread, the built `tsfix-proto`; the span-label case runs only in a `RETROPLUG_PROFILE`
+build), and the CLI's protocol legs render mGB and smsggdj (the latter where audio is real) with and without the pack,
+byte-identical, and fail on any refused, faulted or `[script]` line. The script half's fixtures are
 `packages/native/test/packs/script-fixture/`: `scriptfix` (built from devtest's pack) and its variants `-twin`, `-types`,
 `-syntax` and `-nofile`, and `bliptoaster`, whose script half is BlipToaster's own (staged at `build/packs/bliptoaster/1.0.0`),
 all built by `retroplug-script-fixture-packs` and tested by `PackScript.test.cpp` (`[packs-script]`, in
@@ -243,6 +256,13 @@ on `tileViews().length`). The UI bundle's seam is `__rp_commitUiContributions`, 
 CLI's `cli/tools.ts`), which import the generated seed, never the generated module directly; `src/graph/directGraph.ts`
 is the one exception, importing `../generated/packages` only for the contribution kinds' load-time side effect (M2d
 makes the kinds live). `src/generated/apiLevel.ts` is `RP_API_LEVEL` read from `rp_pack.h`.
+
+The protocol tables are two more: `protocolNodesRegistry` (every declared node, wired or not) and `roleNodesRegistry`
+(`{ kind, node }`) in `src/contributions/protocolRegistries.ts`, seeded by the generated `protocol.ts` in span-label order and
+read through `protocolNodes()`, `roleNodes()`, `declaredNodeTypes()` and `protocolSpecOf()` (`graph/protocolNodes.ts`,
+rebuilt after each commit). Their checks are `graph/protocolSpec.ts`'s, run at every commit over the whole staged list, so
+the product's own tables pass through the rules a pack's do; the generator keeps its build-time checks beside them.
+`KIND_DATA` stays a generated constant until M2f.
 
 **Every product but the desktop gets its own tree**, and its own bundles (the control plane and the React UI as one
 shared module set, plus the script nodes and the render worker): `generate({ product })` (the
