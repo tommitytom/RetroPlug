@@ -56,7 +56,8 @@ JSModuleDef* loadPackHalfImpl(JSContext* ctx, const char* name, PackMetaFn setMe
     if (slash == std::string_view::npos || !table) return notFound(ctx, name);
     const packs::LoadedPack* pack = table->find(rest.substr(0, slash));
     const std::string half(rest.substr(slash + 1));
-    if (!pack || half == "native" || half == "script" || half == "protocol") return notFound(ctx, name);
+    if (!pack || half == "native" || half == "script" || half == "protocol" || half == "kinds")
+        return notFound(ctx, name);
     const auto file = pack->manifest.halves.find(half);
     if (file == pack->manifest.halves.end()) return notFound(ctx, name);
 
@@ -151,11 +152,13 @@ JSValue packList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
                 protocol = ",\"protocol\":{\"nodes\":" + m.protocol->nodesJson + ",\"roles\":{" + roles +
                            "},\"descriptors\":{" + descriptors + "}}";
             }
+            // A kinds half's items (the TS loader holds them to the declared kinds; the half is global code and no module).
+            const std::string kinds = m.kinds ? ",\"kinds\":" + m.kinds->kindsJson : std::string();
             out += std::string(first ? "" : ",") + "{\"id\":" + jsonString(m.id) + ",\"version\":" +
                    jsonString(m.version) + ",\"halves\":" + jsonList(halves) + ",\"provides\":{\"platforms\":" +
                    jsonList(m.providesPlatforms) + ",\"nodeTypes\":" + jsonList(m.providesNodeTypes) +
                    ",\"roles\":" + jsonList(m.providesRoles) + "},\"requires\":{\"packs\":" +
-                   jsonList(m.requiresPacks) + ",\"platforms\":" + jsonList(m.requiresPlatforms) + "}" + protocol + "}";
+                   jsonList(m.requiresPacks) + ",\"platforms\":" + jsonList(m.requiresPlatforms) + "}" + protocol + kinds + "}";
             first = false;
         }
     }

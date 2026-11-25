@@ -15,6 +15,7 @@
 #include "host/packs/FileLock.hpp"
 #include "host/packs/PackCandidate.hpp"
 #include "host/packs/PackManifest.hpp"
+#include "host/packs/PackKinds.hpp"
 #include "host/packs/PackProtocol.hpp"
 #include "host/packs/PackScript.hpp"
 
@@ -39,6 +40,8 @@ struct LoadedPack {
     const ScriptHalf*              script = nullptr;  // its script half, compiled and registered; the table owns it
     // Its protocol half, compiled and trial-loaded; every Engine loads it into its script host (Engine::syncPacks).
     std::optional<ProtocolHalf>    protocol;
+    // Its kinds half, compiled and trial-loaded; every Engine runs it after its built-in pack (docs/downloadable-packs-m2f-plan.md).
+    std::optional<KindsHalf>       kinds;
     std::vector<std::string>       packageIds;  // each package's manifest id, index for index
     void*                          library = nullptr;  // never closed
     std::shared_ptr<FileLock>      lock;  // the hold on its version folder: installed, or development in the data root
@@ -85,6 +88,9 @@ public:
     // The trial a protocol half is run through (the backend's protocolTrial): a table without one refuses every pack
     // with a protocol half. Set before the first load; a test's table sets its own.
     void setProtocolTrial(ProtocolTrial trial);
+    // The trial a kinds half is run through (the backend's kindsTrial): a table without one refuses every pack with a
+    // kinds half. Set before the first load; a test's table sets its own.
+    void setKindsTrial(KindsTrial trial);
 
     std::size_t                    size() const;
     const LoadedPack*              find(std::string_view id) const;
@@ -104,6 +110,7 @@ private:
     std::vector<std::unique_ptr<LoadedPack>> packs_;
     std::vector<PackRefusal>                 refusals_;
     ProtocolTrial                            protocolTrial_;
+    KindsTrial                               kindsTrial_;
     // Every script half this table compiled, loaded or refused: the MicroQuickJS host keeps a pointer to each one it
     // registered for the life of the process (and compares halves by address), so none is ever freed.
     std::vector<std::unique_ptr<ScriptHalf>> scripts_;

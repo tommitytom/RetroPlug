@@ -7,16 +7,17 @@
 #include "graph/Packages.hpp"
 #include "host/packs/PackDirs.hpp"
 #include "host/packs/PackDiscovery.hpp"
+#include "host/packs/KindsTrial.hpp"
 #include "host/packs/ProtocolTrial.hpp"
 
 namespace rp::host::packs {
 
 PackTable& processPacks() {
     // A function-local static: built once, under the guard the language gives it, by whichever thread asks first.
-    // The data root is the user's, so a development folder inside it is held like an installed one. The protocol trial
-    // is the backend's, which this file is in and the table's library cannot reach.
+    // The data root is the user's, so a development folder inside it is held like an installed one. The protocol and kinds
+    // trials are the backend's, which this file is in and the table's library cannot reach.
     static PackTable table(rp::graph::productPackages(), defaultPackRoots().data);
-    static const bool trialSet = (table.setProtocolTrial(protocolTrial()), true);
+    static const bool trialSet = (table.setProtocolTrial(protocolTrial()), table.setKindsTrial(kindsTrial()), true);
     (void)trialSet;
     return table;
 }

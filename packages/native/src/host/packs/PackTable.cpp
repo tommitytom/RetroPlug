@@ -130,6 +130,11 @@ void PackTable::setProtocolTrial(ProtocolTrial trial) {
     protocolTrial_ = std::move(trial);
 }
 
+void PackTable::setKindsTrial(KindsTrial trial) {
+    std::lock_guard<std::mutex> hold(mutex_);
+    kindsTrial_ = std::move(trial);
+}
+
 void PackTable::recordRefusal(PackRefusal refusal) {
     std::lock_guard<std::mutex> hold(mutex_);
     refusals_.push_back(std::move(refusal));
@@ -418,6 +423,18 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
                                           ", which its protocol half does not define");
         for (const auto& t : half->typeIds) registered.insert(t);
         loaded->protocol = std::move(*half);
+    }
+    // The kinds half: read, compiled and run after the built-in script nodes by the backend's trial, which refuses a
+    // runtime that throws, registers an id a built-in package holds or names a kind the product does not declare. An id
+    // an earlier pack holds is the TS loader's to refuse (kindItemsRegistry), and every Engine's registrar refuses it
+    // too.
+    if (manifest->kinds) {
+        if (!kindsTrial_) return refuseHere(id, pack + " has a kinds half, and this host loads none");
+        const auto source = readTextFile(candidate.dir / fs::path(manifest->halves.at("kinds")), &why);
+        if (!source) return refuseHere(id, pack + ": " + why);
+        auto half = kindsTrial_(*source, &why);
+        if (!half) return refuseHere(id, pack + ": " + why);
+        loaded->kinds = std::move(*half);
     }
     // The script half: compiled now, then registered on the MicroQuickJS host, which loads the whole pack in a control
     // context and refuses definitions that are not its type ids. Held by the table from its registration on, loaded or

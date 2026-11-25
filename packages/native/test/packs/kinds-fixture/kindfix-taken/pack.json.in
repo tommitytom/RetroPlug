@@ -1,0 +1,8 @@
+{
+  "id": "kindfix-taken", "name": "Kinds fixture (kindfix-taken)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/kinds-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": [], "roles": [] },
+  "halves": { "kinds": "js/kinds.js" },
+  "kinds": { "controllerApps": [{ "id": "lsdj-midimap" }] }
+}
