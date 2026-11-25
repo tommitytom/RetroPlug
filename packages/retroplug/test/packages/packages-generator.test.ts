@@ -376,6 +376,9 @@ test("a product list that is the desktop's subsequence gets its own tree, its no
   // Its typecheck program is written beside it, extends the shell's, and takes a paths file of its own.
   expect(files.tsconfig.includes("packages/retroplug/tsconfig")).toBe(true);
   expect(files.tsconfig.includes("./tsconfig.paths.json")).toBe(true);
+  // It declares no contribution kind, so its registrar refuses every call: an empty table and the function present.
+  expect(files["scriptNodes.ts"].includes("KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {};")).toBe(true);
+  expect(files["scriptNodes.ts"].includes("globalThis as Record<string, unknown>).__rp_registerKindItems")).toBe(true);
 });
 
 test("the desktop's list must carry every contributing package the shell declares", async () => {

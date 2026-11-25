@@ -1393,7 +1393,7 @@ function registrarLines(kinds) {
   } else {
     lines.push("const KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {");
     for (const { kind, register, owners } of kinds) {
-      lines.push(`  ${JSON.stringify(kind)}: { register: ${register}, owners: ${JSON.stringify(owners)} },`);
+      lines.push(`  ${JSON.stringify(kind)}: { register: ${register}, owners: Object.assign(Object.create(null), ${JSON.stringify(owners)}) },`);
     }
     lines.push("};");
   }
@@ -1403,12 +1403,23 @@ function registrarLines(kinds) {
     "): void => {",
     "  const entry = Object.prototype.hasOwnProperty.call(KIND_REGISTRARS, kind) ? KIND_REGISTRARS[kind] : undefined;",
     "  if (!entry) throw new Error(`a pack's kinds half registers items of ${kind}, a contribution kind this product does not declare`);",
-    "  const got = items.map((item) => item.id);",
-    "  if (got.join(\"\\n\") !== ids.join(\"\\n\")) {",
+    "  if (!Array.isArray(items) || !Array.isArray(ids)) {",
+    "    throw new Error(`a pack's kinds half registers ${kind} with items and ids that are not lists`);",
+    "  }",
+    "  const got: string[] = [];",
+    "  for (const item of items) {",
+    "    if (typeof item !== \"object\" || item === null || typeof item.id !== \"string\") {",
+    "      throw new Error(`a pack's kinds half registers a ${kind} item that is not an object with a string id`);",
+    "    }",
+    "    got.push(item.id);",
+    "  }",
+    "  if (got.length !== ids.length || got.some((id, i) => id !== ids[i])) {",
     "    throw new Error(`a pack's kinds half registers the ${kind} items ${got.join(\", \")}, and its manifest declares ${ids.join(\", \")}`);",
     "  }",
-    "  for (const id of got) {",
-    "    const owner = Object.prototype.hasOwnProperty.call(entry.owners, id) ? entry.owners[id] : undefined;",
+    "  for (let i = 0; i < got.length; i++) {",
+    "    const id = got[i];",
+    "    if (got.indexOf(id) !== i) throw new Error(`a pack's kinds half registers the ${kind} item ${id} twice`);",
+    "    const owner = entry.owners[id];",
     "    if (owner !== undefined) {",
     "      throw new Error(`a pack's kinds half registers the ${kind} item ${id}, which ${owner === \"\" ? \"an earlier pack\" : `this product's ${owner}`} holds`);",
     "    }",
@@ -1423,13 +1434,13 @@ function registrarLines(kinds) {
 function renderScriptNodes({ packages, outDir, kindDecls, product }) {
   const spec = packages.filter((p) => p.protocol);
   // Each declared kind's runtime halves: the contributing manifests' entries, in product order, and the declaring
-  // package's module that registers them. A kind nothing contributes registers nothing.
+  // package's module that registers them. A kind nothing contributes registers no
+  // item here, but still takes a downloaded pack's through the registrar below.
   const kindRuntimes = [...kindDecls].map(([kind, { decl }]) => ({
     kind,
     decl,
     entries: packages.flatMap((p) => p.kindEntries.filter((entry) => entry.kind === kind)),
   }));
-  const withKinds = kindRuntimes.filter((runtime) => runtime.entries.length > 0);
   const head = [
     `${generatedFrom(product)} and the`,
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
@@ -1477,7 +1488,7 @@ function renderScriptNodes({ packages, outDir, kindDecls, product }) {
   // Per kind: the declaring package's runtime registry, then each contributing manifest's module, in product order.
   const kindLocals = [];
   for (const { kind, decl, entries } of kindRuntimes) {
-    lines.push(`import { ${decl.runtime.register}, type ${decl.runtime.type} } from ` +
+    lines.push(`import { ${decl.runtime.register}${entries.length ? `, type ${decl.runtime.type}` : ""} } from ` +
       `"${moduleSpecifier(outDir, kindDecls.get(kind).pkg, decl.runtime.module)}";`);
     const items = [];
     for (const entry of entries) {
@@ -1579,7 +1590,7 @@ function renderScriptNodes({ packages, outDir, kindDecls, product }) {
     ...registrarLines(kindRuntimes.map(({ kind, decl, entries }) => ({
       kind,
       register: decl.runtime.register,
-      owners: Object.fromEntries(entries.map((entry) => [entry.id, entry.pkg.replace(/^@[^/]+\//, "")])),
+      owners: Object.fromEntries(entries.map((entry) => [entry.id, entry.pkg])),
     }))),
     "",
   );

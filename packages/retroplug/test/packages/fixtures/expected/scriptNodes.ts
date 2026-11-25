@@ -11,7 +11,7 @@ import type { DefinedNode } from "@retroplug/core/defineNode";
 import { registerScriptNodes } from "@retroplug/core/register";
 import nodes_alpha from "@retroplug/alpha/nodes";
 import nodes_retroplug from "../script/nodes";
-import { registerWidgets, type WidgetRuntime } from "@retroplug/alpha/widgets";
+import { registerWidgets } from "@retroplug/alpha/widgets";
 import { registerControllerApps, type ControllerAppRuntime } from "@retroplug/beta/apps";
 import item_controllerApps_alpha_alpha_app from "@retroplug/alpha/appRuntime";
 
@@ -95,20 +95,31 @@ registerScriptNodes(nodes);
 // a kind this product does not declare, items that are not the ids the pack's manifest declares, and an id the
 // kind already holds, which the kind's own register would replace without a word.
 const KIND_REGISTRARS: Record<string, { register: (items: readonly any[]) => void; owners: Record<string, string> }> = {
-  "widgets": { register: registerWidgets, owners: {} },
-  "controllerApps": { register: registerControllerApps, owners: {"alpha-app":"alpha"} },
+  "widgets": { register: registerWidgets, owners: Object.assign(Object.create(null), {}) },
+  "controllerApps": { register: registerControllerApps, owners: Object.assign(Object.create(null), {"alpha-app":"alpha"}) },
 };
 (globalThis as Record<string, unknown>).__rp_registerKindItems = (
   kind: string, items: readonly { id: string }[], ids: readonly string[],
 ): void => {
   const entry = Object.prototype.hasOwnProperty.call(KIND_REGISTRARS, kind) ? KIND_REGISTRARS[kind] : undefined;
   if (!entry) throw new Error(`a pack's kinds half registers items of ${kind}, a contribution kind this product does not declare`);
-  const got = items.map((item) => item.id);
-  if (got.join("\n") !== ids.join("\n")) {
+  if (!Array.isArray(items) || !Array.isArray(ids)) {
+    throw new Error(`a pack's kinds half registers ${kind} with items and ids that are not lists`);
+  }
+  const got: string[] = [];
+  for (const item of items) {
+    if (typeof item !== "object" || item === null || typeof item.id !== "string") {
+      throw new Error(`a pack's kinds half registers a ${kind} item that is not an object with a string id`);
+    }
+    got.push(item.id);
+  }
+  if (got.length !== ids.length || got.some((id, i) => id !== ids[i])) {
     throw new Error(`a pack's kinds half registers the ${kind} items ${got.join(", ")}, and its manifest declares ${ids.join(", ")}`);
   }
-  for (const id of got) {
-    const owner = Object.prototype.hasOwnProperty.call(entry.owners, id) ? entry.owners[id] : undefined;
+  for (let i = 0; i < got.length; i++) {
+    const id = got[i];
+    if (got.indexOf(id) !== i) throw new Error(`a pack's kinds half registers the ${kind} item ${id} twice`);
+    const owner = entry.owners[id];
     if (owner !== undefined) {
       throw new Error(`a pack's kinds half registers the ${kind} item ${id}, which ${owner === "" ? "an earlier pack" : `this product's ${owner}`} holds`);
     }

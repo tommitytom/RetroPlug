@@ -32,6 +32,22 @@ test("it refuses an undeclared kind, ids that are not the items', and a taken id
     "a pack's kinds half registers the controllerApps items kr-b, and its manifest declares kr-c");
   expect(refusal(() => register()("controllerApps", [runtime("lsdj-midimap")], ["lsdj-midimap"]))).toBe(
     "a pack's kinds half registers the controllerApps item lsdj-midimap, which this product's lsdj-launchpad holds");
-  expect(refusal(() => register()("controllerApps", [runtime("kr-app")], ["kr-app"]))).toBe(
-    "a pack's kinds half registers the controllerApps item kr-app, which an earlier pack holds");
+  register()("controllerApps", [runtime("kr-own")], ["kr-own"]);
+  expect(refusal(() => register()("controllerApps", [runtime("kr-own")], ["kr-own"]))).toBe(
+    "a pack's kinds half registers the controllerApps item kr-own, which an earlier pack holds");
+});
+
+test("it refuses a repeat within one call, arguments that are not lists, and an item with no string id", () => {
+  expect(refusal(() => register()("controllerApps", [runtime("kr-d"), runtime("kr-d")], ["kr-d", "kr-d"]))).toBe(
+    "a pack's kinds half registers the controllerApps item kr-d twice");
+  expect(refusal(() => register()("controllerApps", [runtime("kr-e")], "kr-e" as never))).toBe(
+    "a pack's kinds half registers controllerApps with items and ids that are not lists");
+  expect(refusal(() => register()("controllerApps", [{ id: 3 } as never], ["3"]))).toBe(
+    "a pack's kinds half registers a controllerApps item that is not an object with a string id");
+});
+
+test("an id named __proto__ is held like any other", () => {
+  register()("controllerApps", [runtime("__proto__")], ["__proto__"]);
+  expect(refusal(() => register()("controllerApps", [runtime("__proto__")], ["__proto__"]))).toBe(
+    "a pack's kinds half registers the controllerApps item __proto__, which an earlier pack holds");
 });
