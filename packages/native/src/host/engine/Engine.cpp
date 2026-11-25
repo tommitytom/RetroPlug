@@ -162,26 +162,47 @@ std::span<const rp::host::ScriptHost::Chunk> embeddedScripts() {
 }
 
 
-// The chunk that closes the built-in bundle's kind registrar, compiled once: global code run after the packs' kinds
-// halves, so a pack's runtime code (an app's factory or target runs in these contexts at block time) cannot add items
-// later and make the control and audio contexts diverge. Empty if it does not compile (reported once).
-std::span<const std::uint8_t> registrarCloser() {
-    static const std::vector<std::uint8_t> bytecode = [] {
+
+// The two global-code chunks around a pack's kinds halves in the built-in load, each compiled once. The guard, before
+// them, records how many script node definitions the bundle holds; the closer, after them, closes the bundle's kind
+// registrar (a pack's runtime code runs in these contexts at block time, and must not add items later and make the
+// control and audio contexts diverge; the registrar's own flag refuses a reference a pack kept, and the global is
+// replaced as well) and throws if a kinds half defined script nodes, which would join rp.script before the host reads
+// them and could take the whole package down. A throw makes the load fall back to the bundle alone. Empty if one does
+// not compile (reported once).
+std::span<const std::uint8_t> compiledChunk(const char* source, std::vector<std::uint8_t>& slot) {
+    if (slot.empty()) {
         std::string error;
-        auto compiled = dsp::compileToBytecode(
-            "globalThis.__rp_registerKindItems = function () {\n"
-            "  throw new Error(\"the kind registrar is closed: a pack's kind items join an Engine only at its "
-            "construction\");\n"
-            "};\n",
-            rp::host::ScriptHost::kStackBytes, &error);
-        if (!compiled) {
-            std::fprintf(stderr, "[engine] the kind registrar's closing chunk did not compile (%s)\n", error.c_str());
-            return std::vector<std::uint8_t>{};
-        }
-        return std::move(*compiled);
-    }();
-    return bytecode;
+        auto compiled = dsp::compileToBytecode(source, rp::host::ScriptHost::kStackBytes, &error);
+        if (compiled) slot = std::move(*compiled);
+        else std::fprintf(stderr, "[engine] a kinds guard chunk did not compile (%s)\n", error.c_str());
+    }
+    return slot;
 }
+
+std::span<const std::uint8_t> kindsGuard() {
+    static std::vector<std::uint8_t> bytecode;
+    return compiledChunk("globalThis.__rpKindsNodeCount = (globalThis.__rp_scriptNodes || []).length;\n", bytecode);
+}
+
+std::span<const std::uint8_t> registrarCloser() {
+    static std::vector<std::uint8_t> bytecode;
+    return compiledChunk(
+        "(function () {\n"
+        "  var was = globalThis.__rpKindsNodeCount;\n"
+        "  delete globalThis.__rpKindsNodeCount;\n"
+        "  var now = (globalThis.__rp_scriptNodes || []).length;\n"
+        "  globalThis.__rp_closeKindRegistrar();\n"
+        "  delete globalThis.__rp_closeKindRegistrar;\n"
+        "  globalThis.__rp_registerKindItems = function () {\n"
+        "    throw new Error(\"the kind registrar is closed: a pack's kind items join an Engine only at its "
+        "construction\");\n"
+        "  };\n"
+        "  if (now !== was) throw new Error(\"a pack's kinds half defines script nodes, which a kinds half may not\");\n"
+        "})();\n",
+        bytecode);
+}
+
 } // namespace
 
 // The Engine's graph: the script host, the node packages and the GraphHost running the plan. Destroyed first (graph_ is
@@ -245,11 +266,14 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
     // here at its sync (syncPacks). A chunk closing the registrar follows them, so no pack's runtime code, which runs in
     // those contexts at block time, can register items later and make the control and audio contexts diverge. A load
     // that fails with the kinds halves is made again without them, in a fresh script host (a host loads one bundle, and
-    // a failed load spends it), so no pack's runtime can take the built-in script nodes down.
+    // a failed load spends it), so no pack's runtime can take the built-in script nodes down. One bad half therefore
+    // drops every pack's kinds half in this Engine (kindsFailedAtBuild_ says why). The guard and the closer also fail
+    // the load for a kinds half that defined script nodes.
     std::vector<rp::host::ScriptHost::Chunk> chunks(scriptBundle.begin(), scriptBundle.end());
     std::vector<std::string> kindPacks;
     const bool embedded = scriptBundle.data() == embeddedScripts().data();
     if (embedded) {
+        chunks.push_back(kindsGuard());
         for (const auto* pack : packs.loadedFrom(0)) {
             if (!pack->kinds) continue;
             chunks.push_back(rp::host::ScriptHost::Chunk{pack->kinds->bytecode});
@@ -263,9 +287,11 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                      "[engine] the script-node bundle did not load with the packs' kinds halves (%s); loading it "
                      "alone\n",
                      why.c_str());
+        kindsFailedAtBuild_ = why;
         kindPacks.clear();
         makeGraph();
         chunks.assign(scriptBundle.begin(), scriptBundle.end());
+        chunks.push_back(kindsGuard());
         chunks.push_back(registrarCloser());
         loaded = graph_->script.load(chunks, &why);
     }
@@ -706,15 +732,22 @@ void Engine::syncPacks() {
         std::string why;
         bool fits = true;
         // A kinds half runs in the built-in contexts, so it can only join an Engine at its construction.
+        // (A pack that is in the list but is refused further down, a requirement or a clash, keeps its kind items live: a
+        // chunk cannot be unloaded from the contexts it ran in. They are only items nothing places, and its manifest's
+        // ids stay taken in this Engine.)
         if (pack->kinds && std::find(kindPacksAtBuild_.begin(), kindPacksAtBuild_.end(), pack->manifest.id) ==
                                kindPacksAtBuild_.end()) {
-            why = kindsOnEmbedded_
-                      ? "its kind items reach an Engine built after it loaded; they take effect at the next launch"
-                      : "its kind items run on the product's script bundle, and this engine runs another";
+            if (!kindsFailedAtBuild_.empty())
+                why = "its kinds half did not load beside the built-in script nodes in this engine (" + kindsFailedAtBuild_ + ")";
+            else if (kindsOnEmbedded_)
+                why = "its kind items reach an Engine built after it loaded; they take effect at the next launch";
+            else
+                why = "its kind items run on the product's script bundle, and this engine runs another";
             fits = false;
         }
         // A pack whose requirement was refused here has nothing to stand on: it is refused too, naming the requirement.
         for (const std::string& need : pack->manifest.requiresPacks) {
+            if (!fits) break;
             if (std::find(packsRefused_.begin(), packsRefused_.end(), need) != packsRefused_.end()) {
                 why = "required pack " + need + " was refused in this engine";
                 fits = false;

@@ -176,3 +176,26 @@ TEST_CASE("a pack's runtime code finds the kind registrar closed once the Engine
     REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("kindfix-late-app"), {})).ok);
     CHECK(runBlock(e, {}) == std::vector<MidiOut>{{1, 0, {0xB0, 0x7F, 1}}});
 }
+
+TEST_CASE("a kinds half that defines script nodes is refused by the table", "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    const auto load = table.load(fixture("kindfix-nodes"));
+    CHECK_FALSE(load);
+    INFO(load.error);
+    CHECK(load.error.find("its kinds half defines script nodes, which a kinds half may not") != std::string::npos);
+    CHECK(table.find("kindfix-nodes") == nullptr);
+}
+
+TEST_CASE("a kinds half that fails only in an Engine drops every kinds half there, and the built-ins still run",
+          "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    REQUIRE(table.load(fixture("kindfix-engine-throws")));
+    Engine e(48000.0, table);
+    CHECK(e.refusedPacks() == std::vector<std::string>{"kindfix-engine-throws"});
+    // The built-in session node is still registered, and the pack's app is not found: its host sent nothing.
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("kindfix-engine-throws-app"), {})).ok);
+    CHECK(runBlock(e, {}).empty());
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("lsdj-midimap"), {})).ok);
+}

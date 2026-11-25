@@ -51,3 +51,13 @@ test("an id named __proto__ is held like any other", () => {
   expect(refusal(() => register()("controllerApps", [runtime("__proto__")], ["__proto__"]))).toBe(
     "a pack's kinds half registers the controllerApps item __proto__, which an earlier pack holds");
 });
+
+test("once closed, the registrar refuses, and so does a reference a pack kept", () => {
+  const held = register();
+  const close = (globalThis as Record<string, unknown>).__rp_closeKindRegistrar as () => void;
+  expect(typeof close).toBe("function");
+  close();
+  const closed = "the kind registrar is closed: a pack's kind items join an Engine only at its construction";
+  expect(refusal(() => held("controllerApps", [runtime("kr-late")], ["kr-late"]))).toBe(closed);
+  expect(refusal(() => register()("controllerApps", [runtime("kr-late")], ["kr-late"]))).toBe(closed);
+});

@@ -64,7 +64,9 @@ public:
 
     // Every constructor registers the product's built-in packages, then the built-in script pack, then every pack
     // `packs` has loaded, in its (dependency) order; the two that take no table read the process's
-    // (packs::processPacks()), which is how every host's engines see one set of loads.
+    // (packs::processPacks()), which is how every host's engines see one set of loads. On the embedded bundle (only), the
+    // kinds halves of the packs loaded before construction also run in the built-in script pack; a later pack carrying
+    // one is refused here.
     explicit Engine(double sampleRate = 44100.0);
     // With the script nodes of `scriptBundle` (its chunks, run in order) in place of the embedded bundle's: a test's
     // toy nodes.
@@ -578,6 +580,8 @@ private:
     // reason each case calls for.
     std::vector<std::string>    kindPacksAtBuild_;
     bool                        kindsOnEmbedded_ = false;
+    // Why the built-in load with the kinds halves failed (the fallback loaded the bundle alone), empty if it did not.
+    std::string                 kindsFailedAtBuild_;
     // Each pack the table loaded since the last call (its packages and its protocol half, which goes into the script
     // host as an app pack), registered whole or not at all: from the constructor, and from each setGraph before it
     // plans, on the control thread, as loadScriptPack changes the registry.

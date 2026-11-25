@@ -5,7 +5,7 @@
 #
 # The one embedded JS bundle a product does not own: the TEST-ONLY script bundle,
 # test/script/scriptTestBundle.ts (the authoring layer for the native tests' toy nodes, and one node of its own),
-# embedded only in retroplug-engine-graph-test (cmake/tests.cmake), so the toy nodes and the test node never ship.
+# embedded only in retroplug-engine-graph-test and retroplug-packs-test (cmake/tests.cmake), so the toy nodes and the test node never ship.
 # A product's own four (the control plane, the React UI, the script nodes, the render worker) are
 # cmake/product-bundles.cmake's, because every retroplug_product() adds two of them to its targets.
 # rp_script_test_bundle[] + _size.

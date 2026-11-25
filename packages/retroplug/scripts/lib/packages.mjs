@@ -1398,9 +1398,17 @@ function registrarLines(kinds) {
     lines.push("};");
   }
   lines.push(
+    "// The Engine closes it once it has loaded the packs' kinds halves, so a reference a pack kept refuses too.",
+    "let kindRegistrarClosed = false;",
+    "(globalThis as Record<string, unknown>).__rp_closeKindRegistrar = (): void => {",
+    "  kindRegistrarClosed = true;",
+    "};",
     "(globalThis as Record<string, unknown>).__rp_registerKindItems = (",
     "  kind: string, items: readonly { id: string }[], ids: readonly string[],",
     "): void => {",
+    "  if (kindRegistrarClosed) {",
+    "    throw new Error(\"the kind registrar is closed: a pack's kind items join an Engine only at its construction\");",
+    "  }",
     "  const entry = Object.prototype.hasOwnProperty.call(KIND_REGISTRARS, kind) ? KIND_REGISTRARS[kind] : undefined;",
     "  if (!entry) throw new Error(`a pack's kinds half registers items of ${kind}, a contribution kind this product does not declare`);",
     "  if (!Array.isArray(items) || !Array.isArray(ids)) {",
