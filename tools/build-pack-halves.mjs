@@ -105,7 +105,7 @@ function workspacePackages() {
  *  packages it may import (each resolved through its own exports map, so a package outside the workspace builds the
  *  same), or null for every one; `refuse` lists specifiers (and their subpaths) it may not, with `refuseText` saying
  *  why; `foreignText` is the reason a package outside `packages` gives. */
-function scriptRealmImports({ name, packages, refuse, refuseText, foreignText }) {
+function scriptRealmImports({ name, packages, refuse, refuseText, foreignText, refuseFiles = new Set(), refuseFilesText = "" }) {
   const workspace = workspacePackages();
   return {
     name,
@@ -127,7 +127,9 @@ function scriptRealmImports({ name, packages, refuse, refuseText, foreignText })
         if (typeof target !== "string") {
           return { errors: [{ text: `${args.importer} imports ${args.path}: ${args.path} is not a module ${m[1]} exports` }] };
         }
-        return { path: join(dir, target) };
+        const path = join(dir, target);
+        if (refuseFiles.has(path)) return { errors: [{ text: `${args.importer} imports ${args.path}: ${refuseFilesText}` }] };
+        return { path };
       });
     },
   };
@@ -145,7 +147,18 @@ function protocolImports() {
   });
 }
 
-/** The kinds half's imports: any @retroplug package, but no schema or UI library. */
+/** Every declaring package's kind runtime module (retroplug.kinds.<kind>.runtime.module): a kinds half that value-imported
+ *  one would bundle a private copy of the kind's registry, which the built-in script bundle never sees. */
+function kindRuntimeModules() {
+  const files = new Set();
+  for (const dir of workspacePackages().values()) {
+    const kinds = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).retroplug?.kinds ?? {};
+    for (const kind of Object.values(kinds)) if (typeof kind?.runtime?.module === "string") files.add(join(dir, kind.runtime.module));
+  }
+  return files;
+}
+
+/** The kinds half's imports: any @retroplug package, but no schema or UI library and no kind's own registry. */
 function kindsImports() {
   return scriptRealmImports({
     name: "kinds-imports",
@@ -153,6 +166,8 @@ function kindsImports() {
     refuse: ["zod", "react", "react/jsx-runtime", "lvgljs", "lvgljs-ui"],
     refuseText: "a kinds half runs in the script contexts, which carry no schema or UI library",
     foreignText: "",
+    refuseFiles: kindRuntimeModules(),
+    refuseFilesText: "a kinds half registers its items through __rp_registerKindItems, never the kind's own registry",
   });
 }
 
