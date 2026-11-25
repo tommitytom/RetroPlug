@@ -17,6 +17,7 @@
 
 #include "RenderCore.hpp"
 
+#include "host/packs/ProcessPacks.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/EngineRpcService.hpp"
@@ -54,6 +55,11 @@ private:
 
     // The backend service graph (host + emulator only - the UI never drives the audio-render harness,
     // debugger, or background thread). Declaration order is load-bearing.
+    // The launch packs, loaded before the Engine below is built (a pack's kind items' runtimes join an Engine only at
+    // its construction, docs/downloadable-packs-m2f-plan.md). Nothing it reads is a member above.
+    struct LaunchPacksFirst {
+        LaunchPacksFirst() { rp::host::packs::ensureLaunchPacks(); }
+    } launchPacks_;
     Engine           engine_;
     QueuedInvoker    invoker_{engine_};
     HostRpcService   host_;

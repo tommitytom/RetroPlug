@@ -187,6 +187,9 @@ int main(int argc, char** argv) try {
 
     // The backend service graph (see host/HostServices.hpp). The CLI exposes the whole surface (incl. the
     // debug facet), so it mounts every facet.
+    // The dispatcher loads the launch packs before the Engine in svc is built: a pack's kind items' runtimes join an
+    // Engine only at its construction (docs/downloadable-packs-m2f-plan.md). A session file loads no pack.
+    if (!runFile) rp::host::packs::ensureLaunchPacks();
     HostServices svc;
     // The providers of the packages this product names in its PROVIDERS list (the N8 pack's, the Launchpad pack's and the
     // midi package's facet: docs/modular-graph-phase-f3-design.md sections 2 and 3,

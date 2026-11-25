@@ -42,6 +42,7 @@ extern "C" {
 #include "dpfjs/LvglJsEngine.hpp"            // LVGL display layer over the shared txiki host
 #include "dpfjs/host/TjsHostRuntime.hpp"     // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
+#include "host/packs/ProcessPacks.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/js/SharedModules.hpp"          // registerSharedModules + rp_js_module (the app's shared module table)
 #include "host/engine/EngineInvoker.hpp"
@@ -170,6 +171,11 @@ struct MidiClockSync {
 // unlike the plugin's per-context routing for multi-instance DAWs).
 struct AppState {
     // --- the shared runtime + backend graph (PluginDSP's control plane) ---
+    // The launch packs, loaded before the Engine in svc is built: a pack's kind items' runtimes join an Engine only at
+    // its construction (docs/downloadable-packs-m2f-plan.md). First, so it is constructed first.
+    struct LaunchPacksFirst {
+        LaunchPacksFirst() { rp::host::packs::ensureLaunchPacks(); }
+    } launchPacks;
     rp::host::PackHostRuntime host;
     // Three facets only, same as the plugin's channel — no debug, no audio-driver. See
     // host/HostServices.hpp for why those two are not members rather than merely unmounted.

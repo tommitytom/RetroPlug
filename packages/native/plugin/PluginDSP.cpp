@@ -90,6 +90,11 @@ class PluginDSP : public Plugin, private rp::plugin::HandoffHost {
     // over __rpcSend. The plugin owns the Engine and drives it per audio block from run() directly (it
     // never routes audio through RPC), so it holds svc_.engine + the ONE invoker plus the host + emulator
     // services it mounts. Declaration order is load-bearing.
+    // The launch packs, loaded before the Engine below is built: a pack's kind items' runtimes join an Engine only at its
+    // construction (Engine's constructor, docs/downloadable-packs-m2f-plan.md). First, so it is constructed first.
+    struct LaunchPacksFirst {
+        LaunchPacksFirst() { rp::host::packs::ensureLaunchPacks(); }
+    } launchPacks_;
     rp::host::PackHostRuntime host_;
     // The three facets below are ALL this channel mounts — no debug, no audio-driver. See host/
     // HostServices.hpp for why those two are not members here rather than merely unmounted.
