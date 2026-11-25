@@ -231,9 +231,10 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/packs/kinds-fixture ${CMAKE_BI
 # model on a temporary root, the loader's every refusal against the fixture pack's variants (test/packs/fixture), a pack
 # reaching a running Engine, two Engines sharing one load, a live load while an audio thread renders (its
 # ThreadSanitizer run is tools/run-sanitizer.sh thread's), and the Mesen package built as a pack and booted beside its
-# static build. Its product is the packs-host list, the plugin's without mesen and bliptoaster, plus the controller packages, so rp.mesen.* reaches
-# its engines only from the pack; it links the static retroplug-mesen too, which no engine of its registers until a
-# case hands it over (Engine::addNodePackage), so the two builds render side by side in one process.
+# static build. Its product is the packs-host list, the plugin's without mesen and bliptoaster, plus the controller
+# packages, so rp.mesen.* reaches its engines only from the pack; it links the static retroplug-mesen too, which no
+# engine of its registers until a case hands it over (Engine::addNodePackage), so the two builds render side by side in
+# one process.
 retroplug_add_test_binary(
     NAME     retroplug-packs-test
     SOURCES  test/engine-graph/Deterministic.cpp  # every core powers on in a fixed state, the pack's copies too
@@ -247,7 +248,7 @@ retroplug_add_test_binary(
              test/packs/BoundaryRules.test.cpp     # the host's code casts nothing by RTTI
              test/packs/PackScript.test.cpp        # the script half: compiled at load, in the table and in Engines
              test/packs/PackProtocol.test.cpp      # the protocol half: the table's trial, the pack list, every Engine
-             test/packs/PackKinds.test.cpp         # the kinds half: the table's trial, the pack list, Engines from construction
+             test/packs/PackKinds.test.cpp         # the kinds half: the table's trial, the pack list, Engines
     LIBS     retroplug-backend                     # Engine, the process's pack table, the folder model
              retroplug-packfixture-nodes           # the fixture's types, statically: a second copy beside the pack's
              retroplug-mesen                       # the static build MesenPack.test.cpp holds the pack to

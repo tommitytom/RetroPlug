@@ -1,6 +1,4 @@
-// The kinds fixture's runtime half (docs/downloadable-packs-m2f-plan.md): global code, as tools/build-pack-halves.mjs
-// writes a kinds half, registering one item through the built-in bundle's registrar. Its target sends CC 127 = 42
-// once, when the session builds it, so a document driving the session out of the host sees this code ran.
+// The kinds fixture's clashing variant: it registers lsdj-midimap, a built-in app's id.
 (function () {
   var grid = { rowCount: 0, channelCount: 4, hasContent: function () { return false; } };
   var model = {

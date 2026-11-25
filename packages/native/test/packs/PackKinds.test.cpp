@@ -1,12 +1,14 @@
-// A pack's kinds half (docs/downloadable-packs-m2f-plan.md): its contribution-kind items' runtimes, global code compiled
-// and trial-loaded once by the table, beside the built-in script nodes, and refused for a chunk that throws, an id a
-// built-in package holds or a kind no package declares; its items in the pack list the TS loader reads.
+// A pack's kinds half (docs/downloadable-packs-m2f-plan.md): its contribution-kind items' runtimes, global code
+// compiled and trial-loaded once by the table, beside the built-in script nodes and the earlier packs' halves, and
+// refused for a chunk that throws, an id a built-in package or an earlier pack holds, a kind no package declares or ids
+// its pack.json does not list; its items in the pack list the TS loader reads.
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-kinds]"`.
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
 
+#include "BareRuntime.hpp"
 #include "PackTestSupport.hpp"
 #include "host/js/PackLoaderCore.hpp"
 #include "host/packs/KindsTrial.hpp"
@@ -15,6 +17,7 @@
 #include "quickjs.h"
 
 using rp::host::packs::PackTable;
+using rp::host::packs::test::BareRuntime;
 using rp::host::packs::test::fixture;
 
 namespace {
@@ -24,42 +27,6 @@ void withTrials(PackTable& table) {
     table.setProtocolTrial(rp::host::packs::protocolTrial());
     table.setKindsTrial(rp::host::packs::kindsTrial());
 }
-
-// A bare QuickJS runtime, as a render job's (host/render/RenderHost): no txiki, a job queue run here.
-struct BareRuntime {
-    JSRuntime* rt = JS_NewRuntime();
-    JSContext* ctx = JS_NewContext(rt);
-    ~BareRuntime() {
-        JS_RunGC(rt);
-        JS_FreeContext(ctx);
-        JS_FreeRuntime(rt);
-    }
-    void drain() {
-        JSContext* jc = nullptr;
-        while (JS_ExecutePendingJob(rt, &jc) > 0) {}
-    }
-    std::string eval(const std::string& code, int flags) {
-        JSValue v = JS_Eval(ctx, code.c_str(), code.size(), "<kinds-test>", flags);
-        REQUIRE_FALSE(JS_IsException(v));
-        JS_FreeValue(ctx, v);
-        drain();
-        JSValue g = JS_GetGlobalObject(ctx);
-        JSValue s = JS_GetPropertyStr(ctx, g, "__pt");
-        const char* c = JS_ToCString(ctx, s);
-        std::string out = c ? c : "<none>";
-        JS_FreeCString(ctx, c);
-        JS_FreeValue(ctx, s);
-        JS_SetPropertyStr(ctx, g, "__pt", JS_UNDEFINED);
-        JS_FreeValue(ctx, g);
-        return out;
-    }
-    std::string importResult(const std::string& name) {
-        return eval("import('" + name + "').then(() => { globalThis.__pt = 'ok'; }, (e) => { globalThis.__pt = 'error ' + "
-                    "e.message; });",
-                    JS_EVAL_TYPE_MODULE);
-    }
-    std::string packList() { return eval("globalThis.__pt = globalThis.__rp_packList();", JS_EVAL_TYPE_GLOBAL); }
-};
 
 }  // namespace
 
@@ -110,4 +77,41 @@ TEST_CASE("the pack list carries the kinds member, and pack:<id>/kinds is no mod
     CHECK(list.find(R"("kinds":{"controllerApps":[{"id":"kindfix-app"}]})", halves) != std::string::npos);
 
     CHECK(rt.importResult("pack:kindfix/kinds").rfind("error could not load 'pack:kindfix/kinds'", 0) == 0);
+}
+
+TEST_CASE("a kinds half is held to its pack.json: an id it does not list is refused", "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    const auto load = table.load(fixture("kindfix-undeclared"));
+    CHECK_FALSE(load);
+    INFO(load.error);
+    CHECK(load.error.find("its kinds half registers controllerApps items kindfix-undeclared-other, and its pack.json's "
+                          "kinds member declares kindfix-undeclared-app") != std::string::npos);
+    CHECK(table.find("kindfix-undeclared") == nullptr);
+}
+
+TEST_CASE("a kinds half that takes an id an earlier pack's holds is refused, the earlier pack staying loaded",
+          "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    REQUIRE(table.load(fixture("kindfix")));
+    const auto load = table.load(fixture("kindfix-twin"));
+    CHECK_FALSE(load);
+    INFO(load.error);
+    CHECK(load.error.find("the controllerApps item kindfix-app, which an earlier pack holds") != std::string::npos);
+    CHECK(table.find("kindfix-twin") == nullptr);
+    CHECK(table.find("kindfix") != nullptr);
+}
+
+TEST_CASE("a kinds half that does not compile, or whose file is missing, is refused", "[packs-kinds]") {
+    PackTable table;
+    withTrials(table);
+    const auto syntax = table.load(fixture("kindfix-syntax"));
+    CHECK_FALSE(syntax);
+    INFO(syntax.error);
+    CHECK(syntax.error.find("its kinds half does not compile") != std::string::npos);
+    const auto missing = table.load(fixture("kindfix-missing"));
+    CHECK_FALSE(missing);
+    INFO(missing.error);
+    CHECK(missing.error.find("halves.kinds names js/gone.js, which the pack does not have") != std::string::npos);
 }

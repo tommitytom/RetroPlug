@@ -40,7 +40,8 @@ struct LoadedPack {
     const ScriptHalf*              script = nullptr;  // its script half, compiled and registered; the table owns it
     // Its protocol half, compiled and trial-loaded; every Engine loads it into its script host (Engine::syncPacks).
     std::optional<ProtocolHalf>    protocol;
-    // Its kinds half, compiled and trial-loaded; every Engine runs it after its built-in pack (docs/downloadable-packs-m2f-plan.md).
+    // Its kinds half, compiled and trial-loaded; every Engine runs it after its built-in pack
+    // (docs/downloadable-packs-m2f-plan.md).
     std::optional<KindsHalf>       kinds;
     std::vector<std::string>       packageIds;  // each package's manifest id, index for index
     void*                          library = nullptr;  // never closed

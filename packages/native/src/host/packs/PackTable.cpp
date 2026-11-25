@@ -432,7 +432,10 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
         if (!kindsTrial_) return refuseHere(id, pack + " has a kinds half, and this host loads none");
         const auto source = readTextFile(candidate.dir / fs::path(manifest->halves.at("kinds")), &why);
         if (!source) return refuseHere(id, pack + ": " + why);
-        auto half = kindsTrial_(*source, &why);
+        std::vector<std::vector<std::uint8_t>> earlier;
+        for (const auto& p : packs_)
+            if (p->kinds) earlier.push_back(p->kinds->bytecode);
+        auto half = kindsTrial_(*source, earlier, manifest->kinds->ids, &why);
         if (!half) return refuseHere(id, pack + ": " + why);
         loaded->kinds = std::move(*half);
     }

@@ -152,13 +152,14 @@ JSValue packList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
                 protocol = ",\"protocol\":{\"nodes\":" + m.protocol->nodesJson + ",\"roles\":{" + roles +
                            "},\"descriptors\":{" + descriptors + "}}";
             }
-            // A kinds half's items (the TS loader holds them to the declared kinds; the half is global code and no module).
+            // A kinds half's items (the TS loader holds them to the declared kinds; the half is global code, no module).
             const std::string kinds = m.kinds ? ",\"kinds\":" + m.kinds->kindsJson : std::string();
             out += std::string(first ? "" : ",") + "{\"id\":" + jsonString(m.id) + ",\"version\":" +
                    jsonString(m.version) + ",\"halves\":" + jsonList(halves) + ",\"provides\":{\"platforms\":" +
                    jsonList(m.providesPlatforms) + ",\"nodeTypes\":" + jsonList(m.providesNodeTypes) +
                    ",\"roles\":" + jsonList(m.providesRoles) + "},\"requires\":{\"packs\":" +
-                   jsonList(m.requiresPacks) + ",\"platforms\":" + jsonList(m.requiresPlatforms) + "}" + protocol + kinds + "}";
+                   jsonList(m.requiresPacks) + ",\"platforms\":" + jsonList(m.requiresPlatforms) + "}" + protocol +
+                   kinds + "}";
             first = false;
         }
     }

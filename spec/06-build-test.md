@@ -478,8 +478,9 @@ native node types alone ([spec/02](02-native-host.md#packs-a-packages-native-hal
    product carries it. A package a product should carry must therefore be in that product's list too: the plugin's
    `plugin` list is the desktop's without `launchpad`, `lsdj-launchpad`, `midi` and the three audio packages (`audio`,
    `audio-portaudio`, `audio-sdl`), and that is what makes the package split a fact about a build. `packs-host`, the
-   packs test's product, is the plugin's list without `mesen` and `bliptoaster`, and with `launchpad`, `lsdj-launchpad` and `midi`
-   (the controller kind a pack's kinds half contributes to must be one its script bundle declares). Only a ROM provider's place is
+   packs test's product, is the plugin's list without `mesen` and `bliptoaster`, and with `launchpad`,
+   `lsdj-launchpad` and `midi` (the controller kind a pack's kinds half contributes to must be one its script bundle
+   declares). Only a ROM provider's place is
    behaviour. A node type's place in the list is what a product's `rp_register_packages()` holds, so moving a package
    moves its types in the registration golden (`test/engine-graph/golden/product-registrations.json`), which is
    re-recorded for an intended move alone.
