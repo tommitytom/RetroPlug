@@ -270,6 +270,15 @@ TEST_CASE("pack.json's protocol member: its nodes and roles, held to provides", 
     CHECK(m->protocol->nodesJson ==
           R"([{"midiIn":"in","midiOut":true,"type":"rp.pp.echo","writes":[]},{"type":"rp.pp.idle"}])");
 
+    // An integer above INT64_MAX is spelled as JS spells the double, not wrapped negative by the reader.
+    const auto big = parsePackManifest(
+        protocolManifest(R"({"nodes":[{"type":"rp.pp.echo","big":18446744073709551615}],"roles":{}})"), &why, RP_API_LEVEL);
+    INFO(why);
+    REQUIRE(big);
+    REQUIRE(big->protocol);
+    CHECK(big->protocol->nodesJson.find("-1") == std::string::npos);
+    CHECK(big->protocol->nodesJson == R"([{"big":18446744073709552000,"type":"rp.pp.echo"}])");
+
     const auto refused = [](const std::string& json, const std::string& reason) {
         std::string w;
         CHECK_FALSE(parsePackManifest(json, &w, RP_API_LEVEL));

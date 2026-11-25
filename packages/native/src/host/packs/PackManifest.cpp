@@ -534,11 +534,11 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
             return std::nullopt;
         }
         ProtocolSpec spec;
-        const std::vector<rfl::Generic> nodes = p->nodes.value_or(std::vector<rfl::Generic>{});
-        if (nodes.empty()) {
+        if (!p->nodes || p->nodes->empty()) {
             refuse(why, "protocol.nodes is empty: a protocol half registers node types");
             return std::nullopt;
         }
+        const std::vector<rfl::Generic>& nodes = *p->nodes;
         for (std::size_t i = 0; i < nodes.size(); ++i) {
             const auto node = rfl::from_generic<RawProtocolNode>(nodes[i]);
             if (!node || !node->type || node->type->empty()) {
@@ -578,7 +578,18 @@ std::optional<PackManifest> parsePackManifest(std::string_view json, std::string
             }
             spec.roles.emplace(kind, type);
         }
-        spec.nodesJson = rp::graph::canonicalJson(rfl::Generic(rfl::Generic::Array(nodes.begin(), nodes.end())));
+        // The nodes are re-read with parseJson, which keeps an integer above INT64_MAX as JS would (reflect-cpp's reader
+        // would wrap it negative); the scan above has already refused duplicate keys and deep nesting.
+        const auto whole = rp::graph::parseJson(json);
+        const auto top = whole ? whole->to_object() : rfl::Result<rfl::Generic::Object>(whole.error());
+        const auto proto = top ? top->get("protocol") : rfl::Result<rfl::Generic>(top.error());
+        const auto protoObj = proto ? proto->to_object() : rfl::Result<rfl::Generic::Object>(proto.error());
+        const auto arr = protoObj ? protoObj->get("nodes") : rfl::Result<rfl::Generic>(protoObj.error());
+        if (!arr || !arr->to_array()) {
+            refuse(why, "protocol.nodes is not a list of nodes");
+            return std::nullopt;
+        }
+        spec.nodesJson = rp::graph::canonicalJson(*arr);
         m.protocol = std::move(spec);
     } else if (protocolHalf) {
         refuse(why, "halves.protocol needs the protocol member (its nodes and roles)");
