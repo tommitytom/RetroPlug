@@ -5,11 +5,11 @@
 import type { TypeDescriptor } from "@retroplug/core/descriptor";
 
 /**
- * The halves a context loads. `protocol` is data (pack.json's protocol member, carried in the pack list), committed
- * without an import: its code is global code every Engine loads (the native loader). The script half is MicroQuickJS
+ * The halves a context loads. `protocol` and `kinds` are data (pack.json's protocol and kinds members, carried in the
+ * pack list), committed without an import: their code is global code every Engine loads (the native loader). The script half is MicroQuickJS
  * code the native loader registers, never a context's.
  */
-export type HalfKind = "app" | "consoles" | "protocol" | "placer" | "ui" | "views" | "cli";
+export type HalfKind = "app" | "consoles" | "protocol" | "kinds" | "placer" | "ui" | "views" | "cli";
 
 /** A pack's protocol half as the host lists it (docs/downloadable-packs-m2e-plan.md). */
 export interface PackProtocol {
@@ -32,6 +32,10 @@ export interface PackInfo {
   readonly requires: { readonly packs: readonly string[]; readonly platforms: readonly string[] };
   /** The protocol half's data, when `halves` names it. */
   readonly protocol?: PackProtocol;
+  /** pack.json's kinds member: each kind's items with their data, as written (docs/downloadable-packs-m2f-plan.md). The
+   *  kinds half itself is global code every Engine's built-in pack runs; the loader commits this data and the app half's
+   *  items. */
+  readonly kinds?: Readonly<Record<string, readonly Readonly<Record<string, unknown>>[]>>;
 }
 
 export interface PackHost {

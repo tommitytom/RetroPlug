@@ -19,6 +19,7 @@ import { placersRegistry } from "../contributions/placers";
 import type { GraphPlacer } from "@retroplug/core/placer";
 import { nativePackHost, type HalfKind, type PackHost, type PackInfo, type PackProtocol } from "./packHost";
 import { protocolAdditions } from "./protocolHalf";
+import { kindAdditions, kindsAdded, packKindItems, type PackKindItems } from "./kindsHalf";
 
 /** A half's default export as the additions a commit takes; throws when the export is not the half's shape. */
 export type HalfBuilder = (pkg: string, exported: unknown) => Addition<any>[];
@@ -99,7 +100,7 @@ export function objectExport(half: HalfKind, exported: unknown): Record<string, 
 }
 
 /** The halves whose content is the manifest's, not a module: committed from the pack list, never imported. */
-const DATA_HALVES: ReadonlySet<HalfKind> = new Set<HalfKind>(["protocol"]);
+const DATA_HALVES: ReadonlySet<HalfKind> = new Set<HalfKind>(["protocol", "kinds"]);
 
 /** A placer half's default export, held to the contract buildGraph calls. */
 function placerExport(exported: unknown): GraphPlacer<unknown> {
@@ -122,6 +123,9 @@ export const APP_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
     ];
   },
   protocol: (pkg, exported) => protocolAdditions(pkg, exported as PackProtocol | undefined),
+  // The kinds half is global code the Engines run and its data is pack.json's: the additions need the app half too, so
+  // the staging builds them (kindAdditions). The builder is here so the half is in the control plane's set.
+  kinds: () => [],
   placer: (pkg, exported) => [{ registry: placersRegistry, pkg, items: [placerExport(exported)] }],
 };
 
@@ -181,13 +185,9 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
         "into the RetroPlug binary)");
     }
     const declaredKinds = contributionKindsRegistry.items().map((k) => k.kind);
-    for (const kind of declaredKinds) {
-      if (Array.isArray(app[kind]) && (app[kind] as unknown[]).length) {
-        throw new Error(`its app half contributes ${kind}, a contribution kind a pack cannot add to yet`);
-      }
-    }
+    const manifestKinds = Object.keys(pack.kinds ?? {});
     for (const member of Object.keys(app)) {
-      if (!APP_MEMBERS.has(member) && !declaredKinds.includes(member)) {
+      if (!APP_MEMBERS.has(member) && !declaredKinds.includes(member) && !manifestKinds.includes(member)) {
         throw new Error(`its app half exports ${member}, which is not something an app half contributes`);
       }
     }
@@ -242,6 +242,8 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
 interface Staged {
   readonly pack: PackInfo;
   readonly kinds: readonly HalfKind[];
+  /** The contribution-kind items it commits, whose kinds take them through `add` once the commit stands. */
+  readonly kindItems: readonly PackKindItems[];
   readonly additions: Addition<any>[];
   /** The platforms its own consoles half declares. */
   readonly own: ReadonlySet<string>;
@@ -292,7 +294,15 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
       }
       checkManifest(pack, exported, platforms);
       const additions = todo.flatMap((kind) => builders[kind]!(pack.id, exported.get(kind)));
-      staged.push({ pack, kinds: todo, additions, own: ownPlatforms(exported) });
+      let kindItems: PackKindItems[] = [];
+      if (exported.has("app") || todo.includes("kinds")) {
+        const app = exported.has("app") ? objectExport("app", exported.get("app")) : undefined;
+        kindItems = packKindItems(pack, app);
+        // The items commit with the kinds half; a context without its builder commits none.
+        if (todo.includes("kinds")) additions.push(...kindAdditions(pack.id, kindItems));
+        else kindItems = [];
+      }
+      staged.push({ pack, kinds: todo, kindItems, additions, own: ownPlatforms(exported) });
       for (const id of pack.provides.platforms) platforms.add(id);
     } catch (e) {
       refuse(host, pack.id, message(e), e instanceof BudgetError);
@@ -303,6 +313,7 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
     const halves = loaded.get(s.pack.id) ?? new Set<HalfKind>();
     for (const kind of s.kinds) halves.add(kind);
     loaded.set(s.pack.id, halves);
+    kindsAdded(s.pack.id, s.kindItems);
   };
   try {
     commitContributions(staged.flatMap((s) => s.additions));

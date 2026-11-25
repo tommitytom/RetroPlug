@@ -10,6 +10,9 @@ import { protocolNodeOf, protocolPipeline } from "../../src/graph/protocolNodes"
 import { buildGraph, type GraphSystem } from "../../src/graph/buildGraph";
 import type { PortDesc, TypeDescriptor } from "@retroplug/core/descriptor";
 import { placersRegistry } from "../../src/contributions/placers";
+import { controllerApp } from "@retroplug/launchpad/registry";
+import { controllerSyncOverride } from "@retroplug/launchpad/placer";
+import { kindData } from "../../src/contributions/kindRegistries";
 
 const role = (kind: string) => ({ kind, category: "feature", schema: { parse: () => ({}) } });
 
@@ -418,4 +421,56 @@ test("a placer for a model its app half declares no project section for is refus
   expect(refused["lp-nosection"]).toBe("its placer half places the model lp-nosection-model, which its app half " +
     "declares no project section for");
   expect(placersRegistry.items().some((x) => x.key === "lp-nosection-model")).toBe(false);
+});
+
+// A pack contributing one controller app: its app half's control half, and its manifest's kinds entry.
+function kindPack(id: string, over: { appIds?: string[]; kindIds?: string[]; data?: Record<string, unknown>;
+                                      kind?: string } = {}) {
+  const kind = over.kind ?? "controllerApps";
+  const appIds = over.appIds ?? [`${id}-app`];
+  const kindIds = over.kindIds ?? [`${id}-app`];
+  const info = pack(id, {
+    halves: ["app", "kinds"],
+    kinds: { [kind]: kindIds.map((i) => ({ id: i, ...(over.data ?? {}) })) },
+  });
+  const modules = {
+    [id]: { app: { [kind]: appIds.map((i) => ({ id: i, label: `App ${i}`, config: { parse: () => ({}) } })) } },
+  };
+  return { info, modules };
+}
+
+test("a pack's controller app reaches the menu's table, its data the planner's, and nothing imports the kinds half", async () => {
+  const { info, modules } = kindPack("lk-a", { data: { syncOverride: { node: "rp.lsdj.sync", role: "lsdj-sync",
+    mode: "midiMap" } } });
+  const { host, refused, imported } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused).toEqual({});
+  expect(packStatus().loaded["lk-a"]).toEqual(["app", "kinds"]);
+  expect(imported.includes("lk-a/kinds")).toBe(false);
+  expect(controllerApp("lk-a-app")?.label).toBe("App lk-a-app");
+  expect(kindData("controllerApps")["lk-a-app"]).toEqual({ syncOverride: { node: "rp.lsdj.sync", role: "lsdj-sync",
+    mode: "midiMap" } });
+  // The kind's add merged the data into the menu's copy: the override the menu reads for the app.
+  const systems = [{ id: 1, pipeline: [{ node: "rp.lsdj.sync" }] }];
+  const ctl = { app: "lk-a-app", target: "system", systemId: 1, cartSync: true } as never;
+  expect(controllerSyncOverride(systems, ctl)?.mode).toBe("midiMap");
+});
+
+test("a pack's kind items are held to the kind's rules", async () => {
+  const unpaired = kindPack("lk-b", { kindIds: ["lk-b-other"] });
+  const taken = kindPack("lk-c", { appIds: ["lsdj-midimap"], kindIds: ["lsdj-midimap"] });
+  const badKey = kindPack("lk-d", { data: { colour: "red" } });
+  const undeclared = kindPack("lk-e", { kind: "nope" });
+  const badRule = kindPack("lk-f", { data: { syncOverride: { node: "rp.nobody.sync", role: "x", mode: "m" } } });
+  const all = [unpaired, taken, badKey, undeclared, badRule];
+  const { host, refused } = fakeHost(all.map((p) => p.info), Object.assign({}, ...all.map((p) => p.modules)));
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused["lk-b"]).toBe("its app half contributes the controllerApps item lk-b-app, which its pack.json's " +
+    "kinds member does not declare");
+  expect(refused["lk-c"]).toBe("two packages contribute the controllerApps item lsdj-midimap: lsdj-launchpad and lk-c");
+  expect(refused["lk-d"]).toBe("its controllerApps item lk-d-app has \"colour\", which nothing reads (the kind's data " +
+    "keys are syncOverride)");
+  expect(refused["lk-e"]).toBe("it contributes to nope, a contribution kind no loaded package declares");
+  expect((refused["lk-f"] ?? "").includes("names \"rp.nobody.sync\"")).toBe(true);
+  for (const id of ["lk-b-app", "lk-d-app", "lk-e-app", "lk-f-app"]) expect(controllerApp(id)).toBe(undefined);
 });
