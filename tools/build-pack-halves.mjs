@@ -24,7 +24,7 @@
 // refuses zod, react and the UI libraries.
 //
 //   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>]
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -222,6 +222,9 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
   if (typeof kinds !== "object" || kinds === null || Array.isArray(kinds)) {
     throw new Error("retroplug.protocol.kinds is { <kind>: [{ id, module, ...data }] }");
   }
+  // esbuild may key its inputs by real path (macOS keeps the temp folder behind /var -> /private/var), so the
+  // bundle is built from the real folder and the registry check below compares real paths, or a reach is missed.
+  const realDir = realpathSync(packageDir);
   const lines = [];
   const member = {};
   let n = 0;
@@ -235,7 +238,7 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
         throw new Error(`retroplug.protocol.kinds.${kind}: ${entry.id} has no module`);
       }
       const local = `item${n++}`;
-      lines.push(`import ${local} from ${JSON.stringify(join(packageDir, entry.module))};`);
+      lines.push(`import ${local} from ${JSON.stringify(join(realDir, entry.module))};`);
       names.push(local);
       ids.push(entry.id);
     }
@@ -243,7 +246,7 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
     member[kind] = entries.map(({ module: _module, ...rest }) => rest);
   }
   const result = await esbuild.build({
-    stdin: { contents: lines.join("\n"), resolveDir: packageDir, sourcefile: "kinds-entry.js", loader: "js" },
+    stdin: { contents: lines.join("\n"), resolveDir: realDir, sourcefile: "kinds-entry.js", loader: "js" },
     metafile: true,
     bundle: true,
     format: "iife",
@@ -253,7 +256,7 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
     tsconfigRaw: tsOptions({ alwaysStrict: true }),
     outfile: join(outDir, "js", "kinds.js"),
     plugins: [kindsImports()],
-    absWorkingDir: packageDir,
+    absWorkingDir: realDir,
     define: { "process.env.NODE_ENV": '"production"' },
     nodePaths: [join(REPO, "node_modules")],
     logLevel: "silent",
@@ -262,7 +265,7 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
   // which the resolver cannot see: the bundle's inputs say so. The refusal names the entry module whose imports lead there.
   const runtimeModules = kindRuntimeModules();
   const inputs = result.metafile.inputs;
-  const keyOf = (file) => relative(packageDir, file).split(sep).join("/");
+  const keyOf = (file) => relative(realDir, realpathSync(file)).split(sep).join("/");
   const wanted = new Set([...runtimeModules].map(keyOf));
   const reaches = (key, seen) => {
     if (wanted.has(key)) return true;
@@ -271,7 +274,7 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
     return (inputs[key]?.imports ?? []).some((i) => reaches(i.path, seen));
   };
   for (const entry of Object.values(kinds).flat()) {
-    const key = keyOf(join(packageDir, entry.module));
+    const key = keyOf(join(realDir, entry.module));
     if (reaches(key, new Set())) {
       throw new Error(`${join(packageDir, entry.module)} imports a kind's own registry module: a kinds half registers its ` +
         "items through __rp_registerKindItems, never the kind's own registry");
