@@ -7,6 +7,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -234,4 +237,67 @@ TEST_CASE("no caller of loadScriptPack can take a pack's protocol id", "[packs-p
     const auto r = e.loadScriptPack("rp.protofix.protocol", "var x = 1;");
     CHECK_FALSE(r.ok);
     CHECK(r.error.find("is the app's to give") != std::string::npos);
+}
+
+TEST_CASE("a protocol half refused in one Engine is freed there and still runs in another", "[packs-protocol]") {
+    // A scratch table gives the bundle's bytecode; a script host that outlives the Engines loads it under another id,
+    // so its package holds rp.protofix.up, and the holder, given that package first, refuses the pack's own.
+    PackTable scratch;
+    withTrial(scratch);
+    const auto scratchLoad = scratch.load(fixture("protofix"));
+    REQUIRE(scratchLoad);
+    rp::host::ScriptHost host;
+    const rp::host::ScriptHost::Chunk builtIn[] = {rp::host::ScriptHost::embeddedBundle()};
+    REQUIRE(host.load(builtIn));
+    const rp::host::ScriptHost::Chunk chunk{scratchLoad.pack->protocol->bytecode};
+    std::string error;
+    const rp_package* held = host.loadAppPack("rp.holder.protocol", {&chunk, 1}, 0, &error);
+    INFO(error);
+    REQUIRE(held != nullptr);
+
+    PackTable table;
+    withTrial(table);
+    Engine holder(48000.0, table);
+    Engine other(48000.0, table);
+    REQUIRE(holder.addNodePackage(held));
+    REQUIRE(table.load(fixture("protofix")));
+    // The document still places: with the holder's own copy of the node, not the pack's.
+    CHECK(holder.setGraph(rp::host::test::graphRequest(kUpDocument, {})).ok);
+    CHECK(holder.refusedPacks() == std::vector<std::string>{"protofix"});
+    CHECK(holder.packsRegistered() == 0);
+    for (const auto& p : holder.scriptPacks()) CHECK(p.id != "rp.protofix.protocol");
+    REQUIRE(other.setGraph(rp::host::test::graphRequest(kUpDocument, {})).ok);
+    CHECK(other.refusedPacks().empty());
+    CHECK(runBlock(other, {{0x90, 60, 100}}) == std::vector<MidiOut>{{1, 0, {0x90, 72, 100}}});
+}
+
+TEST_CASE("a protocol half loads while an audio thread renders, and the next plan runs its node",
+          "[packs-protocol][threads]") {
+    PackTable table;
+    withTrial(table);
+    Engine e(48000.0, table);
+    e.setAudioThreadOwns(true);
+    std::atomic<bool> running{true};
+    std::thread       audio([&] {
+        std::vector<float> l(256), r(256);
+        while (running.load()) {
+            e.drainCommands();
+            e.processBlock(256, l.data(), r.data());
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    });
+    std::thread loader([&] { table.load(fixture("protofix")); });
+    bool        placed = false;
+    const auto  patience = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!placed && std::chrono::steady_clock::now() < patience) {
+        placed = e.setGraph(rp::host::test::graphRequest(kUpDocument, {})).ok;
+        if (!placed) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        e.reclaim();
+    }
+    loader.join();
+    running = false;
+    audio.join();
+    e.setAudioThreadOwns(false);
+    e.reclaim();
+    CHECK(placed);
 }
