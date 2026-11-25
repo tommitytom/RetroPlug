@@ -120,6 +120,10 @@ export const controllerAppsKind = defineKind<ControllerAppContribution>({
   },
   check(items: readonly ControllerAppContribution[], data: KindData, ctx: KindCheckContext): void {
     for (const item of items) {
+      const shape = item as { label?: unknown; config?: { parse?: unknown } | null };
+      if (typeof shape.label !== "string" || typeof shape.config?.parse !== "function") {
+        throw new Error(`the controller app ${item.id} needs a label and a config schema`);
+      }
       const entry = Object.prototype.hasOwnProperty.call(data, item.id) ? data[item.id] : {};
       if (entry.syncOverride !== undefined) checkSyncOverride(item.id, entry.syncOverride, ctx);
     }

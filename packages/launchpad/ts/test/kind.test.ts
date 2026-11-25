@@ -116,3 +116,13 @@ test("accept fills the app registry and hands the menu the data it applies", () 
   expect(controllerSyncOverride([{ id: 1 }], { app: "other", target: "system", systemId: 1, cartSync: null }))
     .toBe(null);
 });
+
+test("a controller app with no label or no config schema is refused", () => {
+  const ctx = { nodeTypes: NODE_TYPES, roleNodes: ROLE_NODES };
+  const noLabel = { id: "x", config: app("x").config } as unknown as ControllerAppContribution;
+  const noConfig = { id: "y", label: "Y" } as unknown as ControllerAppContribution;
+  const noParse = { id: "z", label: "Z", config: {} } as unknown as ControllerAppContribution;
+  expect(() => controllerAppsKind.check!([noLabel], {}, ctx)).toThrow("the controller app x needs a label and a config schema");
+  expect(() => controllerAppsKind.check!([noConfig], {}, ctx)).toThrow("the controller app y needs a label");
+  expect(() => controllerAppsKind.check!([noParse], {}, ctx)).toThrow("the controller app z needs a label");
+});

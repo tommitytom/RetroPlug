@@ -5,12 +5,13 @@ import { loadPacks, packStatus, setLoadBudgetMs, APP_BUILDERS, type HalfBuilder 
 import type { HalfKind, PackHost, PackInfo } from "../../src/packs/packHost";
 import { rolesRegistry, projectSectionsRegistry } from "../../src/contributions/appRegistries";
 import { consolesRegistry, realCartsRegistry } from "../../src/contributions/consoleRegistries";
-import { contributionsVersion } from "../../src/contributions/registry";
+import { commitContributions, contributionsVersion } from "../../src/contributions/registry";
+import { contributionKindsRegistry } from "../../src/contributions/kindRegistries";
 import { protocolNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
 import { buildGraph, type GraphSystem } from "../../src/graph/buildGraph";
 import type { PortDesc, TypeDescriptor } from "@retroplug/core/descriptor";
 import { placersRegistry } from "../../src/contributions/placers";
-import { controllerApp } from "@retroplug/launchpad/registry";
+import { controllerApp, controllerApps, defaultControllerApp } from "@retroplug/launchpad/registry";
 import { controllerSyncOverride } from "@retroplug/launchpad/placer";
 import { kindData } from "../../src/contributions/kindRegistries";
 
@@ -425,7 +426,7 @@ test("a placer for a model its app half declares no project section for is refus
 
 // A pack contributing one controller app: its app half's control half, and its manifest's kinds entry.
 function kindPack(id: string, over: { appIds?: string[]; kindIds?: string[]; data?: Record<string, unknown>;
-                                      kind?: string } = {}) {
+                                      kind?: string; label?: string } = {}) {
   const kind = over.kind ?? "controllerApps";
   const appIds = over.appIds ?? [`${id}-app`];
   const kindIds = over.kindIds ?? [`${id}-app`];
@@ -434,7 +435,7 @@ function kindPack(id: string, over: { appIds?: string[]; kindIds?: string[]; dat
     kinds: { [kind]: kindIds.map((i) => ({ id: i, ...(over.data ?? {}) })) },
   });
   const modules = {
-    [id]: { app: { [kind]: appIds.map((i) => ({ id: i, label: `App ${i}`, config: { parse: () => ({}) } })) } },
+    [id]: { app: { [kind]: appIds.map((i) => ({ id: i, label: over.label ?? `App ${i}`, config: { parse: () => ({}) } })) } },
   };
   return { info, modules };
 }
@@ -473,4 +474,104 @@ test("a pack's kind items are held to the kind's rules", async () => {
   expect(refused["lk-e"]).toBe("it contributes to nope, a contribution kind no loaded package declares");
   expect((refused["lk-f"] ?? "").includes("names \"rp.nobody.sync\"")).toBe(true);
   for (const id of ["lk-b-app", "lk-d-app", "lk-e-app", "lk-f-app"]) expect(controllerApp(id)).toBe(undefined);
+});
+
+const SYNC = { syncOverride: { node: "rp.lsdj.sync", role: "lsdj-sync", mode: "midiMap" } };
+
+test("an item id of __proto__ is an own key of the kind data, and the prototype is untouched", async () => {
+  const { info, modules } = kindPack("lk-g", { appIds: ["__proto__"], kindIds: ["__proto__"], data: SYNC });
+  const { host, refused } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused).toEqual({});
+  const data = kindData("controllerApps");
+  expect(Object.prototype.hasOwnProperty.call(data, "__proto__")).toBe(true);
+  expect(Object.getPrototypeOf({}) === Object.prototype).toBe(true);
+  expect(({} as { syncOverride?: unknown }).syncOverride).toBe(undefined);
+});
+
+test("a kind whose add throws leaves the pack loaded, warns, and is called once with only that pack's items", async () => {
+  const calls: string[][] = [];
+  commitContributions([{ registry: contributionKindsRegistry, pkg: "lk-test", items: [{
+    kind: "lkThrows", data: [],
+    contribution: { accept: () => {}, add: (items: readonly { id: string }[]) => {
+      calls.push(items.map((i) => i.id));
+      throw new Error("the add threw");
+    } },
+  }] }]);
+  const { info, modules } = kindPack("lk-h", { kind: "lkThrows", appIds: ["lk-h-1"], kindIds: ["lk-h-1"] });
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => { warned.push(args.join(" ")); };
+  try {
+    const { host, refused } = fakeHost([info], modules);
+    await loadPacks(host, APP_BUILDERS);
+    expect(refused).toEqual({});
+  } finally {
+    console.warn = warn;
+  }
+  expect(packStatus().loaded["lk-h"]).toEqual(["app", "kinds"]);
+  expect(calls).toEqual([["lk-h-1"]]);
+  expect(warned.some((w) => w.includes("the lkThrows kind's add threw for pack lk-h: the add threw"))).toBe(true);
+});
+
+test("two packs of one batch contributing one item: the second is named, and add ran for the first alone", async () => {
+  const a = kindPack("lk-i", { appIds: ["lk-dup-app"], kindIds: ["lk-dup-app"], label: "First" });
+  const b = kindPack("lk-j", { appIds: ["lk-dup-app"], kindIds: ["lk-dup-app"], label: "Second" });
+  const { host, refused } = fakeHost([a.info, b.info], { ...a.modules, ...b.modules });
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused["lk-i"]).toBe(undefined);
+  expect(refused["lk-j"]).toBe("two packages contribute the controllerApps item lk-dup-app: lk-i and lk-j");
+  expect(controllerApp("lk-dup-app")?.label).toBe("First");
+});
+
+test("a pack with a role refused for a kind rule commits no role, and its apps follow the built-ins", async () => {
+  const bad = kindPack("lk-k", { data: { colour: "red" } });
+  const info = { ...bad.info, provides: { platforms: [], nodeTypes: [], roles: ["lk-k-role"] } };
+  const modules = { "lk-k": { app: { ...bad.modules["lk-k"]!.app, roles: [role("lk-k-role")] } } };
+  const { host, refused } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect((refused["lk-k"] ?? "").includes("\"colour\"")).toBe(true);
+  expect(rolesRegistry.items().some((r) => r.kind === "lk-k-role")).toBe(false);
+  const ids = controllerApps.list().map((a) => a.id);
+  // The built-in app leads; every pack app (lk-a-app, __proto__ and lk-dup-app, loaded above) follows it.
+  expect(ids[0]).toBe("lsdj-midimap");
+  for (const id of ["lk-a-app", "__proto__", "lk-dup-app"]) expect(ids.indexOf(id) > 0).toBe(true);
+  expect(defaultControllerApp()).toBe("lsdj-midimap");
+});
+
+test("a control half's item that is not an object with an id, or a controller app with no label, is refused", async () => {
+  const mk = (id: string, items: unknown[]) => ({
+    info: pack(id, { halves: ["app", "kinds"], kinds: { controllerApps: [] } }),
+    modules: { [id]: { app: { controllerApps: items } } },
+  });
+  const notObject = mk("lk-l", [42]);
+  const noId = mk("lk-m", [{ label: "x" }]);
+  const noLabel = { info: pack("lk-n", { halves: ["app", "kinds"], kinds: { controllerApps: [{ id: "lk-n-app" }] } }),
+    modules: { "lk-n": { app: { controllerApps: [{ id: "lk-n-app", config: { parse: () => ({}) } }] } } } };
+  const all = [notObject, noId, noLabel];
+  const { host, refused } = fakeHost(all.map((p) => p.info), Object.assign({}, ...all.map((p) => p.modules)));
+  await loadPacks(host, APP_BUILDERS);
+  const shape = "its app half's controllerApps list holds an item that is not an object with an id";
+  expect(refused["lk-l"]).toBe(shape);
+  expect(refused["lk-m"]).toBe(shape);
+  expect(refused["lk-n"]).toBe("the controller app lk-n-app needs a label and a config schema");
+});
+
+test("a builder set with the app half and no kinds half commits the app half alone, never a pair mismatch", async () => {
+  const { info, modules } = kindPack("lk-o");
+  const { host, refused } = fakeHost([info], modules);
+  await loadPacks(host, { app: APP_BUILDERS.app! });
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused).toEqual({});
+  expect(packStatus().loaded["lk-o"]).toEqual(["app"]);
+});
+
+test("a kind item may name a protocol node of a pack staged before it in the same batch", async () => {
+  const proto = protocolPack("lk-p");
+  const app = kindPack("lk-q", { data: { syncOverride: { node: proto.type, role: "lk-p", mode: "m" } } });
+  const info = { ...app.info, requires: { packs: ["lk-p"], platforms: [] } };
+  const { host, refused } = fakeHost([proto.info, info], { ...proto.modules, ...app.modules });
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused).toEqual({});
+  expect(controllerApp("lk-q-app")?.label).toBe("App lk-q-app");
 });

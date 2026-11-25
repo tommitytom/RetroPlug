@@ -17,8 +17,10 @@ export interface PackKindItems {
 
 const has = (o: object, key: string): boolean => Object.prototype.hasOwnProperty.call(o, key);
 
-/** The kinds the pack contributes to, checked; throws the first refusal. `app` is its app half's default export. */
-export function packKindItems(pack: PackInfo, app: Record<string, unknown> | undefined): PackKindItems[] {
+/** The kinds the pack contributes to, checked; throws the first refusal. `app` is its app half's default export;
+ *  `earlier` are the packs staged before it in this call, whose protocol nodes and roles its items may name. */
+export function packKindItems(pack: PackInfo, app: Record<string, unknown> | undefined,
+                              earlier: readonly PackInfo[] = []): PackKindItems[] {
   const manifest = pack.kinds ?? {};
   const kinds = new Set<string>(Object.keys(manifest));
   if (app) for (const key of Object.keys(app)) if (declaredKind(key) && Array.isArray(app[key])) kinds.add(key);
@@ -28,12 +30,17 @@ export function packKindItems(pack: PackInfo, app: Record<string, unknown> | und
     if (!decl) throw new Error(`it contributes to ${kind}, a contribution kind no loaded package declares`);
     if (!decl.contribution.add) throw new Error(`it contributes to ${kind}, which takes no items from a pack`);
     const items = (app && Array.isArray(app[kind]) ? app[kind] : []) as { id: string }[];
+    for (const item of items) {
+      if (typeof item !== "object" || item === null || typeof item.id !== "string" || item.id === "") {
+        throw new Error(`its app half's ${kind} list holds an item that is not an object with an id`);
+      }
+    }
     const entries = has(manifest, kind) ? manifest[kind]! : [];
     const entryIds = entries.map((e) => e.id as string);
     for (const item of items) {
       if (!entryIds.includes(item.id)) {
-        throw new Error(`its app half contributes the ${kind} item ${item.id}, which its pack.json's kinds member does ` +
-          "not declare");
+        throw new Error(`its app half contributes the ${kind} item ${item.id}, which its pack.json's kinds member ` +
+          "does not declare");
       }
     }
     for (const id of entryIds) {
@@ -56,11 +63,13 @@ export function packKindItems(pack: PackInfo, app: Record<string, unknown> | und
       }
       if (Object.keys(own).length) data[entry.id as string] = own;
     }
-    // The kind's own check, against the live protocol tables and the pack's own protocol half, which commits with it.
-    const ownNodes = (pack.protocol?.nodes ?? []) as ProtocolNodeEntry[];
+    // The kind's own check, against the live protocol tables and the protocol halves of this pack and the packs staged
+    // before it, which commit with it.
+    const sources = [...earlier, pack];
     decl.contribution.check?.(items, data, {
-      nodeTypes: [...Object.keys(protocolNodes()), ...ownNodes.filter(isWired).map((n) => n.type)],
-      roleNodes: { ...roleNodes(), ...(pack.protocol?.roles ?? {}) },
+      nodeTypes: [...Object.keys(protocolNodes()), ...sources.flatMap((p) =>
+        ((p.protocol?.nodes ?? []) as ProtocolNodeEntry[]).filter(isWired).map((n) => n.type))],
+      roleNodes: Object.assign({}, roleNodes(), ...sources.map((p) => p.protocol?.roles ?? {})),
     });
     out.push({ kind, items, data });
   }
@@ -70,7 +79,8 @@ export function packKindItems(pack: PackInfo, app: Record<string, unknown> | und
 /** The additions a pack's checked kind items make: their ids and their data. */
 export function kindAdditions(pkg: string, kinds: readonly PackKindItems[]): Addition<any>[] {
   return [
-    { registry: kindItemsRegistry, pkg, items: kinds.flatMap((k) => k.items.map((item) => ({ kind: k.kind, id: item.id }))) },
+    { registry: kindItemsRegistry, pkg, items: kinds.flatMap((k) =>
+      k.items.map((item) => ({ kind: k.kind, id: item.id }))) },
     { registry: kindDataRegistry, pkg, items: kinds.flatMap((k) =>
       Object.entries(k.data).map(([id, data]) => ({ kind: k.kind, id, data }))) },
   ];
@@ -83,7 +93,8 @@ export function kindsAdded(pkg: string, kinds: readonly PackKindItems[]): void {
     try {
       declaredKind(k.kind)?.contribution.add?.(k.items, k.data);
     } catch (e) {
-      console.warn(`[packs] the ${k.kind} kind's add threw for pack ${pkg}: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn(`[packs] the ${k.kind} kind's add threw for pack ${pkg}: ` +
+        (e instanceof Error ? e.message : String(e)));
     }
   }
 }

@@ -1,4 +1,4 @@
-// The protocol half is data the pack list carries (committed without an import) and the placer half is a module
+// The protocol and kinds halves are data the pack list carries (committed without an import) and the placer half is a module
 // (docs/downloadable-packs-m2e-plan.md); the render worker loads the control plane's halves (`loadAppPacks`) on a bare
 // runtime with no timers (docs/downloadable-packs-m2d-plan.md).
 // The pack loader (docs/downloadable-packs-m2c-plan.md): each pack's halves a context loads, imported by name, held to
@@ -111,7 +111,7 @@ function placerExport(exported: unknown): GraphPlacer<unknown> {
   return p as unknown as GraphPlacer<unknown>;
 }
 
-/** The halves the control plane loads: the app's registries, the consoles', the protocol tables and the placers.
+/** The halves the control plane loads: the app's registries, the consoles', the protocol tables, the kinds' items and the placers.
  *  The UI's and the CLI's builders add theirs (ui/packs/uiPacks.ts, cli/packs/cliPacks.ts). */
 export const APP_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
   app: (pkg, exported) => appAdditions(pkg, objectExport("app", exported) as PackageContributions),
@@ -281,6 +281,13 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
       continue;
     }
     const todo = kinds.filter((k) => pack.halves.includes(k) && !loaded.get(pack.id)?.has(k));
+    // The kinds half and the app half commit together: the items pair across the two, so one without the other (a
+    // builder set holding only one, or an app half an earlier call loaded) would only misfire later as a mismatch.
+    if (pack.halves.includes("app") && pack.halves.includes("kinds") && builders.kinds) {
+      const at = todo.indexOf("kinds");
+      if (todo.includes("app") && at < 0 && !loaded.get(pack.id)?.has("kinds")) todo.push("kinds");
+      else if (!todo.includes("app") && at >= 0) todo.splice(at, 1);
+    }
     if (!todo.length) continue;
     try {
       const exported = new Map<HalfKind, unknown>();
@@ -297,7 +304,7 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
       let kindItems: PackKindItems[] = [];
       if (exported.has("app") || todo.includes("kinds")) {
         const app = exported.has("app") ? objectExport("app", exported.get("app")) : undefined;
-        kindItems = packKindItems(pack, app);
+        kindItems = packKindItems(pack, app, staged.map((s) => s.pack));
         // The items commit with the kinds half; a context without its builder commits none.
         if (todo.includes("kinds")) additions.push(...kindAdditions(pack.id, kindItems));
         else kindItems = [];
@@ -341,7 +348,7 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
   }
 }
 
-/** The control plane's packs: their app, consoles, protocol and placer halves. */
+/** The control plane's packs: their app, consoles, protocol, kinds and placer halves. */
 export function loadAppPacks(): Promise<void> {
   return loadPacks(nativePackHost(), APP_BUILDERS);
 }
