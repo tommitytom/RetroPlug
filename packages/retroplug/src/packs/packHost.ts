@@ -2,11 +2,24 @@
 // half is imported, and where a refusal is reported. A txiki host installs the globals (host/js/PackModules.cpp)
 // before its entry evaluates; a context without them (a test's bundle, the render worker) has no packs.
 
+import type { TypeDescriptor } from "@retroplug/core/descriptor";
+
 /**
- * The halves a context may load (the protocol half is M2e's; the script half is MicroQuickJS code the native loader
- * registers, never a context's).
+ * The halves a context loads. `protocol` is data (pack.json's protocol member, carried in the pack list), committed
+ * without an import: its code is global code every Engine loads (the native loader). The script half is MicroQuickJS
+ * code the native loader registers, never a context's.
  */
-export type HalfKind = "app" | "consoles" | "ui" | "views" | "cli";
+export type HalfKind = "app" | "consoles" | "protocol" | "placer" | "ui" | "views" | "cli";
+
+/** A pack's protocol half as the host lists it (docs/downloadable-packs-m2e-plan.md). */
+export interface PackProtocol {
+  /** pack.json's protocol.nodes as written: the live table's checks hold each entry (graph/protocolSpec.ts). */
+  readonly nodes: readonly unknown[];
+  /** Each role kind and the node type it is placed as. */
+  readonly roles: Readonly<Record<string, string>>;
+  /** Each node type's descriptor, as the host's trial load read it. */
+  readonly descriptors: Readonly<Record<string, TypeDescriptor>>;
+}
 
 /** A pack as its pack.json declares it: what the loader holds its halves to. */
 export interface PackInfo {
@@ -17,6 +30,8 @@ export interface PackInfo {
   readonly provides: { readonly platforms: readonly string[]; readonly nodeTypes: readonly string[];
     readonly roles: readonly string[] };
   readonly requires: { readonly packs: readonly string[]; readonly platforms: readonly string[] };
+  /** The protocol half's data, when `halves` names it. */
+  readonly protocol?: PackProtocol;
 }
 
 export interface PackHost {

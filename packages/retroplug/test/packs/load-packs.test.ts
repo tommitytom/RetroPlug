@@ -6,6 +6,9 @@ import type { HalfKind, PackHost, PackInfo } from "../../src/packs/packHost";
 import { rolesRegistry } from "../../src/contributions/appRegistries";
 import { consolesRegistry, realCartsRegistry } from "../../src/contributions/consoleRegistries";
 import { contributionsVersion } from "../../src/contributions/registry";
+import { protocolNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
+import { buildGraph, type GraphSystem } from "../../src/graph/buildGraph";
+import { placersRegistry } from "../../src/contributions/placers";
 
 const role = (kind: string) => ({ kind, category: "feature", schema: { parse: () => ({}) } });
 
@@ -305,4 +308,87 @@ test("a runtime with no timers loads its packs with no budget", async () => {
     g.setTimeout = saved.setTimeout;
     g.clearTimeout = saved.clearTimeout;
   }
+});
+
+/** A descriptor with these ports, as the host's trial hands one over. */
+const descriptor = (id: string, ports: { id: string; dir: "in" | "out"; kind: string }[]) =>
+  ({ id, name: id, ports, params: [], settings: { type: "object" } });
+
+const ECHO_PORTS = [{ id: "in", dir: "in" as const, kind: "events" }, { id: "midiOut", dir: "out" as const, kind: "events" }];
+
+/** A pack with an app half (one role, one project section), a protocol half placing the role as an echo node, and a
+ *  placer half. */
+function protocolPack(id: string, over: { ports?: { id: string; dir: "in" | "out"; kind: string }[];
+                                          node?: Record<string, unknown>; roles?: Record<string, string> } = {}) {
+  const node = over.node ?? { type: `rp.${id}.echo`, midiIn: "in", writes: [], midiOut: true };
+  const type = node.type as string;
+  const info = pack(id, {
+    halves: ["app", "protocol", "placer"],
+    provides: { platforms: [], nodeTypes: [type], roles: [id] },
+    protocol: {
+      nodes: [node],
+      roles: over.roles ?? { [id]: type },
+      descriptors: { [type]: descriptor(type, over.ports ?? ECHO_PORTS) } as never,
+    },
+  });
+  const modules = {
+    [id]: {
+      app: { roles: [role(id)], projectSections: [{ key: `${id}-model`, schema: { parse: () => ({}) }, defaults: () => ({}) }] },
+      placer: { key: `${id}-model`, place: () => ({}) },
+    },
+  };
+  return { info, modules, type };
+}
+
+test("a pack's protocol data and placer commit with it, and buildGraph places its role's node", async () => {
+  const { info, modules, type } = protocolPack("lp-proto");
+  const { host, refused, imported } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused).toEqual({});
+  expect(packStatus().loaded["lp-proto"]).toEqual(["app", "protocol", "placer"]);
+  // The protocol half is data: nothing imported it.
+  expect(imported.includes("lp-proto/protocol")).toBe(false);
+  expect(protocolNodeOf("lp-proto")).toBe(type);
+  expect(placersRegistry.items().some((p) => p.key === "lp-proto-model")).toBe(true);
+  const gb: GraphSystem = {
+    id: 1, platform: "gb", type: "rp.sameboy.gb", linkGroup: 0, exportMode: 0, resources: { rom: 1 }, romName: "rom1",
+    pipeline: protocolPipeline([{ kind: "lp-proto", config: {} }]),
+  };
+  const { document } = buildGraph({ systems: [gb], routing: "stereo", shape: { kind: "multi", channels: 2 },
+    midiRouting: "sendToAll", models: {} });
+  expect(document.nodes.find((n) => n.id === "sys-1/lp-proto")?.type).toBe(type);
+  expect(document.wires.some((w) => w.to === "sys-1/lp-proto.in")).toBe(true);
+  expect(document.wires.some((w) => w.from === "sys-1/lp-proto.midiOut")).toBe(true);
+});
+
+test("a protocol node whose ports are not its wiring is refused, with nothing of the pack committed", async () => {
+  const { info, modules } = protocolPack("lp-ports", { ports: [
+    { id: "midi", dir: "in", kind: "events" }, { id: "midiOut", dir: "out", kind: "events" }] });
+  const { host, refused } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused["lp-ports"]).toBe("its protocol node rp.lp-ports.echo has the ports midi in events, midiOut out " +
+    "events, and its pack.json's protocol.nodes wires in in events, midiOut out events");
+  expect(protocolNodeOf("lp-ports")).toBe(undefined);
+  expect(placersRegistry.items().some((p) => p.key === "lp-ports-model")).toBe(false);
+});
+
+test("a protocol node another package declares, or one with a label, is refused", async () => {
+  // A node with mGB's own type and ports, so its ports pass and the table's check is what refuses it.
+  const dup = protocolPack("lp-dup", { node: { type: "rp.mgb.midi", midiIn: "midi", writes: ["serialIn"] }, roles: {},
+    ports: [{ id: "midi", dir: "in", kind: "events" }, { id: "serialIn", dir: "out", kind: "bytes" }] });
+  const labelled = protocolPack("lp-label", { node: { type: "rp.lp-label.echo", label: 30, midiIn: "in", writes: [], midiOut: true } });
+  const { host, refused } = fakeHost([dup.info, labelled.info], { ...dup.modules, ...labelled.modules });
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused["lp-dup"]).toBe("two packages declare the script node rp.mgb.midi: mgb and lp-dup");
+  expect(refused["lp-label"]).toBe('lp-label: the node rp.lp-label.echo has a "label": a span label is the host\'s ' +
+    "to give, at load");
+});
+
+test("a placer half that is not a placer is refused", async () => {
+  const { info, modules } = protocolPack("lp-noplacer");
+  (modules["lp-noplacer"] as Record<string, unknown>).placer = { key: "lp-noplacer-model" };
+  const { host, refused } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused["lp-noplacer"]).toBe("its placer half's default export is not a graph placer (a key and a place " +
+    "function)");
 });

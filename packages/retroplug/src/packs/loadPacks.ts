@@ -1,4 +1,5 @@
-// The render worker loads the control plane's halves (`loadAppPacks`) on a bare runtime with no timers
+// The protocol half is data the pack list carries (committed without an import) and the placer half is a module; the
+// render worker loads the control plane's halves (`loadAppPacks`) on a bare runtime with no timers
 // (docs/downloadable-packs-m2d-plan.md).
 // The pack loader (docs/downloadable-packs-m2c-plan.md): each pack's halves a context loads, imported by name, held to
 // the pack's manifest, and committed into the live registries. Every pack of a call goes in one commit; when that is
@@ -14,7 +15,10 @@ import { consolesRegistry, realCartsRegistry } from "../contributions/consoleReg
 import { KIND_DATA } from "../generated/protocol";
 import type { PackageContributions } from "@retroplug/core/definePackage";
 import type { ConsoleDescriptor, ConsolesContribution } from "@retroplug/core/consoles";
-import { nativePackHost, type HalfKind, type PackHost, type PackInfo } from "./packHost";
+import { placersRegistry } from "../contributions/placers";
+import type { GraphPlacer } from "@retroplug/core/placer";
+import { nativePackHost, type HalfKind, type PackHost, type PackInfo, type PackProtocol } from "./packHost";
+import { protocolAdditions } from "./protocolHalf";
 
 /** A half's default export as the additions a commit takes; throws when the export is not the half's shape. */
 export type HalfBuilder = (pkg: string, exported: unknown) => Addition<any>[];
@@ -94,7 +98,19 @@ export function objectExport(half: HalfKind, exported: unknown): Record<string, 
   return exported as Record<string, unknown>;
 }
 
-/** The halves the control plane loads: the app's registries and the consoles'. The UI's and the CLI's builders add
+/** The halves whose content is the manifest's, not a module: committed from the pack list, never imported. */
+const DATA_HALVES: ReadonlySet<HalfKind> = new Set<HalfKind>(["protocol"]);
+
+/** A placer half's default export, held to the contract buildGraph calls. */
+function placerExport(exported: unknown): GraphPlacer<unknown> {
+  const p = objectExport("placer", exported);
+  if (typeof p.key !== "string" || p.key === "" || typeof p.place !== "function") {
+    throw new Error("its placer half's default export is not a graph placer (a key and a place function)");
+  }
+  return p as unknown as GraphPlacer<unknown>;
+}
+
+/** The halves the control plane loads: the app's registries, the consoles', the protocol tables and the placers. The UI's and the CLI's builders add
  *  theirs (ui/packs/uiPacks.ts, cli/packs/cliPacks.ts). */
 export const APP_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
   app: (pkg, exported) => appAdditions(pkg, objectExport("app", exported) as PackageContributions),
@@ -105,6 +121,8 @@ export const APP_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
       { registry: realCartsRegistry, pkg, items: c.realCarts ?? [] },
     ];
   },
+  protocol: (pkg, exported) => protocolAdditions(pkg, exported as PackProtocol | undefined),
+  placer: (pkg, exported) => [{ registry: placersRegistry, pkg, items: [placerExport(exported)] }],
 };
 
 const loaded = new Map<string, Set<HalfKind>>();
@@ -256,6 +274,10 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
     try {
       const exported = new Map<HalfKind, unknown>();
       for (const kind of todo) {
+        if (DATA_HALVES.has(kind)) {
+          exported.set(kind, pack.protocol);
+          continue;
+        }
         const ns = (await importBefore(host, pack.id, kind, deadline)) as { default?: unknown };
         exported.set(kind, ns.default);
       }
