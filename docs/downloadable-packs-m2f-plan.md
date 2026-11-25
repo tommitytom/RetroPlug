@@ -1705,6 +1705,17 @@ Expected: all four jobs succeed.
 12. **The script-node guard compares only the definitions' count**, so a chunk swapping an entry is not caught.
 13. **The multi-kind seed has no regression test.** A product declaring three or more kinds needs a fresh module set to
     exercise the first-seed state; a three-kind generator fixture would do.
+14. **The plugin product declares no `controllerApps` kind** (it has no launchpad), so the table's trial refuses a
+    kind-carrying pack wholesale there, its other halves included. Should a kinds half for a kind the product does not
+    declare be skipped (its items inert) rather than refusing the pack?
+15. **A pack refused in TS** (pairing, data keys, the kind's check) keeps its kind items' runtimes registered and its ids
+    taken in every Engine's registrar.
+16. **The control plane still offers a pack's app when its Engine refused the pack** (late, failed load, another bundle),
+    and the session finds no app. Should the TS side learn of an Engine's kind refusals?
+17. **The registrar checks only an item's id**: a malformed runtime fails at block time in the session node. Should a kind
+    declare a runtime validator the registrar or the trial calls?
+18. **Native accepts `halves.kinds` with no `halves.app`** (the hand-written kindfix fixtures rely on it) while the TS
+    loader always refuses such a pack. Should the manifest require an app half beside a kinds half?
 
 ## Self-review
 
@@ -1757,8 +1768,8 @@ while it ran, and why:
 - The Engine appends a closing chunk that closes the registrar from inside, so a held reference cannot reopen it; refuses a
   kinds half that defines script nodes; and on a failed load rebuilds its `Graph` (a `ScriptHost` loads once) and refuses
   every kind-carrying pack with the reason (2f029974f, ddd77cd5d).
-- The hosts' order is a first member (the plugin, the SDL `AppState`, the UI harness) or a call before `HostServices` (the
-  CLI) (5a827a897).
+- The hosts' order is a first member (the plugin, the SDL `AppState`), `UiHarness::launchPacks_` (after `core_`, before
+  `engine_`) or a call before `HostServices` (the CLI) (5a827a897).
 - The loader ties the kinds half to the app half, shape-checks items, and lets a kind's check see earlier staged packs'
   protocol nodes (e9f313ce7, e9581d5dc).
 - The build tool resolves `@retroplug` imports through each package's exports map, and refuses `zod`, `react`, `lvgljs` and
