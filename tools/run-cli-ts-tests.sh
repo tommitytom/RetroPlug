@@ -756,6 +756,7 @@ case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) PSEP=";" ;; *) PSEP=":" ;; esac
 PACKPATH="$PACKS/tsfix/1.0.0${PSEP}$PACKS/tsfix-cliclash/1.0.0${PSEP}$PACKS/tsfix-undeclared/1.0.0"
 PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-dependent/1.0.0${PSEP}$PACKS/tsfix-throws/1.0.0${PSEP}$PACKS/tsfix-protocol/1.0.0"
 PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-proto/1.0.0${PSEP}$PACKS/tsfix-proto-ports/1.0.0"
+PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-kind/1.0.0${PSEP}$PACKS/kindfix-taken/1.0.0"
 RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" --help >"$TMP/packs-help.out" 2>"$TMP/packs-help.err"
 check "packs: --help with the fixture packs" 0 $?
 contains "packs: a pack's tool is in the index" "$TMP/packs-help.out" "tsfix-hello"
@@ -769,6 +770,9 @@ contains "packs: a protocol half with no protocol member is refused" "$TMP/packs
 	"halves.protocol needs the protocol member"
 contains "packs: a protocol node whose ports are not its wiring is refused in TS" "$TMP/packs-help.err" \
 	"[packs] pack tsfix-proto-ports is refused: its protocol node rp.tsfix-proto-ports.echo has the ports"
+contains "packs: a kinds half claiming a built-in app is refused natively" "$TMP/packs-help.err" \
+	"[packs] pack kindfix-taken: its kinds half did not run beside the built-in script nodes: chunk 3: Error: a pack's kinds half registers the controllerApps item lsdj-midimap, which this product's lsdj-launchpad holds"
+absent "packs: the kinds fixture pack is refused nowhere" "$TMP/packs-help.err" "pack tsfix-kind"
 RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" tsfix-hello >"$TMP/packs-run.out" 2>/dev/null
 check "packs: a pack's tool runs" 0 $?
 contains "packs: the tool's output" "$TMP/packs-run.out" "hello from the ts fixture pack"

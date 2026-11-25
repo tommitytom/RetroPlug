@@ -199,3 +199,16 @@ TEST_CASE("a kinds half that fails only in an Engine drops every kinds half ther
     CHECK(runBlock(e, {}).empty());
     REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("lsdj-midimap"), {})).ok);
 }
+
+TEST_CASE("the pack build's kinds half runs in an Engine built after the load", "[packs-kinds]") {
+    // tsfix-kind, built from its package by tools/build-pack-halves.mjs: what a real pack's kind items are.
+    PackTable table;
+    withTrials(table);
+    const auto load = table.load(fixture("tsfix-kind"));
+    INFO(load.error);
+    REQUIRE(load);
+    Engine e(48000.0, table);
+    REQUIRE(e.setGraph(rp::host::test::graphRequest(sessionDocument("tsfix-app"), {})).ok);
+    CHECK(runBlock(e, {}) == std::vector<MidiOut>{{1, 0, {0xB0, 0x7F, 0x2A}}});
+    CHECK(e.refusedPacks().empty());
+}

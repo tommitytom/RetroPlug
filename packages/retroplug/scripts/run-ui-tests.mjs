@@ -77,7 +77,7 @@ if (!tests.length) {
 // A test of pack loading names the development packs it loads (docs/downloadable-packs-m2c-plan.md); every other test
 // loads none. The fixture packs are staged under build/packs by retroplug-ts-fixture-packs.
 const PACK_TESTS = {
-  "packs-ts-fixture": ["tsfix", "tsfix-throws", "tsfix-guard"],
+  "packs-ts-fixture": ["tsfix", "tsfix-throws", "tsfix-guard", "tsfix-kind"],
 };
 const packPath = (slug) =>
   (PACK_TESTS[slug] ?? []).map((id) => join(REPO, "build/packs", id, "1.0.0")).join(process.platform === "win32" ? ";" : ":");

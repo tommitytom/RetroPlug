@@ -3,6 +3,7 @@
 # build/packs/<id>/1.0.0/ as a development pack. No product lists any of them.
 # tsfix-render  an app half whose role every ROM gets, which a render's console shows
 # tsfix-proto   an app, a protocol and a placer half (a role placed as a script node)
+# tsfix-kind    an app half and a kinds half (a controller app's runtime)
 # Every staged folder is claimed once (cmake/packs.cmake's RP_PACK_STAGED), so two fixtures cannot stage one id: a second
 # claim is a configure error here, as retroplug_pack_module's is.
 function(_tsfix_claim id)
@@ -71,9 +72,31 @@ add_custom_command(
     VERBATIM)
 _tsfix_claim(tsfix-proto)
 
+# tsfix-kind: built as tsfix is, from kinds/ (docs/downloadable-packs-m2f-plan.md): an app half and a kinds half, a
+# controller app's runtime.
+set(_tsk_dir "${_tsfix_dir}/kinds")
+set(_tsk_out "${RP_PACKS_DIR}/tsfix-kind/1.0.0")
+file(GLOB _tsk_sources CONFIGURE_DEPENDS "${_tsk_dir}/ts/*.ts")
+set(_tsk_halves "${_tsk_out}/js/app.js" "${_tsk_out}/js/kinds.js")
+add_custom_command(
+    OUTPUT "${_tsk_out}/pack.json" ${_tsk_halves}
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs
+            ${_tsk_dir} ${_tsk_out} ${_tsk_dir}/pack.json
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs ${_tsk_dir}/package.json ${_tsk_dir}/pack.json
+            ${_tsk_sources}
+            ${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/graph/rp_pack.h
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/lib/contracts.mjs
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/host-modules.json
+            # the kinds half resolves the declaring package's runtime through its exports map
+            ${CMAKE_SOURCE_DIR}/packages/launchpad/package.json
+    COMMENT "Building the TS kinds fixture pack"
+    VERBATIM)
+_tsfix_claim(tsfix-kind)
+
 add_custom_target(retroplug-ts-fixture-packs DEPENDS "${_tsfix_out}/pack.json" ${_tsfix_halves}
                   "${_tsr_out}/pack.json" "${_tsr_out}/js/app.js"
-                  "${_tsp_out}/pack.json" ${_tsp_halves})
+                  "${_tsp_out}/pack.json" ${_tsp_halves}
+                  "${_tsk_out}/pack.json" ${_tsk_halves})
 
 foreach(_v tsfix-throws tsfix-guard tsfix-undeclared tsfix-cliclash tsfix-dependent tsfix-protocol tsfix-proto-ports)
     _tsfix_claim(${_v})
