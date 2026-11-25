@@ -1,0 +1,11 @@
+{
+  "id": "protofix-clash", "name": "Protocol fixture (protofix-clash)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/protocol-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.midi.route"], "roles": [] },
+  "halves": { "protocol": "js/protocol.js" },
+  "protocol": {
+    "nodes": [{ "type": "rp.midi.route" }],
+    "roles": {}
+  }
+}

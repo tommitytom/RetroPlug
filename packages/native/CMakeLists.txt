@@ -117,6 +117,7 @@ add_library(retroplug-backend STATIC
     # whose include root LIBS below takes.
     src/kit/SampleCache.cpp
     src/host/packs/ProcessPacks.cpp         # the process's pack table, seeded with the product's packages
+    src/host/packs/ProtocolTrial.cpp        # a pack's protocol half compiled and trial-loaded beside the built-in script nodes
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull the full
     # lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp

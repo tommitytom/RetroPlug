@@ -389,6 +389,7 @@ struct ScriptHost::Pack {
     std::vector<const rp_node_type*>   typeList;
     rp_package    package{};
     // Its load, or a release of one of its instances, since its last collect (whoever released it).
+    bool          appOwned = false;  // loadAppPack's: its types are named by the pack that brought them, not under its id
     bool          garbage = false;
     // Its audio runtime's heap, adding to the host's counters once it joins (to a load's own before), and its control
     // runtime's, held to the same limit with a refusal noted the same way, so a load or a settings check it fails says
@@ -1903,6 +1904,21 @@ bool ScriptHost::canLoadPack(const std::string& id, std::string* error) const {
 const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
                                        std::string* error) {
     if (!canLoadPack(id, error)) return nullptr;
+    return loadChecked(id, chunks, memoryLimit, false, error);
+}
+
+const rp_package* ScriptHost::loadAppPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
+                                          std::string* error) {
+    if (!graph::isPlainId(id) || id.rfind("rp.", 0) != 0 || id.size() <= 3 || id == kBuiltInPack) {
+        if (error)
+            *error = "an app pack's id is \"rp.\" and more, and never the built-in pack's: " + graph::jsonString(id);
+        return nullptr;
+    }
+    return loadChecked(id, chunks, memoryLimit, true, error);
+}
+
+const rp_package* ScriptHost::loadChecked(const std::string& id, std::span<const Chunk> chunks,
+                                          std::size_t memoryLimit, bool appOwned, std::string* error) {
     // The id's next generation, whatever came of its loads before and whenever their generations were freed, so one
     // number never names two sources.
     const std::uint32_t generation = ++generations_[id];
@@ -1911,6 +1927,7 @@ const rp_package* ScriptHost::loadPack(const std::string& id, std::span<const Ch
     Counters loading;
     auto pack = makePack(id, loading);
     pack->generation = generation;
+    pack->appOwned = appOwned;
     // Both runtimes' limit, before the load, whose allocations it holds.
     pack->heap.limit = pack->controlHeap.limit = memoryLimit ? memoryLimit : kDefaultMemoryLimit;
     if (!loadInto(*pack, chunks, error)) {
@@ -2119,10 +2136,11 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         }
         JS_FreeValue(control, id);
         if (type.id.empty()) return fail(at + " has no id");
-        // A loaded pack's types are named under its id (the built-in pack's predate the rule: rp.midi.route, ...), so
-        // its namespace meets another's only where one pack's id runs on into another's ("a" beside "a.b", or "rp.midi"
+        // A loaded pack's types are named under its id (the built-in pack's predate the rule: rp.midi.route, ...; an app
+        // pack's, a downloaded pack's protocol half, are named by the pack that brought them, which the table held to
+        // its manifest), so its namespace meets another's only where one pack's id runs on into another's ("a" beside "a.b", or "rp.midi"
         // beside the built-in rp.midi.route), and there the registry refuses the type a second pack would take.
-        if (pack.id != kBuiltInPack &&
+        if (pack.id != kBuiltInPack && !pack.appOwned &&
             (type.id.size() <= pack.id.size() + 1 || type.id.compare(0, pack.id.size(), pack.id) != 0 ||
              type.id[pack.id.size()] != '.'))
             return fail(at + " (" + type.id + ") is outside pack " + graph::jsonString(pack.id) +

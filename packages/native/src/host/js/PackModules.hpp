@@ -22,8 +22,8 @@ inline constexpr std::chrono::seconds kHostReadyDeadline{10};
 
 /** Install the pack loader on `ctx`'s runtime, after registerSharedModules registered `contracts` there:
  *  - a module named `pack:<id>/<half>` is the file `halves.<half>` of the pack `id` in `table`, compiled the first time
- *    something imports the name (the native and script halves are no modules, and a half the pack does not name is
- *    not found);
+ *    something imports the name (the native, script and protocol halves are no modules, and a half the pack does not
+ *    name is not found);
  *  - a module whose own name starts with `pack:` may import only a name of `contracts` that does not start with `rp:`
  *    (a contract module, or a host module's facade); anything else, relative names included, is refused, naming the
  *    pack module and the specifier, before txiki's import map is consulted. Every other module's imports go to txiki's

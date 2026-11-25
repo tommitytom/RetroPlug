@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -57,5 +58,8 @@ bool isUnder(const std::filesystem::path& dir, const std::filesystem::path& root
 // `p` as UTF-8 for a message or a comparison with an id. Never throws: on Windows path::string() converts through the
 // ANSI code page and throws for a name outside it, which a refusal's message must not do.
 std::string displayPath(const std::filesystem::path& p);
+
+// A whole file read as bytes (a half's bundle), or nothing with "cannot read <file>" in *why.
+std::optional<std::string> readTextFile(const std::filesystem::path& file, std::string* why);
 
 }  // namespace rp::host::packs

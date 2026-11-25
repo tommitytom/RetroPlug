@@ -1,0 +1,11 @@
+{
+  "id": "protofix-missing", "name": "Protocol fixture (protofix-missing)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/protocol-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.protofix-missing.up", "rp.protofix-missing.gone"], "roles": [] },
+  "halves": { "protocol": "js/protocol.js" },
+  "protocol": {
+    "nodes": [{ "type": "rp.protofix-missing.up", "midiIn": "in", "writes": [], "midiOut": true }, { "type": "rp.protofix-missing.gone" }],
+    "roles": {}
+  }
+}

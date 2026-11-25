@@ -1,6 +1,8 @@
 #include "host/packs/PackDirs.hpp"
 
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <system_error>
 
 namespace fs = std::filesystem;
@@ -156,6 +158,15 @@ std::vector<fs::path> packPathFromEnv() {
 #else
     return splitPackPath(value.string());
 #endif
+}
+
+std::optional<std::string> readTextFile(const fs::path& file, std::string* why) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        if (why) *why = "cannot read " + displayPath(file);
+        return std::nullopt;
+    }
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
 }  // namespace rp::host::packs

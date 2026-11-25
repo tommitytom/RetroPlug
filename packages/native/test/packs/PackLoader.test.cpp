@@ -194,10 +194,9 @@ TEST_CASE("a pack whose library is missing or exports no entry is refused", "[pa
     // A TS half loads now (docs/downloadable-packs-m2c-plan.md), but every file the manifest names must be there: the
     // variant names js/app.js and ships none.
     checkRefused(table, "packfixture-tshalf", "halves.app names js/app.js, which the pack does not have");
-    // The protocol half is M2e's: a pack with one is refused whole; a script half needs its member
+    // A protocol half needs its member (docs/downloadable-packs-m2e-plan.md), as a script half needs its own
     // (docs/downloadable-packs-m2d-plan.md).
-    checkRefused(table, "packfixture-protocol",
-                 "has a protocol half (js/protocol.js), which this RetroPlug does not load yet");
+    checkRefused(table, "packfixture-protocol", "halves.protocol needs the protocol member (its nodes and roles)");
     checkRefused(table, "packfixture-script", "halves.script needs the script member");
 }
 

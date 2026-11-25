@@ -338,6 +338,12 @@ public:
     // which is not reloadable), and not otherwise the app's ("rp" and every id under "rp.", where its native packages
     // are named too). False, with the reason.
     bool canLoadPack(const std::string& id, std::string* error = nullptr) const;
+    // Load a pack the app owns (a downloaded pack's protocol half, docs/downloadable-packs-m2e-plan.md): what loadPack
+    // does, under an id that is "rp." and more and never the built-in pack's, where loadPack refuses every "rp." id. So
+    // no caller of loadScriptPack can reload or shadow it. Its type ids need not be under its id: they are the pack's
+    // own (rp.<pack>.up in the app pack rp.<pack>.protocol), and the registry still refuses a type another package holds.
+    const rp_package* loadAppPack(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
+                                  std::string* error = nullptr);
     // Retire the generation `package` names, which a reload replaced: a plan placing the new generation's nodes in
     // place of its own is published (or none placed its own). Freed at once when no record of its types' instances is
     // alive, else by the call that finds the last one back (the class comment), the pack-freed callback told its
@@ -468,6 +474,9 @@ private:
     // control thread: a pack named `id` with its two runtimes made (makeRuntimes), loaded with nothing yet, its audio
     // runtime's allocations counted in `counters` until it joins
     std::unique_ptr<Pack> makePack(const std::string& id, Counters& counters);
+    // control thread: loadPack's load, for an id the caller has checked
+    const rp_package* loadChecked(const std::string& id, std::span<const Chunk> chunks, std::size_t memoryLimit,
+                                  bool appOwned, std::string* error);
     void makeRuntimes(Pack& pack);  // control thread: its runtimes and contexts, set up as the class comment says
     void freeRuntimes(Pack& pack);  // control thread or quiescent: its types first (freeTypes), then its runtimes
     // control thread: run a bundle in both of the pack's contexts, read and check its definitions (a loaded pack's

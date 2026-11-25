@@ -1,0 +1,11 @@
+{
+  "id": "protofix", "name": "Protocol fixture (protofix)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/protocol-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.protofix.up", "rp.protofix.idle"], "roles": [] },
+  "halves": { "protocol": "js/protocol.js" },
+  "protocol": {
+    "nodes": [{ "type": "rp.protofix.up", "midiIn": "in", "writes": [], "midiOut": true }, { "type": "rp.protofix.idle" }],
+    "roles": {}
+  }
+}

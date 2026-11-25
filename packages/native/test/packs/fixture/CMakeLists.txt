@@ -13,7 +13,7 @@
 #   packfixture-throws        a library whose entry throws (throws/: its own directory, for MSVC's /EHs)
 #   packfixture-pair          two packages from one library (FixtureSecond.cpp), the second taking the good pack's types
 #   packfixture-tshalf        a TS half naming a file the pack does not have
-#   packfixture-protocol      a protocol half, which M2c does not load (M2d's)
+#   packfixture-protocol      a protocol half with no protocol member, which the manifest refuses
 #   packfixture-script        a script half with no script member
 #   packfixture-duplicate     registers rp.core.add, a built-in's type
 #   packfixture-clone         registers the good pack's two types under another package id

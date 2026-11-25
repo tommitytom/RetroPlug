@@ -125,6 +125,11 @@ PackLoad PackTable::load(const PackCandidate& candidate) {
     return loadLocked(candidate);
 }
 
+void PackTable::setProtocolTrial(ProtocolTrial trial) {
+    std::lock_guard<std::mutex> hold(mutex_);
+    protocolTrial_ = std::move(trial);
+}
+
 void PackTable::recordRefusal(PackRefusal refusal) {
     std::lock_guard<std::mutex> hold(mutex_);
     refusals_.push_back(std::move(refusal));
@@ -268,12 +273,8 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
 
     // The TS halves load when a context imports them (host/js/PackModules, docs/downloadable-packs-m2c-plan.md), long
     // after this load, so each file the manifest names is checked here, where a refusal still leaves nothing loaded.
-    // The protocol half is M2e's, and a pack loads whole or not at all.
     for (const auto& [kind, file] : manifest->halves) {
         if (kind == "native") continue;
-        if (kind == "protocol")
-            return refuseHere(id, pack + " has a " + kind + " half (" + file +
-                                      "), which this RetroPlug does not load yet; a pack loads whole or not at all");
         std::error_code ec;
         if (!fs::is_regular_file(candidate.dir / fs::path(file), ec))
             return refuseHere(id, pack + ": halves." + kind + " names " + file + ", which the pack does not have");
@@ -354,8 +355,11 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
                 holder.emplace(p->node_types[k]->id, packageIdOf(p));
     };
     for (const rp_package* b : builtIns_) holdTypes(b);
-    for (const auto& p : packs_)
+    for (const auto& p : packs_) {
         for (const rp_package* q : p->packages) holdTypes(q);
+        if (p->protocol)
+            for (const auto& t : p->protocol->typeIds) holder.emplace(t, p->protocol->scriptId);
+    }
     // The checks every package of the pack meets, whatever half brought it (null, declared, held): an empty answer is a
     // pass, otherwise the refusal's reason. Run on the native packages before the script half is compiled, so a bad
     // native half never spends a MicroQuickJS slot, and then on the script package.
@@ -380,22 +384,55 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     };
     for (const rp_package* p : loaded->packages)
         if (std::string bad = checkPackage(p); !bad.empty()) return refuseHere(id, bad);
+    // Who holds a type id before this pack's own halves: a package already registered, or one of this pack's native
+    // packages (empty for none). Asked before anything is compiled, so a refused type costs no compile and no slot.
+    const auto heldBy = [&](const std::string& typeId) {
+        const auto it = holder.find(typeId);
+        std::string by = it != holder.end() ? it->second : std::string();
+        for (const rp_package* p : loaded->packages)
+            for (std::uint32_t k = 0; by.empty() && p && p->abi_version == RP_ABI_VERSION && p->node_types &&
+                                      k < p->node_type_count; ++k)
+                if (p->node_types[k] && p->node_types[k]->id && typeId == p->node_types[k]->id) by = packageIdOf(p);
+        if (by.empty() && loaded->protocol &&
+            std::find(loaded->protocol->typeIds.begin(), loaded->protocol->typeIds.end(), typeId) !=
+                loaded->protocol->typeIds.end())
+            by = loaded->protocol->scriptId;
+        return by;
+    };
+    // The protocol half: read, compiled and trial-loaded beside the built-in script nodes by the backend's trial, which
+    // also refuses a clash with them; a type another package holds is refused first, as the script half's is.
+    if (manifest->protocol) {
+        if (!protocolTrial_) return refuseHere(id, pack + " has a protocol half, and this host loads none");
+        for (const auto& typeId : manifest->protocol->nodeTypes)
+            if (const std::string by = heldBy(typeId); !by.empty())
+                return refuseHere(id, pack + " registers node type " + typeId + ", which package " + by +
+                                          " has registered already");
+        const auto source = readTextFile(candidate.dir / fs::path(manifest->halves.at("protocol")), &why);
+        if (!source) return refuseHere(id, pack + ": " + why);
+        auto half = protocolTrial_("rp." + id + ".protocol", *source, &why);
+        if (!half) return refuseHere(id, pack + ": " + why);
+        const auto& declared = manifest->protocol->nodeTypes;
+        for (const auto& t : half->typeIds)
+            if (std::find(declared.begin(), declared.end(), t) == declared.end())
+                return refuseHere(id, pack + "'s protocol half defines node type " + t +
+                                          ", which its pack.json's protocol.nodes does not declare");
+        for (const auto& t : declared)
+            if (std::find(half->typeIds.begin(), half->typeIds.end(), t) == half->typeIds.end())
+                return refuseHere(id, pack + "'s pack.json's protocol.nodes declares " + t +
+                                          ", which its protocol half does not define");
+        for (const auto& t : half->typeIds) registered.insert(t);
+        loaded->protocol = std::move(*half);
+    }
     // The script half: compiled now, then registered on the MicroQuickJS host, which loads the whole pack in a control
     // context and refuses definitions that are not its type ids. Held by the table from its registration on, loaded or
     // refused (registerPack keeps a pointer to it).
     if (manifest->script) {
         // A type the manifest names that is held already is refused before anything is compiled: a registration on the
         // MicroQuickJS host takes one of its few pack slots for the life of the process, refused or not.
-        for (const auto& typeId : manifest->script->nodeTypes) {
-            const auto it = holder.find(typeId);
-            std::string by = it != holder.end() ? it->second : std::string();
-            for (const rp_package* p : loaded->packages)
-                for (std::uint32_t k = 0; by.empty() && p && p->abi_version == RP_ABI_VERSION && p->node_types && k < p->node_type_count; ++k)
-                    if (p->node_types[k] && p->node_types[k]->id && typeId == p->node_types[k]->id) by = packageIdOf(p);
-            if (!by.empty())
+        for (const auto& typeId : manifest->script->nodeTypes)
+            if (const std::string by = heldBy(typeId); !by.empty())
                 return refuseHere(id, pack + " registers node type " + typeId + ", which package " + by +
                                           " has registered already");
-        }
         auto half = compileScriptHalf(candidate.dir, *manifest, &why);
         if (!half) return refuseHere(id, pack + ": " + why);
         ScriptHalf& held = *half;

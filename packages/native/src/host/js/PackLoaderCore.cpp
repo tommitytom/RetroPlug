@@ -56,7 +56,7 @@ JSModuleDef* loadPackHalfImpl(JSContext* ctx, const char* name, PackMetaFn setMe
     if (slash == std::string_view::npos || !table) return notFound(ctx, name);
     const packs::LoadedPack* pack = table->find(rest.substr(0, slash));
     const std::string half(rest.substr(slash + 1));
-    if (!pack || half == "native" || half == "script") return notFound(ctx, name);
+    if (!pack || half == "native" || half == "script" || half == "protocol") return notFound(ctx, name);
     const auto file = pack->manifest.halves.find(half);
     if (file == pack->manifest.halves.end()) return notFound(ctx, name);
 
@@ -138,11 +138,24 @@ JSValue packList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
                 if (kind != "native") halves.push_back(kind);
             if (halves.empty()) continue;
             const packs::PackManifest& m = pack->manifest;
+            // A protocol half's data (the TS loader commits it; the half is global code and no module): its wiring as the
+            // manifest holds it, and each node's descriptor from the table's trial.
+            std::string protocol;
+            if (m.protocol && pack->protocol) {
+                std::string roles, descriptors;
+                for (const auto& [kind, node] : m.protocol->roles)
+                    roles += std::string(roles.empty() ? "" : ",") + jsonString(kind) + ":" + jsonString(node);
+                for (std::size_t k = 0; k < pack->protocol->typeIds.size(); ++k)
+                    descriptors += std::string(k == 0 ? "" : ",") + jsonString(pack->protocol->typeIds[k]) + ":" +
+                                   pack->protocol->descriptors[k];
+                protocol = ",\"protocol\":{\"nodes\":" + m.protocol->nodesJson + ",\"roles\":{" + roles +
+                           "},\"descriptors\":{" + descriptors + "}}";
+            }
             out += std::string(first ? "" : ",") + "{\"id\":" + jsonString(m.id) + ",\"version\":" +
                    jsonString(m.version) + ",\"halves\":" + jsonList(halves) + ",\"provides\":{\"platforms\":" +
                    jsonList(m.providesPlatforms) + ",\"nodeTypes\":" + jsonList(m.providesNodeTypes) +
                    ",\"roles\":" + jsonList(m.providesRoles) + "},\"requires\":{\"packs\":" +
-                   jsonList(m.requiresPacks) + ",\"platforms\":" + jsonList(m.requiresPlatforms) + "}}";
+                   jsonList(m.requiresPacks) + ",\"platforms\":" + jsonList(m.requiresPlatforms) + "}" + protocol + "}";
             first = false;
         }
     }

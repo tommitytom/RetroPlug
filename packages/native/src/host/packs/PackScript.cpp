@@ -1,9 +1,5 @@
 #include "host/packs/PackScript.hpp"
 
-#include <fstream>
-#include <iterator>
-#include <optional>
-
 #include "host/packs/PackDirs.hpp"
 #include "script/MqjsHost.hpp"
 
@@ -11,25 +7,12 @@ namespace fs = std::filesystem;
 
 namespace rp::host::packs {
 
-namespace {
-
-std::optional<std::string> readText(const fs::path& file, std::string* why) {
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
-        if (why) *why = "cannot read " + displayPath(file);
-        return std::nullopt;
-    }
-    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-}
-
-}  // namespace
-
 std::unique_ptr<ScriptHalf> compileScriptHalf(const fs::path& dir, const PackManifest& manifest, std::string* why) {
     const ScriptSpec& spec = *manifest.script;
     const std::string& wholeFile = manifest.halves.at("script");
-    const auto whole = readText(dir / fs::path(wholeFile), why);
+    const auto whole = readTextFile(dir / fs::path(wholeFile), why);
     if (!whole) return nullptr;
-    const auto runtime = readText(dir / fs::path(spec.runtime), why);
+    const auto runtime = readTextFile(dir / fs::path(spec.runtime), why);
     if (!runtime) return nullptr;
     // The names the device-pack toolchain compiles the two bundles under (the bytecode records its file's name), so a
     // compile error names the file as the toolchain's would.

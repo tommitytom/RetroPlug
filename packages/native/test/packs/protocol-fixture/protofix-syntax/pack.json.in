@@ -1,0 +1,11 @@
+{
+  "id": "protofix-syntax", "name": "Protocol fixture (protofix-syntax)", "version": "1.0.0", "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/protocol-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.protofix-syntax.up"], "roles": [] },
+  "halves": { "protocol": "js/protocol.js" },
+  "protocol": {
+    "nodes": [{ "type": "rp.protofix-syntax.up" }],
+    "roles": {}
+  }
+}

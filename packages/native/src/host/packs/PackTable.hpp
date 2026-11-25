@@ -15,6 +15,7 @@
 #include "host/packs/FileLock.hpp"
 #include "host/packs/PackCandidate.hpp"
 #include "host/packs/PackManifest.hpp"
+#include "host/packs/PackProtocol.hpp"
 #include "host/packs/PackScript.hpp"
 
 // The packs a process has loaded (docs/downloadable-packs-loading-design.md section 2): each pack's library opened once
@@ -36,6 +37,8 @@ struct LoadedPack {
     // What rp_pack_entry returned, in its order, then its script half's package; empty with neither.
     std::vector<const rp_package*> packages;
     const ScriptHalf*              script = nullptr;  // its script half, compiled and registered; the table owns it
+    // Its protocol half, compiled and trial-loaded; every Engine loads it into its script host (Engine::syncPacks).
+    std::optional<ProtocolHalf>    protocol;
     std::vector<std::string>       packageIds;  // each package's manifest id, index for index
     void*                          library = nullptr;  // never closed
     std::shared_ptr<FileLock>      lock;  // the hold on its version folder: installed, or development in the data root
@@ -79,6 +82,9 @@ public:
     // A refusal that came before any load (an unreadable state.json, a development manifest that does not parse, a
     // folder that could not be held), so that refusals() is the one list a Settings page reads.
     void recordRefusal(PackRefusal refusal);
+    // The trial a protocol half is run through (the backend's protocolTrial): a table without one refuses every pack
+    // with a protocol half. Set before the first load; a test's table sets its own.
+    void setProtocolTrial(ProtocolTrial trial);
 
     std::size_t                    size() const;
     const LoadedPack*              find(std::string_view id) const;
@@ -97,6 +103,7 @@ private:
     mutable std::mutex                       mutex_;
     std::vector<std::unique_ptr<LoadedPack>> packs_;
     std::vector<PackRefusal>                 refusals_;
+    ProtocolTrial                            protocolTrial_;
     // Every script half this table compiled, loaded or refused: the MicroQuickJS host keeps a pointer to each one it
     // registered for the life of the process (and compares halves by address), so none is ever freed.
     std::vector<std::unique_ptr<ScriptHalf>> scripts_;
