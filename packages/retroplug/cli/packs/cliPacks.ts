@@ -1,5 +1,5 @@
-// The CLI dispatcher's packs (docs/downloadable-packs-m2c-plan.md): their cli halves, and the app and consoles halves a
-// tool's session reads.
+// The CLI dispatcher's packs (docs/downloadable-packs-m2c-plan.md): their cli halves, and the app, consoles, protocol and
+// placer halves a tool's session reads.
 import "../tools";
 import { cliToolsRegistry } from "../contributions/toolRegistries";
 import { APP_BUILDERS, loadPacks, type HalfBuilder } from "../../src/packs/loadPacks";

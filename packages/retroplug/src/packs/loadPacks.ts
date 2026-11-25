@@ -1,6 +1,6 @@
-// The protocol half is data the pack list carries (committed without an import) and the placer half is a module; the
-// render worker loads the control plane's halves (`loadAppPacks`) on a bare runtime with no timers
-// (docs/downloadable-packs-m2d-plan.md).
+// The protocol half is data the pack list carries (committed without an import) and the placer half is a module
+// (docs/downloadable-packs-m2e-plan.md); the render worker loads the control plane's halves (`loadAppPacks`) on a bare
+// runtime with no timers (docs/downloadable-packs-m2d-plan.md).
 // The pack loader (docs/downloadable-packs-m2c-plan.md): each pack's halves a context loads, imported by name, held to
 // the pack's manifest, and committed into the live registries. Every pack of a call goes in one commit; when that is
 // refused, they commit one at a time in load order, so the refused pack is named and the rest still load (all or
@@ -110,8 +110,8 @@ function placerExport(exported: unknown): GraphPlacer<unknown> {
   return p as unknown as GraphPlacer<unknown>;
 }
 
-/** The halves the control plane loads: the app's registries, the consoles', the protocol tables and the placers. The UI's and the CLI's builders add
- *  theirs (ui/packs/uiPacks.ts, cli/packs/cliPacks.ts). */
+/** The halves the control plane loads: the app's registries, the consoles', the protocol tables and the placers.
+ *  The UI's and the CLI's builders add theirs (ui/packs/uiPacks.ts, cli/packs/cliPacks.ts). */
 export const APP_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
   app: (pkg, exported) => appAdditions(pkg, objectExport("app", exported) as PackageContributions),
   consoles: (pkg, exported) => {
@@ -202,6 +202,14 @@ function checkManifest(pack: PackInfo, exported: Map<HalfKind, unknown>, platfor
     }
   } else if (pack.provides.roles.length && !pack.halves.includes("app")) {
     throw new Error(`provides.roles names ${pack.provides.roles[0]}, which no half of the pack contributes`);
+  }
+  if (exported.has("placer")) {
+    const key = objectExport("placer", exported.get("placer")).key;
+    const sections = exported.has("app") ? (objectExport("app", exported.get("app")).projectSections ?? []) : [];
+    if (!(sections as { key: string }[]).some((s) => s.key === key)) {
+      throw new Error(`its placer half places the model ${String(key)}, which its app half declares no project ` +
+        "section for");
+    }
   }
   const mine = ownPlatforms(exported);
   if (exported.has("consoles")) {
@@ -321,7 +329,7 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
   }
 }
 
-/** The control plane's packs: their app and consoles halves. */
+/** The control plane's packs: their app, consoles, protocol and placer halves. */
 export function loadAppPacks(): Promise<void> {
   return loadPacks(nativePackHost(), APP_BUILDERS);
 }

@@ -3,11 +3,12 @@
 import { test, expect } from "@retroplug/testing";
 import { loadPacks, packStatus, setLoadBudgetMs, APP_BUILDERS, type HalfBuilder } from "../../src/packs/loadPacks";
 import type { HalfKind, PackHost, PackInfo } from "../../src/packs/packHost";
-import { rolesRegistry } from "../../src/contributions/appRegistries";
+import { rolesRegistry, projectSectionsRegistry } from "../../src/contributions/appRegistries";
 import { consolesRegistry, realCartsRegistry } from "../../src/contributions/consoleRegistries";
 import { contributionsVersion } from "../../src/contributions/registry";
 import { protocolNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
 import { buildGraph, type GraphSystem } from "../../src/graph/buildGraph";
+import type { PortDesc, TypeDescriptor } from "@retroplug/core/descriptor";
 import { placersRegistry } from "../../src/contributions/placers";
 
 const role = (kind: string) => ({ kind, category: "feature", schema: { parse: () => ({}) } });
@@ -311,14 +312,15 @@ test("a runtime with no timers loads its packs with no budget", async () => {
 });
 
 /** A descriptor with these ports, as the host's trial hands one over. */
-const descriptor = (id: string, ports: { id: string; dir: "in" | "out"; kind: string }[]) =>
-  ({ id, name: id, ports, params: [], settings: { type: "object" } });
+const descriptor = (id: string, ports: PortDesc[]): TypeDescriptor =>
+  ({ id, version: "1.0.0", name: id, category: "script", requires: { heap: false, threads: false }, ports, params: [],
+     settings: { type: "object" } });
 
-const ECHO_PORTS = [{ id: "in", dir: "in" as const, kind: "events" }, { id: "midiOut", dir: "out" as const, kind: "events" }];
+const ECHO_PORTS: PortDesc[] = [{ id: "in", dir: "in", kind: "events" }, { id: "midiOut", dir: "out", kind: "events" }];
 
 /** A pack with an app half (one role, one project section), a protocol half placing the role as an echo node, and a
  *  placer half. */
-function protocolPack(id: string, over: { ports?: { id: string; dir: "in" | "out"; kind: string }[];
+function protocolPack(id: string, over: { ports?: PortDesc[];
                                           node?: Record<string, unknown>; roles?: Record<string, string> } = {}) {
   const node = over.node ?? { type: `rp.${id}.echo`, midiIn: "in", writes: [], midiOut: true };
   const type = node.type as string;
@@ -328,7 +330,7 @@ function protocolPack(id: string, over: { ports?: { id: string; dir: "in" | "out
     protocol: {
       nodes: [node],
       roles: over.roles ?? { [id]: type },
-      descriptors: { [type]: descriptor(type, over.ports ?? ECHO_PORTS) } as never,
+      descriptors: { [type]: descriptor(type, over.ports ?? ECHO_PORTS) },
     },
   });
   const modules = {
@@ -357,8 +359,8 @@ test("a pack's protocol data and placer commit with it, and buildGraph places it
   const { document } = buildGraph({ systems: [gb], routing: "stereo", shape: { kind: "multi", channels: 2 },
     midiRouting: "sendToAll", models: {} });
   expect(document.nodes.find((n) => n.id === "sys-1/lp-proto")?.type).toBe(type);
-  expect(document.wires.some((w) => w.to === "sys-1/lp-proto.in")).toBe(true);
-  expect(document.wires.some((w) => w.from === "sys-1/lp-proto.midiOut")).toBe(true);
+  expect(document.wires.filter((w) => w.to === "sys-1/lp-proto.in")).toEqual([{ from: "routing.sys-1", to: "sys-1/lp-proto.in" }]);
+  expect(document.wires.filter((w) => w.from === "sys-1/lp-proto.midiOut")).toEqual([{ from: "sys-1/lp-proto.midiOut", to: "midi-out.in1" }]);
 });
 
 test("a protocol node whose ports are not its wiring is refused, with nothing of the pack committed", async () => {
@@ -370,6 +372,8 @@ test("a protocol node whose ports are not its wiring is refused, with nothing of
     "events, and its pack.json's protocol.nodes wires in in events, midiOut out events");
   expect(protocolNodeOf("lp-ports")).toBe(undefined);
   expect(placersRegistry.items().some((p) => p.key === "lp-ports-model")).toBe(false);
+  expect(rolesRegistry.items().some((r) => r.kind === "lp-ports")).toBe(false);
+  expect(projectSectionsRegistry.items().some((x) => x.key === "lp-ports-model")).toBe(false);
 });
 
 test("a protocol node another package declares, or one with a label, is refused", async () => {
@@ -382,6 +386,11 @@ test("a protocol node another package declares, or one with a label, is refused"
   expect(refused["lp-dup"]).toBe("two packages declare the script node rp.mgb.midi: mgb and lp-dup");
   expect(refused["lp-label"]).toBe('lp-label: the node rp.lp-label.echo has a "label": a span label is the host\'s ' +
     "to give, at load");
+  for (const id of ["lp-dup", "lp-label"]) {
+    expect(rolesRegistry.items().some((r) => r.kind === id)).toBe(false);
+    expect(projectSectionsRegistry.items().some((x) => x.key === `${id}-model`)).toBe(false);
+    expect(placersRegistry.items().some((x) => x.key === `${id}-model`)).toBe(false);
+  }
 });
 
 test("a placer half that is not a placer is refused", async () => {
@@ -391,4 +400,22 @@ test("a placer half that is not a placer is refused", async () => {
   await loadPacks(host, APP_BUILDERS);
   expect(refused["lp-noplacer"]).toBe("its placer half's default export is not a graph placer (a key and a place " +
     "function)");
+});
+
+test("a protocol node whose descriptor lists no ports is refused by name", async () => {
+  const { info, modules } = protocolPack("lp-noports");
+  (info.protocol!.descriptors as Record<string, unknown>)["rp.lp-noports.echo"] = { id: "rp.lp-noports.echo" };
+  const { host, refused } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused["lp-noports"]).toBe("its protocol node rp.lp-noports.echo's descriptor has no ports list");
+});
+
+test("a placer for a model its app half declares no project section for is refused", async () => {
+  const { info, modules } = protocolPack("lp-nosection");
+  (modules["lp-nosection"] as { app: { projectSections: unknown[] } }).app.projectSections = [];
+  const { host, refused } = fakeHost([info], modules);
+  await loadPacks(host, APP_BUILDERS);
+  expect(refused["lp-nosection"]).toBe("its placer half places the model lp-nosection-model, which its app half " +
+    "declares no project section for");
+  expect(placersRegistry.items().some((x) => x.key === "lp-nosection-model")).toBe(false);
 });
