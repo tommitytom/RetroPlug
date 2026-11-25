@@ -231,7 +231,9 @@ test("a protocol module importing another package, or a kinds member, is refused
     '  roles: [] }, halves: {} }));',
     'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
     '  const out = {};',
-    '  for (const [name, extra] of [["foreign", {}], ["kinds", { kinds: { controllerApps: [] } }]]) {',
+    '  for (const [name, extra] of [["foreign", {}], ["kinds", { kinds: { controllerApps: [] } }], ["zod", {}], ["subpath", {}]]) {',
+    '    if (name === "zod") fs.writeFileSync(path.join(pkg, "ts/nodes.ts"), "import { z } from \\"zod\\";\\nexport default [z];\\n");',
+    '    if (name === "subpath") fs.writeFileSync(path.join(pkg, "ts/nodes.ts"), "import { x } from \\"@retroplug/core/nope\\";\\nexport default [x];\\n");',
     '    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify(manifest(extra)));',
     '    try { await m.buildPackHalves({ packageDir: pkg, outDir: path.join(work, name), template }); out[name] = "built"; }',
     '    catch (e) { out[name] = e.message; }',
@@ -245,5 +247,8 @@ test("a protocol module importing another package, or a kinds member, is refused
   const got = JSON.parse(r.out);
   expect(got.foreign.includes("imports @retroplug/sameboy/cartridge: a protocol half bundles @retroplug/core alone"),
     got.foreign).toBe(true);
+  expect(got.zod.includes("imports zod: a protocol half's nodes run in the script contexts, which carry no schema library"),
+    got.zod).toBe(true);
+  expect(got.subpath.includes("@retroplug/core/nope is not a module @retroplug/core exports"), got.subpath).toBe(true);
   expect(got.kinds).toBe("retroplug.protocol.kinds: a pack cannot contribute to a contribution kind yet");
 });

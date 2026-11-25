@@ -93,9 +93,14 @@ function protocolImports() {
   return {
     name: "protocol-imports",
     setup(build) {
+      build.onResolve({ filter: /^zod(\/|$)/ }, (args) => ({ errors: [{ text: `${args.importer} imports ${args.path}: ` +
+        "a protocol half's nodes run in the script contexts, which carry no schema library" }] }));
       build.onResolve({ filter: /^@retroplug\// }, (args) => {
         const m = /^@retroplug\/core(?:\/(.+))?$/.exec(args.path);
         const target = m ? exportsMap[m[1] ? `./${m[1]}` : "."] : undefined;
+        if (m && typeof target !== "string") {
+          return { errors: [{ text: `${args.importer} imports ${args.path}: ${args.path} is not a module @retroplug/core exports` }] };
+        }
         if (typeof target !== "string") {
           return { errors: [{ text: `${args.importer} imports ${args.path}: a protocol half bundles @retroplug/core ` +
             "alone (its nodes run in the script contexts, which hold no other RetroPlug module)" }] };
@@ -127,7 +132,7 @@ async function buildProtocolHalf({ packageDir, outDir, pack, protocol }) {
     'import { registerScriptNodes } from "@retroplug/core/register";',
     `const ORDER = ${JSON.stringify(types)};`,
     "const ids = nodes.map((n) => n.id);",
-    "if (ids.length !== ORDER.length || ids.some((id) => ORDER.indexOf(id) < 0)) {",
+    "if (new Set(ids).size !== ids.length || ids.length !== ORDER.length || ids.some((id) => ORDER.indexOf(id) < 0)) {",
     '  throw new Error("the protocol module defines " + ids.join(", ") + ", and the manifest declares " + ORDER.join(", "));',
     "}",
     "registerScriptNodes(nodes.slice().sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id)));",
