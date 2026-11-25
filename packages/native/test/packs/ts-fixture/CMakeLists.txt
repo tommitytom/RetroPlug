@@ -87,7 +87,8 @@ add_custom_command(
             ${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/graph/rp_pack.h
             ${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/lib/contracts.mjs
             ${CMAKE_SOURCE_DIR}/packages/retroplug/host-modules.json
-            # the kinds half resolves the declaring package's runtime through its exports map
+            # the tool reads each package's declared kind runtime modules (launchpad's controllerApps) to refuse bundling
+            # them; this fixture value-imports no @retroplug module
             ${CMAKE_SOURCE_DIR}/packages/launchpad/package.json
     COMMENT "Building the TS kinds fixture pack"
     VERBATIM)

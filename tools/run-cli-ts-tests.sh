@@ -771,8 +771,11 @@ contains "packs: a protocol half with no protocol member is refused" "$TMP/packs
 contains "packs: a protocol node whose ports are not its wiring is refused in TS" "$TMP/packs-help.err" \
 	"[packs] pack tsfix-proto-ports is refused: its protocol node rp.tsfix-proto-ports.echo has the ports"
 contains "packs: a kinds half claiming a built-in app is refused natively" "$TMP/packs-help.err" \
-	"[packs] pack kindfix-taken: its kinds half did not run beside the built-in script nodes: chunk 3: Error: a pack's kinds half registers the controllerApps item lsdj-midimap, which this product's lsdj-launchpad holds"
+	"[packs] pack kindfix-taken: its kinds half did not run beside the built-in script nodes"
+contains "packs: ...and the refusal names the built-in app and its holder" "$TMP/packs-help.err" \
+	"the controllerApps item lsdj-midimap, which this product's lsdj-launchpad holds"
 absent "packs: the kinds fixture pack is refused nowhere" "$TMP/packs-help.err" "pack tsfix-kind"
+absent "packs: ...and its folder was found" "$TMP/packs-help.err" "tsfix-kind/1.0.0"
 RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" tsfix-hello >"$TMP/packs-run.out" 2>/dev/null
 check "packs: a pack's tool runs" 0 $?
 contains "packs: the tool's output" "$TMP/packs-run.out" "hello from the ts fixture pack"

@@ -271,7 +271,7 @@ add_dependencies(retroplug-packs-test ${_rp_packfixture_targets})
 # The device-pack toolchain's own outputs, whose ES5 bundles PackScript.test.cpp compiles.
 add_dependencies(retroplug-packs-test retroplug-devtest-script-pack retroplug-bliptoaster-script-pack)
 add_dependencies(retroplug-packs-test retroplug-script-fixture-packs)
-# tsfix-proto, built from its package by tools/build-pack-halves.mjs
+# tsfix-proto and tsfix-kind, built from their packages by tools/build-pack-halves.mjs
 add_dependencies(retroplug-packs-test retroplug-ts-fixture-packs)
 if(TARGET retroplug-mesen-pack)  # absent on a platform with no pack folder (cmake/packs.cmake)
     add_dependencies(retroplug-packs-test retroplug-mesen-pack)

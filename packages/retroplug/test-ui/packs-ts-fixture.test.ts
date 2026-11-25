@@ -56,12 +56,14 @@ test("the kinds fixture pack's controller app is offered by the Launchpad menu's
   ui.pump(8);
   expect(navTo("App")).toBeTruthy();
   const seen: string[] = [];
-  for (let i = 0; i < 4; i++) {
-    seen.push(ui.findByTextContaining("App")?.text ?? "");
+  for (let i = 0; i < 32; i++) {
+    const label = ui.findByTextContaining("App")?.text ?? "";
+    if (seen.length > 0 && label === seen[0]) break;
+    seen.push(label);
     ui.tapKey(Key.Right);
     ui.pump(4);
   }
-  // The cycler wraps: the pack's app is the built-in one's neighbour, and the built-in one is still offered.
+  // The cycler wraps through every app, the pack's beside the built-in ones.
   expect(seen.includes("App: TS Fixture App")).toBeTruthy();
   expect(seen.includes("App: LSDj MI.MAP")).toBeTruthy();
 });
