@@ -269,6 +269,276 @@
    "total": 2
   }
  },
+ "native-packs": {
+  "app-construct-edit": {
+   "skipped": 1,
+   "total": 8
+  },
+  "app-cores": {
+   "skipped": 1,
+   "total": 5
+  },
+  "app-lsdj-seed": {
+   "skipped": 1,
+   "total": 1
+  },
+  "app-play-lsdj": {
+   "skipped": 1,
+   "total": 1
+  },
+  "app-song-recents": {
+   "skipped": 1,
+   "total": 1
+  },
+  "app-unsaved-changes": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-bench": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-lsdj-midisync": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-risa-sync": {
+   "skipped": 2,
+   "total": 2
+  },
+  "dsp-risa-sync-grid": {
+   "skipped": 1,
+   "total": 1
+  },
+  "dsp-risa-sync-locate": {
+   "skipped": 2,
+   "total": 2
+  },
+  "dsp-threaded": {
+   "skipped": 1,
+   "total": 1
+  },
+  "engine-run": {
+   "skipped": 1,
+   "total": 13
+  },
+  "lsdj-arduinoboy-slave": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-capture-settings": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-codec-corpus": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-drift-detect": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-keyboardmidi": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-launchpad": {
+   "skipped": 3,
+   "total": 5
+  },
+  "lsdj-launchpad-role": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-legacy-offsets": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-mastersync": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-midimap": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-midiout": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-midiout-48k": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-midiout-96k": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-old-drift": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-passthrough": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-playback-differential": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-playback-probe": {
+   "skipped": 10,
+   "total": 10
+  },
+  "lsdj-rom": {
+   "skipped": 8,
+   "total": 11
+  },
+  "lsdj-runtime": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-sync-negative": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-sync-pattern": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-wram-seam": {
+   "skipped": 2,
+   "total": 2
+  },
+  "lsdj-wram-spike": {
+   "skipped": 1,
+   "total": 1
+  },
+  "mesen-state-ceiling": {
+   "skipped": 1,
+   "total": 2
+  },
+  "nes-bench": {
+   "skipped": 1,
+   "total": 1
+  },
+  "parity/blocks-tiny-lsdj": {
+   "skipped": 9,
+   "total": 10
+  },
+  "parity/blocks-tiny-lsdj-master": {
+   "skipped": 6,
+   "total": 7
+  },
+  "parity/blocks-tiny-risa": {
+   "skipped": 3,
+   "total": 4
+  },
+  "parity/controller": {
+   "skipped": 1,
+   "total": 2
+  },
+  "parity/gba": {
+   "skipped": 2,
+   "total": 3
+  },
+  "parity/lsdj-link": {
+   "skipped": 6,
+   "total": 7
+  },
+  "parity/lsdj-modes": {
+   "skipped": 8,
+   "total": 9
+  },
+  "parity/lsdj-sync": {
+   "skipped": 8,
+   "total": 9
+  },
+  "parity/render-blocks": {
+   "skipped": 1,
+   "total": 8
+  },
+  "parity/risa": {
+   "skipped": 2,
+   "total": 3
+  },
+  "render-baseline": {
+   "skipped": 3,
+   "total": 5
+  },
+  "render-chunks": {
+   "skipped": 3,
+   "total": 5
+  },
+  "render-cli": {
+   "skipped": 1,
+   "total": 6
+  },
+  "risa-220-layout": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-230-layout": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-kit": {
+   "skipped": 2,
+   "total": 4
+  },
+  "risa-load": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-m0-spike": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-render": {
+   "skipped": 6,
+   "total": 6
+  },
+  "risa-render-hff": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-render-region": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-rom": {
+   "skipped": 2,
+   "total": 2
+  },
+  "risa-rom-cli": {
+   "skipped": 5,
+   "total": 5
+  },
+  "risa-runtime": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-songs": {
+   "skipped": 1,
+   "total": 1
+  },
+  "sameboy-state-model-switch": {
+   "skipped": 3,
+   "total": 3
+  },
+  "song-guard-e2e": {
+   "skipped": 1,
+   "total": 1
+  },
+  "sram-continuous": {
+   "skipped": 1,
+   "total": 1
+  },
+  "tracker-working-dirty": {
+   "skipped": 2,
+   "total": 2
+  }
+ },
  "ts": {
   "lsdj/ui-views": {
    "skipped": 1,
@@ -276,6 +546,40 @@
   }
  },
  "ui": {
+  "action-typing": {
+   "skipped": 1,
+   "total": 1
+  },
+  "hd-view-closes": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-hd": {
+   "skipped": 1,
+   "total": 1
+  },
+  "lsdj-overlay": {
+   "skipped": 1,
+   "total": 1
+  },
+  "overlay-actions": {
+   "skipped": 1,
+   "total": 1
+  },
+  "overlay-click-through": {
+   "skipped": 1,
+   "total": 1
+  },
+  "overlay-survives-menu": {
+   "skipped": 1,
+   "total": 1
+  },
+  "risa-overlay": {
+   "skipped": 1,
+   "total": 1
+  }
+ },
+ "ui-packs": {
   "action-typing": {
    "skipped": 1,
    "total": 1
