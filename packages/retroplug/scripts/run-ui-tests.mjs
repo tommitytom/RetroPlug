@@ -12,7 +12,7 @@
 import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync, copyFileSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve, relative } from "node:path";
+import { dirname, join, resolve, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { build } from "esbuild";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
@@ -112,6 +112,33 @@ const SEP = process.platform === "win32" ? ";" : ":";
 const packPath = (slug) =>
   [...(PACKS ? [MESEN_PACK] : []), ...(PACK_TESTS[slug] ?? []).map(fixtureFolder)].join(SEP);
 
+const SHELL_SRC = join(PKG, "src");
+
+/** Whether `file`'s pack-mode bundle carries any module of the shell's own src/: a metafile-only build (nothing
+ *  written) with the pack mode's externals and product tree, and no prelude. */
+async function reachesShellSrc(file) {
+  const result = await build({
+    entryPoints: [file],
+    bundle: true,
+    write: false,
+    metafile: true,
+    format: "esm",
+    platform: "neutral",
+    mainFields: ["module", "main"],
+    target: "es2022",
+    outfile: join(OUT_DIR, "metafile-probe.js"),
+    alias: { "ui-harness": UI_HARNESS },
+    define: { "process.env.NODE_ENV": '"production"' },
+    external: setContracts("app"),
+    plugins: [productGenerated({ dir: PRODUCT_TREE })],
+    logLevel: "silent",
+  });
+  return Object.keys(result.metafile.inputs).some((input) => {
+    const abs = resolve(process.cwd(), input);  // a metafile key is relative to the working dir (esbuild's default)
+    return abs === SHELL_SRC || abs.startsWith(SHELL_SRC + sep);
+  });
+}
+
 async function runOne({ file, slug }) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
@@ -146,11 +173,17 @@ async function runOne({ file, slug }) {
   }
 
   try {
+    // Only a file whose bundle reaches the shell's own src/ (its stores, and so a copy of the registries of its own)
+    // needs the prelude: the UI bundle loads the packs into the UI's registries itself (ui/main.tsx's loadUiPacks). For
+    // any other file the prelude would bring a second copy of the shell and its packages' modules into the UI's context,
+    // whose global hooks then stand in for the fakes a device test installs (audio-driver, midi-settings and game-input
+    // failed so). A metafile pass without it says which.
+    const needsPrelude = PACKS && (await reachesShellSrc(file));
     // esbuild refuses entryPoints beside stdin, so the pack mode's options are built apart from the desktop's.
     const entry = PACKS
       ? {
           stdin: {
-            contents: `import ${JSON.stringify(PRELUDE.replaceAll("\\", "/"))};\nimport ${JSON.stringify(file.replaceAll("\\", "/"))};\n`,
+            contents: `${needsPrelude ? `import ${JSON.stringify(PRELUDE.replaceAll("\\", "/"))};\n` : ""}import ${JSON.stringify(file.replaceAll("\\", "/"))};\n`,
             resolveDir: dirname(file),
             sourcefile: `${slug}.packs-entry.js`,
             loader: "js",
