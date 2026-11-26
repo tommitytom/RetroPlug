@@ -31,6 +31,7 @@
 using rp::host::packs::PackTable;
 using rp::host::test::DocSystem;
 
+#if RP_HEAP_OWN_RUNTIME
 namespace {
 
 constexpr double        kRate = 48000.0;
@@ -75,6 +76,7 @@ std::string res(const char* member, std::uint32_t id) {
 const char* const kLongRomName = R"("romName":"a ROM name longer than any short-string buffer holds")";
 
 }  // namespace
+#endif
 
 TEST_CASE("the heap test's counts are live: a block freed by the side that did not allocate it is counted",
           "[packs-heap]") {
@@ -92,20 +94,23 @@ TEST_CASE("the heap test's counts are live: a block freed by the side that did n
     REQUIRE(pack.release != nullptr);
 
     const auto hostBefore = rp::test::heap::hostViolations();
+    const auto hostBlocksBefore = rp::test::heap::hostBlocks();
     void*      packBlock = pack.allocate(64);
     REQUIRE(packBlock != nullptr);
     ::operator delete(packBlock);  // the host deleting the pack's block
     CHECK(rp::test::heap::hostViolations() == hostBefore + 1);
 
     const auto packBefore = pack.violations();
-    pack.release(::operator new(64));  // the pack deleting the host's block
+    void* hostBlock = ::operator new(64);
+    CHECK(rp::test::heap::hostBlocks() > hostBlocksBefore);  // the host's operator new is the tagged one
+    pack.release(hostBlock);  // the pack deleting the host's block
     CHECK(pack.violations() == packBefore + 1);
 #endif
 }
 
 TEST_CASE("no heap block crosses the boundary: a Mesen pack with a heap of its own is built, run, read, debugged "
           "and destroyed",
-          "[packs-heap][!shouldfail]") {
+          "[packs-heap]") {
 #if !RP_HEAP_OWN_RUNTIME
     SKIP("no pack with a heap of its own on this platform (packages/native/cmake/tests.cmake)");
 #else
@@ -115,6 +120,7 @@ TEST_CASE("no heap block crosses the boundary: a Mesen pack with a heap of its o
     REQUIRE(load);
     const PackHooks pack = hooksOf(load.pack->library);
     REQUIRE(pack.violations != nullptr);
+    REQUIRE(pack.blocks != nullptr);
     const auto hostBefore = rp::test::heap::hostViolations();
     const auto packBefore = pack.violations();
     const auto packBlocksBefore = pack.blocks();
@@ -152,7 +158,7 @@ TEST_CASE("no heap block crosses the boundary: a Mesen pack with a heap of its o
         rp::host::JobRequest title;
         title.nodeId = "sys-3";
         title.capability = RP_SYSTEM_ROM_INTERFACE;
-        title.op = "title";
+        title.op = "title";  // a title fits any short-string buffer, so this count cannot see it; the contract scan holds it
         CHECK(e.submitJob(title).id != 0);
         (void)e.drainJobs();
 
@@ -222,7 +228,9 @@ TEST_CASE("no heap block crosses the boundary: a Mesen pack with a heap of its o
     const auto packCrossed = pack.violations() - packBefore;
     INFO("the host freed " << hostCrossed << " of the pack's blocks; the pack freed " << packCrossed
                            << " of the host's (break on crossed() in HostHeap.cpp / PackHeap.cpp to see where)");
-    CHECK(hostCrossed == 0);
-    CHECK(packCrossed == 0);
+    // Today's boundary crosses (the claim's savestate and battery vectors, the stream layout, the debug service's
+    // containers, the build request's by-value members); docs/downloadable-packs-m5a-plan.md Task 6 makes this
+    // `hostCrossed == 0` and `packCrossed == 0`.
+    CHECK(hostCrossed + packCrossed > 0);
 #endif
 }

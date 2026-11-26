@@ -27,6 +27,7 @@ static_assert(sizeof(Header) == 16, "the header keeps a block 16-byte aligned");
 // A block of `size` bytes aligned to `align` (at least 16), tagged `tag`; null when malloc has none.
 inline void* allocateTagged(std::size_t size, std::size_t align, std::uint64_t tag) noexcept {
     if (align < sizeof(Header)) align = sizeof(Header);
+    if (size > SIZE_MAX - align - sizeof(Header)) return nullptr;
     void* raw = std::malloc(size + align + sizeof(Header));
     if (raw == nullptr) return nullptr;
     std::uintptr_t at = reinterpret_cast<std::uintptr_t>(raw) + sizeof(Header);
