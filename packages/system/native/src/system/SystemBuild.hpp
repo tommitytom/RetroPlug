@@ -28,8 +28,8 @@ struct SystemBuildRequest;
 
 // `id` is the system the core is built under, `request` what to build it from (its `config` is the console's, which
 // only this function reads), `sampleRate` the rate the plan runs at, and `why` receives a refusal's reason
-// (refuseBuild). Returns an already-onActivate'd core, or null: for a ROM the console's gate refuses, a boot the core refuses, or a request that
-// carried no config (the node passes the one its settings made, so a config of the wrong console's is a bug no build
+// (refuseBuild). Returns an already-onActivate'd core, or null: for a ROM the console's gate refuses, a boot the core
+// refuses, or a request that carried no config (the node passes the one its settings made, so a config of the wrong console's is a bug no build
 // function can see through the void pointer). The core is the caller's, deleted through SystemBase's virtual
 // destructor, whose deleting form is this module's: the one object that crosses the boundary, with its deleter.
 using SystemBuildFn = std::unique_ptr<SystemBase> (*)(SystemId id, const SystemBuildRequest& request,
@@ -40,8 +40,8 @@ struct SystemBuildRequest {
     std::span<const std::uint8_t> rom;
     std::span<const std::uint8_t> sram;       // battery RAM seed (may be empty)
     std::span<const std::uint8_t> savestate;  // savestate seed (may be empty)
-    // The ROM's file stem (a view of the node's setting). A Master System or Game Gear core stages its ROM as a file and takes its battery stem from
-    // that name, and now that its ROM is bytes it has nothing else to name the file by; empty keeps the core's "rom".
+    // The ROM's file stem (a view of the node's setting). A Master System or Game Gear core stages its ROM as a file and
+    // takes its battery stem from that name, and now that its ROM is bytes it has nothing else to name the file by; empty keeps the core's "rom".
     std::string_view romName;
     // The largest block the plan this core is built for will run, in frames; 0 for a build outside a plan (a test, a
     // tool), which then keeps the console's default. It is reserved before the core activates, so its audio ring and

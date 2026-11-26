@@ -2554,7 +2554,7 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
             SystemBuildRequest request;
             request.rom = boot.rom;
             const auto t0 = Clock::now();
-            std::unique_ptr<SystemBase> core = boot.build(std::move(request));
+            std::unique_ptr<SystemBase> core = boot.build(request);
             built.push_back(micros(t0));
             REQUIRE(core);
         }
@@ -3636,7 +3636,6 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
         REQUIRE(twin != nullptr);
         Lanes twinLanes(2);
         const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
-        request.rom = rom;
         auto core = build(request);
         REQUIRE(core != nullptr);
         Lanes lanes(2);

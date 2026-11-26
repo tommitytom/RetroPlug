@@ -1,6 +1,8 @@
 #include "system/mesen/MesenBackend.hpp"
 
+#include <span>
 #include <string>
+#include <vector>
 
 #include "system/mesen/RomFormat.hpp"
 #include "system/SystemBase.hpp"

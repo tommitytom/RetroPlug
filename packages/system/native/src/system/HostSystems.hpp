@@ -36,9 +36,11 @@ struct HostSystems {
     // The request is the node's, read for the call (SystemBuild.hpp).
     //
     // /3: the request is views and passed by pointer, where /2 passed a request of vectors by value, which a pack's
-    // node and the host freed on each other's heaps (docs/downloadable-packs-m5a-plan.md). /2: the request carries a build function and an opaque config pointer where /1 carried a SystemConfig variant, so
-    // the host no longer picks a backend by the alternative it held. A node built against /1 would read the config as a
-    // variant, which is why the id moved; every consumer is in tree (the system nodes, the tests' rigs).
+    // node and the host freed on each other's heaps (docs/downloadable-packs-m5a-plan.md).
+    //
+    // /2: the request carries a build function and an opaque config pointer where /1 carried a SystemConfig variant,
+    // so the host no longer picks a backend by the alternative it held. A node built against /1 would read the config
+    // as a variant, which is why the id moved; every consumer is in tree (the system nodes, the tests' rigs).
     SystemBase* (*build)(void* ctx, std::uint64_t system, const SystemBuildRequest* request, rp_error* err);
     // The node is giving up a core it built: release its snapshot slot, leave the live cores and delete it.
     void (*destroy)(void* ctx, SystemBase* core);

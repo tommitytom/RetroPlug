@@ -168,7 +168,11 @@ struct NodeRig {
                           static_cast<unsigned long long>(id));
             return nullptr;
         }
-        if (request == nullptr || !request->build) {
+        if (request == nullptr) {
+            std::snprintf(err->message, sizeof err->message, "the build names no request (rp.host.systems/3)");
+            return nullptr;
+        }
+        if (!request->build) {
             std::snprintf(err->message, sizeof err->message, "the request names no build function (rp.host.systems/3)");
             return nullptr;
         }

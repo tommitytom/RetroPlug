@@ -430,7 +430,8 @@ SystemBase* Engine::buildSystem(std::uint64_t system, const SystemBuildRequest& 
     rp_error buildErr{};
     std::unique_ptr<SystemBase> core = build(id, request, sampleRate_, &buildErr);
     if (!core) {
-        if (why) *why = buildErr.message[0] != '\0' ? std::string(buildErr.message) : std::string("the core did not build");
+        if (why)
+            *why = buildErr.message[0] != '\0' ? std::string(buildErr.message) : std::string("the core did not build");
         return nullptr;
     }
     // The slot is claimed after the build, not before, because the claim seeds the slot from the core: a GBA pays its

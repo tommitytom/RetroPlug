@@ -274,8 +274,9 @@ struct SystemNode {
         return true;
     }
 
-    // Build the core the settings name, through rp.host.systems/3, with views of the bytes this instance's resources pinned, the
-    // config its settings made, the plan's largest block and the build function its package carries: the build applies
+    // Build the core the settings name, through rp.host.systems/3, with views of the bytes this instance's resources
+    // pinned, the config its settings made, the plan's largest block and the build function its package carries: the
+    // build applies
     // the config and reserves that block before onActivate, and boots and restores the seeds there, so a non-default
     // model never restarts the core it just restored. A failure throws its reason, which rp::detail::activateFn reports
     // and the planner shows as activate-failed on this node. `config` is what `Self::config` made, and `Self::kBuild`

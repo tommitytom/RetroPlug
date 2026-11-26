@@ -4,14 +4,14 @@
 
 // The Game Boy's build function (docs/modular-graph-phase-f2-design.md section 3): what rp.sameboy.gb's request carries
 // and rp.host.systems/3 runs, so the host that builds the core names no console. It reads a SameBoyConfig from the
-// request's `config`, which only it does: the node that made the settings passed it, and the host moved it here opaque.
+// request's `config`, which only it does: the node that made the settings passed it, and the host passed it here opaque.
 //
-// SameBoy-only: a ROM that is another console's, or nothing at all, is rejected (nullptr, with the reason in *why). The
+// SameBoy-only: a ROM that is another console's, or nothing at all, is rejected (nullptr, with the reason in why's message). The
 // embedded mGB is not: it carries a cart's logo, so it passes the gate like any other cartridge.
 namespace rp::sameboy {
 
 // The ROM gate, the seeds into the config BEFORE construct (so a live core restores them inside onActivate, the
-// savestate last), onActivate, then enableStateSnapshot. The config and the request's bytes are consumed.
+// savestate last), onActivate, then enableStateSnapshot. The config and the request's bytes are copied (the request's bytes are the node's).
 std::unique_ptr<SystemBase> buildCore(SystemId id, const SystemBuildRequest& request, double sampleRate,
                                       rp_error* why);
 
