@@ -154,7 +154,7 @@ interface ToolRun {
 }
 
 test("a package's device script pack becomes the pack's script half: the two ES5 bundles and the script member", async () => {
-  const run = await runNode(toolScript("packages/native/test/packs/script-fixture/bliptoaster.pack.json", "script"));
+  const run = await runNode(toolScript("packages/bliptoaster/pack.json", "script"));
   if (run.status !== 0) throw new Error(run.err);
   const rec = JSON.parse(run.out) as ToolRun;
   expect(rec.status, rec.stderr).toBe(0);

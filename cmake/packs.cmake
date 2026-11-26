@@ -113,6 +113,8 @@ endfunction()
 # TS_HALVES builds the package's TS halves into the folder with tools/build-pack-halves.mjs, which then writes the
 # folder's pack.json from the stamped template (the folder's one writer of it, so configure writes none); the module
 # target depends on that build, with a depfile from the esbuild metafiles so editing a bundled source rebuilds it.
+# TS_HALVES also ships a package's device script pack (retroplug.script) as the script half, copied from its toolchain
+# output; NO_LIBRARY with TS_HALVES is a pack with no native half, whose folder the halves build alone writes.
 function(retroplug_pack_module target)
     cmake_parse_arguments(M "NO_ENTRY;THROWING_ENTRY;NO_LIBRARY" "MANIFEST;API_LEVEL;ENTRY_API_LEVEL;TS_HALVES"
                           "LIBS;SOURCES;DEFINES;ENTRIES;EXPORTS" ${ARGN})
@@ -137,6 +139,10 @@ function(retroplug_pack_module target)
         set(M_ENTRY_API_LEVEL ${M_API_LEVEL})
     endif()
     string(JSON _json SET "${_json}" apiLevel ${M_API_LEVEL})
+    # The work files (the stamped template, the halves' depfile, the entry, the export list) live apart from the packs'
+    # folder: a pack declared from the root has this directory's binary dir for its own, which is build/packs/ itself,
+    # the development packs' folder.
+    set(_work "${CMAKE_CURRENT_BINARY_DIR}/pack-work")
     set(_dir "${RP_PACKS_DIR}/${_id}/${_version}")
     get_property(_staged GLOBAL PROPERTY RP_PACK_STAGED)
     if("${_id}/${_version}" IN_LIST _staged)
@@ -145,10 +151,10 @@ function(retroplug_pack_module target)
     set_property(GLOBAL APPEND PROPERTY RP_PACK_STAGED "${_id}/${_version}")
     # Written at configure, and copied only when its content changed, so a pack's folder exists before anything builds
     # and a reconfigure leaves an unchanged manifest's timestamp alone.
-    file(MAKE_DIRECTORY "${_dir}")
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.pack.json" "${_json}\n")
+    file(MAKE_DIRECTORY "${_dir}" "${_work}")
+    file(WRITE "${_work}/${target}.pack.json" "${_json}\n")
     if(NOT M_TS_HALVES)
-        file(COPY_FILE "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.pack.json" "${_dir}/pack.json" ONLY_IF_DIFFERENT)
+        file(COPY_FILE "${_work}/${target}.pack.json" "${_dir}/pack.json" ONLY_IF_DIFFERENT)
     endif()
     if(M_TS_HALVES AND RP_PACK_PLATFORM)
         file(READ "${M_TS_HALVES}/package.json" _pkg)
@@ -160,18 +166,45 @@ function(retroplug_pack_module target)
             endif()
         endforeach()
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${M_TS_HALVES}/package.json")
-        set(_depfile "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}-halves.d")
+        # A device script pack (retroplug.script) is the script half: the package's own toolchain output
+        # (retroplug_device_script_pack, build/packages/<package>/script), copied in with --script-from, so the pack's
+        # bundles are the bytes the static build compiles. That target runs on every build and rewrites a file only when
+        # its bytes change, so depending on its files copies them again exactly when they move.
+        set(_script_args "")
+        set(_script_deps "")
+        string(JSON _script ERROR_VARIABLE _err GET "${_pkg}" retroplug script)
+        if(NOT _err)
+            get_filename_component(_pkgname "${M_TS_HALVES}" NAME)
+            if(NOT _id STREQUAL _pkgname)
+                message(FATAL_ERROR "retroplug_pack_module(${target}): the script half is ${_pkgname}'s own script "
+                                    "pack, which the toolchain names after the package, so the pack's id must be "
+                                    "${_pkgname}, not ${_id}")
+            endif()
+            if(NOT TARGET retroplug-${_pkgname}-script-pack)
+                message(FATAL_ERROR "retroplug_pack_module(${target}): ${_pkgname} declares retroplug.script, and "
+                                    "retroplug-${_pkgname}-script-pack is not defined: retroplug_package(${_pkgname}) "
+                                    "must come first")
+            endif()
+            set(_from "${CMAKE_BINARY_DIR}/packages/${_pkgname}/script")
+            set(_script_args --script-from "${_from}")
+            set(_script_deps retroplug-${_pkgname}-script-pack "${_from}/${_pkgname}.js"
+                             "${_from}/${_pkgname}.device.js" "${_from}/${_pkgname}.types.json")
+            list(APPEND _halves_out "${_dir}/js/script.js" "${_dir}/js/script.device.js")
+        endif()
+        set(_depfile "${_work}/${target}-halves.d")
         add_custom_command(
             OUTPUT ${_halves_out}
             COMMAND ${NODE_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs" "${M_TS_HALVES}" "${_dir}"
-                    "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.pack.json" --depfile "${_depfile}"
+                    "${_work}/${target}.pack.json" --depfile "${_depfile}"
+                    ${_script_args}
             DEPFILE "${_depfile}"
             DEPENDS "${CMAKE_SOURCE_DIR}/tools/build-pack-halves.mjs"
-                    "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.pack.json"
+                    "${_work}/${target}.pack.json"
                     "${M_TS_HALVES}/package.json"
                     "${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/lib/contracts.mjs"
                     "${CMAKE_SOURCE_DIR}/packages/retroplug/host-modules.json"
                     "${_rp_pack_header}"
+                    ${_script_deps}
             COMMENT "Building ${target}'s TS halves into ${_dir}"
             VERBATIM)
         add_custom_target(${target}-halves DEPENDS ${_halves_out})
@@ -222,7 +255,7 @@ function(retroplug_pack_module target)
         set(_body "    static const rp_package* const packages[] = {\n${_calls}    };\n")
         string(APPEND _body "    *count = ${_count};\n    return packages;\n")
     endif()
-    set(_entry "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}-entry.cpp")
+    set(_entry "${_work}/${target}-entry.cpp")
     file(GENERATE OUTPUT "${_entry}" CONTENT
 "// Generated by retroplug_pack_module(${target}) in cmake/packs.cmake from ${M_MANIFEST}. Do not edit.
 
@@ -266,14 +299,14 @@ ${_body}}
         VISIBILITY_INLINES_HIDDEN ON)
     set(_exported "${_name}" ${M_EXPORTS})
     if(APPLE)
-        set(_exports "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.exports")
+        set(_exports "${_work}/${target}.exports")
         list(TRANSFORM _exported PREPEND "_" OUTPUT_VARIABLE _apple)
         list(JOIN _apple "\n" _apple)
         file(CONFIGURE OUTPUT "${_exports}" CONTENT "${_apple}\n")
         target_link_options(${target} PRIVATE "LINKER:-exported_symbols_list,${_exports}")
         set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${_exports}")
     elseif(NOT WIN32)
-        set(_script "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.map")
+        set(_script "${_work}/${target}.map")
         list(JOIN _exported "; " _globals)
         file(CONFIGURE OUTPUT "${_script}" CONTENT "{ global: ${_globals}; local: *; };\n")
         target_link_options(${target} PRIVATE "LINKER:--version-script=${_script}" "LINKER:--no-undefined")
@@ -290,9 +323,10 @@ endfunction()
 # from its manifest's desktop targets and entries (the same ones a product links), its pack.json template MANIFEST
 # (packages/<package>/pack.json by default); a valueless TS_HALVES also builds the package's TS halves into the folder
 # (retroplug_pack_module's TS_HALVES). Called from the package's own native/CMakeLists.txt, after its targets,
-# so the module is the package's own target and links nothing its manifest does not declare. Part 1 loads a pack's
-# native node types alone, so a package with a provider, an audio backend, a script pack or an embed is refused here
-# rather than built into a pack that would silently lose them.
+# so the module is the package's own target and links nothing its manifest does not declare. A package with no native
+# entry is a pack too when TS_HALVES is given (its halves and script half alone, called from the root). A pack loads
+# native node types and TS halves, so a package with a provider, an audio backend or an embed is refused here rather
+# than built into a pack that would silently lose them, and a script pack is refused without TS_HALVES.
 function(retroplug_pack package)
     cmake_parse_arguments(P "TS_HALVES" "MANIFEST" "" ${ARGN})
     if(P_UNPARSED_ARGUMENTS)
@@ -305,18 +339,30 @@ function(retroplug_pack package)
     get_property(_targets GLOBAL PROPERTY RP_PACKAGE_${package}_TARGETS)
     foreach(_part PROVIDERS AUDIO_BACKEND_TARGETS SCRIPT_ENTRY EMBED_IDS)
         get_property(_has GLOBAL PROPERTY RP_PACKAGE_${package}_${_part})
+        if(_part STREQUAL "SCRIPT_ENTRY" AND P_TS_HALVES)
+            continue()  # the halves build ships the script half
+        endif()
         if(_has)
             message(FATAL_ERROR "retroplug_pack(${package}): the package has ${_part} (${_has}), which a pack does not "
                                 "load yet (docs/downloadable-packs-loading-design.md): build it into a product")
         endif()
     endforeach()
-    if(NOT _entries)
-        message(FATAL_ERROR "retroplug_pack(${package}): the package's manifest names no native entry, so its pack "
-                            "would register nothing")
-    endif()
     set(_halves "")
     if(P_TS_HALVES)
         set(_halves TS_HALVES "${RP_PACKAGES_DIR}/${package}")
+    endif()
+    if(NOT _entries)
+        if(NOT P_TS_HALVES)
+            message(FATAL_ERROR "retroplug_pack(${package}): the package's manifest names no native entry, so its "
+                                "pack would register nothing")
+        endif()
+        # A pack with no native half: its TS halves (and its script half) alone, the folder the halves build's.
+        retroplug_pack_module(retroplug-${package}-pack MANIFEST "${P_MANIFEST}" NO_LIBRARY ${_halves})
+        if(TARGET retroplug-${package}-pack-halves)  # absent on a platform with no pack folder, as a module is
+            add_custom_target(retroplug-${package}-pack)
+            add_dependencies(retroplug-${package}-pack retroplug-${package}-pack-halves)
+        endif()
+        return()
     endif()
     retroplug_pack_module(retroplug-${package}-pack MANIFEST "${P_MANIFEST}" LIBS ${_targets} ENTRIES ${_entries}
                           ${_halves})

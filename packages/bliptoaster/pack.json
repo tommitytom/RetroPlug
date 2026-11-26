@@ -1,0 +1,17 @@
+{
+  "id": "bliptoaster",
+  "name": "BlipToaster",
+  "version": "0.1.0",
+  "license": "MIT",
+  "source": "https://github.com/tommitytom/RetroPlug",
+  "requires": {
+    "packs": [],
+    "platforms": ["nes"]
+  },
+  "provides": {
+    "platforms": [],
+    "nodeTypes": ["rp.bliptoaster.midi-policy"],
+    "roles": ["bliptoaster", "bliptoaster-assets"]
+  },
+  "halves": {}
+}

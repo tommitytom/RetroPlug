@@ -183,9 +183,13 @@ extern "C" const rp_package* rp_bliptoaster_script_package(void);
 
 using rp::host::packs::test::runBlock;
 
+// BlipToaster's whole pack (packages/bliptoaster/pack.json, built by retroplug-bliptoaster-pack): its app, ui and cli
+// halves and, as its script half, the package's own toolchain output.
+fs::path blipToasterPack() { return fs::path(RP_PACKS_BUILD_DIR) / "bliptoaster" / "0.1.0"; }
+
 TEST_CASE("BlipToaster's script half as a pack filters MIDI exactly as its static build does", "[packs-script]") {
     PackTable table(rp::graph::productPackages());
-    const PackLoad load = table.load(fixture("bliptoaster"));
+    const PackLoad load = table.load(blipToasterPack());
     INFO(load.error);
     REQUIRE(load);
     REQUIRE(load.pack->script);
@@ -214,4 +218,21 @@ TEST_CASE("BlipToaster's script half as a pack filters MIDI exactly as its stati
     CHECK(packOut == staticOut);
     // The note on, the CC, the SysEx and the note off pass; aftertouch and the system messages are dropped.
     REQUIRE(packOut.size() == 4);
+}
+
+TEST_CASE("BlipToaster's pack folder carries its app, ui, cli and script halves, the script half the toolchain's own",
+          "[packs-script]") {
+    PackTable table(rp::graph::productPackages());
+    const PackLoad load = table.load(blipToasterPack());
+    INFO(load.error);
+    REQUIRE(load);
+    for (const char* half : {"js/app.js", "js/ui.js", "js/cli.js", "js/script.js", "js/script.device.js"}) {
+        INFO(half);
+        CHECK(fs::exists(blipToasterPack() / half));
+    }
+    // Copied from the package's static script pack, byte for byte: the bytecode the host compiles is the static build's.
+    CHECK(readText(blipToasterPack() / "js/script.js") == readText(toolchainOut("bliptoaster") / "bliptoaster.js"));
+    CHECK(readText(blipToasterPack() / "js/script.device.js") ==
+          readText(toolchainOut("bliptoaster") / "bliptoaster.device.js"));
+    CHECK(load.pack->manifest.requiresPlatforms == std::vector<std::string>{"nes"});
 }

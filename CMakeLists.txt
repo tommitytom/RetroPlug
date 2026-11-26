@@ -444,6 +444,11 @@ foreach(_rp_package IN LISTS _rp_first_packages _rp_test_packages RP_DESKTOP_PAC
     retroplug_package(${_rp_package})
 endforeach()
 
+# The packages built as packs that have no native/CMakeLists.txt to call retroplug_pack() from: BlipToaster's app, ui,
+# cli and script halves (docs/downloadable-packs-m5c-plan.md). After the list, whose retroplug_package(bliptoaster)
+# defines the script pack its script half is copied from.
+retroplug_pack(bliptoaster TS_HALVES)
+
 # The device check's case generator, a desktop tool listing what the RP2350 check registers (a device product of the
 # packages above); the check itself is packages/graph-runtime/device-check, a Pico SDK project of its own.
 add_subdirectory(packages/graph-runtime/device-check/cases "${CMAKE_BINARY_DIR}/device-check/cases")
