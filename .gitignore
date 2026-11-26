@@ -66,7 +66,9 @@ __pycache__/
 # Package test-bundle output (derived: esbuild -> tjs run / native host)
 packages/retroplug/.test-build/
 packages/retroplug/.native-build/
+packages/retroplug/.native-build-packs/
 packages/retroplug/.ui-build/
+packages/retroplug/.ui-build-packs/
 
 # Per-file test durations, recorded by the runners to dispatch longest-first next run.
 # Machine-specific and self-healing (a missing file just costs one unordered run).

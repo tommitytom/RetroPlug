@@ -9,7 +9,8 @@
 //
 //   node scripts/run-native-tests.mjs [slugFilter] [--jobs N]
 
-import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
@@ -17,15 +18,30 @@ import { build } from "esbuild";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
 import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
 import { generate } from "./lib/packages.mjs";
+import { setContracts } from "../../../tools/build-shared-modules.mjs";
+
+const { productGenerated } = createRequire(import.meta.url)("../../../tools/product-generated.js");
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-native");
-const OUT_DIR = join(PKG, ".native-build");
+
+// The pack mode (docs/downloadable-packs-m5b-plan.md): every file again, on retroplug-host-packs, a host of
+// packs-desktop (the desktop's list without mesen) that loads Mesen as a pack. A bundle reads that product's generated
+// registries, leaves the host's shared contract modules (the render set's names, zod among them) external so the test
+// and the pack's halves share one instance of each, and starts with a prelude that loads the packs' halves.
+const PACKS = process.argv.slice(2).includes("--packs");
+const PACK_PRODUCT = "packs-desktop";
+const MESEN_VERSION = JSON.parse(readFileSync(join(REPO, "packages/mesen/pack.json"), "utf8")).version;
+const MESEN_PACK = join(REPO, "build/packs/mesen", MESEN_VERSION);
+const PRODUCT_TREE = join(REPO, "build/products", PACK_PRODUCT, "packages/retroplug");
+const PRELUDE = join(TEST_DIR, "_packsPrelude.ts");
+const EXTERNALS = PACKS ? setContracts("render") : [];
+const OUT_DIR = join(PKG, PACKS ? ".native-build-packs" : ".native-build");
 
 // The generated package registries first (src/generated, docs/modular-graph-phase-f1-design.md section 3): a test
 // bundles src, which imports them, so they must exist before the first esbuild run. A fresh checkout has none.
-generate();
+generate(PACKS ? { product: PACK_PRODUCT } : {});
 
 // The sibling resources dir (ROMs/manuals/…), overridable — mirrors the repo-wide convention.
 // Injected into the bundle so a test can locate real ROMs by absolute path (native slurps them).
@@ -45,15 +61,23 @@ const RISA_SRC = process.env.RISA_SRC || "/workspaces/risa-v2.2.1-source";
 // CLI check.
 const DETERMINISTIC_FILES = new Set(["render-baseline", "render-chunks", "render-cli"]);
 
+const HOST_TARGET = PACKS ? "retroplug-host-packs" : "retroplug-host";
 const HOST =
-  process.env.RETROPLUG_HOST ||
-  join(REPO, "build/bin/retroplug-host" + (process.platform === "win32" ? ".exe" : ""));
+  (PACKS ? process.env.RETROPLUG_HOST_PACKS : process.env.RETROPLUG_HOST) ||
+  join(REPO, "build/bin", HOST_TARGET + (process.platform === "win32" ? ".exe" : ""));
 
 if (!existsSync(HOST)) {
   console.error(
-    `retroplug-host not found: ${HOST}\n` +
-      `build it once:  cmake --build build --target retroplug-host -j$(nproc)\n` +
-      `or set RETROPLUG_HOST to a host binary.`,
+    `${HOST_TARGET} not found: ${HOST}\n` +
+      `build it once:  cmake --build build --target ${HOST_TARGET} -j$(nproc)\n` +
+      `or set ${PACKS ? "RETROPLUG_HOST_PACKS" : "RETROPLUG_HOST"} to a host binary.`,
+  );
+  process.exit(1);
+}
+if (PACKS && !existsSync(join(MESEN_PACK, "pack.json"))) {
+  console.error(
+    `the Mesen pack is not built: ${MESEN_PACK}\n` +
+      `build it:  cmake --build build --target retroplug-mesen-pack -j$(nproc)`,
   );
   process.exit(1);
 }
@@ -97,13 +121,27 @@ async function runOne({ file, slug }) {
   const cfgDir = mkdtempSync(join(tmpdir(), "rp-")).replaceAll("\\", "/");
 
   try {
+    // esbuild refuses entryPoints beside stdin, so the pack mode's options are built apart from the desktop's.
+    const entry = PACKS
+      ? {
+          stdin: {
+            contents: `import ${JSON.stringify(PRELUDE.replaceAll("\\", "/"))};\nimport ${JSON.stringify(file.replaceAll("\\", "/"))};\n`,
+            resolveDir: dirname(file),
+            sourcefile: `${slug}.packs-entry.js`,
+            loader: "js",
+          },
+          external: EXTERNALS,
+          plugins: [productGenerated({ dir: PRODUCT_TREE })],
+        }
+      : { entryPoints: [file] };
     await build({
-      entryPoints: [file],
+      ...entry,
       bundle: true,
       format: "esm",
       platform: "neutral",
       mainFields: ["module", "main"],
-      target: "es2020",
+      // The pack mode's prelude awaits at top level, which es2020 cannot express.
+      target: PACKS ? "es2022" : "es2020",
       outfile: outFile,
       define: {
         "process.env.NODE_ENV": '"production"',
@@ -148,6 +186,11 @@ async function runOne({ file, slug }) {
   };
   if (slug.startsWith("parity/") || DETERMINISTIC_FILES.has(slug)) env.RETROPLUG_DETERMINISTIC = "1";
   else delete env.RETROPLUG_DETERMINISTIC;
+  if (PACKS) {
+    env.RETROPLUG_PACK_PATH = MESEN_PACK;
+    env.RETROPLUG_PACKS_DIR = `${cfgDir}/packs`;
+    env.RETROPLUG_PACKS_CACHE_DIR = `${cfgDir}/packs-cache`;
+  } else delete env.RETROPLUG_PACK_PATH;
   const run = await spawnBuffered(HOST, [outFile], { cwd: PKG, env });
   flush(slug, run.output);
   rmSync(cfgDir, { recursive: true, force: true });
@@ -158,19 +201,19 @@ async function runOne({ file, slug }) {
 
 const results = await runPool(tests, runOne, {
   jobs,
-  timings: { file: join(PKG, ".test-timings/native.json"), key: (t) => t.slug },
+  timings: { file: join(PKG, `.test-timings/${PACKS ? "native-packs" : "native"}.json`), key: (t) => t.slug },
 });
 const failures = tests.filter((_, i) => results[i]?.ok !== true).map((t) => t.slug);
 
 if (failures.length) {
-  console.error(`\n# ${failures.length}/${tests.length} native test file(s) FAILED: ${failures.join(", ")}`);
+  console.error(`\n# ${failures.length}/${tests.length} native${PACKS ? " (packs)" : ""} test file(s) FAILED: ${failures.join(", ")}`);
   process.exit(1);
 }
 const skipped = tests
   .map((t, i) => ({ slug: t.slug, n: results[i]?.tap.skip ?? 0 }))
   .filter((x) => x.n > 0);
 const skipTotal = skipped.reduce((a, x) => a + x.n, 0);
-console.error(`\n# ${tests.length} native test file(s) passed (jobs=${jobs})`);
+console.error(`\n# ${tests.length} native${PACKS ? " (packs)" : ""} test file(s) passed (jobs=${jobs})`);
 if (skipped.length)
   console.error(
     `#   ${skipTotal} case(s) SKIPPED in ${skipped.length} file(s): ` +
@@ -180,7 +223,7 @@ if (skipped.length)
 // The ratchet. A filtered run has no reading for the files it did not execute, so it cannot judge the
 // baseline and does not try.
 const baseline = checkSkipBaseline(
-  "native",
+  PACKS ? "native-packs" : "native",
   tests.map((t, i) => ({ slug: t.slug, skip: results[i]?.tap.skip ?? 0, total: results[i]?.tap.plan ?? 0 })),
   {
     filtered: filter !== undefined,
