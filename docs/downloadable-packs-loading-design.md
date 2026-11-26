@@ -256,7 +256,7 @@ top-level commands, and one that collides with a built-in command is refused.
 ## 5. Tests
 
 **The proof is real packages.** Part 1 builds Mesen and BlipToaster from this tree as packs and loads them at run time.
-Between them they carry every half part 1 promises: Mesen native, app, consoles, ui and cli; BlipToaster app, ui,
+Between them they carry every half part 1 promises: Mesen native, app, consoles and ui; BlipToaster app, ui,
 script and cli, and `requires.platforms: ["nes"]`. A test product (the desktop list without `mesen` and
 `bliptoaster`; the shared `n8` stays built in) loads both from `build/packs/`, and Mesen's and BlipToaster's existing
 cases run against it and must pass unchanged: the parity baselines, the kits, the renders, the emulated N8,
@@ -282,7 +282,9 @@ a live load while audio runs is clean under TSAN and ASAN.
 **Where each proof stands.** Mesen's and BlipToaster's are built (M5b, [its plan](downloadable-packs-m5b-plan.md), and M5c,
 [its plan](downloadable-packs-m5c-plan.md)): the test product is `packs-desktop` (the desktop list without `mesen` and
 `bliptoaster`), and both test tiers have a pack mode (`pnpm test:native:packs`, `pnpm test:ui:packs`) that loads both
-packs and runs the whole tier against them. The CLI's is its own milestone, which first loads BlipToaster's cli half.
+packs and runs the whole tier against them. The CLI's is built ([its plan](downloadable-packs-cli-plan.md)):
+`pnpm test:cli-ts:packs` runs the CLI suite on `retroplug-cli-packs`, a session child loads the launch packs, and the
+smsggdj render golden holds on the Mesen pack.
 
 ## 6. Not in part 1
 

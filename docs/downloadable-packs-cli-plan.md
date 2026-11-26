@@ -858,8 +858,48 @@ built through `retroplug_cli()`, and their CLI artifacts must still build.
 
 ## After the reviews
 
-(Filled in during execution.)
+What the build found that the plan did not say:
+
+- **No deviation of design.** Every task landed as written. No review found anything Critical or Important.
+- **Task 1.** A test assertion could be made vacuous by a `/products/` segment in the checkout path; it was tightened.
+  A 123-column comment was rewrapped.
+- **Task 2.** The top-level-await allowance was first applied to every shared set; it is now the cli set's alone, so the
+  app and render sets keep es2020's refusal. A stale `__rp_sdkAsset` comment naming a "js" asset no longer served was
+  fixed, and an em dash removed.
+- **Task 3.** A header listed a variable the function never reads; over-long lines were rewrapped; the rule that a
+  product sharing another's set must not ask for a CLI went from a comment to a FATAL_ERROR; a redundant
+  `set_property` was dropped; and `retroplug-cli-packs` joined warnings.cmake's /W4 /WX list.
+- **Task 4.** A 121-column line was rewrapped, and two "with no pack" labels that were inaccurate in pack mode now say
+  "with no fixture pack". The pack-mode absence check (no `bliptoaster-rom` in `--help`) is paired with a presence
+  check.
+- **`retroplug-cli-packs` links no Mesen or BlipToaster code:** 0 Mesen symbols against 480 in `retroplug-cli`, and
+  21.9 MB against 30.9 MB.
+- **Results.** The CLI suite in desktop mode is 166 ok, in pack mode 169 ok, 0 FAIL; the pack mode's smsggdj render
+  (section 6d) hashes to the golden (c309fbacf1c2803a) on the Mesen pack.
+- **The verification found one miss.** `retroplug-cli-packs` is a product binary, so `Packages.test.cpp`'s golden
+  (`test/engine-graph/golden/product-registrations.json`) needs its row, which Task 3 left out: the `plugin` and `egfix`
+  legs failed on it. The row (packs-desktop's node types, the same as `retroplug-host-packs`'s) went into Task 3's
+  commit.
+- **Verification.** The parallel tip-verify (`runs/cli-packs` against `runs/m5c`): additions only, once the golden row
+  was in, apart from the known machine-local `app-cores` GBA case in the native tiers, as in M5c.
+  `pnpm test:native:packs` has that case alone; `pnpm test:ui:packs` and `pnpm test:cli-ts:packs` pass. `retroplug-cli`
+  is 786 KB smaller, since the SDK shares the dispatcher's chunks instead of carrying its own copy.
+- **Session cost** (median of 5, `retroplug-cli test tools/fixtures/ts-harness-sdk/tests`, no packs): 0.111 s before,
+  0.110 s after; with Mesen and BlipToaster on the path, 0.116 s.
 
 ## Design questions this plan found
 
-(Filled in during execution.)
+- **Session cost.** Every session child now loads the launch packs (the native table, then the TS halves through the
+  SDK). With both packs on the path the smallest session goes from 0.110 s to 0.116 s; with none it does not move.
+  Should a session load lazily, on the first thing that needs a pack?
+- **Node SDK.** `build/cli-sdk/retroplug-cli.js` is a self-contained bundle that loads no pack, so the Node addon's
+  sessions see none (M5d).
+- **SDK-free sessions.** A session file that does not import the SDK still loads the packs' native halves and commits no
+  TS half; the example sessions, which bundle their own SDK copy, are such sessions. Should a session that never
+  imports the SDK load no pack at all?
+- **A session's refusals.** A pack a session refuses is reported on the session's own stderr, as the dispatcher's are,
+  not in a result the test can read.
+- **Pinning.** A consumer repo cannot yet pin its pack set except through `RETROPLUG_PACKS_DIR` and
+  `RETROPLUG_PACK_PATH`, until M4's `--pack`.
+- **Two kinds of SDK hash.** The embedded SDK's hash now changes with the cli set's split, so a dispatcher-only change
+  can move it and rewrite a consumer's materialized `.d.ts` stamp. Should the stamp hash the declarations alone?

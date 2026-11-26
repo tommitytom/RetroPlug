@@ -177,11 +177,16 @@ file, so a consumer repo (BlipToaster) needs no Node, npm, esbuild or node_modul
 and nothing else. [tools/sync-cli-to-bliptoaster.sh](../tools/sync-cli-to-bliptoaster.sh) is the sync step, a
 binaries-only copy of two binaries, `retroplug-cli` and `retroplug-n8-hwtest` (the bare N8 device access the
 nes-hardware-lab skill uses), into the consumer's `retroplug-cli/bin/`; no SDK file goes over. The harness's own check
-is `pnpm test:cli-ts`, which CI runs on the linux job.
+is `pnpm test:cli-ts`, which CI runs on the linux job, and `pnpm test:cli-ts:packs`, its pack mode: the suite on
+`retroplug-cli-packs` (the `packs-desktop` CLI, linking no Mesen or BlipToaster code) with both packs on
+`RETROPLUG_PACK_PATH`, plus a console section (BlipToaster's ROM on NES/mesen, smsggdj on SMS) and the pack-mode-only
+checks that a CLI with no packs lists no `bliptoaster-rom` and one with them does. CI runs it on the linux x86 job. A
+session file loads the launch packs like the dispatcher does.
 
 **The SDK is a module, never a file.** A test imports the SDK by the bare specifier `"retroplug-cli"`, which the binary
 serves from QuickJS's loaded-module table: [packages/native/cli/main.cpp](../packages/native/cli/main.cpp)
-`JS_ReadObject`s the embedded module bytecode (compiled with `tjsc -m -n retroplug-cli`) before a session evaluates, and
+`JS_ReadObject`s the embedded module bytecode (`rp_retroplug_cli`, the cli set's `rp:sdk` host compiled by
+`retroplug-modc`) before a session evaluates, and
 `js_host_resolve_imported_module` checks that table BEFORE the module loader, so nothing is left to sync or to go stale.
 A relative specifier could not work this way: `tjs_module_normalizer` consults the import map only for bare names (`if
 (name[0] != '.')`), so `"../sdk/x.js"` always hits the disk. Only the `.d.ts` is written out

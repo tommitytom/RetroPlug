@@ -120,7 +120,8 @@ split into the pure, unit-tested [cli/renderArgs.ts](../packages/retroplug/cli/r
 owned by the TS root dispatcher [cli/cli.ts](../packages/retroplug/cli/cli.ts) — registered in
 [cli/tools.ts](../packages/retroplug/cli/tools.ts), bundled by the `retroplug-cli-bundle` CMake target and
 linked into `retroplug-cli` (`rp_cli_bundle`, over the CLI set's module table `rp_cli_modules`, which the dispatcher
-branch registers; session files register only the SDK module); [cli/main.cpp](../packages/native/cli/main.cpp) evals that
+branch and a session file both register, a session then registering the SDK, the set's `rp:sdk` host, which loads the
+launch packs' TS halves with a top-level `loadAppPacks()`); [cli/main.cpp](../packages/native/cli/main.cpp) evals that
 dispatcher for a command (it prints the top-level help + routes `<cmd> --help`), or a `<session.js>` file by
 path as the dev fallback. Smoke: `pnpm cli:render-smoke`.
 

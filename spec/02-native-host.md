@@ -1441,10 +1441,16 @@ requires (`requires.platforms`) holds it back while another pending pack provide
 needing the NES loads after the pack whose consoles bring it, in whatever order the folders were found in; a platform no
 other pending pack provides is the product's or nobody's, which the TS loader judges, and holds nothing back. Two packs
 requiring each other's platforms both wait, and the leftover pass loads them in the order given. `processPacks()` is the
-process's table, seeded with the product's packages and empty until a host loads into it: every product host (the plugin, the SDL standalone, the UI harness and the CLI's dispatcher; not the `test:native` host, which builds an Engine and loads no pack) calls
-`ensureLaunchPacks` ([ProcessPacks](../packages/native/src/host/packs/ProcessPacks.hpp)) once per process, before it builds an
-`Engine` and before its first context evaluates (the installed packs and `RETROPLUG_PACK_PATH`'s development folders; the CLI's session files
-load none), and a failed load is reported, not thrown.
+process's table, seeded with the product's packages and empty until a host loads into it: every product host (the
+plugin, the SDL standalone, the UI harness and the CLI, a dispatcher command and a session file alike; not the
+`test:native` host, which builds an Engine and loads no pack) calls `ensureLaunchPacks`
+([ProcessPacks](../packages/native/src/host/packs/ProcessPacks.hpp)) once per process, before it builds an `Engine` and
+before its first context evaluates (the installed packs and `RETROPLUG_PACK_PATH`'s development folders), and a failed
+load is reported, not thrown. A CLI session file loads the launch packs too: their native halves before its Engine,
+and their TS halves through the SDK module's top-level `loadAppPacks()`, so a session that never imports the SDK loads
+the native halves and no TS half. The embedded SDK (the
+bare `retroplug-cli` import) is the cli set's second host, `rp:sdk`; the Node SDK (`build/cli-sdk`) is a self-contained
+bundle that loads no pack (M5d).
 
 Every `Engine` registers its table's packs after the product's packages and the built-in script pack, in load order,
 which is dependency order. A pack loaded later joins each Engine on its control thread, the thread `loadScriptPack`
