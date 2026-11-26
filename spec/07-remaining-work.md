@@ -40,6 +40,7 @@ than work.
 - [ ] [The tap's mode bound](#the-taps-mode-bound)
 - [ ] [A narrow host still arms the tap](#a-narrow-host-still-arms-the-tap)
 - [ ] [Threaded engine cases are smoke runs](#threaded-engine-cases-are-smoke-runs)
+- [ ] [The NES split-render drift case fails on macOS now and then](#the-nes-split-render-drift-case-fails-on-macos-now-and-then)
 - [ ] [A plugin with its editor closed has no idle reclaim](#a-plugin-with-its-editor-closed-has-no-idle-reclaim)
 - [ ] [A silent plugin after an editor-close suspend](#a-silent-plugin-after-an-editor-close-suspend)
 - [ ] [A rate change with the editor closed parks the plugin](#a-rate-change-with-the-editor-closed-parks-the-plugin)
@@ -362,6 +363,15 @@ ordering between the `setGraph` path and the block thread (a probe written each 
 `GraphHost::reclaim`), but the pairing release was not found, so "an Engine hides the race" is a reading, not a finding,
 and until it is understood these are weak race detectors. ([D2 design](../docs/modular-graph-phase-d2-design.md) section
 11.)
+
+### The NES split-render drift case fails on macOS now and then
+
+`nes-capture-mix-drain`'s drift case (a NES split export's 1500 ms mix settle against an unarmed one) failed once on
+macOS CI (run 45833854438, first attempt: first difference at sample 314, expected none) and passed on the rerun, on
+three earlier macOS runs and 10 of 10 local Linux runs. The cause is not found. One reading is that NES work RAM powers
+on random and the case assumes it never reaches the sound, which this would be the first counterexample to; another is
+a real drift that depends on timing. Until it is run down a red macOS native tier on this case is not proof of a
+change, and is not proof of noise either.
 
 ### A plugin with its editor closed has no idle reclaim
 
