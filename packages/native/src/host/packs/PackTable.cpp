@@ -90,10 +90,29 @@ bool trialAdd(rp::graph::NodeRegistry& trial, const rp_package* package, std::st
 PackTable::PackTable(std::span<const rp_package* const> builtIns, fs::path dataRoot)
     : builtIns_(builtIns.begin(), builtIns.end()), dataRoot_(std::move(dataRoot)) {}
 
+namespace {
+
+// The script halves of tables that went away, kept for the life of the process: reachable from here, so a leak checker
+// (LeakSanitizer) sees a deliberate keep, not a leak. Never destroyed, so no exit-time order can free one early.
+std::vector<std::unique_ptr<ScriptHalf>>& keptScriptHalves() {
+    static auto* kept = new std::vector<std::unique_ptr<ScriptHalf>>();
+    return *kept;
+}
+
+std::mutex& keptScriptHalvesMutex() {
+    static std::mutex m;
+    return m;
+}
+
+}  // namespace
+
 // The MicroQuickJS host keeps a pointer into every script half it registered for the life of the process, so a table
-// that goes away (a test's; the process table never does) leaves them alive rather than free what the host reads.
+// that goes away (a test's; the process table never does) hands its halves to keptScriptHalves() rather than free
+// what the host reads.
 PackTable::~PackTable() {
-    for (auto& half : scripts_) (void)half.release();
+    const std::lock_guard<std::mutex> hold(keptScriptHalvesMutex());
+    auto& kept = keptScriptHalves();
+    for (auto& half : scripts_) kept.push_back(std::move(half));
 }
 
 std::size_t PackTable::size() const {
