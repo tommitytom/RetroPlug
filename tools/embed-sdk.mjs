@@ -1,7 +1,9 @@
-// Build the test SDK and embed it in retroplug-cli as C arrays, so the BINARY owns it and a consumer
-// repo never has to carry (or keep in sync) a copy.
+// Embed the test SDK's declarations and content stamp in retroplug-cli as C arrays, so the BINARY owns them and a
+// consumer repo never has to carry (or keep in sync) a copy. The embedded SDK is the cli shared set's `rp:sdk` host
+// (tools/build-shared-modules.mjs; CMake compiles it to module bytecode), and <sdk.js> is that host's output;
+// tools/build-cli-sdk.mjs builds the Node addon's self-contained SDK instead.
 //
-//   node tools/embed-sdk.mjs <outDir> <out.c>
+//   node tools/embed-sdk.mjs <sdk.js> <out.c>
 //
 // The consumer-side copy used to be synced alongside the binary, which made a stale SDK against a newer
 // binary a real failure mode - exactly the class of bug the sync script existed to avoid. Embedding it
@@ -13,9 +15,8 @@
 //   rp_sdk_hash[]          a content stamp, so the staleness check is O(1)
 //
 // The authoring layer ITSELF is not here: it ships as module bytecode (rp_retroplug_cli, compiled by
-// the CMake target next to this one) and is resolved from QuickJS's loaded-module table, so it never
+// the CLI's shared-module target) and is resolved from QuickJS's loaded-module table, so it never
 // needs to exist as a file. Only the declarations do, because editors read them off disk.
-import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve, dirname } from "node:path";
@@ -23,16 +24,13 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
-const outDir = resolve(process.argv[2] ?? resolve(REPO, "build/cli-sdk"));
+const sdkJs = resolve(process.argv[2] ?? resolve(REPO, "build/native/cli-modules/js/rp/sdk.js"));
 const outC = resolve(process.argv[3] ?? resolve(REPO, "build/native/sdk-assets_data.c"));
 
 mkdirSync(dirname(outC), { recursive: true });
 
-// Reuse the existing SDK builder rather than duplicating its esbuild config.
-execFileSync(process.execPath, [resolve(HERE, "build-cli-sdk.mjs"), outDir], { stdio: "inherit" });
-
-const js = readFileSync(resolve(outDir, "retroplug-cli.js"));
-const dts = readFileSync(resolve(outDir, "retroplug-cli.d.ts"));
+const js = readFileSync(sdkJs);
+const dts = readFileSync(resolve(REPO, "packages/retroplug/cli/sdk-types.d.ts"));
 const hash = createHash("sha256").update(js).update(dts).digest("hex").slice(0, 16);
 
 /** A byte array as C source. 16 per line keeps the generated file diffable-ish and the compiler happy. */

@@ -4,7 +4,7 @@
 //
 //   app: the control plane (rp:cp) and the UI (rp:ui) and every contract specifier (SHELL_IMPORTS, UI_IMPORTS and the
 //        host modules), for the context the two share in the plugin, the SDL standalone and the UI test harness.
-//   cli: the CLI's dispatcher (rp:cli) and SHELL_IMPORTS.
+//   cli: the CLI's dispatcher (rp:cli), the SDK a session imports (rp:sdk) and SHELL_IMPORTS.
 //   render: the render worker (rp:render) and SHELL_IMPORTS, for a render job's bare QuickJS runtime.
 //
 // The names: a contract module is named by its specifier, so a bare import of it needs no import map (txiki's
@@ -54,9 +54,16 @@ function setOf(name) {
   }
   if (name === "cli") {
     return {
-      hosts: [{ name: "rp:cli", entry: path.join(SHELL, "cli/cli.ts") }],
+      hosts: [
+        { name: "rp:cli", entry: path.join(SHELL, "cli/cli.ts") },
+        // The SDK a session file imports (cli/sdkModule.ts): cli/main.cpp registers its bytecode as `retroplug-cli`.
+        { name: "rp:sdk", entry: path.join(SHELL, "cli/sdkModule.ts") },
+      ],
       contracts: [...new Set([...SHELL_IMPORTS.map((e) => e.specifier), ...SHARED_LIBRARIES.map((e) => e.specifier)])],
       external: ["tjs:path", "retroplug-cli"],
+      // The rp:sdk host awaits the launch packs at top level (cli/sdkModule.ts), which QuickJS evaluates; the other
+      // sets keep the ES2020 target's refusal of it.
+      supported: { "top-level-await": true },
     };
   }
   if (name === "render") {
@@ -165,6 +172,7 @@ export async function buildSharedModules({ set, outDir, productDir, write = true
   ];
   const result = await esbuild.build({
     ...base,
+    ...(spec.supported ? { supported: spec.supported } : {}),
     plugins: [facadePlugin, ...(base.plugins ?? [])],
     entryPoints,
     outdir: jsDir,

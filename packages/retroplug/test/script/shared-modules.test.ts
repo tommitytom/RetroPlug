@@ -105,7 +105,9 @@ test("the plugin's app set is built from its own generated tree", async () => {
 test("the cli set holds the shape and reaches no UI", async () => {
   const d = await describe("cli");
   holdsTheShape(d);
-  expect(d.hosts.map((h) => h.name)).toEqual(["rp:cli"]);
+  expect(d.hosts.map((h) => h.name)).toEqual(["rp:cli", "rp:sdk"]);
+  expect(d.closures["rp:sdk"].some((p) => p.includes("/cli/generated/tools.ts")), "a session carries no tool").toBe(false);
+  expect(d.closures["rp:sdk"].some((p) => p.includes("/packages/retroplug/ui/"))).toBe(false);
   expect(d.closures["rp:cli"].some((p) => p.includes("/packages/retroplug/ui/"))).toBe(false);
 });
 

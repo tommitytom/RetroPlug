@@ -7,7 +7,8 @@
 // This launcher is deliberately dumb about commands: it evals the compiled-in root dispatcher bundle
 // (cli/cli.ts → rp_cli_bundle) for anything that isn't a `.js` file path, passing the FULL arg vector so
 // the TS side owns command routing + all help text. A `.js` argument is slurped and evaled directly (the
-// dispatcher is skipped). Commands are added in TS (cli/tools.ts) — never here.
+// dispatcher is skipped). Both paths load the launch packs and register the cli set. Commands are added in TS
+// (cli/tools.ts), never here.
 //
 // It binds the same JS surface the test host (src/main.cpp) and the plugin expose — the Backend over
 // globalThis[Symbol.for("plugin")].__rpcSend and console.log -> stdout; a session ends through txiki's own
@@ -111,9 +112,6 @@ JSValue jsLoadTsStripper(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_UNDEFINED;
 }
 
-// globalThis.__rp_sdkAsset(name) -> string. "js" / "d.ts" hand back the embedded SDK text, "hash" its
-// content stamp. Read by cli/sdkAssets.ts when it materializes the SDK for a consumer's tests; nothing
-// is decoded here, the arrays are plain UTF-8.
 // Register the embedded SDK under its module name, WITHOUT evaluating it. JS_ReadObject alone is enough:
 // deserializing module bytecode creates the JSModuleDef, which enters ctx->loaded_modules, and
 // js_host_resolve_imported_module checks that table before ever calling the module loader. So a session's
@@ -124,14 +122,21 @@ JSValue jsLoadTsStripper(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 void registerSdkModule(JSContext* ctx) {
     JSValue mod = JS_ReadObject(ctx, rp_retroplug_cli, rp_retroplug_cli_size, JS_READ_OBJ_BYTECODE);
     if (JS_IsException(mod)) {
-        JS_FreeValue(ctx, JS_GetException(ctx));  // non-fatal: imports of it will simply fail to resolve
+        // Non-fatal here: the session's import of it then fails with its own error.
+        std::fprintf(stderr, "retroplug-cli: the SDK module did not load\n");
+        tjs_dump_error(ctx);
         return;
     }
-    if (JS_VALUE_GET_TAG(mod) == JS_TAG_MODULE && JS_ResolveModule(ctx, mod) < 0)
-        JS_FreeValue(ctx, JS_GetException(ctx));
+    if (JS_VALUE_GET_TAG(mod) == JS_TAG_MODULE && JS_ResolveModule(ctx, mod) < 0) {
+        std::fprintf(stderr, "retroplug-cli: the SDK module did not load\n");
+        tjs_dump_error(ctx);
+    }
     JS_FreeValue(ctx, mod);
 }
 
+// globalThis.__rp_sdkAsset(name) -> string. "d.ts" hands back the embedded SDK's declarations, "hash" its
+// content stamp. Read by cli/sdkAssets.ts when it materializes the SDK for a consumer's tests; nothing
+// is decoded here, the arrays are plain UTF-8.
 JSValue jsSdkAsset(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 1) return JS_NULL;
     const char* name = JS_ToCString(ctx, argv[0]);
@@ -187,9 +192,10 @@ int main(int argc, char** argv) try {
 
     // The backend service graph (see host/HostServices.hpp). The CLI exposes the whole surface (incl. the
     // debug facet), so it mounts every facet.
-    // The dispatcher loads the launch packs before the Engine in svc is built: a pack's kind items' runtimes join an
-    // Engine only at its construction (docs/downloadable-packs-m2f-plan.md). A session file loads no pack.
-    if (!runFile) rp::host::packs::ensureLaunchPacks();
+    // The launch packs load before the Engine in svc is built, for the dispatcher and a session file alike: a pack's kind
+    // items' runtimes join an Engine only at its construction (docs/downloadable-packs-m2f-plan.md), and a session's SDK
+    // commits the packs' TS halves before its body runs (docs/downloadable-packs-cli-plan.md).
+    rp::host::packs::ensureLaunchPacks();
     HostServices svc;
     // The providers of the packages this product names in its PROVIDERS list (the N8 pack's, the Launchpad pack's and the
     // midi package's facet: docs/modular-graph-phase-f3-design.md sections 2 and 3,
@@ -297,25 +303,23 @@ int main(int argc, char** argv) try {
     // as an async one that rejects does.
     bool hookThrew = false;
 
-    // A `.js` path is slurped + evaled; otherwise run the compiled-in dispatcher (it reads the command
-    // from the args we exposed above and prints help / routes it).
+    // The cli set's contract modules first, on both paths: the dispatcher and the SDK import them by name, and the pack
+    // loader links a pack's TS halves to the same ones. A `.js` path is then slurped + evaled; otherwise the compiled-in
+    // dispatcher runs (it reads the command from the args we exposed above and prints help / routes it).
     int rc;
-    if (runFile) {
-        // Session files are the only thing that imports the SDK, so only they pay the deserialize;
-        // `render` / `n8-bridge` / help never touch it.
-        registerSdkModule(ctx);
-        const std::string code = slurp(argv[1]);
-        rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
+    const std::string why = rp::host::registerSharedModules(ctx, rp_cli_modules, rp_cli_modules_count);
+    if (!why.empty()) {
+        std::fprintf(stderr, "retroplug-cli: %s\n", why.c_str());
+        rc = 1;
     } else {
-        // Session files load no pack: they never get the cli set (docs/downloadable-packs-m2c-plan.md).
-        rp::host::packs::ensureLaunchPacks();  // before the shared modules: a pack's TS halves are read from what it loaded
-        // The dispatcher's contract modules first: its imports resolve to them by name.
-        const std::string why = rp::host::registerSharedModules(ctx, rp_cli_modules, rp_cli_modules_count);
-        if (!why.empty()) {
-            std::fprintf(stderr, "retroplug-cli: %s\n", why.c_str());
-            rc = 1;
+        rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_cli_modules, rp_cli_modules_count);
+        if (runFile) {
+            // Only a session file imports the SDK, so only it pays the deserialize; `render` / `n8-bridge` / help never
+            // touch it. The SDK's imports resolve to the modules registered above.
+            registerSdkModule(ctx);
+            const std::string code = slurp(argv[1]);
+            rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
         } else {
-            rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_cli_modules, rp_cli_modules_count);
             rc = host.evalModuleBytecode(rp_cli_bundle, rp_cli_bundle_size);
         }
     }

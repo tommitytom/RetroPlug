@@ -782,6 +782,16 @@ contains "packs: the tool's output" "$TMP/packs-run.out" "hello from the ts fixt
 RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" render --help >/dev/null 2>&1
 check "packs: a built-in command still routes beside them" 0 $?
 
+# A session file loads the launch packs as the dispatcher does (docs/downloadable-packs-cli-plan.md): the render
+# fixture pack's role reaches a system a `test` file boots.
+SP="$TMP/session-packs"
+mkdir -p "$SP/tests"
+cp "$FIX/ts-harness-packs/tests/pack-role.test.ts" "$SP/tests/"
+RETROPLUG_PACK_PATH="$PACKS/tsfix-render/1.0.0" RP_GB_ROM="$REPO/packages/mgb/rom/mGB.gb" \
+	"$CLI" test "$SP/tests" >"$TMP/session-packs.out" 2>&1
+check "packs: a session file sees a launch pack's role" 0 $?
+contains "packs: ...the role's construct hook ran in the session" "$TMP/session-packs.out" "tsfix-render: constructed"
+
 # A render job's worker loads the packs' app and consoles halves (docs/downloadable-packs-m2d-plan.md): the fixture's
 # role reaches the system the job builds, and adds nothing to its bytes.
 if [ -f "$REPO_ROM" ]; then
