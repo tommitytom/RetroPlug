@@ -7,7 +7,8 @@
 // debug service, a seeded rebuild, and the destruction - and hold both counts at zero. Two negative controls prove the
 // counting is live in this binary and in the module.
 //
-// Linux (gcc) and Windows; macOS builds no module (packages/native/cmake/tests.cmake says why) and skips.
+// Linux (gcc) and Windows; macOS builds no module (packages/native/cmake/tests.cmake says why) and skips the two pack
+// cases, running only the tagging header's own.
 //
 // Run via `pnpm test:plugin heap` or `build/bin/retroplug-packs-heap-test`.
 
@@ -77,6 +78,25 @@ const char* const kLongRomName = R"("romName":"a ROM name longer than any short-
 
 }  // namespace
 #endif
+
+// Runs on every platform, so a platform with no heap pack (macOS) still runs a case rather than skipping them all,
+// which Catch2 reports as a failure.
+TEST_CASE("the heap test's tagged blocks are aligned and carry their side's tag", "[packs-heap]") {
+    for (const std::size_t align : {std::size_t{1}, std::size_t{16}, std::size_t{64}, std::size_t{4096}}) {
+        for (const std::size_t size : {std::size_t{0}, std::size_t{1}, std::size_t{100}, std::size_t{1} << 20}) {
+            INFO("align " << align << ", size " << size);
+            void* block = rp::test::heap::allocateTagged(size, align, rp::test::heap::kPackTag);
+            REQUIRE(block != nullptr);
+            const auto at = reinterpret_cast<std::uintptr_t>(block);
+            CHECK(at % (align < 16 ? 16 : align) == 0);
+            CHECK(rp::test::heap::tagOf(block) == rp::test::heap::kPackTag);
+            if (size != 0) static_cast<unsigned char*>(block)[size - 1] = 0x5a;  // the block's last byte is writable
+            rp::test::heap::freeTagged(block);
+        }
+    }
+    // A size no allocator can serve is refused rather than wrapped into a small block.
+    CHECK(rp::test::heap::allocateTagged(SIZE_MAX - 8, 16, rp::test::heap::kHostTag) == nullptr);
+}
 
 TEST_CASE("the heap test's counts are live: a block freed by the side that did not allocate it is counted",
           "[packs-heap]") {
