@@ -330,7 +330,7 @@ public:
     virtual void disassembleInto(std::uint32_t addr, std::uint32_t count, Sink<DisasmLine> out) = 0;
 
     // Enable/disable the execution trace logger. Enable before the run window;
-    // read the captured rows afterwards with readTrace().
+    // read the captured rows afterwards with readTraceInto().
     virtual void setTraceEnabled(bool on) = 0;
     // Most recent `count` executed instructions to `out` (first = most recent).
     virtual void readTraceInto(std::uint32_t count, Sink<TraceLine> out) = 0;
@@ -348,9 +348,9 @@ public:
     // Snapshot the cart's expansion audio chip (VRC6/VRC7/Sunsoft-5B/Namco-163)
     // decoded per-channel state. Like getApuState, the registers are write-only,
     // so this is how a test observes what a MIDI-driven ROM programmed into the
-    // expansion sound chip. Default {} (chip "none") for backends / carts with
-    // no expansion audio: hands `out` nothing then (the caller's default state, chip ""). Call after advancing the
-    // emulator.
+    // expansion sound chip. A cart with no expansion audio reports chip "none"; a
+    // backend with no expansion audio hands `out` nothing, leaving the caller's default state (chip ""). Call after
+    // advancing the emulator.
     virtual void expansionAudioStateInto(Sink<ExpansionAudioState> /*out*/) {}
 
     // Snapshot the NES PPU's live timing + register state (scanline/cycle/
