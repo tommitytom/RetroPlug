@@ -108,10 +108,10 @@ std::vector<rp::ProfiledFunction> MesenNesDebugSession::readProfile() {
     return out;
 }
 
-bool MesenNesDebugSession::loadLabels(const std::string& path) {
+bool MesenNesDebugSession::loadLabels(std::string_view path) {
     Debugger* dbg = ensureDebugger();
     if (!dbg) return false;
-    const std::vector<rp::DbgSymbol> syms = rp::parseCc65Dbg(path);
+    const std::vector<rp::DbgSymbol> syms = rp::parseCc65Dbg(std::string(path));
     if (syms.empty()) return false;
     LabelManager* labels = dbg->GetLabelManager();
     if (!labels) return false;
@@ -131,11 +131,12 @@ bool MesenNesDebugSession::loadLabels(const std::string& path) {
     return true;
 }
 
-std::optional<std::uint32_t> MesenNesDebugSession::symbolAddress(const std::string& name) {
-    if (auto it = symbols_.find(name); it != symbols_.end()) return it->second;
+std::optional<std::uint32_t> MesenNesDebugSession::symbolAddress(std::string_view name) {
+    const std::string key(name);
+    if (auto it = symbols_.find(key); it != symbols_.end()) return it->second;
     // cc65 prefixes every C identifier's assembler label with '_'; accept the bare C name for a symbol
     // whose .dbg carried no csym record (an older toolchain, or a hand-written fixture).
-    if (auto it = symbols_.find("_" + name); it != symbols_.end()) return it->second;
+    if (auto it = symbols_.find("_" + key); it != symbols_.end()) return it->second;
     return std::nullopt;
 }
 
@@ -364,7 +365,7 @@ rp::PpuState MesenNesDebugSession::getPpuState() {
     return out;
 }
 
-void MesenNesDebugSession::setBreakpoints(const std::vector<rp::BreakpointSpec>& specs) {
+void MesenNesDebugSession::setBreakpoints(std::span<const rp::BreakpointSpec> specs) {
     Debugger* dbg = ensureDebugger();
     if (!dbg) return;
     std::vector<Breakpoint> bps;
@@ -620,4 +621,29 @@ std::vector<rp::CallFrame> MesenNesDebugSession::getCallStack() {
         out.push_back(std::move(cf));
     }
     return out;
+}
+
+void MesenNesDebugSession::readProfileInto(rp::Sink<rp::ProfiledFunction> out) {
+    for (const rp::ProfiledFunction& f : readProfile()) out(f);
+}
+void MesenNesDebugSession::disassembleInto(std::uint32_t addr, std::uint32_t count, rp::Sink<rp::DisasmLine> out) {
+    for (const rp::DisasmLine& line : disassemble(addr, count)) out(line);
+}
+void MesenNesDebugSession::readTraceInto(std::uint32_t count, rp::Sink<rp::TraceLine> out) {
+    for (const rp::TraceLine& line : readTrace(count)) out(line);
+}
+void MesenNesDebugSession::callStackInto(rp::Sink<rp::CallFrame> out) {
+    for (const rp::CallFrame& frame : getCallStack()) out(frame);
+}
+void MesenNesDebugSession::expansionAudioStateInto(rp::Sink<rp::ExpansionAudioState> out) {
+    out(getExpansionAudioState());
+}
+void MesenNesDebugSession::ppuStateInto(rp::Sink<rp::PpuState> out) { out(getPpuState()); }
+std::uint32_t MesenNesDebugSession::drainBreakHitsInto(rp::Sink<rp::BreakHit> out) {
+    std::uint32_t overflow = 0;
+    for (const rp::BreakHit& hit : drainBreakHits(overflow)) out(hit);
+    return overflow;
+}
+void MesenNesDebugSession::drainEventsInto(rp::Sink<rp::DebugEvent> out) {
+    for (const rp::DebugEvent& event : drainEvents()) out(event);
 }

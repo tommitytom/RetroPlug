@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -25,24 +27,24 @@ public:
     MesenNesDebugSession& operator=(const MesenNesDebugSession&) = delete;
 
     void beginProfile() override;
-    std::vector<rp::ProfiledFunction> readProfile() override;
-    bool loadLabels(const std::string& path) override;
-    std::optional<std::uint32_t> symbolAddress(const std::string& name) override;
-    std::vector<rp::DisasmLine> disassemble(std::uint32_t addr, std::uint32_t count) override;
+    void readProfileInto(rp::Sink<rp::ProfiledFunction> out) override;
+    bool loadLabels(std::string_view path) override;
+    std::optional<std::uint32_t> symbolAddress(std::string_view name) override;
+    void disassembleInto(std::uint32_t addr, std::uint32_t count, rp::Sink<rp::DisasmLine> out) override;
     void setTraceEnabled(bool on) override;
-    std::vector<rp::TraceLine> readTrace(std::uint32_t count) override;
-    std::vector<rp::CallFrame> getCallStack() override;
+    void readTraceInto(std::uint32_t count, rp::Sink<rp::TraceLine> out) override;
+    void callStackInto(rp::Sink<rp::CallFrame> out) override;
     rp::ApuState getApuState() override;
-    rp::ExpansionAudioState getExpansionAudioState() override;
-    rp::PpuState getPpuState() override;
+    void expansionAudioStateInto(rp::Sink<rp::ExpansionAudioState> out) override;
+    void ppuStateInto(rp::Sink<rp::PpuState> out) override;
 
-    void setBreakpoints(const std::vector<rp::BreakpointSpec>& bps) override;
+    void setBreakpoints(std::span<const rp::BreakpointSpec> bps) override;
     rp::BreakInfo runUntilBreak(std::uint64_t maxCycles) override;
     rp::BreakInfo step() override;
     rp::BreakInfo stepOver() override;
     rp::BreakInfo stepOut() override;
-    std::vector<rp::DebugEvent> drainEvents() override;
-    std::vector<rp::BreakHit> drainBreakHits(std::uint32_t& overflow) override;
+    void drainEventsInto(rp::Sink<rp::DebugEvent> out) override;
+    std::uint32_t drainBreakHitsInto(rp::Sink<rp::BreakHit> out) override;
 
     // --- passive break capture (driven from MesenNesSystem's render loop) ---
     //
@@ -57,6 +59,16 @@ public:
     void captureBreakHit();
 
 private:
+    // The bodies behind the sink overrides: they build the vectors a sink then copies out of, inside this module.
+    std::vector<rp::ProfiledFunction> readProfile();
+    std::vector<rp::DisasmLine> disassemble(std::uint32_t addr, std::uint32_t count);
+    std::vector<rp::TraceLine> readTrace(std::uint32_t count);
+    std::vector<rp::CallFrame> getCallStack();
+    rp::ExpansionAudioState getExpansionAudioState();
+    rp::PpuState getPpuState();
+    std::vector<rp::DebugEvent> drainEvents();
+    std::vector<rp::BreakHit> drainBreakHits(std::uint32_t& overflow);
+
     // Initialise Mesen's debugger on first use (claiming the emulation thread)
     // and put it in free-run mode. Returns the live Debugger* (nullptr if the
     // emulator isn't running).

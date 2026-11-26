@@ -4,7 +4,11 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <span>
+#include <string_view>
 #include <rfl/Bytestring.hpp>
+
+#include "system/Sink.hpp"
 
 namespace rp {
 
@@ -293,6 +297,9 @@ struct DebugEvent {
 // surface doesn't bloat the base class and callers branch on nullptr rather
 // than dynamic_cast.
 //
+// No result is returned in a container: each is handed to a sink of the caller's (system/Sink.hpp), and each input is a
+// view, since the session may be a pack's, with a heap of its own (docs/downloadable-packs-m5a-plan.md).
+//
 // Threading: all calls must come from the emulator's emulation thread (the
 // harness's single thread). Mesen's DebugBreakHelper no-ops there, so there is
 // no cross-thread break/deadlock.
@@ -302,35 +309,35 @@ public:
 
     // Profiling. `beginProfile` ensures the debugger is initialised and clears
     // the profiler; drive execution via the normal run path (the harness's
-    // runMs) between begin and read. `readProfile` returns the accumulated
+    // runMs) between begin and read. `readProfileInto` hands `out` the accumulated
     // per-function stats sorted by exclusive cycles (descending).
     virtual void beginProfile() = 0;
-    virtual std::vector<ProfiledFunction> readProfile() = 0;
+    virtual void readProfileInto(Sink<ProfiledFunction> out) = 0;
 
     // Load a cc65 `.dbg` symbol file so profiler/disassembly/call-stack output
     // shows function names. Returns false on read/parse failure or if
     // unsupported. Safe to call before or after beginProfile.
-    virtual bool loadLabels(const std::string& path) = 0;
+    virtual bool loadLabels(std::string_view path) = 0;
 
     // The CPU address of a symbol from the loaded `.dbg`, by name: a C name
     // (`g_frame`, and a file-scope `static` such as `s_mode1` - the `.dbg`
     // records those under their assembler label, which this resolves through
     // the C-symbol table) or the assembler label itself (`_g_frame`,
     // `midiIdleLoop`). nullopt when no labels are loaded or the name is unknown.
-    virtual std::optional<std::uint32_t> symbolAddress(const std::string& /*name*/) { return std::nullopt; }
+    virtual std::optional<std::uint32_t> symbolAddress(std::string_view /*name*/) { return std::nullopt; }
 
-    // Disassemble `count` instructions starting at CPU address `addr`.
-    virtual std::vector<DisasmLine> disassemble(std::uint32_t addr, std::uint32_t count) = 0;
+    // Disassemble `count` instructions starting at CPU address `addr`, handing each to `out`.
+    virtual void disassembleInto(std::uint32_t addr, std::uint32_t count, Sink<DisasmLine> out) = 0;
 
     // Enable/disable the execution trace logger. Enable before the run window;
     // read the captured rows afterwards with readTrace().
     virtual void setTraceEnabled(bool on) = 0;
-    // Most recent `count` executed instructions (row 0 = most recent).
-    virtual std::vector<TraceLine> readTrace(std::uint32_t count) = 0;
+    // Most recent `count` executed instructions to `out` (first = most recent).
+    virtual void readTraceInto(std::uint32_t count, Sink<TraceLine> out) = 0;
 
-    // Current call stack (outermost first), each frame's entered function +
+    // Current call stack to `out` (outermost first), each frame's entered function +
     // resolved label.
-    virtual std::vector<CallFrame> getCallStack() = 0;
+    virtual void callStackInto(Sink<CallFrame> out) = 0;
 
     // Snapshot the NES APU's five channels' decoded state (period/duty/volume/
     // length/enable/output). The raw APU registers are write-only on the NES,
@@ -342,31 +349,32 @@ public:
     // decoded per-channel state. Like getApuState, the registers are write-only,
     // so this is how a test observes what a MIDI-driven ROM programmed into the
     // expansion sound chip. Default {} (chip "none") for backends / carts with
-    // no expansion audio. Call after advancing the emulator.
-    virtual ExpansionAudioState getExpansionAudioState() { return {}; }
+    // no expansion audio: hands `out` nothing then (the caller's default state, chip ""). Call after advancing the
+    // emulator.
+    virtual void expansionAudioStateInto(Sink<ExpansionAudioState> /*out*/) {}
 
     // Snapshot the NES PPU's live timing + register state (scanline/cycle/
     // frameCount + the $2000/$2001/$2002 register bytes + scroll). Call after
-    // advancing the emulator. Default {} for backends without a NES PPU. The
-    // tilemap/sprite/palette viewers are deliberately not exposed here.
-    virtual PpuState getPpuState() { return {}; }
+    // advancing the emulator. Hands `out` nothing for backends without a NES PPU.
+    // The tilemap/sprite/palette viewers are deliberately not exposed here.
+    virtual void ppuStateInto(Sink<PpuState> /*out*/) {}
 
     // -- Breakpoints / stepping ---------------------------------------------
     //
     // Install breakpoints (replacing any existing; empty clears). Don't drive
     // with runMs while breakpoints are active — use runUntilBreak, which steps
     // the CPU one instruction at a time and stops when a breakpoint fires.
-    virtual void setBreakpoints(const std::vector<BreakpointSpec>& bps) = 0;
+    virtual void setBreakpoints(std::span<const BreakpointSpec> bps) = 0;
     virtual BreakInfo runUntilBreak(std::uint64_t maxCycles) = 0;
 
-    // Take the breakpoint firings recorded during ORDINARY execution since the last call, oldest
+    // Hand `out` the breakpoint firings recorded during ORDINARY execution since the last call, oldest
     // first. The passive twin of runUntilBreak: install a conditional watchpoint, render the
     // timeline normally, then ask what tripped. Empty when nothing did.
     //
     // The buffer is capped (a badly-scoped watchpoint fires on every instruction, inside the audio
-    // thread), so `overflow` reports how many were seen beyond what is returned. A non-zero overflow
-    // still means the invariant was violated - only the detail is lost.
-    virtual std::vector<BreakHit> drainBreakHits(std::uint32_t& overflow) { overflow = 0; return {}; }
+    // thread), so the return value reports how many were seen beyond what was handed over. A non-zero
+    // overflow still means the invariant was violated - only the detail is lost.
+    virtual std::uint32_t drainBreakHitsInto(Sink<BreakHit> /*out*/) { return 0; }
 
     // Single-step: into the next instruction, over a subroutine call, or out of
     // the current subroutine.
@@ -380,8 +388,8 @@ public:
     // retains only the frame in progress plus the previous one, so a caller
     // must poll at least once per PPU frame (~16 ms) to see everything; a
     // slower poll loses whole frames, never repeats. The first call returns
-    // both retained frames. Default {} for backends without an event viewer.
-    virtual std::vector<DebugEvent> drainEvents() { return {}; }
+    // both retained frames. Hands `out` nothing for backends without an event viewer.
+    virtual void drainEventsInto(Sink<DebugEvent> /*out*/) {}
 };
 
 } // namespace rp

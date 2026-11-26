@@ -80,7 +80,7 @@ public:
     virtual std::span<const std::uint8_t> image() const = 0;
     // [any] The cartridge's title field as the ROM stores it, up to its first byte that is not printable ASCII, or
     // empty for a console whose header has none (a NES's iNES header, a Master System's).
-    virtual std::string title() const = 0;
+    virtual std::string_view title() const = 0;
 };
 
 // The three, as every emulated core presents them: the work RAM through SystemBase::getMemory, a battery that is
@@ -112,7 +112,7 @@ public:
     CoreRom(const std::vector<std::uint8_t>& rom, std::size_t titleOffset, std::size_t titleLength)
         : rom_(rom), titleOffset_(titleOffset), titleLength_(titleLength) {}
     std::span<const std::uint8_t> image() const override { return rom_; }
-    std::string title() const override;
+    std::string_view title() const override;
 
 private:
     const std::vector<std::uint8_t>& rom_;

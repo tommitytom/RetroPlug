@@ -36,16 +36,16 @@ SramCapability::WriteResult CoreSram::write(std::uint32_t offset, const std::uin
     return WriteResult::Written;
 }
 
-std::string CoreRom::title() const {
-    std::string out;
-    for (std::size_t i = titleOffset_; i < titleOffset_ + titleLength_ && i < rom_.size(); ++i) {
+std::string_view CoreRom::title() const {
+    std::size_t length = 0;
+    for (std::size_t i = titleOffset_; i < titleOffset_ + titleLength_ && i < rom_.size(); ++i, ++length) {
         const std::uint8_t c = rom_[i];
         // Printable ASCII to the first byte that is not: a Game Boy title that fills its 15 bytes leaves the CGB flag
         // (0x80 or 0xC0) at $0143, which is not part of the title.
         if (c < 0x20 || c > 0x7e) break;
-        out.push_back(static_cast<char>(c));
     }
-    return out;
+    if (length == 0) return {};
+    return {reinterpret_cast<const char*>(rom_.data() + titleOffset_), length};
 }
 
 }  // namespace rp

@@ -2,6 +2,7 @@
 
 #include "host/engine/Engine.hpp"
 #include "system/MemoryType.hpp"  // rp::MemoryType / rp::AccessType (readMemory)
+#include "system/Sink.hpp"
 #include "system/SystemBase.hpp"
 
 // Live-core debug reads — resolve the real system via findSystem (NOT the snapshot registry), so they
@@ -19,7 +20,9 @@ rp::ExpansionAudioState DebugRpcService::getExpansionAudioState(std::uint32_t id
     if (!sys) return {};
     rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
     if (!dbg) return {};
-    return dbg->getExpansionAudioState();
+    rp::ExpansionAudioState state;
+    dbg->expansionAudioStateInto(rp::assignTo(state));
+    return state;
 }
 
 rp::PpuState DebugRpcService::getPpuState(std::uint32_t id) {
@@ -27,7 +30,9 @@ rp::PpuState DebugRpcService::getPpuState(std::uint32_t id) {
     if (!sys) return {};
     rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
     if (!dbg) return {};
-    return dbg->getPpuState();
+    rp::PpuState state;
+    dbg->ppuStateInto(rp::assignTo(state));
+    return state;
 }
 
 std::optional<std::uint8_t> DebugRpcService::readCpu(std::uint32_t id, std::uint32_t addr) {
@@ -71,7 +76,9 @@ std::vector<rp::DebugEvent> DebugRpcService::drainEvents(std::uint32_t id) {
     if (!sys) return {};
     rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
     if (!dbg) return {};
-    return dbg->drainEvents();  // events Mesen logged for the frame just rendered
+    std::vector<rp::DebugEvent> events;
+    dbg->drainEventsInto(rp::appendTo(events));  // events Mesen logged for the frame just rendered
+    return events;
 }
 
 rfl::Bytestring DebugRpcService::drainCoreBytes(std::uint32_t id) {
@@ -144,7 +151,7 @@ rp::BreakHitBatch DebugRpcService::drainBreakHits(std::uint32_t id) {
     rp::IDebugTarget* dbg = sys->debugTarget();
     if (!dbg) return {};
     rp::BreakHitBatch batch;
-    batch.hits = dbg->drainBreakHits(batch.overflow);
+    batch.overflow = dbg->drainBreakHitsInto(rp::appendTo(batch.hits));
     return batch;
 }
 
@@ -164,7 +171,9 @@ std::vector<rp::TraceLine> DebugRpcService::readTrace(std::uint32_t id, std::uin
     if (!sys) return {};
     rp::IDebugTarget* dbg = sys->debugTarget();
     if (!dbg) return {};
-    return dbg->readTrace(count);
+    std::vector<rp::TraceLine> lines;
+    dbg->readTraceInto(count, rp::appendTo(lines));
+    return lines;
 }
 
 rp::BreakInfo DebugRpcService::stepInto(std::uint32_t id) {
@@ -207,7 +216,9 @@ std::vector<rp::ProfiledFunction> DebugRpcService::readProfile(std::uint32_t id)
     if (!sys) return {};
     rp::IDebugTarget* dbg = sys->debugTarget();
     if (!dbg) return {};
-    return dbg->readProfile();
+    std::vector<rp::ProfiledFunction> functions;
+    dbg->readProfileInto(rp::appendTo(functions));
+    return functions;
 }
 
 std::vector<rp::DisasmLine> DebugRpcService::disassemble(std::uint32_t id, std::uint32_t addr, std::uint32_t count) {
@@ -215,7 +226,9 @@ std::vector<rp::DisasmLine> DebugRpcService::disassemble(std::uint32_t id, std::
     if (!sys) return {};
     rp::IDebugTarget* dbg = sys->debugTarget();
     if (!dbg) return {};
-    return dbg->disassemble(addr, count);
+    std::vector<rp::DisasmLine> lines;
+    dbg->disassembleInto(addr, count, rp::appendTo(lines));
+    return lines;
 }
 
 std::vector<rp::CallFrame> DebugRpcService::getCallStack(std::uint32_t id) {
@@ -223,5 +236,7 @@ std::vector<rp::CallFrame> DebugRpcService::getCallStack(std::uint32_t id) {
     if (!sys) return {};
     rp::IDebugTarget* dbg = sys->debugTarget();
     if (!dbg) return {};
-    return dbg->getCallStack();
+    std::vector<rp::CallFrame> frames;
+    dbg->callStackInto(rp::appendTo(frames));
+    return frames;
 }

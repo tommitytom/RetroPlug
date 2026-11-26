@@ -1234,7 +1234,7 @@ rp::host::JobSubmit Engine::submitJob(rp::host::JobRequest r) {
             return completeNow(std::vector<std::uint8_t>(image.begin(), image.begin() + n));
         }
         if (r.op == "title") {
-            const std::string title = rom->title();
+            const std::string_view title = rom->title();
             return completeNow(std::vector<std::uint8_t>(title.begin(), title.end()));
         }
         return noOp();
