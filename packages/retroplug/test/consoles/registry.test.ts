@@ -11,6 +11,7 @@
 // generated list builds.
 import { test, expect } from "@retroplug/testing";
 import { classifyRom } from "../../src/systemsStore";
+import { realCartsRegistry } from "../../src/contributions/consoleRegistries";
 import {
   consoleDescriptors,
   consoleFor,
@@ -20,6 +21,7 @@ import {
   registeredCores,
   registeredPlatforms,
   realCartOf,
+  registeredRealCarts,
   romHasBattery,
   sniffLengths,
 } from "../../src/consoles";
@@ -342,3 +344,11 @@ function gbLike(): { at: number; bytes: number[] } {
 function segaLike(): { at: number; bytes: number[] } {
   return { at: 0x7ff0, bytes: [0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41] };
 }
+
+test("the desktop product holds every real cart it registers active", () => {
+  // A cart dormant in the desktop product names a platform no package of this tree declares: a typo, since the desktop
+  // links every console package; a pack's own carts are checked when the pack's consoles arrive.
+  const registered = realCartsRegistry.items().map((cart) => cart.cartNode);
+  expect(registeredRealCarts().map((cart) => cart.cartNode)).toEqual(registered);
+  expect(registered.length).toBeGreaterThan(0);
+});
