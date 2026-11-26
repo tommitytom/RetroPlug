@@ -143,7 +143,7 @@ hosts built on the `packs-desktop` product, which has no Mesen, and run by `pnpm
 `pnpm test:ui:packs` (what they prove is [06](06-build-test.md#pnpm-scripts)'s). Each runs `ensureLaunchPacks` before
 any Engine exists; the native one also loads the pack host runtime, registers the product's render modules and installs
 the pack loader. Both are built by name, get no device (no audio, video or serial), and run on the Linux CI job only;
-`RETROPLUG_PACK_PATH` names `build/packs/mesen/0.1.0`, which the full build produces.
+`RETROPLUG_PACK_PATH` names `build/packs/mesen/0.1.0`, which `pnpm test:native:packs` and `pnpm test:ui:packs` build by name (`retroplug-mesen-pack`) before they run.
 
 ### The device guard
 
