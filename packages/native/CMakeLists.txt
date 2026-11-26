@@ -206,8 +206,8 @@ set_target_properties(retroplug-host PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# retroplug-host-packs: the same test host on packs-desktop (the desktop's list without mesen), loading the launch packs
-# (RP_HOST_LOADS_PACKS): the native tier's pack mode runs every file on it with Mesen loaded as a pack
+# retroplug-host-packs: the same test host on packs-desktop (the desktop's list without mesen and bliptoaster), loading
+# the launch packs (RP_HOST_LOADS_PACKS): the native tier's pack mode runs every file on it with Mesen loaded as a pack
 # (docs/downloadable-packs-m5b-plan.md, `pnpm test:native:packs`). Built by name.
 add_executable(retroplug-host-packs EXCLUDE_FROM_ALL src/main.cpp src/host/SessionPump.cpp)
 target_link_libraries(retroplug-host-packs PRIVATE retroplug-backend retroplug-tjs-runtime retroplug-launchpad-harness)
@@ -236,37 +236,6 @@ set_target_properties(retroplug-render-host-test PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# The root CLI dispatcher (cli/cli.ts) and the shell's contract modules as the CLI's shared module set
-# (docs/downloadable-packs-m2b-plan.md): rp_cli_modules is the ordered table the launcher registers before it evaluates
-# the dispatcher (rp_cli_bundle, now importing those modules by name), so a pack's CLI half can link to the same
-# contracts (M2c). Derived; never committed. Adding a command is pure TS (cli/tools.ts): no change here.
-set(CLI_MODULES_DIR "${CMAKE_BINARY_DIR}/native/cli-modules")
-set(CLI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/cli-bundle_data.c")
-set(CLI_MODULES_C "${CMAKE_BINARY_DIR}/native/cli-modules_data.c")
-set(SDK_MODULE_C  "${CMAKE_BINARY_DIR}/native/sdk-module_data.c")
-set_source_files_properties(${CLI_BUNDLE_C} ${CLI_MODULES_C} ${SDK_MODULE_C} PROPERTIES GENERATED TRUE)  # produced before the CLI compiles
-add_custom_target(retroplug-cli-bundle
-    BYPRODUCTS ${CLI_BUNDLE_C} ${CLI_BUNDLE_C}.new ${CLI_MODULES_C} ${CLI_MODULES_C}.new
-               ${SDK_MODULE_C} ${SDK_MODULE_C}.new
-               ${CLI_MODULES_DIR}/shared.tsv ${CLI_MODULES_DIR}/hosts.tsv
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-shared-modules.mjs cli ${CLI_MODULES_DIR}
-    COMMAND ${_MODC_COMMAND} table -s rp_cli_modules ${CLI_MODULES_DIR}/shared.tsv ${CLI_MODULES_C}.new
-    COMMAND ${_MODC_COMMAND} array -s rp:cli rp_cli_bundle ${CLI_MODULES_DIR}/js/rp/cli.js ${CLI_BUNDLE_C}.new
-    COMMAND ${_MODC_COMMAND} array -s retroplug-cli rp_retroplug_cli ${CLI_MODULES_DIR}/js/rp/sdk.js ${SDK_MODULE_C}.new
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CLI_MODULES_C}.new ${CLI_MODULES_C}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CLI_BUNDLE_C}.new ${CLI_BUNDLE_C}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SDK_MODULE_C}.new ${SDK_MODULE_C}
-    COMMENT "Building the CLI's shared module set (esbuild split + retroplug-modc)"
-    VERBATIM)
-# Order against the in-tree tool target only; a cross-build's -DRP_MODC_EXECUTABLE is a host file path (not a target).
-if(TARGET ${_MODC_DEP})
-  add_dependencies(retroplug-cli-bundle ${_MODC_DEP})
-endif()
-# ...and against the shell's generator: cli.ts imports cli/generated/tools.ts and the dispatcher's own modules import
-# src/generated, which a fresh tree has not written yet. Unbundled from this edge, a parallel build from a tree with no
-# src/generated can bundle the CLI before the generator has written it (the desktop's set: these bundles are its).
-add_dependencies(retroplug-cli-bundle ${RP_BUNDLE_desktop_GENERATOR})
-
 # The TypeScript type stripper — ts-blank-space + the TS parser → tjsc bytecode C array, COMPILED INTO
 # retroplug-cli so `retroplug-cli test/run` can execute `.ts` directly with no Node, npm or bundler on
 # the consumer's machine. GLOBAL CODE (tjsc WITHOUT -m, like the render worker): cli/main.cpp loads it
@@ -288,51 +257,18 @@ if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-ts-stripper-bundle ${_TJSC_DEP})
 endif()
 
-# The test SDK, embedded twice, for two different consumers:
-#
-#   rp_retroplug_cli[]  MODULE bytecode of the cli shared set's `rp:sdk` host (cli/sdkModule.ts), compiled by
-#                       retroplug-modc (retroplug-cli-bundle above) under the module name `retroplug-cli`.
-#                       cli/main.cpp JS_ReadObject's it before evaluating a session, which registers it in QuickJS's
-#                       loaded-module table; an `import ... from "retroplug-cli"` then resolves from that table,
-#                       because js_host_resolve_imported_module looks there BEFORE calling the module loader
-#                       (quickjs.c: "first look at the loaded modules"). So the SDK never touches the filesystem -
-#                       there is no .js to generate, sync, or let go stale. Its imports are the set's contract
-#                       modules, registered first, and it commits the launch packs' halves before a session's body.
-#   rp_sdk_dts[]        the .d.ts as raw text. Still materialized next to a consumer's tests, because
-#                       editors and `tsc` read declarations off disk; a bare specifier resolves to it
-#                       via a tsconfig `paths` entry.
-#
-# The relative-import form could never work this way: tjs_module_normalizer only consults the import
-# map for BARE specifiers (modules.c, `if (name[0] != '.')`), so "../sdk/x.js" always hits the disk.
-set(SDK_ASSETS_C "${CMAKE_BINARY_DIR}/native/sdk-assets_data.c")
-set_source_files_properties(${SDK_ASSETS_C} PROPERTIES GENERATED TRUE)
-add_custom_target(retroplug-cli-sdk-assets
-    BYPRODUCTS ${SDK_ASSETS_C} ${SDK_ASSETS_C}.new
-    # Embeds the .d.ts and a content stamp over the set's rp:sdk output and the .d.ts.
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/embed-sdk.mjs
-            ${CLI_MODULES_DIR}/js/rp/sdk.js ${SDK_ASSETS_C}.new
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SDK_ASSETS_C}.new ${SDK_ASSETS_C}
-    COMMENT "Embedding the retroplug-cli test SDK's declarations and stamp"
-    VERBATIM)
-# The stamp hashes the set's rp:sdk output, so the set is built first.
-add_dependencies(retroplug-cli-sdk-assets retroplug-cli-bundle)
-
-# retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
-# dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
-# runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp src/host/SessionPump.cpp ${CLI_BUNDLE_C} ${CLI_MODULES_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
-
-target_link_libraries(retroplug-cli PRIVATE retroplug-backend retroplug-tjs-runtime)
-retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad midi)
-add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first
-add_dependencies(retroplug-cli retroplug-ts-stripper-bundle)     # ...and the stripper bytecode
-add_dependencies(retroplug-cli retroplug-cli-sdk-assets)         # ...and the embedded SDK
-
-set_target_properties(retroplug-cli PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-)
+# retroplug-cli, built per product (cmake/cli.cmake). The desktop's is the one that ships.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cli.cmake)
+retroplug_cli(retroplug-cli desktop)
+# retroplug-cli-packs: the CLI on packs-desktop (the desktop's list without mesen and bliptoaster), which gets both from
+# their packs; `pnpm test:cli-ts:packs` runs the whole CLI suite on it (docs/downloadable-packs-cli-plan.md). Built by
+# name, never released.
+retroplug_cli(retroplug-cli-packs packs-desktop EXCLUDE_FROM_ALL)
+foreach(_pack retroplug-mesen-pack retroplug-bliptoaster-pack)
+    if(TARGET ${_pack})
+        add_dependencies(retroplug-cli-packs ${_pack})  # the packs its suite loads
+    endif()
+endforeach()
 
 # The Node-API addon host (opt-in: -DRETROPLUG_NODE_ADDON=ON).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/node-addon.cmake)
@@ -480,7 +416,6 @@ add_dependencies(retroplug-ui-test retroplug-app-modules)
 # retroplug-ui-test-packs: the UI harness on packs-desktop's app module set and UI bundle, so the UI tier's pack mode
 # runs every file with Mesen loaded as a pack (docs/downloadable-packs-m5b-plan.md, `pnpm test:ui:packs`). The harness
 # loads the launch packs already (UiHarness.hpp). Built by name.
-set_property(GLOBAL PROPERTY RP_BUNDLE_PACKAGES_packs-desktop "${RP_PRODUCT_PACKAGES_packs-desktop}")
 retroplug_bundles(packs-desktop)
 add_executable(retroplug-ui-test-packs EXCLUDE_FROM_ALL
     test/ui/UiRunner.cpp

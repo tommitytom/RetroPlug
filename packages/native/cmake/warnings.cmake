@@ -36,7 +36,7 @@ if(MSVC)
         list(APPEND _rp_warn_flags /WX)
     endif()
     set(_rp_werror_targets
-        retroplug-backend retroplug-host retroplug-cli retroplug-sdl
+        retroplug-backend retroplug-host retroplug-cli retroplug-cli-packs retroplug-sdl
         # The two host runtime libraries (cmake/packages.cmake's shell): a vendored txiki host file's compile is judged
         # at the level the backend's was, and the watcher's own code is ours.
         retroplug-tjs-runtime retroplug-file-watcher
