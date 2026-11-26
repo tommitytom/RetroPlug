@@ -23,8 +23,8 @@
 // script contexts, so it bundles everything its runtime imports (each @retroplug package through its exports map) and
 // refuses zod, react and the UI libraries.
 //
-//   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>]
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
+//   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>] [--depfile <path>]
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync, realpathSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -173,7 +173,7 @@ function kindsImports() {
 }
 
 /** The package's protocol member as the pack's protocol half (see the header). Returns the bundle's file. */
-async function buildProtocolHalf({ packageDir, outDir, pack, protocol }) {
+async function buildProtocolHalf({ packageDir, outDir, pack, protocol, inputs }) {
   if (typeof protocol.module !== "string" || protocol.module === "") {
     throw new Error("retroplug.protocol needs a module, the file that default-exports its nodes");
   }
@@ -198,8 +198,9 @@ async function buildProtocolHalf({ packageDir, outDir, pack, protocol }) {
     "}",
     "registerScriptNodes(nodes.slice().sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id)));",
   ].join("\n");
-  await esbuild.build({
+  const built = await esbuild.build({
     stdin: { contents: entry, resolveDir: packageDir, sourcefile: "protocol-entry.js", loader: "js" },
+    metafile: true,
     bundle: true,
     format: "iife",
     platform: "neutral",
@@ -214,12 +215,13 @@ async function buildProtocolHalf({ packageDir, outDir, pack, protocol }) {
     nodePaths: [join(REPO, "node_modules")],
     logLevel: "silent",
   });
+  collectInputs(inputs, built.metafile, packageDir);
   pack.protocol = { nodes, roles: protocol.roles ?? {} };
   return "js/protocol.js";
 }
 
 /** The package's protocol.kinds member as the pack's kinds half (see the header). Returns the bundle's file. */
-async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
+async function buildKindsHalf({ packageDir, outDir, pack, kinds, inputs: allInputs }) {
   if (typeof kinds !== "object" || kinds === null || Array.isArray(kinds)) {
     throw new Error("retroplug.protocol.kinds is { <kind>: [{ id, module, ...data }] }");
   }
@@ -266,6 +268,7 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
   // which the resolver cannot see: the bundle's inputs say so. The refusal names the entry module whose imports lead there.
   const runtimeModules = kindRuntimeModules();
   const inputs = result.metafile.inputs;
+  collectInputs(allInputs, result.metafile, realDir);
   const keyOf = (file) => relative(realDir, realpathSync(file)).split(sep).join("/");
   const wanted = new Set([...runtimeModules].map(keyOf));
   const reaches = (key, seen) => {
@@ -285,7 +288,17 @@ async function buildKindsHalf({ packageDir, outDir, pack, kinds }) {
   return "js/kinds.js";
 }
 
-export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner }) {
+/** Adds a build's metafile inputs to `into`, keyed by absolute path (esbuild keys them relative to its working dir). */
+function collectInputs(into, metafile, workingDir) {
+  // A stdin entry's key names no file (its sourcefile), and a depfile entry that does not exist fails the build.
+  for (const key of Object.keys(metafile.inputs)) {
+    const file = resolve(workingDir, key);
+    if (existsSync(file)) into[file] = {};
+  }
+}
+
+export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner, depfile }) {
+  const inputs = {};
   const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   const block = manifest.retroplug ?? {};
   if (block.kinds !== undefined) {
@@ -303,11 +316,11 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
     if (typeof entry !== "string") continue;
     if (only && !only.includes(half)) continue;
     if (half === "protocol") {
-      halves.protocol = await buildProtocolHalf({ packageDir, outDir, pack, protocol: block.protocol });
+      halves.protocol = await buildProtocolHalf({ packageDir, outDir, pack, protocol: block.protocol, inputs });
       continue;
     }
     if (half === "kinds") {
-      halves.kinds = await buildKindsHalf({ packageDir, outDir, pack, kinds: block.protocol.kinds });
+      halves.kinds = await buildKindsHalf({ packageDir, outDir, pack, kinds: block.protocol.kinds, inputs });
       continue;
     }
     const refuseForeign = {
@@ -321,8 +334,9 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
       },
     };
     const outfile = join(outDir, "js", `${half}.js`);
-    await esbuild.build({
+    const built = await esbuild.build({
       entryPoints: [join(packageDir, entry)],
+      metafile: true,
       bundle: true,
       format: "esm",
       platform: "neutral",
@@ -339,6 +353,7 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
       nodePaths: [join(REPO, "node_modules")],
       logLevel: "silent",
     });
+    collectInputs(inputs, built.metafile, packageDir);
     halves[half] = `js/${half}.js`;
   }
   if ((!only || only.includes("script")) && block.script !== undefined) {
@@ -348,13 +363,14 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
   pack.halves = halves;
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, "pack.json"), `${JSON.stringify(pack, null, 2)}\n`);
+  if (depfile) createRequire(import.meta.url)("./esbuild-shared.js").writeDepfile(depfile, join(outDir, "pack.json"), { inputs });
   return pack;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const usage = () => {
     console.error("usage: node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> " +
-      "[--only <half,...>] [--mqjs <path>] [--runner <path>]");
+      "[--only <half,...>] [--mqjs <path>] [--runner <path>] [--depfile <path>]");
     process.exit(2);
   };
   const positional = [];
@@ -362,7 +378,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     if (argv[i].startsWith("--")) {
-      if (!["--only", "--mqjs", "--runner"].includes(argv[i]) || i + 1 >= argv.length) usage();
+      if (!["--only", "--mqjs", "--runner", "--depfile"].includes(argv[i]) || i + 1 >= argv.length) usage();
       opts[argv[i].slice(2)] = argv[++i];
     } else positional.push(argv[i]);
   }
@@ -372,5 +388,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     packageDir: resolve(packageDir), outDir: resolve(outDir), template: resolve(template),
     only: opts.only ? opts.only.split(",") : undefined,
     mqjs: opts.mqjs ? resolve(opts.mqjs) : undefined, runner: opts.runner ? resolve(opts.runner) : undefined,
+    depfile: opts.depfile ? resolve(opts.depfile) : undefined,
   }).catch((e) => { console.error(e?.message ?? e); process.exit(1); });
 }

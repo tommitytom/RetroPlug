@@ -37,7 +37,10 @@
 #include <dlfcn.h>
 #endif
 
+#include <algorithm>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -121,6 +124,34 @@ std::string vtableFile(SystemBase* core) {
 }
 
 }  // namespace
+
+TEST_CASE("the Mesen pack's folder names its native and TS halves, each present", "[packs-mesen]") {
+    std::ifstream in(mesenPack() / "pack.json");
+    REQUIRE(in);
+    std::ostringstream text;
+    text << in.rdbuf();
+    const std::string json = text.str();
+    const auto        halves = json.find("\"halves\"");
+    REQUIRE(halves != std::string::npos);
+    const auto end = json.find('}', halves);
+    REQUIRE(end != std::string::npos);
+    // The halves member is a flat object, so its text is exactly the four members the pack carries.
+    const std::string member = json.substr(halves, end - halves);
+    for (const char* entry : {"\"native\": \"rp-mesen\"", "\"app\": \"js/app.js\"", "\"consoles\": \"js/consoles.js\"",
+                              "\"ui\": \"js/ui.js\""}) {
+        INFO(entry);
+        CHECK(member.find(entry) != std::string::npos);
+    }
+    CHECK(std::count(member.begin(), member.end(), ':') == 5);  // "halves": and the four members
+    for (const char* js : {"js/app.js", "js/consoles.js", "js/ui.js"}) {
+        INFO(js);
+        CHECK(std::filesystem::exists(mesenPack() / js));
+    }
+    PackTable  table(rp::graph::productPackages());
+    const auto load = table.load(mesenPack());
+    INFO(load.error);
+    CHECK(load);
+}
 
 TEST_CASE("the Mesen package loads as a pack, its types described as its static build describes them",
           "[packs-mesen]") {

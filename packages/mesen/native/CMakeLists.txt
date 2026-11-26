@@ -62,5 +62,6 @@ retroplug_add_test_binary(
 
 # --- retroplug-mesen-pack: the same entry built as a pack (cmake/packs.cmake), staged at build/packs/mesen/0.1.0/ from
 # ../pack.json. Built by name, or by what loads it: retroplug-packs-test boots a NES through it and holds its PCM to
-# this package's static build. Only the native half: the TS halves join a pack in M2.
-retroplug_pack(mesen)
+# this package's static build. The pack carries its native module and its app, consoles and ui halves
+# (docs/downloadable-packs-m5b-plan.md): the folder's pack.json is written by the halves build, not at configure.
+retroplug_pack(mesen TS_HALVES)
