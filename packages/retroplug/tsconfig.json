@@ -5,6 +5,10 @@
   // React modules the UI alone may name, from host-modules.json) and the one alias the UI tests use (from
   // tsconfig.aliases.json). The runtime's ambient globals come from the base's `files`.
   "extends": ["../../tsconfig.base.json", "./tsconfig.paths.json"],
+  // ES2022 modules, over the base's ES2020, for one thing: top-level await, which the test runners' pack-mode preludes
+  // (test-native/_packsPrelude.ts, test-ui/_packsPrelude.ts) use so a test's modules wait for the packs' halves to load.
+  // esbuild, which builds every bundle, does not read this option.
+  "compilerOptions": { "module": "ES2022" },
   // The shell's own trees, the LVGL UI among them, and every workspace package's TS half by one glob, so a package
   // added to the workspace is type-checked without an entry here: its own ts/ tree, sources and ts/test alike.
   // packages/native's device-mode fixture packs stay listed (they are fixtures of a native test, not a package).
