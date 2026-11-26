@@ -177,6 +177,58 @@ test("a script half whose types the template does not declare is refused, naming
     "the script half defines rp.bliptoaster.midi-policy, which the template's provides.nodeTypes does not declare")).toBe(true);
 });
 
+// The script half from a toolchain output folder (--script-from): copied, not rebuilt, and held to the template.
+function scriptFromScript(declared: string[], files: boolean): string {
+  return [
+    'const fs = require("fs"), os = require("os"), path = require("path"), cp = require("child_process");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-script-from-"));',
+    'const from = path.join(work, "toolchain");',
+    'fs.mkdirSync(from);',
+    `if (${files}) {`,
+    '  fs.writeFileSync(path.join(from, "bliptoaster.js"), "var whole = 1;\\n");',
+    '  fs.writeFileSync(path.join(from, "bliptoaster.device.js"), "var device = 1;\\n");',
+    '  fs.writeFileSync(path.join(from, "bliptoaster.types.json"), JSON.stringify(["rp.bliptoaster.midi-policy"]));',
+    '}',
+    'const template = path.join(work, "template.json");',
+    'fs.writeFileSync(template, JSON.stringify({ id: "bliptoaster", name: "x", version: "0.1.0", apiLevel: 0,',
+    '  license: "MIT", source: "x", requires: { packs: [], platforms: [] },',
+    `  provides: { platforms: [], nodeTypes: ${JSON.stringify(declared)}, roles: [] }, halves: {} }));`,
+    'const out = path.join(work, "v");',
+    'const r = cp.spawnSync(process.execPath, [path.join(repo, "tools/build-pack-halves.mjs"),',
+    '  path.join(repo, "packages/bliptoaster"), out, template, "--only", "script", "--script-from", from],',
+    '  { encoding: "utf8", cwd: repo });',
+    'const read = (f) => { try { return fs.readFileSync(path.join(out, f), "utf8"); } catch (e) { return null; } };',
+    'const rec = { status: r.status, stderr: r.stderr, pack: read("pack.json"), whole: read("js/script.js"),',
+    '  runtime: read("js/script.device.js") };',
+    'fs.rmSync(work, { recursive: true, force: true });',
+    'process.stdout.write(JSON.stringify(rec));',
+  ].join("\n");
+}
+
+test("--script-from copies a toolchain's bundles in as the script half, held to the template's types", async () => {
+  const run = await runNode(scriptFromScript(["rp.bliptoaster.midi-policy"], true));
+  if (run.status !== 0) throw new Error(run.err);
+  const rec = JSON.parse(run.out) as ToolRun;
+  expect(rec.status, rec.stderr).toBe(0);
+  expect(rec.whole).toBe("var whole = 1;\n");
+  expect(rec.runtime).toBe("var device = 1;\n");
+  const pack = JSON.parse(rec.pack as string) as { halves: Record<string, string>; script: unknown };
+  expect(pack.halves).toEqual({ script: "js/script.js" });
+  expect(pack.script).toEqual({ runtime: "js/script.device.js", heapBytes: 24576, nodeTypes: ["rp.bliptoaster.midi-policy"] });
+
+  const undeclared = JSON.parse((await runNode(scriptFromScript([], true))).out) as ToolRun;
+  expect(undeclared.status).toBe(1);
+  expect(undeclared.stderr.includes("the script half defines rp.bliptoaster.midi-policy, which the template's " +
+    "provides.nodeTypes does not declare"), undeclared.stderr).toBe(true);
+});
+
+test("--script-from naming a folder without the toolchain's files is refused, saying what builds them", async () => {
+  const rec = JSON.parse((await runNode(scriptFromScript(["rp.bliptoaster.midi-policy"], false))).out) as ToolRun;
+  expect(rec.status).toBe(1);
+  expect(rec.stderr.includes("retroplug-bliptoaster-script-pack"), rec.stderr).toBe(true);
+});
+
 test("a package's protocol member is built as a pack's protocol and placer halves", async () => {
   const script = [
     'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url"), vm = require("vm");',

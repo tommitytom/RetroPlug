@@ -11,7 +11,9 @@
 // (packages/retroplug/scripts/build-device-pack.mjs, with its bundling, ES5 lowering, library-call scan and transcript
 // run) builds it under the pack's id, and the pack ships its two ES5 bundles (js/script.js, the whole pack;
 // js/script.device.js, the device's runtime), which the host compiles to bytecode when it loads the pack, and a `script`
-// member naming the runtime, the heap and the types. `--only` builds the halves it names alone.
+// member naming the runtime, the heap and the types. `--only` builds the halves it names alone. A `--script-from <dir>`
+// names a folder holding the toolchain's `<id>.js`, `<id>.device.js` and `<id>.types.json` (the product build's
+// build/packages/<package>/script), copied in rather than rebuilt, so the pack's bundles are the static build's own.
 //
 // A package's `retroplug.protocol` member becomes the protocol half, a global-code script-node bundle (an IIFE that
 // appends its definitions to __rp_scriptNodes, as the product's own script bundle does) carrying its own copy of
@@ -24,7 +26,7 @@
 // script contexts, so it bundles everything its runtime imports (each @retroplug package through its exports map) and
 // refuses zod, react and the UI libraries.
 //
-//   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>] [--depfile <path>]
+//   node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> [--only <half,...>] [--mqjs <path>] [--runner <path>] [--depfile <path>] [--script-from <dir>]
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, copyFileSync, mkdtempSync, rmSync, realpathSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -55,12 +57,39 @@ export function packExternals() {
     ...SHARED_LIBRARIES.map((e) => e.specifier), ...hostModules])];
 }
 
+/** The script half's types held to the template's, then its two bundles copied in and the `script` member written.
+ *  `whole` and `runtime` are the toolchain's `<id>.js` and `<id>.device.js`. Returns the whole pack's file. */
+function placeScriptHalf({ outDir, pack, script, types, whole, runtime }) {
+  const declared = pack.provides?.nodeTypes ?? [];
+  for (const type of types) {
+    if (!declared.includes(type)) {
+      throw new Error(`the script half defines ${type}, which the template's provides.nodeTypes does not declare`);
+    }
+  }
+  mkdirSync(join(outDir, "js"), { recursive: true });
+  copyFileSync(whole, join(outDir, "js", "script.js"));
+  copyFileSync(runtime, join(outDir, "js", "script.device.js"));
+  pack.script = { runtime: "js/script.device.js", heapBytes: script.heapBytes, nodeTypes: types };
+  return "js/script.js";
+}
+
 /** The package's device script pack as the pack's script half (see the header). Returns the whole pack's file. */
-function buildScriptHalf({ packageDir, outDir, pack, script, mqjs, runner }) {
+function buildScriptHalf({ packageDir, outDir, pack, script, mqjs, runner, scriptFrom }) {
   if (typeof script !== "object" || script === null || script.device !== true || typeof script.entry !== "string" ||
       !Number.isInteger(script.heapBytes)) {
     throw new Error("retroplug.script is not a device pack ({ entry, device: true, heapBytes }): a desktop script " +
       "pack is reserved");
+  }
+  if (scriptFrom) {
+    const file = (ext) => join(scriptFrom, `${pack.id}${ext}`);
+    for (const ext of [".js", ".device.js", ".types.json"]) {
+      if (!existsSync(file(ext))) {
+        throw new Error(`the script half's ${file(ext)} does not exist: build the package's device script pack ` +
+          `(retroplug-${pack.id}-script-pack) first`);
+      }
+    }
+    return placeScriptHalf({ outDir, pack, script, types: JSON.parse(readFileSync(file(".types.json"), "utf8")),
+      whole: file(".js"), runtime: file(".device.js") });
   }
   const work = mkdtempSync(join(tmpdir(), "rp-pack-script-"));
   try {
@@ -73,18 +102,8 @@ function buildScriptHalf({ packageDir, outDir, pack, script, mqjs, runner }) {
     if (run.status !== 0) {
       throw new Error(`the device-pack toolchain refused ${pack.id}'s script half:\n${run.error ? `${run.error}\n` : ""}${run.stderr}${run.stdout}`);
     }
-    const types = JSON.parse(readFileSync(join(work, `${pack.id}.types.json`), "utf8"));
-    const declared = pack.provides?.nodeTypes ?? [];
-    for (const type of types) {
-      if (!declared.includes(type)) {
-        throw new Error(`the script half defines ${type}, which the template's provides.nodeTypes does not declare`);
-      }
-    }
-    mkdirSync(join(outDir, "js"), { recursive: true });
-    copyFileSync(join(work, `${pack.id}.js`), join(outDir, "js", "script.js"));
-    copyFileSync(join(work, `${pack.id}.device.js`), join(outDir, "js", "script.device.js"));
-    pack.script = { runtime: "js/script.device.js", heapBytes: script.heapBytes, nodeTypes: types };
-    return "js/script.js";
+    return placeScriptHalf({ outDir, pack, script, types: JSON.parse(readFileSync(join(work, `${pack.id}.types.json`), "utf8")),
+      whole: join(work, `${pack.id}.js`), runtime: join(work, `${pack.id}.device.js`) });
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
@@ -333,7 +352,7 @@ function collectInputs(into, metafile, workingDir) {
   }
 }
 
-export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner, depfile }) {
+export async function buildPackHalves({ packageDir, outDir, template, only, mqjs, runner, depfile, scriptFrom }) {
   const inputs = {};
   const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   const block = manifest.retroplug ?? {};
@@ -397,7 +416,7 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
     halves[half] = `js/${half}.js`;
   }
   if ((!only || only.includes("script")) && block.script !== undefined) {
-    halves.script = buildScriptHalf({ packageDir, outDir, pack, script: block.script, mqjs, runner });
+    halves.script = buildScriptHalf({ packageDir, outDir, pack, script: block.script, mqjs, runner, scriptFrom });
   }
   pack.apiLevel = apiLevel();
   pack.halves = halves;
@@ -410,7 +429,7 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const usage = () => {
     console.error("usage: node tools/build-pack-halves.mjs <package dir> <version dir> <pack.json template> " +
-      "[--only <half,...>] [--mqjs <path>] [--runner <path>] [--depfile <path>]");
+      "[--only <half,...>] [--mqjs <path>] [--runner <path>] [--depfile <path>] [--script-from <dir>]");
     process.exit(2);
   };
   const positional = [];
@@ -418,7 +437,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     if (argv[i].startsWith("--")) {
-      if (!["--only", "--mqjs", "--runner", "--depfile"].includes(argv[i]) || i + 1 >= argv.length) usage();
+      if (!["--only", "--mqjs", "--runner", "--depfile", "--script-from"].includes(argv[i]) || i + 1 >= argv.length) usage();
       opts[argv[i].slice(2)] = argv[++i];
     } else positional.push(argv[i]);
   }
@@ -429,5 +448,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     only: opts.only ? opts.only.split(",") : undefined,
     mqjs: opts.mqjs ? resolve(opts.mqjs) : undefined, runner: opts.runner ? resolve(opts.runner) : undefined,
     depfile: opts.depfile ? resolve(opts.depfile) : undefined,
+    scriptFrom: opts["script-from"] ? resolve(opts["script-from"]) : undefined,
   }).catch((e) => { console.error(e?.message ?? e); process.exit(1); });
 }
