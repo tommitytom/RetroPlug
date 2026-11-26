@@ -22,7 +22,7 @@
 import type { CliHost, CliTool } from "@retroplug/core/cliTool";
 import type { KitEffect } from "@retroplug/dsp/kitEffect";
 import type { NesDmcKitSpec, NesDmcSampleSpec } from "@retroplug/tracker/nes/kitSpec";
-import { NO_SLOT_REASON } from "@retroplug/dsp";
+import { NO_SLOT_REASON } from "@retroplug/dsp/kitContract";
 import { encodeWav } from "@retroplug/dsp/wav";
 import {
   BlipToasterRom,

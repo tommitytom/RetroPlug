@@ -5,6 +5,10 @@
 import type { OfflineRunRequest, OfflineRunResult } from "@retroplug/core/offlineJob";
 import type { KitEffect } from "./kitEffect";
 
+/** What a compile error says when the compiler left a slot empty and gave no reason: the kit tools' fallback message,
+ *  in the contract so a pack's tool (which may import only contract modules) words it as the built-in ones do. */
+export const NO_SLOT_REASON = "the compiler left the slot empty without saying why";
+
 /** A compiled kit: the bank, and each spec sample's reason in spec order, null exactly when the bank holds that
  *  sample whole. A reason is a failure (the slot is empty), or why a slot that compiled is still empty or short (an
  *  LSDj window with nothing to pack, a bank that ran out of room); a sample past the bank's slot count is not
