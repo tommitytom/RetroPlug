@@ -72,6 +72,21 @@ std::string manifestJson(const std::string& id, std::uint32_t level, const std::
            needs + "}, \"provides\": {\"nodeTypes\": [\"rp." + id + ".t\"]}, \"halves\": {" + halves + "}}";
 }
 
+// A pack folder with an app half alone (a file the native table only finds; the TS loader reads it), requiring and
+// providing the platforms given.
+std::filesystem::path platformPack(const TempDir& tmp, const std::string& id, const std::string& needsPlatforms,
+                                   const std::string& givesPlatforms) {
+    const auto dir = writePack(
+        tmp, id,
+        "{\"id\": \"" + id + "\", \"name\": \"n\", \"version\": \"1.0.0\", \"apiLevel\": " +
+            std::to_string(RP_API_LEVEL) + ", \"license\": \"MIT\", \"source\": \"s\", \"requires\": {\"packs\": [], "
+            "\"platforms\": " + needsPlatforms + "}, \"provides\": {\"platforms\": " + givesPlatforms +
+            ", \"nodeTypes\": [], \"roles\": []}, \"halves\": {\"app\": \"js/app.js\"}}");
+    std::filesystem::create_directories(dir / "js");
+    std::ofstream(dir / "js" / "app.js") << "export default {};\n";
+    return dir;
+}
+
 #if defined(__linux__)
 // Whether `file` is mapped in this process: RTLD_NOLOAD answers a handle only for a library already open.
 bool libraryIsOpen(const std::filesystem::path& file) {
@@ -138,6 +153,30 @@ TEST_CASE("packs load in dependency order, whatever order they are given in", "[
     REQUIRE(order.size() == 2);
     CHECK(order[0]->manifest.id == "packfixture");
     CHECK(table.loadedFrom(1).size() == 1);
+}
+
+TEST_CASE("a pack requiring a platform loads after the pack that provides it, whatever order they are given in",
+          "[packs-loader]") {
+    TempDir tmp;
+    const auto user = platformPack(tmp, "plat-user", "[\"plat\"]", "[]");
+    const auto other = platformPack(tmp, "plat-other", "[]", "[]");
+    const auto provider = platformPack(tmp, "plat-provider", "[]", "[\"plat\"]");
+    PackTable table(rp::graph::productPackages());
+    const auto loads = table.loadAll({{user}, {other}, {provider}});
+    std::string refusals;
+    for (const auto& r : loads.refused) refusals += r.id + ": " + r.reason + "\n";
+    INFO(refusals);
+    REQUIRE(loads.loaded.size() == 3);
+    CHECK(loads.loaded[0]->manifest.id == "plat-other");
+    CHECK(loads.loaded[1]->manifest.id == "plat-provider");
+    CHECK(loads.loaded[2]->manifest.id == "plat-user");
+
+    // A platform no other pack given provides (the product's, or nobody's) holds nothing back: the TS loader judges it.
+    TempDir alone;
+    PackTable second(rp::graph::productPackages());
+    const auto one = second.loadAll({{platformPack(alone, "plat-user", "[\"plat\"]", "[]")}});
+    CHECK(one.loaded.size() == 1);
+    CHECK(one.refused.empty());
 }
 
 TEST_CASE("a pack whose requirement is not loaded is refused, naming it", "[packs-loader]") {

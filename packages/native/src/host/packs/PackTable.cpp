@@ -168,7 +168,9 @@ LoadReport PackTable::loadAll(const std::vector<PackCandidate>& candidates) {
     struct Pending {
         PackCandidate            candidate;
         std::string              id;
-        std::vector<std::string> needs;
+        std::vector<std::string> needs;      // requires.packs
+        std::vector<std::string> platforms;  // requires.platforms
+        std::vector<std::string> provides;   // provides.platforms
     };
     std::vector<Pending> pending;
     for (const auto& c : candidates) {
@@ -178,20 +180,33 @@ LoadReport PackTable::loadAll(const std::vector<PackCandidate>& candidates) {
             out.push_back(loadLocked(c));
             continue;
         }
-        pending.push_back({c, manifest->id, manifest->requiresPacks});
+        pending.push_back({c, manifest->id, manifest->requiresPacks, manifest->requiresPlatforms,
+                           manifest->providesPlatforms});
     }
     const auto loaded = [&](const std::string& dep) {
         for (const auto& p : packs_)
             if (p->manifest.id == dep) return true;
         return false;
     };
-    // Kahn's order without a graph: each pass loads every pending pack whose requirements are all loaded, in the order
-    // given, until a pass loads none. What is left waits on a pack that never loaded (absent, refused, or a cycle), and
-    // its own load refuses it naming the requirement.
+    // A platform a pack requires holds it back while another pending pack provides it: a pack needing the NES loads
+    // after the pack whose consoles bring the NES, whichever order the folders were found in. A platform no other
+    // pending pack provides is the product's or nobody's; the TS loader judges that, and it holds nothing back here.
+    const auto waitsOnPlatform = [&](const Pending& p) {
+        for (const auto& q : pending) {
+            if (&q == &p) continue;
+            for (const auto& platform : p.platforms)
+                if (std::find(q.provides.begin(), q.provides.end(), platform) != q.provides.end()) return true;
+        }
+        return false;
+    };
+    // Kahn's order without a graph: each pass loads every pending pack whose requirements are all loaded (and whose
+    // required platforms no other pending pack still provides), in the order given, until a pass loads none. What is
+    // left waits on a pack that never loaded (absent, refused, or a cycle), and its own load refuses it naming the
+    // requirement.
     for (bool progress = true; progress && !pending.empty();) {
         progress = false;
         for (auto it = pending.begin(); it != pending.end();) {
-            bool ready = true;
+            bool ready = !waitsOnPlatform(*it);
             for (const auto& dep : it->needs) ready = ready && loaded(dep);
             if (!ready) {
                 ++it;
