@@ -277,6 +277,48 @@ if(TARGET retroplug-mesen-pack)  # absent on a platform with no pack folder (cma
     add_dependencies(retroplug-packs-test retroplug-mesen-pack)
 endif()
 
+# The heap test (docs/downloadable-packs-m5a-plan.md): no heap block crosses the pack boundary. mesen-heap is the Mesen
+# package built as a pack again, with a heap of its own (its C++ runtime linked statically on Linux with gcc, Windows'
+# static CRT) and a tagging allocator (test/packs/heap/PackHeap.cpp); the test binary tags its own blocks the same way
+# (HostHeap.cpp), so a block either side frees that the other allocated is counted. A binary of its own: it replaces the
+# global operator new, which retroplug-packs-test must not, and links no static Mesen, so its engines reach rp.mesen.*
+# only through the pack. macOS builds no module (libc++ is a system library whose out-of-line members allocate through
+# the process's operator new, so the pack would not have a heap of its own) and the cases skip there.
+set(_rp_heap_own_runtime 0)
+if(RP_PACK_PLATFORM AND NOT APPLE)
+    retroplug_pack_module(retroplug-mesen-heap-pack
+        MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/test/packs/heap/mesen-heap.pack.json"
+        LIBS     retroplug-mesen
+        SOURCES  "${CMAKE_CURRENT_SOURCE_DIR}/test/packs/heap/PackHeap.cpp"
+        EXPORTS  rp_heap_violations rp_heap_blocks rp_heap_allocate rp_heap_free
+        ENTRIES  rp_mesen_package)
+    # The module is the mesen package built as a pack again: it may reach that package, which native does not declare.
+    set_target_properties(retroplug-mesen-heap-pack PROPERTIES RP_BOUNDARY_DECLARED mesen)
+    if(WIN32)
+        set(_rp_heap_own_runtime 1)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_options(retroplug-mesen-heap-pack PRIVATE -static-libstdc++ -static-libgcc)
+        set(_rp_heap_own_runtime 1)
+    endif()
+endif()
+retroplug_add_test_binary(
+    NAME     retroplug-packs-heap-test
+    SOURCES  test/packs/heap/HostHeap.cpp       # the host's tagging operator new and delete
+             test/packs/heap/PackHeap.test.cpp  # the cases
+    LIBS     retroplug-backend                  # Engine, the pack table, the debug service
+    PACKAGES ${RP_PRODUCT_PACKAGES_packs-host}
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph  # GraphDocs.hpp
+    DEFS     RP_PACKS_BUILD_DIR="${RP_PACKS_DIR}"
+             RP_HEAP_OWN_RUNTIME=${_rp_heap_own_runtime}
+             RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
+             RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
+             RP_BLIPTOASTER_DBG_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.dbg"
+             RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
+             RP_SMS_SAV_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sav")
+if(TARGET retroplug-mesen-heap-pack)
+    add_dependencies(retroplug-packs-heap-test retroplug-mesen-heap-pack)
+endif()
+
 # What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
 # mode by cmake/check-manifest.cmake) with its own reason, so a rule that stopped firing fails the configure rather than

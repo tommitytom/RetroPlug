@@ -1,0 +1,19 @@
+{
+  "id": "mesen-heap",
+  "name": "Mesen (heap test)",
+  "version": "0.1.0",
+  "license": "GPL-3.0-only",
+  "source": "https://github.com/tommitytom/RetroPlug",
+  "requires": {
+    "packs": [],
+    "platforms": []
+  },
+  "provides": {
+    "platforms": ["nes", "sms", "gg", "gba"],
+    "nodeTypes": ["rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"],
+    "roles": ["mesen"]
+  },
+  "halves": {
+    "native": "rp-mesen-heap"
+  }
+}

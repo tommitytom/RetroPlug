@@ -97,12 +97,14 @@ function(_retroplug_pack_check_pic module)
 endfunction()
 
 # retroplug_pack_module(<target> MANIFEST <pack.json template> [LIBS <target>...] [SOURCES <file>...]
-#                       [DEFINES <name=value>...] [ENTRIES <C function>...] [API_LEVEL <n>] [ENTRY_API_LEVEL <n>]
+#                       [DEFINES <name=value>...] [ENTRIES <C function>...] [EXPORTS <C function>...] [API_LEVEL <n>] [ENTRY_API_LEVEL <n>]
 #                       [NO_ENTRY] [THROWING_ENTRY] [NO_LIBRARY])
 #
 # Stages build/packs/<id>/<version>/pack.json from MANIFEST (its `id`, `version` and `halves.native` read from it, its
 # `apiLevel` set to API_LEVEL, RP_API_LEVEL by default), and defines <target>, the MODULE library built from SOURCES and
 # LIBS with an entry returning ENTRIES' rp_packages in order and reporting ENTRY_API_LEVEL (API_LEVEL by default).
+# EXPORTS are exported beside the entry: a test variant's hooks, which the SOURCES define `extern "C" RP_EXPORT` (on
+# Windows a DLL exports what is dllexport'd, so the list matters only on Linux and macOS).
 # EXCLUDE_FROM_ALL: what loads a pack depends on its target. The fixture pack's broken variants use the rest:
 # NO_ENTRY builds a module whose one export is rp_pack_entry_withheld (an exported-symbols list is never empty, which
 # macOS's linker would refuse); THROWING_ENTRY one whose entry first calls rp_pack_entry_prelude(), a C++ function the
@@ -110,7 +112,7 @@ endfunction()
 # C4297); and NO_LIBRARY stages the manifest alone, defining no target.
 function(retroplug_pack_module target)
     cmake_parse_arguments(M "NO_ENTRY;THROWING_ENTRY;NO_LIBRARY" "MANIFEST;API_LEVEL;ENTRY_API_LEVEL"
-                          "LIBS;SOURCES;DEFINES;ENTRIES" ${ARGN})
+                          "LIBS;SOURCES;DEFINES;ENTRIES;EXPORTS" ${ARGN})
     if(M_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_pack_module(${target}): unrecognised argument(s): ${M_UNPARSED_ARGUMENTS}")
     endif()
@@ -225,14 +227,18 @@ ${_body}}
         C_VISIBILITY_PRESET hidden
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
+    set(_exported "${_name}" ${M_EXPORTS})
     if(APPLE)
         set(_exports "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.exports")
-        file(CONFIGURE OUTPUT "${_exports}" CONTENT "_${_name}\n")
+        list(TRANSFORM _exported PREPEND "_" OUTPUT_VARIABLE _apple)
+        list(JOIN _apple "\n" _apple)
+        file(CONFIGURE OUTPUT "${_exports}" CONTENT "${_apple}\n")
         target_link_options(${target} PRIVATE "LINKER:-exported_symbols_list,${_exports}")
         set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${_exports}")
     elseif(NOT WIN32)
         set(_script "${CMAKE_CURRENT_BINARY_DIR}/packs/${target}.map")
-        file(CONFIGURE OUTPUT "${_script}" CONTENT "{ global: ${_name}; local: *; };\n")
+        list(JOIN _exported "; " _globals)
+        file(CONFIGURE OUTPUT "${_script}" CONTENT "{ global: ${_globals}; local: *; };\n")
         target_link_options(${target} PRIVATE "LINKER:--version-script=${_script}" "LINKER:--no-undefined")
         set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${_script}")
     endif()
