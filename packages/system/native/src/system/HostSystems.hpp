@@ -19,7 +19,7 @@ class SystemBase;
 
 namespace rp::host {
 
-#define RP_HOST_SYSTEMS_INTERFACE "rp.host.systems/2"
+#define RP_HOST_SYSTEMS_INTERFACE "rp.host.systems/3"
 // A system node building its core where it runs. [control]: build and destroy both run there, build inside the setGraph
 // that activates the node and destroy at the reclaim that frees the plan which last ran it (or as a refused plan
 // unwinds). A node's resources are pinned by its instance already, so a build reads bytes rather than files.
@@ -33,10 +33,13 @@ struct HostSystems {
     // here is the node's until `destroy`: the host claimed its snapshot slot under `system` and keeps it among its live
     // cores, so the plan's table and the control plane see it at once.
     //
-    // /2: the request carries a build function and an opaque config pointer where /1 carried a SystemConfig variant, so
+    // The request is the node's, read for the call (SystemBuild.hpp).
+    //
+    // /3: the request is views and passed by pointer, where /2 passed a request of vectors by value, which a pack's
+    // node and the host freed on each other's heaps (docs/downloadable-packs-m5a-plan.md). /2: the request carries a build function and an opaque config pointer where /1 carried a SystemConfig variant, so
     // the host no longer picks a backend by the alternative it held. A node built against /1 would read the config as a
     // variant, which is why the id moved; every consumer is in tree (the system nodes, the tests' rigs).
-    SystemBase* (*build)(void* ctx, std::uint64_t system, SystemBuildRequest request, rp_error* err);
+    SystemBase* (*build)(void* ctx, std::uint64_t system, const SystemBuildRequest* request, rp_error* err);
     // The node is giving up a core it built: release its snapshot slot, leave the live cores and delete it.
     void (*destroy)(void* ctx, SystemBase* core);
 };

@@ -314,6 +314,5 @@ TEST_CASE("the contract headers hand no heap ownership across a pack's boundary"
     CHECK(publicVirtuals == 61);
     UNSCOPED_INFO("public virtuals scanned: " << publicVirtuals);
     for (const auto& f : found) UNSCOPED_INFO(f);
-    // Today's contract hands ownership across; docs/downloadable-packs-m5a-plan.md Task 5 makes this CHECK(found.empty()).
-    CHECK_FALSE(found.empty());
+    CHECK(found.empty());
 }

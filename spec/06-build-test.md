@@ -687,7 +687,7 @@ three rules the two console packages (four node types between them) follow (F2,
   is `src/`, so a moved source keeps the include text it had.
 - Its node type carries `static constexpr SystemBuildFn kBuild`, the package's own build function (section 3 of
   [modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md)), which the request hands to
-  `rp.host.systems/2`; the engine knows no console. It declares `category = "system"`: that is what the engine
+  `rp.host.systems/3`; the engine knows no console. It declares `category = "system"`: that is what the engine
   recognises a system node by, and the `SystemNode<Self, Core, Settings>` template (`system/SystemNode.hpp`) refuses a
   type built on it that does not, at compile time (a constexpr string comparison in `activate`). The engine also holds a
   type that declares the category to a built core: a plan whose slot stayed null is refused before it is published, and

@@ -1,6 +1,6 @@
 # The SameBoy pack's native half (docs/modular-graph-phase-f2-design.md section 2): the Game Boy core, its config and
 # boot ROMs, the Game Boy button table, its ROM gate, the build function rp.sameboy.gb's request carries
-# (rp.host.systems/2), and the node type itself. Added by retroplug_package(sameboy) (cmake/packages.cmake). It builds on
+# (rp.host.systems/3), and the node type itself. Added by retroplug_package(sameboy) (cmake/packages.cmake). It builds on
 # the system package's contract (SystemBase, the build request and function, the host's system services, the SystemNode
 # template) and on the node SDK, which the template is written in; it links no shell target.
 #

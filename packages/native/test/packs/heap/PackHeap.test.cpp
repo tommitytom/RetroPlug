@@ -228,9 +228,7 @@ TEST_CASE("no heap block crosses the boundary: a Mesen pack with a heap of its o
     const auto packCrossed = pack.violations() - packBefore;
     INFO("the host freed " << hostCrossed << " of the pack's blocks; the pack freed " << packCrossed
                            << " of the host's (break on crossed() in HostHeap.cpp / PackHeap.cpp to see where)");
-    // Today's boundary crosses (the claim's savestate and battery vectors, the stream layout, the debug service's
-    // containers, the build request's by-value members); docs/downloadable-packs-m5a-plan.md Task 6 makes this
-    // `hostCrossed == 0` and `packCrossed == 0`.
-    CHECK(hostCrossed + packCrossed > 0);
+    CHECK(hostCrossed == 0);
+    CHECK(packCrossed == 0);
 #endif
 }

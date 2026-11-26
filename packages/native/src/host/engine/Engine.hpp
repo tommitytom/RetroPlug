@@ -272,7 +272,7 @@ public:
     // that claim took); the node throws
     // that reason, which the planner reports as activate-failed. The core is the calling node's until destroySystem,
     // which is the reclaim (or refused-plan unwind) that frees the node:
-    SystemBase* buildSystem(std::uint64_t system, SystemBuildRequest request, std::string* why);
+    SystemBase* buildSystem(std::uint64_t system, const SystemBuildRequest& request, std::string* why);
     bool        coreLive(SystemId id) const { return liveCores_.count(id) != 0; }
     // Every core alive: owned by a system node of a plan not yet reclaimed. Control thread.
     std::size_t liveSystemCount() const { return liveCores_.size(); }
@@ -436,7 +436,7 @@ public:
     void clearGraph();
 
 private:
-    // The node giving its core up, or a refused plan unwinding one it built. Only rp.host.systems/2's destroy lambda
+    // The node giving its core up, or a refused plan unwinding one it built. Only rp.host.systems/3's destroy lambda
     // calls it, so the core a live node holds cannot be deleted by anyone else.
     void destroySystem(SystemBase* core);
 

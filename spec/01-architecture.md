@@ -323,9 +323,9 @@ A core's life, end to end:
 
 | Direction | Trigger | Mechanism |
 |---|---|---|
-| **build** | `setGraph` plans the document on the control thread, and a new node's first `activate` builds its core through `rp.host.systems/2` (`Engine::buildSystem`) | the node's package boots it from the ROM and seed bytes its resources hold, the config its settings made and the build function its type carries; the engine claims its registry slot under the system id, records it among the live cores, and fills the plan's `SystemTable` entry |
+| **build** | `setGraph` plans the document on the control thread, and a new node's first `activate` builds its core through `rp.host.systems/3` (`Engine::buildSystem`) | the node's package boots it from the ROM and seed bytes its resources hold, the config its settings made and the build function its type carries; the engine claims its registry slot under the system id, records it among the live cores, and fills the plan's `SystemTable` entry |
 | **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied; the system table rides with the plan |
-| **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core through `rp.host.systems/2` (`Engine::destroySystem`: `registry.release(id)` first, then `delete`) and releases its resource pins |
+| **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core through `rp.host.systems/3` (`Engine::destroySystem`: `registry.release(id)` first, then `delete`) and releases its resource pins |
 
 The stores never reuse a system id (a `DirectGraph` caller may, once the old core is gone), and
 `buildSystem` refuses an id that is still live (held by a node of any plan not yet

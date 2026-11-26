@@ -1,7 +1,7 @@
 #pragma once
 
 // The engine service the host I/O nodes ask the engine for through rp_host.get_interface, in the package that owns those
-// nodes (docs/modular-graph-phase-f2-design.md section 2). The system services (rp.host.systems/2 and
+// nodes (docs/modular-graph-phase-f2-design.md section 2). The system services (rp.host.systems/3 and
 // rp.engine.sync-trace/1) are the system package's (system/HostSystems.hpp), since the contract they serve is that
 // package's; the device links (rp.host.devices/2) and the job reports (rp.host.jobs/1) a device's node takes, and the
 // staged message (rp.stage/1) it presents, are the node SDK's (graph/rp_device.h, graph/rp_jobs.h, graph/rp_stage.h),

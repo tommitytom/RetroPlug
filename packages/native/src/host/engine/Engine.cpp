@@ -15,7 +15,7 @@
 #include "system/ChannelTap.hpp"  // the capability SyncTap arms
 #include "system/SystemBase.hpp"
 #include "system/SystemCapabilities.hpp"
-#include "system/HostSystems.hpp"  // rp.host.systems/2: the builder a system node's request names
+#include "system/HostSystems.hpp"  // rp.host.systems/3: the builder a system node's request names
 #include "system/SystemBuild.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
 #include "system/InputCapacity.hpp"
@@ -319,20 +319,20 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
         std::fprintf(stderr, "[engine] the script node types were refused (%s); none is registered\n", why.c_str());
     // Then the loaded packs, after every built-in, so a built-in's order and ids are what they were with none loaded.
     syncPacks();
-    // rp.host.systems/2: a system node that builds its own core, on the control thread, inside the setGraph that
+    // rp.host.systems/3: a system node that builds its own core, on the control thread, inside the setGraph that
     // activates it. The id it names must not be live; the core it builds claims its snapshot slot and joins the live
     // cores, and the table of the plan being built learns it (buildSystem).
     graph_->systems = {
         this,
-        [](void* ctx, std::uint64_t id, SystemBuildRequest request, rp_error* err) {
+        [](void* ctx, std::uint64_t id, const SystemBuildRequest* request, rp_error* err) -> SystemBase* {
             auto* self = static_cast<Engine*>(ctx);
-            std::string why;
-            SystemBase* core = self->buildSystem(id, std::move(request), &why);
-            if (!core && err) {
-                const std::size_t n = std::min(why.size(), sizeof err->message - 1);
-                std::memcpy(err->message, why.data(), n);
-                err->message[n] = '\0';
+            if (request == nullptr) {
+                refuseBuild(err, "the build names no request (rp.host.systems/3)");
+                return nullptr;
             }
+            std::string why;
+            SystemBase* core = self->buildSystem(id, *request, &why);
+            if (!core) refuseBuild(err, why);
             return core;
         },
         [](void* ctx, SystemBase* core) { static_cast<Engine*>(ctx)->destroySystem(core); }};
@@ -405,7 +405,7 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
 
 bool Engine::pushCommand(const DspCommand& c) { return graph_->host->pushHostCommand(&c, sizeof c); }
 
-SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request, std::string* why) {
+SystemBase* Engine::buildSystem(std::uint64_t system, const SystemBuildRequest& request, std::string* why) {
     const auto refuse = [why](std::string reason) {
         if (why) *why = std::move(reason);
         return nullptr;
@@ -413,7 +413,7 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     // The plan being built is where the id's slot is filled (below); a build with no setGraph in progress would join the
     // live cores and claim a snapshot slot with no plan to publish it, and a later plan's slot for that id would stay
     // null while processBlock dereferences it. Refused, rather than left to the comment on this method.
-    if (!building_) return refuse("a system is built only inside the setGraph that activates it (rp.host.systems/2)");
+    if (!building_) return refuse("a system is built only inside the setGraph that activates it (rp.host.systems/3)");
     if (system == 0) return refuse("0 is not a system id");
     if (system > UINT32_MAX) return refuse("system " + std::to_string(system) + " is beyond a system id");
     const SystemId id = static_cast<SystemId>(system);
@@ -425,11 +425,12 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     // the host naming one. A request with none names no console: refused here, before the build, so a request that
     // could build nothing claims no snapshot slot and no live id.
     const SystemBuildFn build = request.build;
-    if (!build) return refuse("the request names no build function (rp.host.systems/2)");
+    if (!build) return refuse("the request names no build function (rp.host.systems/3)");
     const char* const nodeType = request.nodeType;  // a literal the node's type names, alive for the build
-    std::unique_ptr<SystemBase> core = build(id, std::move(request), sampleRate_, why);
+    rp_error buildErr{};
+    std::unique_ptr<SystemBase> core = build(id, request, sampleRate_, &buildErr);
     if (!core) {
-        if (why && why->empty()) *why = "the core did not build";
+        if (why) *why = buildErr.message[0] != '\0' ? std::string(buildErr.message) : std::string("the core did not build");
         return nullptr;
     }
     // The slot is claimed after the build, not before, because the claim seeds the slot from the core: a GBA pays its
@@ -571,7 +572,7 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
         InSetGraph(Engine& engine, rp::host::SystemTable* table) : e(engine) { e.building_ = table; }
         ~InSetGraph() { e.building_ = nullptr; }
     };
-    // The category is a promise: a type that declares "system" builds its core through rp.host.systems/2 in its first
+    // The category is a promise: a type that declares "system" builds its core through rp.host.systems/3 in its first
     // activation, and a slot left null is one the audio thread would dereference (processBlock, setSampleRate). Checked
     // once every node has activated and before the plan is published, so a type that breaks the promise (a script node's
     // own, a native pack's) costs a refused setGraph and nothing else: the plan it was made for is rolled back with every
@@ -581,7 +582,7 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
             if (!e.core)
                 return rp::graph::PlanError{"sys-" + std::to_string(e.id), "", "no-core",
                                             "declares category \"system\" and built no core: a system node builds its "
-                                            "core through rp.host.systems/2 in its first activation"};
+                                            "core through rp.host.systems/3 in its first activation"};
         return std::nullopt;
     };
     rp::graph::SetGraphResult result;

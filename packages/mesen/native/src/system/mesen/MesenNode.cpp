@@ -1,7 +1,7 @@
 // The Mesen consoles as nodes - rp.mesen.nes, rp.mesen.gba and rp.mesen.sms (docs/modular-graph-phase-b1-design.md
 // section 3.1, and docs/modular-graph-phase-f2-design.md section 2 for the package they live in): each adapts one of the
 // Mesen systems, builds its own core at activation from the ROM and seed resources its settings name
-// (rp.host.systems/2, docs/modular-graph-phase-c3-design.md), and carries its own package's build function in the
+// (rp.host.systems/3, docs/modular-graph-phase-c3-design.md), and carries its own package's build function in the
 // request, so the host that runs it names no console.
 //
 // Their settings are the fields each type reads and nothing else: the system it names, the resources its core is built
@@ -209,7 +209,7 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
     static constexpr const char* id = "rp.mesen.nes";
     static constexpr const char* name = "NES";
     static constexpr const char* category = "system";
-    // The NES's build: the package's own, which the node's request carries to rp.host.systems/2.
+    // The NES's build: the package's own, which the node's request carries to rp.host.systems/3.
     static constexpr SystemBuildFn kBuild = rp::mesen::buildNesCore;
     struct {
         rp::bytes_in  serialIn;
@@ -301,7 +301,7 @@ struct Gba : SystemNode<Gba, MesenGbaSystem, GbaSettings> {
     static constexpr const char* id = "rp.mesen.gba";
     static constexpr const char* name = "Game Boy Advance";
     static constexpr const char* category = "system";
-    // The GBA's build: the package's own, which the node's request carries to rp.host.systems/2.
+    // The GBA's build: the package's own, which the node's request carries to rp.host.systems/3.
     static constexpr SystemBuildFn kBuild = rp::mesen::buildGbaCore;
     struct {
         rp::bytes_in  serialIn;
@@ -321,7 +321,7 @@ struct Sms : SystemNode<Sms, MesenSmsSystem, SmsSettings> {
     static constexpr const char* id = "rp.mesen.sms";
     static constexpr const char* name = "Master System / Game Gear";
     static constexpr const char* category = "system";
-    // The Master System's build: the package's own, which the node's request carries to rp.host.systems/2.
+    // The Master System's build: the package's own, which the node's request carries to rp.host.systems/3.
     static constexpr SystemBuildFn kBuild = rp::mesen::buildSmsCore;
     struct {
         rp::bytes_in  serialIn;

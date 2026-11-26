@@ -2504,8 +2504,8 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
     NodeRig rig(kRate);
     const auto embedded = rp::graph::embeddedResource("mgb");
     // A console's boot as its node makes one: the package's build function, and a config of its own type alive for the
-    // call (docs/modular-graph-phase-f2-design.md section 3). The request is the caller's, its ROM copied before the
-    // clock starts: what is timed is the console's build, not the copy of its ROM into the request.
+    // call (docs/modular-graph-phase-f2-design.md section 3). The request views the boot's ROM, which the build copies
+    // into the core: what is timed is the console's build, that copy included, as a node's build pays it.
     struct Boot {
         const char*                                          name;
         const char*                                          type;
@@ -2517,25 +2517,25 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
         SameBoyConfig cfg;
         request.build = rp::sameboy::buildCore;
         request.config = &cfg;
-        return request.build(1, std::move(request), kRate, nullptr);
+        return request.build(1, request, kRate, nullptr);
     };
     const auto nes = [](SystemBuildRequest request) {
         MesenNesConfig cfg;
         request.build = rp::mesen::buildNesCore;
         request.config = &cfg;
-        return request.build(1, std::move(request), kRate, nullptr);
+        return request.build(1, request, kRate, nullptr);
     };
     const auto sms = [](SystemBuildRequest request) {
         MesenSmsConfig cfg;
         request.build = rp::mesen::buildSmsCore;
         request.config = &cfg;
-        return request.build(1, std::move(request), kRate, nullptr);
+        return request.build(1, request, kRate, nullptr);
     };
     const auto gba = [](SystemBuildRequest request) {
         MesenGbaConfig cfg;
         request.build = rp::mesen::buildGbaCore;
         request.config = &cfg;
-        return request.build(1, std::move(request), kRate, nullptr);
+        return request.build(1, request, kRate, nullptr);
     };
     boots.push_back({"mGB (embedded)", "rp.sameboy.gb", {embedded.begin(), embedded.end()}, gameBoy});
     if (auto lsdj = resourceFixture("/roms/lsdj/lsdj9_4_1-develop.gb"); !lsdj.empty())
@@ -2545,7 +2545,7 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
     if (auto gbaRom = resourceFixture("/roms/nanoloop287d.gba"); !gbaRom.empty())
         boots.push_back({"GBA", "rp.mesen.gba", std::move(gbaRom), gba});
 
-    std::printf("\nboot through rp.host.systems/2's build at %.1f kHz: construct, onActivate (ROM, battery, savestate), the "
+    std::printf("\nboot through rp.host.systems/3's build at %.1f kHz: construct, onActivate (ROM, battery, savestate), the "
                 "state snapshot, and the same build through setGraph (slot claim and one plan with it); median of %d runs\n",
                 kRate / 1000.0, kRuns);
     for (auto& boot : boots) {
@@ -3461,10 +3461,12 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
         return counted;
     };
     std::string why;
-    // The request's own build function, as the node that made it hands it over: what rp.host.systems/2 runs.
-    const auto build = [&why](SystemBuildRequest request) {
-        const SystemBuildFn fn = request.build;
-        return fn(1, std::move(request), kRate, &why);
+    // The request's own build function, as the node that made it hands it over: what rp.host.systems/3 runs.
+    const auto build = [&why](const SystemBuildRequest& request) {
+        rp_error err{};
+        auto core = request.build(1, request, kRate, &err);
+        why = err.message;
+        return core;
     };
     // The configs the requests point at, held here for their calls: a build reads the config's address and copies it,
     // so one whole test can share them.
@@ -3479,9 +3481,13 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
     SameBoyConfig  gbConfig;
     gbConfig.model = SameBoyModel::DmgB;  // the DMG boot ROM plays its chime: real signal on the first block
     gbConfig.fastBoot = false;
+    const std::vector<std::uint8_t> nesRom = readFile(RP_BLIPTOASTER_ROM_PATH);
+    const std::vector<std::uint8_t> smsRom = readFile(RP_SMS_ROM_PATH);
+    const std::vector<std::uint8_t> ggRom = readFile(RP_GG_ROM_PATH);
+    const std::vector<std::uint8_t> gbRom = readFile(RP_MGB_ROM_PATH);
     const auto nesRequest = [&] {
         SystemBuildRequest request;
-        request.rom = readFile(RP_BLIPTOASTER_ROM_PATH);
+        request.rom = nesRom;
         request.maxBlockFrames = 8192;
         request.build = rp::mesen::buildNesCore;
         request.config = &nesConfig;
@@ -3489,7 +3495,7 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
     };
     const auto smsRequest = [&](bool gameGear, bool enableFm) {
         SystemBuildRequest request;
-        request.rom = readFile(gameGear ? RP_GG_ROM_PATH : RP_SMS_ROM_PATH);
+        request.rom = gameGear ? ggRom : smsRom;
         request.maxBlockFrames = 8192;
         request.build = rp::mesen::buildSmsCore;
         request.config = gameGear ? &ggConfig : enableFm ? &smsFmConfig : &smsConfig;
@@ -3497,7 +3503,7 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
     };
     const auto gbRequest = [&] {
         SystemBuildRequest request;
-        request.rom = readFile(RP_MGB_ROM_PATH);
+        request.rom = gbRom;
         request.maxBlockFrames = 8192;
         request.build = rp::sameboy::buildCore;
         request.config = &gbConfig;
@@ -3631,7 +3637,7 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
         Lanes twinLanes(2);
         const auto capture = captureAfterFirstBlock(*twin, {twinLanes.ptrs[0], twinLanes.ptrs[1]});
         request.rom = rom;
-        auto core = build(std::move(request));
+        auto core = build(request);
         REQUIRE(core != nullptr);
         Lanes lanes(2);
         const auto counted = firstBlock(*core, {lanes.ptrs[0], lanes.ptrs[1]});

@@ -2,7 +2,7 @@
 
 // A GraphHost carrying the system node packages, the host I/O nodes and the test nodes (TestNodes.hpp), with
 // stand-ins for the engine's services: a node naming a `system` and a `rom` resource builds its core through the build
-// function its own package carries, and the rig's resource table, as the Engine's rp.host.systems/2 and putResource
+// function its own package carries, and the rig's resource table, as the Engine's rp.host.systems/3 and putResource
 // would; what the host MIDI out and the sync trace would hand the engine is recorded instead; the device links are the
 // ones a case installs.
 
@@ -152,12 +152,12 @@ struct NodeRig {
         return *t;
     }
 
-    // rp.host.systems/2: the build function the node's own package carries builds the core, as the engine's runs it, and
+    // rp.host.systems/3: the build function the node's own package carries builds the core, as the engine's runs it, and
     // the node owns the core until its destructor, which the rig records (the core's id in `released`) and deletes. No
     // snapshot slot to claim here and no live-id check: those are the engine's, and the refusals they add are
     // EngineGraph.test.cpp's. A request that names no build function is refused here as the engine refuses it, so a case
     // that places a type without one reports rather than calling through null.
-    static SystemBase* buildSystem(void* ctx, std::uint64_t id, SystemBuildRequest request, rp_error* err) {
+    static SystemBase* buildSystem(void* ctx, std::uint64_t id, const SystemBuildRequest* request, rp_error* err) {
         auto& rig = *static_cast<NodeRig*>(ctx);
         if (id == 0) {
             std::snprintf(err->message, sizeof err->message, "0 is not a system id");
@@ -168,15 +168,13 @@ struct NodeRig {
                           static_cast<unsigned long long>(id));
             return nullptr;
         }
-        if (!request.build) {
-            std::snprintf(err->message, sizeof err->message, "the request names no build function (rp.host.systems/2)");
+        if (request == nullptr || !request->build) {
+            std::snprintf(err->message, sizeof err->message, "the request names no build function (rp.host.systems/3)");
             return nullptr;
         }
-        std::string why;
-        std::unique_ptr<SystemBase> core =
-            request.build(static_cast<SystemId>(id), std::move(request), rig.rate, &why);
+        std::unique_ptr<SystemBase> core = request->build(static_cast<SystemId>(id), *request, rig.rate, err);
         if (!core) {
-            std::snprintf(err->message, sizeof err->message, "%s", why.c_str());
+            if (err->message[0] == '\0') std::snprintf(err->message, sizeof err->message, "the core did not build");
             return nullptr;
         }
         rig.built.push_back(core.get());

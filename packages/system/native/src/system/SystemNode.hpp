@@ -135,7 +135,7 @@ inline constexpr double kUnapplied = std::numeric_limits<double>::quiet_NaN();
 // params (`gain` at least), supplies finish's lanes, may write output queues after the core has run (writeQueues), and
 // applies its own knobs (apply) and any param beyond the gain (applyParams).
 //
-// A node builds its core at activation from the bytes its resources hold (rp.host.systems/2,
+// A node builds its core at activation from the bytes its resources hold (rp.host.systems/3,
 // docs/modular-graph-phase-c3-design.md section 5). The core is the host's: the snapshot slot under the system id, the
 // live cores, and the delete when the node is destroyed. Which fields a build reads is rebuild_key's, the
 // construct-time fields among them. The build itself is the node's own package's (docs/modular-graph-phase-f2-design.md
@@ -274,25 +274,27 @@ struct SystemNode {
         return true;
     }
 
-    // Build the core the settings name, through rp.host.systems/2, with the bytes this instance's resources pinned, the
+    // Build the core the settings name, through rp.host.systems/3, with views of the bytes this instance's resources pinned, the
     // config its settings made, the plan's largest block and the build function its package carries: the build applies
     // the config and reserves that block before onActivate, and boots and restores the seeds there, so a non-default
     // model never restarts the core it just restored. A failure throws its reason, which rp::detail::activateFn reports
     // and the planner shows as activate-failed on this node. `config` is what `Self::config` made, and `Self::kBuild`
     // alone reads it.
     void build(const void* config, std::uint32_t maxBlockFrames) {
-        if (!systems) throw std::runtime_error("the host offers no system builder (rp.host.systems/2)");
+        if (!systems) throw std::runtime_error("the host offers no system builder (rp.host.systems/3)");
+        // Views of what this instance's resources pin and its settings hold, alive for the call: the build function
+        // copies what its core keeps (SystemBuild.hpp).
         SystemBuildRequest request;
         request.rom = bytesOf(settings->rom);
         request.sram = bytesOf(settings->sram);
         request.savestate = bytesOf(settings->state);
-        request.romName = settings->romName.value_or(std::string());
+        if (settings->romName) request.romName = *settings->romName;
         request.maxBlockFrames = maxBlockFrames;
         request.build = Self::kBuild;
         request.config = config;
         request.nodeType = Self::id;
         rp_error err{};
-        SystemBase* made = systems->build(systems->ctx, settings->system, std::move(request), &err);
+        SystemBase* made = systems->build(systems->ctx, settings->system, &request, &err);
         if (!made)
             throw std::runtime_error(err.message[0] ? std::string(err.message) : std::string("the core did not build"));
         // The cast is by construction, which is why nothing checks it: the function that built the core is this type's
@@ -308,10 +310,9 @@ struct SystemNode {
         applySettings();
     }
 
-    static std::vector<std::uint8_t> bytesOf(const auto& field) {
-        std::vector<std::uint8_t> out;
-        if (const rp_bytes* bytes = field.bytes()) out.assign(bytes->data, bytes->data + bytes->size);
-        return out;
+    static std::span<const std::uint8_t> bytesOf(const auto& field) {
+        if (const rp_bytes* bytes = field.bytes()) return {bytes->data, bytes->size};
+        return {};
     }
 
     // A type whose config carries none of its knobs clears them here, so the node's first block applies them.

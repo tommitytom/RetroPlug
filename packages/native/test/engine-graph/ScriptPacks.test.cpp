@@ -328,7 +328,7 @@ globalThis.__rp_scriptNodes[globalThis.__rp_scriptNodes.length] = {
             "chunk 0: Error: not today", "test.throws.up");
 
     // A type that declares category "system": that is a native type's promise to build its core through
-    // rp.host.systems/2 in its first activation, which a script node cannot do, so the pack is refused where its types
+    // rp.host.systems/3 in its first activation, which a script node cannot do, so the pack is refused where its types
     // are registered rather than lined up against a plan slot that would stay null.
     refused(e, "test.sys", toys(R"JS(
 globalThis.__rp_scriptNodes[globalThis.__rp_scriptNodes.length] = {

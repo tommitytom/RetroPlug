@@ -1,7 +1,7 @@
 # The Mesen pack's native half (docs/modular-graph-phase-f2-design.md section 2): the NES, GBA and SMS/GG cores over the
 # vendored `mesen` library, their configs, the global init and the NES debug session, the video and audio devices, the
 # shared block tail, the emulated N8 FIFO and its reliable link role, the SMS sync role, the consoles' button tables and
-# ROM gates, the three build functions their nodes' requests carry (rp.host.systems/2), and the three node types. Added by
+# ROM gates, the three build functions their nodes' requests carry (rp.host.systems/3), and the three node types. Added by
 # retroplug_package(mesen) (cmake/packages.cmake).
 #
 # It builds on the system package's contract and on the node SDK, and declares the n8-wire package: NesN8FifoRole speaks

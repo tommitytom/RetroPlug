@@ -1,6 +1,6 @@
 // rp.sameboy.gb, the Game Boy as a node (docs/modular-graph-phase-b1-design.md section 3.1, and
 // docs/modular-graph-phase-f2-design.md section 2 for the package it lives in): the node adapts SameBoySystem, builds
-// its own core at activation from the ROM and seed resources its settings name (rp.host.systems/2,
+// its own core at activation from the ROM and seed resources its settings name (rp.host.systems/3,
 // docs/modular-graph-phase-c3-design.md), and carries its own package's build function (rp::sameboy::buildCore) in the
 // request, so the host that runs it names no console.
 //
@@ -97,7 +97,7 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
     static constexpr const char* id = "rp.sameboy.gb";
     static constexpr const char* name = "Game Boy";
     static constexpr const char* category = "system";
-    // The Game Boy's build: the package's own, which the node's request carries to rp.host.systems/2.
+    // The Game Boy's build: the package's own, which the node's request carries to rp.host.systems/3.
     static constexpr SystemBuildFn kBuild = rp::sameboy::buildCore;
     struct {
         rp::link      link;

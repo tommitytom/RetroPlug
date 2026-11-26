@@ -981,8 +981,8 @@ private:
 
 // The console's build: what every console's does, in a few lines. It reads its config, builds the core from it and
 // activates the core at the plan's rate, so the host gets the core exactly as an activated one is (SystemBuild.hpp).
-std::unique_ptr<SystemBase> buildFixtureCore(SystemId id, SystemBuildRequest&& request, double sampleRate,
-                                             std::string*) {
+std::unique_ptr<SystemBase> buildFixtureCore(SystemId id, const SystemBuildRequest& request, double sampleRate,
+                                             rp_error*) {
     const auto* cfg = static_cast<const FixtureConfig*>(request.config);
     auto core = std::make_unique<StubCore>(id, cfg ? cfg->tag : -1);
     core->onActivate(sampleRate);
@@ -1041,7 +1041,7 @@ struct FixtureConsole : rp::host::SystemNode<FixtureConsole<Build>, StubCore, Fi
 
 // A node type that declares category "system" and builds nothing. The category is the promise the engine trusts (it
 // recognizes a system node by it and reads its core back from the plan's slot), so a type that never calls
-// rp.host.systems/2 is the promise broken, and the engine refuses the document rather than publish a plan whose slot for
+// rp.host.systems/3 is the promise broken, and the engine refuses the document rather than publish a plan whose slot for
 // it is null.
 struct NoCorePorts {
     struct {} inputs;
@@ -1084,7 +1084,7 @@ struct FixtureConsoleWithoutCategory : NoCorePorts {
         request.build = kBuild;
         request.nodeType = id;
         rp_error err{};
-        if (!systems->build(systems->ctx, system, std::move(request), &err))
+        if (!systems->build(systems->ctx, system, &request, &err))
             throw std::runtime_error(err.message[0] ? std::string(err.message) : std::string("the core did not build"));
     }
     void process(const rp::Block&) noexcept {}
@@ -1167,7 +1167,7 @@ TEST_CASE("a request that names no build function is refused with its own reason
     const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
 
     const auto r = e.setGraph(builtRequest(builtDoc(2, "rp.test.fixture-console-no-build", rom), {2}));
-    CHECK(refusal(r) == "sys-2: activate-failed: the request names no build function (rp.host.systems/2)");
+    CHECK(refusal(r) == "sys-2: activate-failed: the request names no build function (rp.host.systems/3)");
     CHECK_FALSE(e.coreLive(2));
     CHECK(e.findSystem(1) == running);
     CHECK(e.liveSystemCount() == cores);
@@ -1215,7 +1215,7 @@ TEST_CASE("a console package the engine has never heard of plans, builds, runs a
 TEST_CASE("a type that declares category \"system\" and builds no core refuses the document, publishing nothing",
           "[engine-graph][b2][systems]") {
     // The promise the category signs (docs/modular-graph-phase-f2-design.md section 3): a system node builds its core
-    // through rp.host.systems/2 in its first activation, and the plan's slot for it is what the audio thread reads. A
+    // through rp.host.systems/3 in its first activation, and the plan's slot for it is what the audio thread reads. A
     // document that places a type which builds nothing is refused before the plan is published, unwinding what its
     // nodes' activations built, and the plan already running is untouched. The document places a fixture console beside
     // the broken type, so the sibling's core, slot and pin are what the refusal has to give back: a single no-core node
@@ -1238,7 +1238,7 @@ TEST_CASE("a type that declares category \"system\" and builds no core refuses t
            "wires":[{"from":"sys-2.mix","to":"out.out.1-2"}]})";
     const auto r = e.setGraph(builtRequest(document, {2, 3}));
     CHECK(refusal(r) == "sys-3: no-core: declares category \"system\" and built no core: a system node builds its "
-                        "core through rp.host.systems/2 in its first activation");
+                        "core through rp.host.systems/3 in its first activation");
     // The sibling built, and the refusal unwound it: no core, no slot, no pin of its own.
     CHECK_FALSE(e.coreLive(2));
     CHECK(StubCore::live == 0);
@@ -1257,7 +1257,7 @@ TEST_CASE("a type that declares category \"system\" and builds no core refuses t
 TEST_CASE("a type that builds a core but declares no category is refused, naming the type",
           "[engine-graph][b2][systems]") {
     // The category is the promise the engine reads a system node by (docs/modular-graph-phase-f2-design.md section 3):
-    // a type that builds through rp.host.systems/2 without declaring it builds a core that no slot of the plan's table
+    // a type that builds through rp.host.systems/3 without declaring it builds a core that no slot of the plan's table
     // names. The SystemNode template refuses the omission at compile time; a third party's own node can still make it,
     // which is what this case drives. Refused at the activation that built the core, naming the type, with what the
     // build claimed given back: the plan already running is untouched.
@@ -1539,8 +1539,9 @@ TEST_CASE("a build outside the setGraph that activates it is refused rather than
     const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
     REQUIRE(rom != 0);
     SameBoyConfig config;
+    const std::vector<std::uint8_t> romBytes = readFile(RP_MGB_ROM_PATH);
     SystemBuildRequest request;
-    request.rom = readFile(RP_MGB_ROM_PATH);
+    request.rom = romBytes;
     request.build = rp::sameboy::buildCore;
     request.config = &config;
     std::string why;

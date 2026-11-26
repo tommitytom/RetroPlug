@@ -643,7 +643,7 @@ name:
   turns `tap` into the swap's `SyncTap` trailer; and hands both to `GraphHost::setGraph`, which computes
   every node's layout from the document (`layout_for` on each node type), runs every layout check, and
   only then creates and activates the new instances. A system node builds its core as it activates
-  (`rp.host.systems/2`) and the engine fills that slot's table entry, so the table is complete before the plan is
+  (`rp.host.systems/3`) and the engine fills that slot's table entry, so the table is complete before the plan is
   published. It rides with the plan, so the audio thread's
   lookups always match the plan that is running. A refused document changes nothing: the cores its new nodes built
   are destroyed as those instances unwind, releasing their slots and their pins.
@@ -709,7 +709,7 @@ The document `buildGraph` writes:
   plan's host width (the sum of its `audio-out` buses, recorded by `setGraph`), so a caller that forgot
   the shape gets an error rather than audio wired for another output count.
 - **Cores.** A system node builds its core at first activation through the host service
-  `rp.host.systems/2` ([HostSystems.hpp](../packages/system/native/src/system/HostSystems.hpp)), from the ROM and seed
+  `rp.host.systems/3` ([HostSystems.hpp](../packages/system/native/src/system/HostSystems.hpp)), from the ROM and seed
   bytes its resources hold, the config its settings made and the build function its own package carries
   (`Engine::buildSystem`), and owns it until the node is destroyed (`Engine::destroySystem`).
 - **Resources.** A node that reads a resource its settings name (a system node's ROM, its battery, a savestate seed,
