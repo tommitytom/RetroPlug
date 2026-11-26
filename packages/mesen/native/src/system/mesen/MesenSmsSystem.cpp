@@ -649,7 +649,7 @@ std::size_t MesenSmsSystem::stateSnapshotSize() const {
 }
 
 bool MesenSmsSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
-    dst = saveStateBytes();
+    dst = stateBytes();
     return !dst.empty();
 }
 
@@ -679,7 +679,7 @@ rp::MemoryAccessor MesenSmsSystem::getMemory(rp::MemoryType type, rp::AccessType
                               info.Size};
 }
 
-std::vector<std::uint8_t> MesenSmsSystem::saveSramBytes() const {
+std::vector<std::uint8_t> MesenSmsSystem::sramBytes() const {
     if (!emu_) return {};
     auto* self = const_cast<MesenSmsSystem*>(this);
     auto accessor = self->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
@@ -687,12 +687,22 @@ std::vector<std::uint8_t> MesenSmsSystem::saveSramBytes() const {
     return std::vector<std::uint8_t>(accessor.data(), accessor.data() + accessor.size());
 }
 
-std::vector<std::uint8_t> MesenSmsSystem::saveStateBytes() const {
+std::vector<std::uint8_t> MesenSmsSystem::stateBytes() const {
     if (!emu_) return {};
     std::stringstream ss(std::ios::out | std::ios::binary);
     emu_->GetSaveStateManager()->SaveState(ss);
     const std::string str = ss.str();
     return std::vector<std::uint8_t>(str.begin(), str.end());
+}
+
+void MesenSmsSystem::saveSramInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = sramBytes();
+    out(bytes.data(), bytes.size());
+}
+
+void MesenSmsSystem::saveStateInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = stateBytes();
+    out(bytes.data(), bytes.size());
 }
 
 bool MesenSmsSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {

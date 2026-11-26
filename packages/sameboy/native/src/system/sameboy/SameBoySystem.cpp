@@ -383,7 +383,7 @@ void SameBoySystem::restartEmulator() {
     rearmStateSnapshot();
 }
 
-std::vector<std::uint8_t> SameBoySystem::saveSramBytes() const {
+std::vector<std::uint8_t> SameBoySystem::sramBytes() const {
     if (!gb_) return {};
     const int sramSize = GB_save_battery_size(const_cast<GB_gameboy_t*>(gb_));
     if (sramSize <= 0) return {};
@@ -396,13 +396,23 @@ std::vector<std::uint8_t> SameBoySystem::saveSramBytes() const {
 }
 
 
-std::vector<std::uint8_t> SameBoySystem::saveStateBytes() const {
+std::vector<std::uint8_t> SameBoySystem::stateBytes() const {
     if (!gb_) return {};
     const std::size_t size = GB_get_save_state_size(const_cast<GB_gameboy_t*>(gb_));
     if (size == 0) return {};
     std::vector<std::uint8_t> out(size);
     GB_save_state_to_buffer(const_cast<GB_gameboy_t*>(gb_), out.data());
     return out;
+}
+
+void SameBoySystem::saveSramInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = sramBytes();
+    out(bytes.data(), bytes.size());
+}
+
+void SameBoySystem::saveStateInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = stateBytes();
+    out(bytes.data(), bytes.size());
 }
 
 // -- Whole-savestate snapshot ------------------------------------------------
@@ -646,9 +656,11 @@ bool SameBoySystem::peekPendingPress(std::uint8_t button, bool& down) const {
     return held;
 }
 
-std::vector<ChannelStream> SameBoySystem::channelLayout() const {
+void SameBoySystem::channelLayoutInto(rp::Sink<ChannelStream> out) const {
     // GB_channel_t order: GB_SQUARE_1, GB_SQUARE_2, GB_WAVE, GB_NOISE.
-    return {{"Pulse 1", true}, {"Pulse 2", true}, {"Wave", true}, {"Noise", true}};
+    for (const ChannelStream& s : {ChannelStream{"Pulse 1", true}, ChannelStream{"Pulse 2", true},
+                                   ChannelStream{"Wave", true}, ChannelStream{"Noise", true}})
+        out(s);
 }
 
 void SameBoySystem::writeChannelSamples(const int16_t* samples) {
@@ -877,17 +889,13 @@ rp::MemoryAccessor SameBoySystem::getMemory(rp::MemoryType type, rp::AccessType 
 
 // -- CPU state ---------------------------------------------------------------
 
-std::vector<rp::CpuRegister> SameBoySystem::getCpuRegisters() const {
-    if (!gb_) return {};
+void SameBoySystem::cpuRegistersInto(rp::Sink<rp::CpuRegister> out) const {
+    if (!gb_) return;
     const GB_registers_t* r = GB_get_registers(gb_);
-    return {
-        { "af", r->af, 16 },
-        { "bc", r->bc, 16 },
-        { "de", r->de, 16 },
-        { "hl", r->hl, 16 },
-        { "sp", r->sp, 16 },
-        { "pc", r->pc, 16 },
-    };
+    for (const rp::CpuRegister& reg : {rp::CpuRegister{"af", r->af, 16}, rp::CpuRegister{"bc", r->bc, 16},
+                                       rp::CpuRegister{"de", r->de, 16}, rp::CpuRegister{"hl", r->hl, 16},
+                                       rp::CpuRegister{"sp", r->sp, 16}, rp::CpuRegister{"pc", r->pc, 16}})
+        out(reg);
 }
 
 bool SameBoySystem::setCpuRegister(std::string_view name, std::uint32_t value) {

@@ -440,11 +440,16 @@ void MesenNesSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data
     }
 }
 
-std::vector<std::uint8_t> MesenNesSystem::drainCoreBytes() {
+std::vector<std::uint8_t> MesenNesSystem::takeCoreBytes() {
     // The other direction: what the ROM wrote to the FIFO with CMD_USB_WR. The role's queue is
     // mutex-guarded, so this is safe from the control thread while the core runs.
     if (!n8Role_) return {};
     return n8Role_->drainUsbTx();
+}
+
+void MesenNesSystem::drainCoreBytesInto(rp::ByteSink out) {
+    const std::vector<std::uint8_t> bytes = takeCoreBytes();
+    out(bytes.data(), bytes.size());
 }
 
 CoreTransportStats MesenNesSystem::coreTransportStats() {
@@ -666,16 +671,21 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     publishStateSnapshot(info.frames, sampleRate_);
 }
 
-std::vector<ChannelStream> MesenNesSystem::channelLayout() const {
+void MesenNesSystem::channelLayoutInto(rp::Sink<ChannelStream> out) const {
     const std::size_t streams = captureStreamCount();
     // Mode 3 (§5b): the 5 individual core channels as raw mono stems ("does not sum").
-    if (streams == 5)
-        return {{"Square1", false}, {"Square2", false}, {"Triangle", false}, {"Noise", false}, {"DMC", false}};
+    if (streams == 5) {
+        for (const char* name : {"Square1", "Square2", "Triangle", "Noise", "DMC"}) out(ChannelStream{name, false});
+        return;
+    }
     // The two 2A03 stereo-mod output pins + the lumped expansion term, as mono streams (spec/10 §5). Mode 2
     // (native/test-only) appends the mix-reference stream for the fidelity test.
-    if (streams == 4) return {{"Pulse", false}, {"TND", false}, {"Expansion", false}, {"MixRef", false}};
-    if (streams == 3) return {{"Pulse", false}, {"TND", false}, {"Expansion", false}};
-    return {{"Mix", true}};
+    if (streams == 4 || streams == 3) {
+        for (const char* name : {"Pulse", "TND", "Expansion"}) out(ChannelStream{name, false});
+        if (streams == 4) out(ChannelStream{"MixRef", false});
+        return;
+    }
+    out(ChannelStream{"Mix", true});
 }
 
 // How many streams the armed mode captures, as channelLayout offers them. finishBlock reads it rather than
@@ -748,7 +758,7 @@ std::size_t MesenNesSystem::stateSnapshotSize() const {
 bool MesenNesSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
     // Goes through the streaming SaveState path, which allocates internally —
     // acceptable at the coarse snapshot interval, not per audio block.
-    dst = saveStateBytes();
+    dst = stateBytes();
     return !dst.empty();
 }
 
@@ -798,7 +808,7 @@ NesCpu* nesCpu(Emulator* emu) {
 }
 } // namespace
 
-std::vector<rp::CpuRegister> MesenNesSystem::getCpuRegisters() const {
+std::vector<rp::CpuRegister> MesenNesSystem::cpuRegisters() const {
     NesCpu* cpu = nesCpu(emu_.get());
     if (!cpu) return {};
     const NesCpuState& s = cpu->GetState();
@@ -810,6 +820,10 @@ std::vector<rp::CpuRegister> MesenNesSystem::getCpuRegisters() const {
         { "ps", s.PS, 8 },
         { "pc", s.PC, 16 },
     };
+}
+
+void MesenNesSystem::cpuRegistersInto(rp::Sink<rp::CpuRegister> out) const {
+    for (const rp::CpuRegister& r : cpuRegisters()) out(r);
 }
 
 bool MesenNesSystem::setCpuRegister(std::string_view name, std::uint32_t value) {
@@ -865,7 +879,7 @@ std::uint64_t MesenNesSystem::stepInstruction() {
     return after - before;
 }
 
-std::vector<std::uint8_t> MesenNesSystem::saveSramBytes() const {
+std::vector<std::uint8_t> MesenNesSystem::sramBytes() const {
     if (!emu_) return {};
     auto* self = const_cast<MesenNesSystem*>(this);
     auto accessor = self->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
@@ -874,12 +888,22 @@ std::vector<std::uint8_t> MesenNesSystem::saveSramBytes() const {
                                      accessor.data() + accessor.size());
 }
 
-std::vector<std::uint8_t> MesenNesSystem::saveStateBytes() const {
+std::vector<std::uint8_t> MesenNesSystem::stateBytes() const {
     if (!emu_) return {};
     std::stringstream ss(std::ios::out | std::ios::binary);
     emu_->GetSaveStateManager()->SaveState(ss);
     const std::string str = ss.str();
     return std::vector<std::uint8_t>(str.begin(), str.end());
+}
+
+void MesenNesSystem::saveSramInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = sramBytes();
+    out(bytes.data(), bytes.size());
+}
+
+void MesenNesSystem::saveStateInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = stateBytes();
+    out(bytes.data(), bytes.size());
 }
 
 bool MesenNesSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {

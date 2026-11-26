@@ -48,7 +48,7 @@ public:
 
     // Default = one stereo "Mix" stream. Under channelExportMode == StereoModPins (CLI-only), reports
     // the three mono pin streams (Pulse | TND | Expansion) the NesSoundMixer tap captures (spec/10 §5).
-    std::vector<ChannelStream> channelLayout() const override;
+    void channelLayoutInto(rp::Sink<ChannelStream> out) const override;
 
     // Audio-thread: forward host MIDI events to the attached N8 role (if any).
     // The role pushes bytes into the FIFO RX queue so the ROM's polling loop
@@ -60,7 +60,7 @@ public:
 
     // Control-thread: the N8 FIFO's CMD_USB_WR payload — what the ROM has sent host-ward since the
     // last drain. Empty before activation or when the ROM has sent nothing.
-    std::vector<std::uint8_t> drainCoreBytes() override;
+    void drainCoreBytesInto(rp::ByteSink out) override;
     CoreTransportStats coreTransportStats() override;
     std::uint64_t inputAccepted() const override;
     std::uint64_t inputDropped() const override;
@@ -106,7 +106,7 @@ public:
     // NES (6502): registers a/x/y/sp/ps (8-bit) + pc (16-bit), register writes,
     // native single-step via NesCpu::Exec(), and side-effect-free CPU-address
     // reads via NesMemoryManager::DebugRead().
-    std::vector<rp::CpuRegister> getCpuRegisters() const override;
+    void cpuRegistersInto(rp::Sink<rp::CpuRegister> out) const override;
     bool setCpuRegister(std::string_view name, std::uint32_t value) override;
     std::optional<std::uint32_t> getProgramCounter() const override;
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
@@ -118,8 +118,8 @@ public:
     rp::IDebugTarget* debugTarget() override;
 
     // SystemBase virtuals — see base class for contracts.
-    std::vector<std::uint8_t> saveSramBytes() const override;
-    std::vector<std::uint8_t> saveStateBytes() const override;
+    void saveSramInto(rp::ByteSink out) const override;
+    void saveStateInto(rp::ByteSink out) const override;
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
 
@@ -190,6 +190,12 @@ public:
     static constexpr std::uint32_t kPixelHeight = 240;
 
 private:
+    // The battery and the savestate as this core reads them; saveSramInto / saveStateInto hand them over.
+    std::vector<std::uint8_t> sramBytes() const;
+    std::vector<std::uint8_t> stateBytes() const;
+    std::vector<std::uint8_t> takeCoreBytes();
+    std::vector<rp::CpuRegister> cpuRegisters() const;
+
     // Restore a savestate seed over the battery seedSramAndState() already put into the core.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
 

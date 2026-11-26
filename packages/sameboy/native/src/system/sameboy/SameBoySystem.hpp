@@ -118,7 +118,7 @@ public:
     //
     // Live SM83 state, valid only while activated (gb_ != nullptr). SameBoy
     // supports the full set; runUntilPc is provided by the base class.
-    std::vector<rp::CpuRegister> getCpuRegisters() const override;
+    void cpuRegistersInto(rp::Sink<rp::CpuRegister> out) const override;
     bool setCpuRegister(std::string_view name, std::uint32_t value) override;
     std::optional<std::uint32_t> getProgramCounter() const override;
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
@@ -141,7 +141,7 @@ public:
     // Pulse 2, Wave, Noise, in GB_channel_t order). Inert until the plan wires the
     // node's ch1..ch4 ports: with only mix wired, finishBlock keeps receiving the
     // 2-lane mix. See the per-channel tap below.
-    std::vector<ChannelStream> channelLayout() const override;
+    void channelLayoutInto(rp::Sink<ChannelStream> out) const override;
 
     // Set the per-system gain target (dB). Smoothed at audio rate inside finishBlock so live edits don't click.
     // The block thread calls it, as a system node applies its params there, and it allocates nothing (a test
@@ -180,8 +180,8 @@ public:
 
     // SystemBase virtuals — see base class for contracts.
     void                      setFastBoot(bool on) override     { config_.fastBoot = on; }
-    std::vector<std::uint8_t> saveSramBytes() const override;
-    std::vector<std::uint8_t> saveStateBytes() const override;
+    void saveSramInto(rp::ByteSink out) const override;
+    void saveStateInto(rp::ByteSink out) const override;
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
     StateRegionTable          stateSnapshotRegions() const override;
@@ -336,6 +336,10 @@ public:
     std::vector<std::pair<std::uint32_t, std::uint8_t>> serialOutLog_;
 
 private:
+    // The battery and the savestate as this core reads them; saveSramInto / saveStateInto hand them over.
+    std::vector<std::uint8_t> sramBytes() const;
+    std::vector<std::uint8_t> stateBytes() const;
+
     // Size stereoAccum_ and chanAccum_ for `frames`, growth only: a smaller block keeps the memory the larger one took.
     void sizePerBlockBuffers(std::uint32_t frames);
     // Take the front byte of the serial queue (its run loses one, and the run goes when its last byte has).

@@ -13,6 +13,7 @@
 #include "system/CpuState.hpp"
 #include "system/MemoryAccessor.hpp"
 #include "system/MemoryType.hpp"
+#include "system/Sink.hpp"
 #include "system/SystemTypes.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "transport/MemorySnapshotTriple.hpp"
@@ -36,6 +37,11 @@ struct CoreTransportStats {
     std::uint64_t linkResent   = 0;
 };
 
+// The boundary rule (docs/downloadable-packs-m5a-plan.md): a core may be a pack's, with a heap of its own, so no public
+// virtual here returns an owning type or takes one but by const reference. A result goes to a sink the caller made
+// (system/Sink.hpp), and the non-virtual helper beside it gives the caller a vector of its own. `[packs-boundary]`
+// scans this header for it.
+//
 // Polymorphic runtime representation of one emulator instance. Owned by its
 // system node (its own package's node file, on the generic SystemNode template in system/SystemNode.hpp), and built by
 // the build function its own package carries (system/SystemBuild.hpp). Concrete subclasses: SameBoySystem,
@@ -108,7 +114,14 @@ public:
     // entry per stream; that layout only takes effect when the plan wires the
     // node's stream ports (finishBlock still receives whatever laneCount the node
     // hands it), so reporting a wide layout is inert on the default path.
-    virtual std::vector<ChannelStream> channelLayout() const { return {{"Mix", true}}; }
+    virtual void channelLayoutInto(rp::Sink<ChannelStream> out) const { out(ChannelStream{"Mix", true}); }
+    // channelLayoutInto's streams, in a vector of the caller's (system/Sink.hpp: nothing a pack allocates is freed by
+    // the host). Inline and not virtual, so the vector is the calling module's.
+    std::vector<ChannelStream> channelLayout() const {
+        std::vector<ChannelStream> streams;
+        channelLayoutInto(rp::appendTo(streams));
+        return streams;
+    }
 
     // Fused single-system convenience entry: prepare → step-to-done → finish.
     // NOT on the engine's path (its system nodes drive the triad directly); this is
@@ -139,7 +152,13 @@ public:
     // drain, oldest first. On the NES that is the N8 FIFO's `CMD_USB_WR` payload — the back-channel a
     // cartridge uses to talk to the host (on hardware the MCU forwards it out of the USB port). Empty
     // for cores with no such transport. Control-thread read; the NES implementation is mutex-guarded.
-    virtual std::vector<std::uint8_t> drainCoreBytes() { return {}; }
+    virtual void drainCoreBytesInto(rp::ByteSink /*out*/) {}
+    // drainCoreBytesInto's bytes, in the caller's vector.
+    std::vector<std::uint8_t> drainCoreBytes() {
+        std::vector<std::uint8_t> bytes;
+        drainCoreBytesInto(rp::appendBytesTo(bytes));
+        return bytes;
+    }
 
     // Depths of the core's host<->cart transport, and what it has cost. On the NES these are the N8
     // FIFO's two stages plus its cumulative dropped-byte count, which is the only way a test can see
@@ -182,10 +201,20 @@ public:
 
     // Cartridge battery RAM. Empty vector when the cartridge has no battery
     // or the backend doesn't yet support snapshotting.
-    virtual std::vector<std::uint8_t> saveSramBytes() const { return {}; }
+    virtual void saveSramInto(rp::ByteSink /*out*/) const {}
+    std::vector<std::uint8_t> saveSramBytes() const {
+        std::vector<std::uint8_t> bytes;
+        saveSramInto(rp::appendBytesTo(bytes));
+        return bytes;
+    }
 
     // Savestate, byte for byte. Empty when the backend doesn't support savestates.
-    virtual std::vector<std::uint8_t> saveStateBytes() const { return {}; }
+    virtual void saveStateInto(rp::ByteSink /*out*/) const {}
+    std::vector<std::uint8_t> saveStateBytes() const {
+        std::vector<std::uint8_t> bytes;
+        saveStateInto(rp::appendBytesTo(bytes));
+        return bytes;
+    }
 
     // -- Memory access -------------------------------------------------------
 
@@ -215,7 +244,12 @@ public:
 
     // Live register file (empty when unsupported). Names are canonical lower
     // case ("pc", "sp", "a", "af", "r15", "cpsr", …).
-    virtual std::vector<rp::CpuRegister> getCpuRegisters() const { return {}; }
+    virtual void cpuRegistersInto(rp::Sink<rp::CpuRegister> /*out*/) const {}
+    std::vector<rp::CpuRegister> getCpuRegisters() const {
+        std::vector<rp::CpuRegister> registers;
+        cpuRegistersInto(rp::appendTo(registers));
+        return registers;
+    }
 
     // Write one register by name. False on unsupported backend / unknown name.
     virtual bool setCpuRegister(std::string_view /*name*/, std::uint32_t /*value*/) {

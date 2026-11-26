@@ -151,8 +151,8 @@ public:
     bool                        writeCpuByte(std::uint32_t addr, std::uint8_t value) override;
 
     // SystemBase virtuals - see base class for contracts.
-    std::vector<std::uint8_t> saveSramBytes() const override;
-    std::vector<std::uint8_t> saveStateBytes() const override;
+    void saveSramInto(rp::ByteSink out) const override;
+    void saveStateInto(rp::ByteSink out) const override;
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
 
@@ -178,6 +178,10 @@ public:
     static constexpr std::uint32_t kGgPixelHeight  = 144;
 
 private:
+    // The battery and the savestate as this core reads them; saveSramInto / saveStateInto hand them over.
+    std::vector<std::uint8_t> sramBytes() const;
+    std::vector<std::uint8_t> stateBytes() const;
+
     // Restore a savestate seed over the battery seedSramAndState() already put into the core.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
 

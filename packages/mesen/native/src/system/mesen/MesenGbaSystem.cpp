@@ -383,7 +383,7 @@ std::size_t MesenGbaSystem::stateSnapshotSize() const {
 bool MesenGbaSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
     // Streaming SaveState path allocates internally — acceptable at the coarse
     // snapshot interval, not per audio block.
-    dst = saveStateBytes();
+    dst = stateBytes();
     return !dst.empty();
 }
 
@@ -432,7 +432,7 @@ int parseArmReg(std::string_view name) {
 }
 } // namespace
 
-std::vector<rp::CpuRegister> MesenGbaSystem::getCpuRegisters() const {
+std::vector<rp::CpuRegister> MesenGbaSystem::cpuRegisters() const {
     GbaCpu* cpu = gbaCpu(emu_.get());
     if (!cpu) return {};
     const GbaCpuState& s = cpu->GetState();
@@ -444,6 +444,10 @@ std::vector<rp::CpuRegister> MesenGbaSystem::getCpuRegisters() const {
     out.push_back({ "cpsr", const_cast<GbaCpuFlags&>(s.CPSR).ToInt32(), 32 });
     out.push_back({ "pc", s.R[15], 32 }); // alias of r15, per the "pc" contract
     return out;
+}
+
+void MesenGbaSystem::cpuRegistersInto(rp::Sink<rp::CpuRegister> out) const {
+    for (const rp::CpuRegister& r : cpuRegisters()) out(r);
 }
 
 bool MesenGbaSystem::setCpuRegister(std::string_view name, std::uint32_t value) {
@@ -500,7 +504,7 @@ void MesenGbaSystem::setFastBoot(bool on) {
     if (emu_) configureGba(*emu_, on);
 }
 
-std::vector<std::uint8_t> MesenGbaSystem::saveSramBytes() const {
+std::vector<std::uint8_t> MesenGbaSystem::sramBytes() const {
     if (!emu_) return {};
     auto* self = const_cast<MesenGbaSystem*>(this);
     auto accessor = self->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
@@ -509,12 +513,22 @@ std::vector<std::uint8_t> MesenGbaSystem::saveSramBytes() const {
                                      accessor.data() + accessor.size());
 }
 
-std::vector<std::uint8_t> MesenGbaSystem::saveStateBytes() const {
+std::vector<std::uint8_t> MesenGbaSystem::stateBytes() const {
     if (!emu_) return {};
     std::stringstream ss(std::ios::out | std::ios::binary);
     emu_->GetSaveStateManager()->SaveState(ss);
     const std::string str = ss.str();
     return std::vector<std::uint8_t>(str.begin(), str.end());
+}
+
+void MesenGbaSystem::saveSramInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = sramBytes();
+    out(bytes.data(), bytes.size());
+}
+
+void MesenGbaSystem::saveStateInto(rp::ByteSink out) const {
+    const std::vector<std::uint8_t> bytes = stateBytes();
+    out(bytes.data(), bytes.size());
 }
 
 bool MesenGbaSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {

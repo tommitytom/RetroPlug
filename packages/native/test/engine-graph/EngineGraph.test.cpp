@@ -963,7 +963,7 @@ public:
 
     void onActivate(double) override { activated_ = true; }
     void onSampleRateChanged(double) override {}
-    std::vector<ChannelStream> channelLayout() const override { return {{"Mix", true}}; }
+    void channelLayoutInto(rp::Sink<ChannelStream> out) const override { out(ChannelStream{"Mix", true}); }
     void finishBlock(const AudioBlockInfo&, float* const*, std::size_t) override { ++blocks_; }
 
     int  tag() const { return tag_; }
@@ -1108,7 +1108,7 @@ public:
     StateCore(SystemId id, std::size_t size) : SystemBase(id), state_(size, 0) {}
     void onActivate(double) override {}
     void onSampleRateChanged(double) override {}
-    std::vector<std::uint8_t> saveStateBytes() const override { return state_; }
+    void saveStateInto(rp::ByteSink out) const override { out(state_.data(), state_.size()); }
 
 protected:
     std::size_t stateSnapshotSize() const override { return state_.size(); }

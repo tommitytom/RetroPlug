@@ -94,7 +94,7 @@ public:
     // writes (pc/r15 via SetProgramCounter; cpsr write unsupported), single-step
     // via GbaCpu::Exec(), and side-effect-free CPU-address reads via
     // GbaMemoryManager::DebugRead(). Inspect memory regions via getMemory().
-    std::vector<rp::CpuRegister> getCpuRegisters() const override;
+    void cpuRegistersInto(rp::Sink<rp::CpuRegister> out) const override;
     bool setCpuRegister(std::string_view name, std::uint32_t value) override;
     std::optional<std::uint32_t> getProgramCounter() const override;
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
@@ -102,8 +102,8 @@ public:
 
     // SystemBase virtuals — see base class for contracts.
     void                      setFastBoot(bool on) override;
-    std::vector<std::uint8_t> saveSramBytes() const override;
-    std::vector<std::uint8_t> saveStateBytes() const override;
+    void saveSramInto(rp::ByteSink out) const override;
+    void saveStateInto(rp::ByteSink out) const override;
     std::size_t               stateSnapshotSize() const override;
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
 
@@ -115,6 +115,11 @@ public:
     static constexpr std::uint32_t kPixelHeight = 160;
 
 private:
+    // The battery and the savestate as this core reads them; saveSramInto / saveStateInto hand them over.
+    std::vector<std::uint8_t> sramBytes() const;
+    std::vector<std::uint8_t> stateBytes() const;
+    std::vector<rp::CpuRegister> cpuRegisters() const;
+
     // Restore a savestate seed over the battery seedSramAndState() already put into the core.
     bool loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
     void sizeBlockScratch(std::uint32_t frames);  // stereoAccum_: at activation, never on the block thread

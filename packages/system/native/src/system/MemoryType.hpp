@@ -67,13 +67,4 @@ enum class AccessType : std::uint8_t {
     ReadWrite = 1,
 };
 
-// Record of one write through a MemoryAccessor that had patch tracking
-// enabled. Future use: surface "what changed" to the UI without re-reading
-// the whole region. Not currently persisted by any role; LSDJ kit patches
-// are serialized via the kit role's own config.
-struct MemoryPatch {
-    std::size_t              offset = 0;
-    std::vector<std::uint8_t> bytes;
-};
-
 } // namespace rp
