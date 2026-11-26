@@ -139,11 +139,13 @@ script is not in CI; the devcontainer ships one for it.
 ## The pack hosts
 
 `retroplug-host-packs` and `retroplug-ui-test-packs` sit beside `retroplug-host` and `retroplug-ui-test`: the same test
-hosts built on the `packs-desktop` product, which has no Mesen, and run by `pnpm test:native:packs` and
+hosts built on the `packs-desktop` product, which has neither Mesen nor BlipToaster, and run by `pnpm test:native:packs` and
 `pnpm test:ui:packs` (what they prove is [06](06-build-test.md#pnpm-scripts)'s). Each runs `ensureLaunchPacks` before
 any Engine exists; the native one also loads the pack host runtime, registers the product's render modules and installs
 the pack loader. Both are built by name, get no device (no audio, video or serial), and run on the Linux CI job only;
-`RETROPLUG_PACK_PATH` names `build/packs/mesen/0.1.0`, which `pnpm test:native:packs` and `pnpm test:ui:packs` build by name (`retroplug-mesen-pack`) before they run.
+`RETROPLUG_PACK_PATH` names `build/packs/bliptoaster/0.1.0` and `build/packs/mesen/0.1.0`, which
+`pnpm test:native:packs` and `pnpm test:ui:packs` build by name (`retroplug-bliptoaster-pack`, `retroplug-mesen-pack`)
+before they run.
 
 ### The device guard
 

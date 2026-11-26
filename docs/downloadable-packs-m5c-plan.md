@@ -1040,3 +1040,43 @@ Design questions to carry (answered or left open):
 - [ ] **Step 1: Ask the user to push `feature/modularize`.** Then dispatch `build.yml` and read every job: the linux
   job's two pack steps must run with both packs and pass; the other jobs as before (the full build now also defines
   `retroplug-bliptoaster-pack` on every platform with a pack folder, and the packs test builds it on Windows and macOS).
+
+## After the reviews
+
+What the build found that the plan did not say:
+
+- **No deviation of design.** Every task landed as written; the reviews changed comment wrapping in
+  `tools/build-pack-halves.mjs`'s header and `PackTable::loadAll`'s Kahn comment, and spec/02's account of where a
+  pack's work files live (`pack-work/` under the declaring directory's binary dir, not beside the packs).
+- **esbuild's metafile keys match.** A metafile input's `imports[].path` is keyed as `inputs` is (esbuild 0.28.1), so
+  the inputs check names each refused file's importer as written.
+- **A new target needs a configure.** The first build after `retroplug_pack(bliptoaster TS_HALVES)` said "No rule to
+  make target" for `retroplug-bliptoaster-pack`: a named target that does not exist yet does not trigger the configure a
+  cmake edit otherwise re-runs. `cmake build` once, then it builds.
+- **`requires` is a C++20 keyword**, so `platformPack`'s parameters are `needsPlatforms` and `givesPlatforms`.
+- **The products golden's tag is `[packages]`**, and each runner takes one substring filter on a file's slug.
+- **Results (fixture-less, as CI runs):** the native tier in the pack mode 176/177 files, the known machine-local
+  `app-cores` GBA case the one failure, exactly as the desktop mode (624 cases passed, 23 skipped in each); the UI tier
+  50/50 in both modes (2 skips in each). No finding to triage, and the skip baselines did not move.
+
+## Design questions this plan found
+
+1. **A bundled copy drifts.** A pack's copy of a `PACK_BUNDLED` module is its build's: a fix to tracker's NES helpers
+   reaches a pack only when the pack is rebuilt. Accepted (the user's decision); a library pack stays the route if
+   shared code grows large, holds state or ships on its own schedule.
+2. **`PACK_BUNDLED` is held to its imports, not to purity.** The inputs check keeps a listed module from pulling in an
+   unlisted file, but a listed module that grows module state would still be copied into every pack. Should a check
+   read the listed modules for top-level mutable state?
+3. **Two packs requiring each other's platforms** both wait; the leftover loop loads them in the given order and the
+   TS loader refuses whichever finds its platform missing. Should the table refuse them as a cycle, as it does for
+   `requires.packs`?
+4. **The cli half is built and not loaded here.** No host in this plan loads BlipToaster's cli half: the CLI milestone's
+   dispatcher built without `bliptoaster` is its first loader.
+5. **The script half needs a product build.** `--script-from` copies the toolchain output a configured product builds;
+   an SDK repo building a pack runs the toolchain through the tool instead, and the two paths' bytes are equal only
+   while the toolchain names its source after the pack's id.
+6. **A TS-only pack is declared from the root.** A package with no native/ folder has no CMakeLists to call
+   `retroplug_pack()` from: should `retroplug_package()` build a pack for any package with a `pack.json`?
+7. **Registration order is still unread.** BlipToaster's roles, ROM provider and tracker integration now register after
+   the product's, and no file in either tier failed on it: as M5b found for a console, no test pins where a pack's
+   contributions land.

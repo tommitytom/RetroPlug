@@ -1436,7 +1436,11 @@ side of the entry) or returns no package or a null one, a node type its `provide
 declared one it does not register, one a built-in package or an earlier pack holds, a `requires.packs` (packs only) not
 loaded, an installed folder that cannot be held, or anything the `NodeRegistry` refuses on a scratch registry holding
 the product's packages and the packs before it (the script node types are not in it: each Engine checks those).
-`loadAll` loads in dependency order, whatever order the candidates come in, and names a cycle. `processPacks()` is the
+`loadAll` loads in dependency order, whatever order the candidates come in, and names a cycle. A platform a pack
+requires (`requires.platforms`) holds it back while another pending pack provides it (`provides.platforms`), so a pack
+needing the NES loads after the pack whose consoles bring it, in whatever order the folders were found in; a platform no
+other pending pack provides is the product's or nobody's, which the TS loader judges, and holds nothing back. Two packs
+requiring each other's platforms both wait, and the leftover pass loads them in the order given. `processPacks()` is the
 process's table, seeded with the product's packages and empty until a host loads into it: every product host (the plugin, the SDL standalone, the UI harness and the CLI's dispatcher; not the `test:native` host, which builds an Engine and loads no pack) calls
 `ensureLaunchPacks` ([ProcessPacks](../packages/native/src/host/packs/ProcessPacks.hpp)) once per process, before it builds an
 `Engine` and before its first context evaluates (the installed packs and `RETROPLUG_PACK_PATH`'s development folders; the CLI's session files
@@ -1598,8 +1602,27 @@ desktop-product case holds every cart there active, a typo guard). zod is a shar
 schemas with one instance and a pack's app half carries no copy (Mesen's went from about 550 KB to about 6 KB);
 `RP_API_LEVEL` is 3 for it. A pack folder has one `pack.json` writer: `retroplug_pack(<id> TS_HALVES)` builds the native
 module and runs `tools/build-pack-halves.mjs` on the manifest template the configure stamps, so
-`build/packs/mesen/0.1.0` names the native, app, consoles and ui halves, and a depfile re-runs the halves when a source
-they bundle changes. The pack hosts are `retroplug-host-packs` and `retroplug-ui-test-packs`, the test hosts built on
+`build/packs/mesen/0.1.0` names the native, app, consoles and ui halves (and `build/packs/bliptoaster/0.1.0` the app,
+ui, cli and script halves), and a depfile re-runs the halves when a source they bundle changes. A script pack the
+package declares (`retroplug.script`) is the pack's script half, copied from the package's own toolchain output
+(`build/packages/<package>/script`, through `--script-from`) rather than rebuilt, so the pack's bundles are the static
+build's bytes; the pack's id must be the package's name, which the toolchain names its files after. A pack with no
+native half is `retroplug_pack(<package> TS_HALVES)`, called from the root for a package with no `native/` folder
+(BlipToaster's: app, ui, cli and script halves, `requires.platforms: ["nes"]`), after the `retroplug_package()` that
+defines its script pack; its folder is the halves build's alone. A pack's work files (its stamped template, depfile,
+entry and export list) live in `pack-work/` under the declaring directory's binary dir, never in the packs' folder.
+
+**`PACK_BUNDLED`** ([contracts.mjs](../packages/retroplug/scripts/lib/contracts.mjs)) lists the modules a pack's halves
+may bundle their own copy of: pure code of a built-in package that holds no state (the NES ROM helpers
+`@retroplug/tracker/nes/{constants,find,kitBank,theme}`, `ritAssets` and `ritAssetOps`, which risa's and BlipToaster's
+asset views and patchers share). `build-pack-halves.mjs` bundles each through its package's exports map, and its inputs
+check refuses a half whose bundle holds any file that is not the pack's own package, an npm library or a listed module
+(so a listed module cannot pull in an unlisted one), naming each file and the module that imports it. It is no contract:
+the shell is not held to it, no shared module set builds it and an entry changes no API level. A pack's copy is its
+build's, so a fix to a listed module reaches a pack only when the pack is rebuilt; a module that grows state, or ships
+on its own schedule, is a library pack instead.
+
+The pack hosts are `retroplug-host-packs` and `retroplug-ui-test-packs`, the test hosts built on
 the `packs-desktop` product (see [06](06-build-test.md#hosts--test-tiers) and
 [14](14-hosts-harnesses.md#the-pack-hosts)): each runs `ensureLaunchPacks` before an Engine exists.
 
