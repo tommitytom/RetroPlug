@@ -481,6 +481,29 @@ set_target_properties(retroplug-ui-test PROPERTIES
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-app-modules)
 
+# retroplug-ui-test-packs: the UI harness on packs-desktop's app module set and UI bundle, so the UI tier's pack mode
+# runs every file with Mesen loaded as a pack (docs/downloadable-packs-m5b-plan.md, `pnpm test:ui:packs`). The harness
+# loads the launch packs already (UiHarness.hpp). Built by name.
+set_property(GLOBAL PROPERTY RP_BUNDLE_PACKAGES_packs-desktop "${RP_PRODUCT_PACKAGES_packs-desktop}")
+retroplug_bundles(packs-desktop)
+add_executable(retroplug-ui-test-packs EXCLUDE_FROM_ALL
+    test/ui/UiRunner.cpp
+    test/ui/UiHarness.cpp
+    test/ui/RenderCore.cpp
+    ${RP_BUNDLE_packs-desktop_MODULES_C}   # packs-desktop's shared modules (rp_app_modules)
+    ${RP_BUNDLE_packs-desktop_UI_C})       # its UI bytecode (rp_ui_bundle)
+target_link_libraries(retroplug-ui-test-packs PRIVATE lvgl-js-native retroplug-backend retroplug-tjs-runtime)
+retroplug_product(retroplug-ui-test-packs PACKAGES ${RP_PRODUCT_PACKAGES_packs-desktop})
+target_include_directories(retroplug-ui-test-packs PRIVATE ${RP_QUICKJS_INCLUDE})
+set_target_properties(retroplug-ui-test-packs PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_dependencies(retroplug-ui-test-packs ${RP_BUNDLE_packs-desktop_UI_TARGET})  # the bundle must exist before it compiles
+if(TARGET retroplug-mesen-pack)
+    add_dependencies(retroplug-ui-test-packs retroplug-mesen-pack)
+endif()
+
 # The shell's nine native test binaries (EXCLUDE_FROM_ALL; built by name), and the configure checks the packages'
 # manifests, boundary fixtures and device entries are held to.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
