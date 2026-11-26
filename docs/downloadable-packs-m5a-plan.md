@@ -2061,7 +2061,7 @@ and change the last sentence's "on Linux and macOS" to "on every platform".
 - [ ] **Step 5: Verify**
 
 ```sh
-pnpm typecheck && pnpm check:boundaries && pnpm check:doc-links
+pnpm typecheck && pnpm check:boundaries && pnpm check:docs
 cmake --build build -j$(nproc)
 mkdir -p .superpowers/verify/runs/m5a
 env -u RETROPLUG_RESOURCES_DIR TV_SKIP_SDLCTL=1 TVL=.superpowers/verify/runs/m5a/tv bash .superpowers/verify/tip-verify-par.sh
