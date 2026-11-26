@@ -80,8 +80,10 @@ a Windows `/MT` DLL: a heap of its own. `ldd` lists only libc.
 - Sonnet implements each task from its text alone, and Opus reviews each task's diff before the next one starts.
 - The code here was not compiled as written. Where a step meets the tree differently (a helper's exact name, an
   include, a field), the implementer follows the tree, keeps the step's intent, and reports the deviation.
-- Every task leaves `pnpm test:plugin` green: the two new checks that fail until the conversion is done are tagged
-  `[!shouldfail]` (Catch2 passes such a case only when it fails) until Task 6 removes the tag.
+- Every task leaves `pnpm test:plugin` green. The two new checks hold today's boundary as it is until the conversion
+  is done: the heap scenario checks its crossings are more than zero, and the contract scan that it finds faults, each
+  with a comment naming the task that flips it; Task 5 flips both to zero. (Not `[!shouldfail]`, which passes a case on
+  ANY failure and would hide a broken load or REQUIRE while Tasks 3 to 5 rewrite the boundary: the Task 1 review.)
 - Task 7 ends with a CI gate on Windows and macOS, which needs the user's go-ahead to push.
 
 ## Decisions this plan makes
@@ -616,7 +618,7 @@ TEST_CASE("the heap test's counts are live: a block freed by the side that did n
 
 TEST_CASE("no heap block crosses the boundary: a Mesen pack with a heap of its own is built, run, read, debugged "
           "and destroyed",
-          "[packs-heap][!shouldfail]") {
+          "[packs-heap]") {
 #if !RP_HEAP_OWN_RUNTIME
     SKIP("no pack with a heap of its own on this platform (packages/native/cmake/tests.cmake)");
 #else
@@ -733,8 +735,9 @@ TEST_CASE("no heap block crosses the boundary: a Mesen pack with a heap of its o
     const auto packCrossed = pack.violations() - packBefore;
     INFO("the host freed " << hostCrossed << " of the pack's blocks; the pack freed " << packCrossed
                            << " of the host's (break on crossed() in HostHeap.cpp / PackHeap.cpp to see where)");
-    CHECK(hostCrossed == 0);
-    CHECK(packCrossed == 0);
+    // Today's boundary crosses (the claim's savestate and battery vectors, the stream layout, the debug service's
+    // containers, the build request's by-value members); Task 5 makes this `hostCrossed == 0` and `packCrossed == 0`.
+    CHECK(hostCrossed + packCrossed > 0);
 #endif
 }
 ```
@@ -998,7 +1001,7 @@ TEST_CASE("a sink copies into the container of the side that made it", "[packs-b
     none(a, 3);  // a sink with no function takes nothing and does not crash
 }
 
-TEST_CASE("the contract headers hand no heap ownership across a pack's boundary", "[packs-boundary][!shouldfail]") {
+TEST_CASE("the contract headers hand no heap ownership across a pack's boundary", "[packs-boundary]") {
     const fs::path dir = fs::path(RP_REPO_ROOT) / "packages" / "system" / "native" / "src" / "system";
     static const std::regex kVirtual(R"(virtual\s+([^;{}()]*?)\s*\b(\w+)\s*\(([^()]*)\))");
     std::vector<std::string> found;
@@ -1029,7 +1032,8 @@ TEST_CASE("the contract headers hand no heap ownership across a pack's boundary"
     }
     CHECK(publicVirtuals >= 50);  // the scan read the interfaces, not an empty match
     for (const auto& f : found) UNSCOPED_INFO(f);
-    CHECK(found.empty());
+    // Today's contract hands ownership across; docs/downloadable-packs-m5a-plan.md Task 5 makes this CHECK(found.empty()).
+    CHECK_FALSE(found.empty());
 }
 ```
 
@@ -1044,7 +1048,8 @@ Run:
 cmake --build build --target retroplug-packs-test -j$(nproc)
 build/bin/retroplug-packs-test "[packs-boundary]" -s 2>&1 | grep -E "returns|takes|holds|passed|failed" | head -60
 ```
-Expected: the sink case and the RTTI case pass; the contract case "fails as expected" (`[!shouldfail]`). Its list
+Expected: all three cases pass (the contract case because it finds faults). To read its list, temporarily change
+the `CHECK_FALSE` to `CHECK` locally (do not commit that) or print `found`. The list
 should name: `SystemBase.hpp`'s five owning returns (`channelLayout`, `drainCoreBytes`, `saveSramBytes`,
 `saveStateBytes`, `getCpuRegisters`), `SystemCapabilities.hpp`'s `title` returning `std::string`, `DebugTarget.hpp`'s
 eight owning returns, and `SystemBuild.hpp` and `HostSystems.hpp` holding an owning type and an rvalue reference.
@@ -1282,7 +1287,7 @@ build/bin/retroplug-audio-test 2>&1 | tail -3
 build/bin/retroplug-packs-test "[packs-mesen],[packs-boundary]" 2>&1 | tail -3
 build/bin/retroplug-packs-heap-test -s 2>&1 | grep -E "freed|passed|failed" | tail -5
 ```
-Expected: every suite passes (the two `[!shouldfail]` cases still fail as expected). The heap test's counts drop (the
+Expected: every suite passes (the heap scenario's and the scan's interim checks still find crossings). The heap test's counts drop (the
 claim's and the layout's crossings are gone); record them.
 
 - [ ] **Step 6: Commit**
@@ -1886,8 +1891,11 @@ build/bin/retroplug-packs-test 2>&1 | tail -3
 build/bin/retroplug-packs-heap-test -s 2>&1 | grep -E "freed|passed|failed" | tail -5
 build/bin/retroplug-packs-test "[packs-boundary]" -s 2>&1 | grep -E "returns|takes|holds|passed|failed"
 ```
-Expected: everything passes, and **both `[!shouldfail]` cases now pass, which Catch2 reports as failures** ("expected to
-fail but passed"): that is the signal to Task 6. The heap test's counts are 0 and 0. If either is not, find the crossing
+With the conversion done, flip the two interim checks: in `PackHeap.test.cpp` replace `CHECK(hostCrossed + packCrossed
+> 0);` and its comment with `CHECK(hostCrossed == 0);` and `CHECK(packCrossed == 0);`, and in `BoundaryRules.test.cpp`
+replace `CHECK_FALSE(found.empty());` and its comment with `CHECK(found.empty());`. Rebuild and rerun.
+
+Expected: everything passes, the heap test's counts are 0 and 0, and the scan finds nothing. If either is not, find the crossing
 with `gdb -batch -ex 'break crossed' -ex run -ex bt build/bin/retroplug-packs-heap-test` and fix it in this task
 (report what it was).
 
@@ -1917,8 +1925,7 @@ reading to the header's.
 
 - [ ] **Step 2: The checks hold for good**
 
-Remove `[!shouldfail]` from the heap scenario's tags (`"[packs-heap]"`) and from the contract scan's
-(`"[packs-boundary]"`).
+Confirm Task 5 flipped both interim checks: `grep -n "> 0);\|CHECK_FALSE(found.empty" packages/native/test/packs/heap/PackHeap.test.cpp packages/native/test/packs/BoundaryRules.test.cpp` prints nothing.
 
 - [ ] **Step 3: Mesen's pack on Windows**
 
@@ -1980,8 +1987,7 @@ std::string vtableFile(SystemBase* core) {
 cmake --build build -j$(nproc)
 pnpm test:plugin 2>&1 | tail -25
 ```
-Expected: every binary passes, `retroplug-packs-heap-test` among them, with no `[!shouldfail]` left
-(`grep -rn "shouldfail" packages/native/test` prints nothing).
+Expected: every binary passes, `retroplug-packs-heap-test` among them, and both checks holding zero.
 
 - [ ] **Step 6: Commit**
 
@@ -2101,6 +2107,10 @@ found" to this plan, with at least these, each answered or left open for the use
 9. **The build copies the ROM in the build function** rather than in the node: the same one copy. spec/07's "P3:
    cores borrow their pinned ROM" can now be had by a core keeping the span instead, if the pin's lifetime is made the
    core's.
+
+10. **The Linux heap leg cannot see a by-value owning parameter.** On Itanium the caller destroys a by-value
+    argument; on MSVC the callee does. So a by-value container parameter crossing shows only on Windows: the contract
+    scan (`parameterFault`) and the Windows CI gate hold that class (the Task 1 review).
 
 - [ ] **Step 7: Commit**
 
