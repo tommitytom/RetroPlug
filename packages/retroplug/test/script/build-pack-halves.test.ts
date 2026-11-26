@@ -79,6 +79,28 @@ test("the fixture's halves are built, each importing only contracts, and its pac
   expect(imports.app).toEqual(["@retroplug/core/definePackage"]);
 });
 
+test("Mesen's app half imports zod from the host rather than bundling it", async () => {
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-mesen-"));',
+    'const mesen = path.join(repo, "packages/mesen");',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  await m.buildPackHalves({ packageDir: mesen, outDir: work, template: path.join(mesen, "pack.json") });',
+    '  const src = fs.readFileSync(path.join(work, "js/app.js"), "utf8");',
+    '  process.stdout.write(JSON.stringify({ bytes: Buffer.byteLength(src),',
+    '    imports: /^import[^"\']*["\']zod["\']/m.test(src), bundled: /class ZodError|\$ZodError/.test(src) }));',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '}).catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });',
+  ].join("\n");
+  const run = await runNode(script);
+  if (run.status !== 0) throw new Error(run.err);
+  const got = JSON.parse(run.out) as { bytes: number; imports: boolean; bundled: boolean };
+  expect(got.imports).toBe(true);
+  expect(got.bundled).toBe(false);
+  expect(got.bytes < 64 * 1024, `app.js is ${got.bytes} bytes`).toBe(true);
+});
+
 test("a package importing another package's module is refused, naming it", async () => {
   const script = [
     'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',

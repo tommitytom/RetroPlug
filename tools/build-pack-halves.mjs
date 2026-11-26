@@ -30,7 +30,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { SHELL_IMPORTS, UI_IMPORTS, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
+import { SHELL_IMPORTS, UI_IMPORTS, SHARED_LIBRARIES, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
 
 const esbuild = createRequire(import.meta.url)("esbuild");
 const { tsOptions } = createRequire(import.meta.url)("./ts-options.js");
@@ -50,7 +50,8 @@ export function packExternals() {
   const hostModules = hostModuleSpecifiers(JSON.parse(readFileSync(join(REPO, "packages/retroplug/host-modules.json"),
     "utf8")));
   // The two lists are { specifier, reason } entries (build-shared-modules.mjs reads them the same way).
-  return [...new Set([...SHELL_IMPORTS.map((e) => e.specifier), ...UI_IMPORTS.map((e) => e.specifier), ...hostModules])];
+  return [...new Set([...SHELL_IMPORTS.map((e) => e.specifier), ...UI_IMPORTS.map((e) => e.specifier),
+    ...SHARED_LIBRARIES.map((e) => e.specifier), ...hostModules])];
 }
 
 /** The package's device script pack as the pack's script half (see the header). Returns the whole pack's file. */

@@ -67,6 +67,15 @@ export const UI_IMPORTS = [
   { specifier: "@retroplug/tracker/trackerIntegration", reason: "the integration contract the shell resolves a cart's tracker by" },
 ];
 
+/** The libraries every shared module set carries as one named module, which a pack's halves import rather than bundle
+ *  (docs/downloadable-packs-m5b-plan.md): a role config's schema a pack builds composes with the host's configFields,
+ *  and one schema built from two zod instances is two type systems; one copy also keeps a pack's app half small. Rule 9
+ *  does not judge these (it names @retroplug/* specifiers), and a kinds half still refuses them (its script contexts
+ *  carry no schema library). Their versions are part of the API level (graph/rp_pack.h). */
+export const SHARED_LIBRARIES = [
+  { specifier: "zod", reason: "the schema library role configs, node settings and the stores' configs are built with" },
+];
+
 /** The host modules a pack's UI half may import (host-modules.json), minus the CLI binary's own `retroplug-cli`, which
  *  the CLI serves from its own embedded module and no shared set builds. */
 export function hostModuleSpecifiers(hostModulesJson) {

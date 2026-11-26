@@ -24,7 +24,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SHELL_IMPORTS, UI_IMPORTS, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
+import { SHELL_IMPORTS, UI_IMPORTS, SHARED_LIBRARIES, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
@@ -47,6 +47,7 @@ function setOf(name) {
         ...SHELL_IMPORTS.map((e) => e.specifier),
         ...UI_IMPORTS.map((e) => e.specifier),
         ...hostModuleSpecifiers(HOST_MODULES),
+        ...SHARED_LIBRARIES.map((e) => e.specifier),
       ])],
       external: ["tjs:path"],
     };
@@ -54,7 +55,7 @@ function setOf(name) {
   if (name === "cli") {
     return {
       hosts: [{ name: "rp:cli", entry: path.join(SHELL, "cli/cli.ts") }],
-      contracts: [...new Set(SHELL_IMPORTS.map((e) => e.specifier))],
+      contracts: [...new Set([...SHELL_IMPORTS.map((e) => e.specifier), ...SHARED_LIBRARIES.map((e) => e.specifier)])],
       external: ["tjs:path", "retroplug-cli"],
     };
   }
@@ -63,11 +64,16 @@ function setOf(name) {
     // (host/render/RenderHost), whose pack halves link to the shell contracts as the CLI's do.
     return {
       hosts: [{ name: "rp:render", entry: path.join(SHELL, "src/render/worker.ts") }],
-      contracts: [...new Set(SHELL_IMPORTS.map((e) => e.specifier))],
+      contracts: [...new Set([...SHELL_IMPORTS.map((e) => e.specifier), ...SHARED_LIBRARIES.map((e) => e.specifier)])],
       external: [],
     };
   }
   throw new Error(`build-shared-modules: no set is named ${name} (the sets are app, cli, render)`);
+}
+
+/** The names a set's module table registers: what a bundle built to run beside that table leaves external. */
+export function setContracts(name) {
+  return setOf(name).contracts;
 }
 
 /** The file esbuild resolves each specifier to, with the options the set builds with: one throwaway build of a stdin
