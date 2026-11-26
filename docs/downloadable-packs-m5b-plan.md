@@ -895,3 +895,45 @@ Design questions to carry (answered or left open):
 
 Ask the user to push `feature/modularize`. Then dispatch `build.yml` and read every job: the linux job's two new steps
 must run and pass; the other jobs as before.
+
+---
+
+## After the reviews
+
+What the build found that the plan did not say:
+
+- **No generator change.** The generator has no platform check of its own, so there is no generate-time refusal and
+  Task 1's generator step was unnecessary. A real cart whose platform no console registers is dormant
+  (`src/consoles.ts` lists only active carts); a desktop-product case guards that every cart there is active, a typo
+  guard.
+- **The depfile resolves against each build's working dir.** `build-pack-halves.mjs` writes inputs relative to the
+  directory the build ran in, and a `PRE_LINK` `mkdir` creates `native/<platform>/` before the library links.
+- **es2022.** The pack modes' prelude awaits `loadAppPacks()` at top level, so the bundles target es2022.
+- **The UI prelude goes only to files reaching `src/`.** A metafile pass decides: a second copy of the shell in the UI's
+  context displaced device tests' fakes (audio-driver, audio-device, midi-settings, game-input failed).
+- **Baselines were recorded fixture-less** (no risa or resources trees), as CI runs: identical files and counts to the
+  desktop modes. `engine-run`'s recorded total in the desktop key is stale (5 against the actual 13), not a pack
+  difference.
+- **Results:** the whole native tier passes in the pack mode but the known machine-local `app-cores` GBA case (176/177,
+  as in the desktop mode); the whole UI tier 50/50.
+
+## Design questions this plan found
+
+1. **Registration order.** A pack's consoles register after the product's, so the platform order (menus, extension
+   lists) differs from a product that links the console. Part 2 drops Mesen from the desktop: does a product want a
+   pack's console placed where a built-in one was?
+2. **zod's version is the API's.** A host moving zod's major version breaks every pack: the level must move with it.
+3. **Two registries in a UI context.** In the UI tier's pack mode a test that imports the shell's stores loads the packs
+   into its own registries beside the UI bundle's: one module instance per half, committed twice.
+4. **The pack hosts are built by name and run on Linux CI only**; macOS and Windows run no pack mode.
+5. **A dormant real cart and placeholders (M3).** A project naming a real cart's platform before its console's pack is
+   installed places the system without the cart; M3's placeholders decide how such a project shows and saves.
+6. **The render set as a test host's contracts.** A native test that imports a UI contract module keeps its own copy in
+   the pack mode (it is not in the render set): harmless for a module with no registry, a split for one with.
+7. **The second-copy hazard, generalised.** Any bundle beside the UI that carries its own shell copy can displace a
+   global hook, as the UI prelude did to the device tests' fakes.
+8. **zod subpaths are not shared modules.** `zod/v4` and the like are not in the sets, so a pack importing one would not
+   resolve.
+9. **The full build builds more.** `retroplug_bundles(packs-desktop)` puts its app-modules target in ALL.
+10. **Registration order is unread by the tiers.** No registration-order failure appeared, so no test reads the order a
+    pack's console lands in: should a UI test pin it?

@@ -1590,6 +1590,19 @@ destruction. The host casts nothing by RTTI (`[packs-boundary]` scans every pack
 source but Mesen's, and the shell's own source and hosts), and `[packs-mesen]` boots a NES through the Mesen package
 built as a pack beside its static build and holds the two to the same PCM and work RAM, bit for bit, on every platform.
 
+**A pack of whole halves, and the pack hosts.** Four things M5b added, so Mesen loads as a pack. A built-in REAL cart
+(the N8, whose platform only a console provides) whose platform no console registers is dormant: `src/consoles.ts` lists
+only the active carts, and the cart seeds when a pack's consoles register the platform, rather than throwing at seed (a
+desktop-product case holds every cart there active, a typo guard). zod is a shared library (`contracts.mjs`
+`SHARED_LIBRARIES`, in all three module sets and in `packExternals`), so a pack's halves and the shell build their
+schemas with one instance and a pack's app half carries no copy (Mesen's went from about 550 KB to about 6 KB);
+`RP_API_LEVEL` is 3 for it. A pack folder has one `pack.json` writer: `retroplug_pack(<id> TS_HALVES)` builds the native
+module and runs `tools/build-pack-halves.mjs` on the manifest template the configure stamps, so
+`build/packs/mesen/0.1.0` names the native, app, consoles and ui halves, and a depfile re-runs the halves when a source
+they bundle changes. The pack hosts are `retroplug-host-packs` and `retroplug-ui-test-packs`, the test hosts built on
+the `packs-desktop` product (see [06](06-build-test.md#hosts--test-tiers) and
+[14](14-hosts-harnesses.md#the-pack-hosts)): each runs `ensureLaunchPacks` before an Engine exists.
+
 ### Kit reproducibility
 
 A kit compiles to the same bytes every time. The compiler is TypeScript (each cart's `ts/kitFormat.ts` over

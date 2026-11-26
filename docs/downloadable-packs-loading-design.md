@@ -279,6 +279,11 @@ distribution, with no loader built.
 **Concurrency and sanitizers.** Two processes installing into one `packs/` folder at once leave a valid `state.json`;
 a live load while audio runs is clean under TSAN and ASAN.
 
+**Where each proof stands.** Mesen's is built (M5b, [its plan](downloadable-packs-m5b-plan.md)): the test product is
+`packs-desktop` (the desktop list without `mesen`), and both test tiers have a pack mode (`pnpm test:native:packs`,
+`pnpm test:ui:packs`) that loads Mesen's pack and runs the whole tier against it. BlipToaster's is M5c; the CLI's is its
+own milestone.
+
 ## 6. Not in part 1
 
 Device providers (N8 and Launchpad stay built in). The index, downloads and signing (part 4); ROM and project
