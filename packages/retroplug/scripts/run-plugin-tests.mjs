@@ -48,7 +48,8 @@ const BINARIES = [
   "retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test",
   "retroplug-sameboy-test", "retroplug-mesen-test", "retroplug-watcher-test", "retroplug-lottie-test",
   "retroplug-midi-test", "retroplug-audio-host-test", "retroplug-launchpad-test", "retroplug-graph-test",
-  "retroplug-engine-graph-test", "retroplug-device-mode-test", "retroplug-packs-test", "retroplug-n8-test",
+  "retroplug-engine-graph-test", "retroplug-device-mode-test", "retroplug-packs-test", "retroplug-packs-heap-test",
+  "retroplug-n8-test",
   ...(process.platform === "linux" ? ["retroplug-serial-test"] : []),
 ];
 

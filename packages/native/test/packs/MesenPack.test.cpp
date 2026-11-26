@@ -14,16 +14,24 @@
 // /tmp/retroplug-mesen/<pid>, which each copy's first init clears, and NesEverdriveFifo.hpp's retroplug-sd-<pid>/<n>,
 // whose slot counter each copy keeps for itself, so both NES systems get slot 0). A NES BlipToaster boot writes
 // neither, which is why the case is the NES alone; the SMS and GBA stage files there and are left to M5, where Mesen is
-// a pack and no static copy sits beside it. And it does not run on Windows: the boundary moves heap ownership both
-// ways, which the static CRT (/MT) makes two allocators there, so a pass would prove nothing until the allocator
-// decision is made (docs/downloadable-packs-m1-plan.md, Design questions). Nor does it cover retroplug-sdl, which links
-// -static-libstdc++: a pack there would carry a second C++ runtime across this boundary (Design questions 14).
+// a pack and no static copy sits beside it. It runs on Windows too: no heap ownership crosses the boundary
+// (docs/downloadable-packs-m5a-plan.md), so the static CRT's heap per module is sound, which retroplug-packs-heap-test
+// proves. Nor does it cover retroplug-sdl, which links -static-libstdc++: a pack there would carry a second C++
+// runtime across this boundary, and is now held to the same rule (Design questions 4).
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-mesen]"`.
 
 #include <catch2/catch_test_macros.hpp>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
 #endif
 
@@ -90,15 +98,25 @@ std::vector<float> block(Engine& e, std::uint64_t at) {
     return out;
 }
 
-#if !defined(_WIN32)
 // The file the code behind a system's vtable was loaded from: a core built by the pack's own copy of the package has
 // its vtable in the module, one built by the static build has it in this binary.
 std::string vtableFile(SystemBase* core) {
+    if (!core) return {};
+    const void* vtable = *reinterpret_cast<void* const*>(core);
+#if defined(_WIN32)
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            static_cast<LPCWSTR>(vtable), &module))
+        return {};
+    wchar_t     path[MAX_PATH];
+    const DWORD n = GetModuleFileNameW(module, path, MAX_PATH);
+    return n == 0 ? std::string() : std::filesystem::path(std::wstring(path, n)).string();
+#else
     Dl_info info{};
-    if (!core || dladdr(*reinterpret_cast<void* const*>(core), &info) == 0 || !info.dli_fname) return {};
+    if (dladdr(vtable, &info) == 0 || !info.dli_fname) return {};
     return info.dli_fname;
-}
 #endif
+}
 
 }  // namespace
 
@@ -137,11 +155,6 @@ TEST_CASE("the Mesen package loads as a pack, its types described as its static 
 
 TEST_CASE("a NES booted through the Mesen pack renders the static build's PCM and work RAM, bit for bit",
           "[packs-mesen]") {
-#if defined(_WIN32)
-    // The whole body is the #else: code after SKIP would be unreachable, which MSVC's C4702 makes an error under /WX.
-    SKIP("the boundary moves heap ownership both ways, and /MT gives each module its own allocator: held until the "
-         "allocator decision (docs/downloadable-packs-m1-plan.md, Design questions 1)");
-#else
     PackTable none(rp::graph::productPackages());
     Engine    builtIn(kRate, none);
     REQUIRE(builtIn.addNodePackage(rp_mesen_package()));
@@ -190,5 +203,4 @@ TEST_CASE("a NES booted through the Mesen pack renders the static build's PCM an
     CHECK(*ramBuiltIn == *ramPack);
     CHECK(builtIn.faultCount() == 0);
     CHECK(fromPack.faultCount() == 0);
-#endif
 }
