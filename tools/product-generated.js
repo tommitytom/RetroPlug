@@ -6,9 +6,9 @@
 // and esbuild's `alias` only substitutes package specifiers: a one-file bundle with an alias for `generated` still
 // compiled the desktop's file (a relative import is resolved against its importer, never through the alias table). So
 // the redirect is a resolver: an import whose path ends in one of the generated modules' names, from an importer under
-// the shell's src/ or ui/, is answered with the product's file. The entry points are never redirected (a script-node
-// bundle's entry IS the product's generated module), and neither is an import from anywhere else: a product's own tree
-// already names its siblings, and a package's module names no generated file.
+// the shell's src/, ui/ or cli/, is answered with the product's file. The entry points are never redirected (a
+// script-node bundle's entry IS the product's generated module), and neither is an import from anywhere else: a
+// product's own tree already names its siblings, and a package's module names no generated file.
 //
 //   const { productGenerated } = require("./product-generated");
 //   esbuild.build({ ..., plugins: [productGenerated({ dir: "<build>/products/<name>/packages/retroplug" })] })
@@ -22,7 +22,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const SHELL = path.join(REPO_ROOT, "packages/retroplug");
 
 /** The generated modules and the tree they live in: the protocol tables and the app registry are src/, the UI's two
- *  are ui/. */
+ *  are ui/, the CLI's tools cli/. */
 const GENERATED = {
   packages: "src",
   consoles: "src",
@@ -32,6 +32,7 @@ const GENERATED = {
   apiLevel: "src",
   menus: "ui",
   views: "ui",
+  tools: "cli",
 };
 
 const NAME = /\/generated\/([A-Za-z]+)(?:\.ts)?$/;
@@ -61,7 +62,7 @@ function productGenerated({ dir } = {}) {
         const found = NAME.exec(args.path.split("\\").join("/"));
         if (!found || !Object.hasOwn(GENERATED, found[1])) return undefined;
         const importer = path.resolve(args.importer);
-        if (!under(importer, path.join(SHELL, "src")) && !under(importer, path.join(SHELL, "ui"))) return undefined;
+        if (!["src", "ui", "cli"].some((tree) => under(importer, path.join(SHELL, tree)))) return undefined;
         const name = found[1];
         return { path: path.join(productTree, GENERATED[name], "generated", `${name}.ts`) };
       });

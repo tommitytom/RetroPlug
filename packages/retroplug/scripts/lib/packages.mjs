@@ -1699,12 +1699,12 @@ export function generate({
   const shell = ordered[ordered.length - 1];
   // Where this product's generated modules land: the shell's tree for the desktop (so the typecheck, the pure tier,
   // the shell's tests and every existing path are unchanged), and a parallel tree under the build directory for any
-  // other product, laid out as a shell's is so the same relative specifiers hold. A product that is not the desktop
-  // ships no CLI, so its tree has no cli/generated.
+  // other product, laid out as a shell's is so the same relative specifiers hold. Every product's tree carries its CLI
+  // tools: a CLI is built per product (packages/native/cmake/cli.cmake).
   const productTree = product === DESKTOP ? shell.dir : join(productsDir, product, "packages", shell.name);
   const outDir = join(productTree, GENERATED);
   const uiOutDir = join(productTree, "ui/generated");
-  const cliOutDir = product === DESKTOP ? join(shell.dir, "cli/generated") : null;
+  const cliOutDir = join(productTree, "cli/generated");
   const contributionsOf = ordered.map((pkg) => ({ pkg, ...contributions(pkg) }));
   const { byType } = nodeTable(contributionsOf, product);
   const kinds = roleTable(contributionsOf);
@@ -1848,12 +1848,10 @@ export function generate({
       content: renderViews({ packages: contributionsOf, outDir: uiOutDir, shellDir: shell.dir, product }),
     },
   ];
-  if (cliOutDir) {
-    files.push({
-      path: join(cliOutDir, "tools.ts"),
-      content: renderCliTools({ packages: contributionsOf, outDir: cliOutDir, shellDir: shell.dir, product }),
-    });
-  }
+  files.push({
+    path: join(cliOutDir, "tools.ts"),
+    content: renderCliTools({ packages: contributionsOf, outDir: cliOutDir, shellDir: shell.dir, product }),
+  });
   if (product === DESKTOP) {
     // The desktop's typecheck paths are the shell program's: a product's tree typechecks through its own tsconfig.
     files.push(
@@ -1881,7 +1879,7 @@ export function generate({
   }
   mkdirSync(outDir, { recursive: true });
   mkdirSync(uiOutDir, { recursive: true });
-  if (cliOutDir) mkdirSync(cliOutDir, { recursive: true });
+  mkdirSync(cliOutDir, { recursive: true });
   const stamp = Math.random().toString(36).slice(2, 10);
   const written = files.map((file) => ({ path: file.path, changed: writeIfChanged(file.path, file.content, stamp) }));
   return { packages: ordered.map((p) => p.name), files: written };

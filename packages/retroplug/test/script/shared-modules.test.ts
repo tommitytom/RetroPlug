@@ -108,3 +108,15 @@ test("the cli set holds the shape and reaches no UI", async () => {
   expect(d.hosts.map((h) => h.name)).toEqual(["rp:cli"]);
   expect(d.closures["rp:cli"].some((p) => p.includes("/packages/retroplug/ui/"))).toBe(false);
 });
+
+test("the packs-desktop cli set is built from its own generated tree and carries no tool its list leaves out", async () => {
+  const d = await describe("cli", "packs-desktop");
+  holdsTheShape(d);
+  const cli = d.closures["rp:cli"];
+  expect(cli.some((p) => p.includes("/products/packs-desktop/packages/retroplug/cli/generated/tools.ts"))).toBe(true);
+  const own = "/products/packs-desktop/packages/retroplug/cli/generated/";
+  expect(cli.some((p) => p.includes("/packages/retroplug/cli/generated/") && !p.includes(own)), "the desktop's tools")
+    .toBe(false);
+  expect(cli.some((p) => p.includes("/packages/bliptoaster/")), "BlipToaster's cli half is the pack's").toBe(false);
+  expect(cli.some((p) => p.includes("/packages/mesen/")), "Mesen is the pack's").toBe(false);
+});
