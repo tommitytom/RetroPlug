@@ -206,6 +206,24 @@ set_target_properties(retroplug-host PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
+# retroplug-host-packs: the same test host on packs-desktop (the desktop's list without mesen), loading the launch packs
+# (RP_HOST_LOADS_PACKS): the native tier's pack mode runs every file on it with Mesen loaded as a pack
+# (docs/downloadable-packs-m5b-plan.md, `pnpm test:native:packs`). Built by name.
+add_executable(retroplug-host-packs EXCLUDE_FROM_ALL src/main.cpp src/host/SessionPump.cpp)
+target_link_libraries(retroplug-host-packs PRIVATE retroplug-backend retroplug-tjs-runtime retroplug-launchpad-harness)
+target_compile_definitions(retroplug-host-packs PRIVATE RP_HOST_LOADS_PACKS=1)
+retroplug_product(retroplug-host-packs PACKAGES ${RP_PRODUCT_PACKAGES_packs-desktop} PROVIDERS n8 launchpad midi)
+target_include_directories(retroplug-host-packs PRIVATE ${CMAKE_SOURCE_DIR}/packages/n8/native/test
+                                                        ${CMAKE_SOURCE_DIR}/packages/launchpad/native/test
+                                                        ${CMAKE_SOURCE_DIR}/packages/midi/native/test-support)
+set_target_properties(retroplug-host-packs PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+if(TARGET retroplug-mesen-pack)
+    add_dependencies(retroplug-host-packs retroplug-mesen-pack)  # the pack its suite loads
+endif()
+
 # retroplug-render-host-test: submits renders from JSON job specs as engine jobs on an OfflineJobs pool (one,
 # several in parallel, or one cancelled), a manual smoke beside the [engine-jobs] cases and a binary to build in
 # build-tsan/ and build-asan/. EXCLUDE_FROM_ALL: built by name, not part of a normal build.

@@ -50,6 +50,19 @@
 #include "midi/FakeMidiBackend.hpp"     // packages/midi: the scripted MIDI system its facet serves
 #include "midi/facet/MidiProvider.hpp"  // its provider and facet (the midi package's, mounted over the fake)
 
+#if RP_HOST_LOADS_PACKS
+#include "host/js/PackModules.hpp"      // PackHostRuntime, installPackLoader
+#include "host/js/SharedModules.hpp"    // registerSharedModules
+#include "host/packs/ProcessPacks.hpp"  // ensureLaunchPacks, processPacks
+
+// The product's render module set (the shell's contract modules and the shared libraries, for a host with no UI): what
+// a test bundle built in the runner's pack mode leaves external, and what a pack's halves link to.
+extern "C" {
+extern const rp_js_module  rp_render_modules[];
+extern const std::uint32_t rp_render_modules_count;
+}
+#endif
+
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
 namespace {
@@ -92,12 +105,31 @@ int main(int argc, char** argv) try {
         return 2;
     }
 
+#if RP_HOST_LOADS_PACKS
+    // The pack mode's host (docs/downloadable-packs-m5b-plan.md): the launch packs load before anything else, since an
+    // Engine reads the process's table as it is built and a pack's kind items join it only then; the runtime then
+    // settles the packs' modules before it is freed.
+    rp::host::packs::ensureLaunchPacks();
+    rp::host::PackHostRuntime host;
+#else
     TjsHostRuntime host;
+#endif
     if (!host.init()) {
         std::fprintf(stderr, "TjsHostRuntime init failed\n");
         return 1;
     }
     JSContext* ctx = host.context();
+#if RP_HOST_LOADS_PACKS
+    // The contract modules as named modules, and the pack loader serving pack:<id>/<half> against the same names, before
+    // anything evaluates: a test bundle built with those names external shares one instance of each with a pack's
+    // halves, so the halves its prelude loads commit into the registries the test reads.
+    if (const std::string why = rp::host::registerSharedModules(ctx, rp_render_modules, rp_render_modules_count);
+        !why.empty()) {
+        std::fprintf(stderr, "[retroplug-host] the shared modules did not register: %s\n", why.c_str());
+        return 1;
+    }
+    rp::host::installPackLoader(ctx, rp::host::packs::processPacks(), rp_render_modules, rp_render_modules_count);
+#endif
 
     // The harness's control surface: the graph's rp.launchpad.surface-in / -out nodes bind it by name, so a headless
     // test's staged pad presses reach the controller session a document places and its answers have a device-side
