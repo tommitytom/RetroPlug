@@ -434,3 +434,78 @@ test("a package declaring a contribution kind of its own, and a runtime reaching
   expect(got.transitive.includes("rt.ts imports a kind's own registry module: a kinds half registers its items through " +
     "__rp_registerKindItems, never the kind's own registry"), got.transitive).toBe(true);
 });
+
+test("BlipToaster's app, ui and cli halves bundle the tracker modules PACK_BUNDLED lists and import only contracts", async () => {
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-bt-"));',
+    'const template = path.join(work, "template.json");',
+    'fs.writeFileSync(template, JSON.stringify({ id: "bliptoaster", name: "x", version: "0.1.0", apiLevel: 0,',
+    '  license: "MIT", source: "x", requires: { packs: [], platforms: ["nes"] },',
+    '  provides: { platforms: [], nodeTypes: [], roles: ["bliptoaster", "bliptoaster-assets"] }, halves: {} }));',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then(async (m) => {',
+    '  const pack = await m.buildPackHalves({ packageDir: path.join(repo, "packages/bliptoaster"), outDir: path.join(work, "v"),',
+    '    template, only: ["app", "ui", "cli"] });',
+    '  const imports = {}, src = {};',
+    '  for (const half of Object.keys(pack.halves)) {',
+    '    src[half] = fs.readFileSync(path.join(work, "v", pack.halves[half]), "utf8");',
+    '    imports[half] = [...src[half].matchAll(/^import[^"\']*["\']([^"\']+)["\']/gm)].map((x) => x[1]);',
+    '  }',
+    '  const contracts = m.packExternals();',
+    '  fs.rmSync(work, { recursive: true, force: true });',
+    '  process.stdout.write(JSON.stringify({ halves: pack.halves, imports, contracts,',
+    '    findBundled: /function findMagicInRange\\b/.test(src.app), themeBundled: /function decodeThemeFromRom\\b/.test(src.ui) }));',
+    '}).catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });',
+  ].join("\n");
+  const run = await runNode(script);
+  if (run.status !== 0) throw new Error(run.err);
+  const got = JSON.parse(run.out) as { halves: Record<string, string>; imports: Record<string, string[]>; contracts: string[];
+    findBundled: boolean; themeBundled: boolean };
+  expect(got.halves).toEqual({ app: "js/app.js", ui: "js/ui.js", cli: "js/cli.js" });
+  for (const [half, list] of Object.entries(got.imports)) {
+    for (const name of list) {
+      if (!got.contracts.includes(name)) throw new Error(`${half} imports ${name}, which is not a contract`);
+    }
+  }
+  expect(got.findBundled).toBe(true);
+  expect(got.themeBundled).toBe(true);
+});
+
+test("a half whose bundle reaches another package's file that PACK_BUNDLED does not list is refused, naming it", async () => {
+  const script = [
+    'const fs = require("fs"), os = require("os"), path = require("path"), url = require("url");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'const work = fs.mkdtempSync(path.join(os.tmpdir(), "rp-pack-reach-"));',
+    'fs.mkdirSync(path.join(work, "pkg/ts"), { recursive: true });',
+    'fs.writeFileSync(path.join(work, "pkg/package.json"), JSON.stringify({ retroplug: { app: "ts/app.ts" } }));',
+    'const font = path.join(repo, "packages/tracker/ts/nes/font.ts");',
+    'fs.writeFileSync(path.join(work, "pkg/ts/app.ts"), `import * as f from ${JSON.stringify(font)}; export default { roles: [], f };`);',
+    'fs.writeFileSync(path.join(work, "pack.json"), JSON.stringify({ id: "x", halves: {} }));',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href)',
+    '  .then((m) => m.buildPackHalves({ packageDir: path.join(work, "pkg"), outDir: path.join(work, "out"),',
+    '    template: path.join(work, "pack.json") }))',
+    '  .then(() => { process.stdout.write("built"); }, (e) => { process.stdout.write(String(e.message)); })',
+    '  .finally(() => fs.rmSync(work, { recursive: true, force: true }));',
+  ].join("\n");
+  const run = await runNode(script);
+  expect(run.out.includes("packages/tracker/ts/nes/font.ts"), run.out).toBe(true);
+  expect(run.out.includes("ts/app.ts"), run.out).toBe(true);
+  expect(run.out.includes("PACK_BUNDLED"), run.out).toBe(true);
+});
+
+test("PACK_BUNDLED names only modules their packages export, none of them a contract", async () => {
+  const script = [
+    'const path = require("path"), url = require("url");',
+    'const repo = path.resolve(process.cwd(), "../..");',
+    'import(url.pathToFileURL(path.join(repo, "tools/build-pack-halves.mjs")).href).then((m) => {',
+    '  const files = m.bundledModuleFiles();',
+    '  process.stdout.write(JSON.stringify({ specifiers: [...files.keys()], contracts: m.packExternals() }));',
+    '}).catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });',
+  ].join("\n");
+  const run = await runNode(script);
+  if (run.status !== 0) throw new Error(run.err);
+  const got = JSON.parse(run.out) as { specifiers: string[]; contracts: string[] };
+  expect(got.specifiers.length > 0).toBe(true);
+  for (const s of got.specifiers) expect(got.contracts.includes(s), s).toBe(false);
+});

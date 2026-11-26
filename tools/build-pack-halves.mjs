@@ -2,9 +2,10 @@
 // A package's TS halves built as a pack's (docs/downloadable-packs-loading-design.md section 3,
 // docs/downloadable-packs-m2c-plan.md): each half its package.json names (retroplug.app, consoles, ui, views, cli) one
 // ES module bundle, js/<half>.js, with every contract module and host module external, so the pack links to its
-// RetroPlug's own; the package's other imports are bundled in, except another @retroplug package's module, which a
-// pack may not carry a copy of and is refused. Then pack.json: the template's members, its API level this build's,
-// and its halves the ones built (a native half the template names is kept).
+// RetroPlug's own; the package's own files and its npm libraries are bundled in, and so are the modules PACK_BUNDLED
+// lists (pure code a pack may carry its own copy of); any other file of another package is refused. Then pack.json:
+// the template's members, its API level this build's, and its halves the ones built (a native half the template names
+// is kept).
 //
 // A package's `retroplug.script`, a device script pack, becomes the script half: the device-pack toolchain
 // (packages/retroplug/scripts/build-device-pack.mjs, with its bundling, ES5 lowering, library-call scan and transcript
@@ -30,7 +31,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { SHELL_IMPORTS, UI_IMPORTS, SHARED_LIBRARIES, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
+import { SHELL_IMPORTS, UI_IMPORTS, SHARED_LIBRARIES, PACK_BUNDLED, hostModuleSpecifiers } from "../packages/retroplug/scripts/lib/contracts.mjs";
 
 const esbuild = createRequire(import.meta.url)("esbuild");
 const { tsOptions } = createRequire(import.meta.url)("./ts-options.js");
@@ -99,6 +100,41 @@ function workspacePackages() {
     if (typeof name === "string") found.set(name, join(REPO, "packages", entry.name));
   }
   return found;
+}
+
+/** PACK_BUNDLED's modules, each specifier to the file its package's exports map names (a real path). A specifier its
+ *  package does not export is a mistake in the list, and throws. */
+export function bundledModuleFiles() {
+  const workspace = workspacePackages();
+  const files = new Map();
+  for (const { specifier } of PACK_BUNDLED) {
+    const m = /^(@retroplug\/[^/]+)(?:\/(.+))?$/.exec(specifier);
+    const dir = m && workspace.get(m[1]);
+    const target = dir ? (JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).exports ?? {})[m[2] ? `./${m[2]}` : "."] : undefined;
+    if (typeof target !== "string") throw new Error(`PACK_BUNDLED names ${specifier}, which no workspace package exports`);
+    files.set(specifier, realpathSync(join(dir, target)));
+  }
+  return files;
+}
+
+/** A half's bundle holds the package's own files, its npm libraries and PACK_BUNDLED's modules. Any other file (another
+ *  package's module reached by a relative or absolute path, or a file a listed module imports that is not listed itself)
+ *  is refused: every such file, each with a module that imports it, so the message does not hang on esbuild's order. */
+function checkBundleInputs(half, metafile, packageDir, allowed) {
+  const own = realpathSync(packageDir) + sep;
+  const refused = [];
+  for (const key of Object.keys(metafile.inputs)) {
+    const file = resolve(packageDir, key);
+    if (!existsSync(file)) continue;  // a stdin entry's key names no file
+    const real = realpathSync(file);
+    if (real.startsWith(own) || real.split(sep).includes("node_modules") || allowed.has(real)) continue;
+    const importer = Object.entries(metafile.inputs).find(([, i]) => (i.imports ?? []).some((x) => x.path === key))?.[0];
+    refused.push(relative(REPO, real).split(sep).join("/") + (importer ? ` (imported by ${importer})` : ""));
+  }
+  if (refused.length) {
+    throw new Error(`the ${half} half bundles ${refused.join(", ")}, which is neither the package's own nor a module ` +
+      "PACK_BUNDLED lists (scripts/lib/contracts.mjs): a pack may bundle only those, and must import a contract module");
+  }
 }
 
 /** Resolves a script-realm half's imports: its code runs in an Engine's script contexts, which have no module loader
@@ -305,6 +341,8 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
     throw new Error("retroplug.kinds: a pack cannot declare a contribution kind of its own (docs/downloadable-packs-m2f-plan.md)");
   }
   const externals = packExternals();
+  const bundled = bundledModuleFiles();
+  const allowed = new Set(bundled.values());
   const pack = JSON.parse(readFileSync(template, "utf8"));
   const halves = pack.halves?.native ? { native: pack.halves.native } : {};
   // A script member a template carries is replaced when the half is built and dropped when it is not.
@@ -328,8 +366,9 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
       setup(build) {
         build.onResolve({ filter: /^@retroplug\// }, (args) => {
           if (externals.includes(args.path)) return { path: args.path, external: true };
-          return { errors: [{ text: `${args.importer} imports ${args.path}, which is not a contract module: a pack ` +
-            "may import only the contracts (scripts/lib/contracts.mjs) and the host modules" }] };
+          if (bundled.has(args.path)) return { path: bundled.get(args.path) };
+          return { errors: [{ text: `${args.importer} imports ${args.path}, which is not a contract module and not one ` +
+            "PACK_BUNDLED lets a pack bundle: a pack may import only the contracts (scripts/lib/contracts.mjs) and the host modules" }] };
         });
       },
     };
@@ -353,6 +392,7 @@ export async function buildPackHalves({ packageDir, outDir, template, only, mqjs
       nodePaths: [join(REPO, "node_modules")],
       logLevel: "silent",
     });
+    checkBundleInputs(half, built.metafile, packageDir, allowed);
     collectInputs(inputs, built.metafile, packageDir);
     halves[half] = `js/${half}.js`;
   }

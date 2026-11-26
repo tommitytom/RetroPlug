@@ -76,6 +76,21 @@ export const SHARED_LIBRARIES = [
   { specifier: "zod", reason: "the schema library role configs, node settings and the stores' configs are built with" },
 ];
 
+/** The modules a pack's halves may bundle their own copy of (docs/downloadable-packs-m5c-plan.md): a built-in
+ *  package's pure code, holding no state, so a pack's copy and the host's (or another pack's) can differ in nothing but
+ *  their version. tools/build-pack-halves.mjs bundles each through its package's exports map, and refuses a half whose
+ *  bundle holds any other file outside the pack's own package and its npm libraries. This is no contract: the shell
+ *  is not held to it, no shared module set builds it, and an entry here changes no API level. */
+export const PACK_BUNDLED = [
+  // The NES ROM helpers the NES carts' asset views and patchers share (risa's, BlipToaster's).
+  { specifier: "@retroplug/tracker/nes/constants", reason: "the iNES asset formats' sizes, the theme record and the NES palette" },
+  { specifier: "@retroplug/tracker/nes/find", reason: "the marker scanner a NES cart's ROM view finds its tables with" },
+  { specifier: "@retroplug/tracker/nes/kitBank", reason: "the DPCM kit-bank reader and packer" },
+  { specifier: "@retroplug/tracker/nes/theme", reason: "the theme record's codec" },
+  { specifier: "@retroplug/tracker/ritAssets", reason: "the ROM asset override shape and patcher the NES carts' asset roles share" },
+  { specifier: "@retroplug/tracker/ritAssetOps", reason: "the asset menus' shared .rit export and replace actions over those overrides" },
+];
+
 /** The host modules a pack's UI half may import (host-modules.json), minus the CLI binary's own `retroplug-cli`, which
  *  the CLI serves from its own embedded module and no shared set builds. */
 export function hostModuleSpecifiers(hostModulesJson) {
