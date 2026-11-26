@@ -492,7 +492,8 @@ native node types alone ([spec/02](02-native-host.md#packs-a-packages-native-hal
    `audio-portaudio`, `audio-sdl`), and that is what makes the package split a fact about a build. `packs-host`, the
    packs test's product, is the plugin's list without `mesen` and `bliptoaster`, and with `launchpad`,
    `lsdj-launchpad` and `midi` (the controller kind a pack's kinds half contributes to must be one its script bundle
-   declares). Only a ROM provider's place is
+   declares). `packs-desktop` is the desktop's list without `mesen`, the product the pack mode's test hosts are built on
+   (`docs/downloadable-packs-m5b-plan.md`). Only a ROM provider's place is
    behaviour. A node type's place in the list is what a product's `rp_register_packages()` holds, so moving a package
    moves its types in the registration golden (`test/engine-graph/golden/product-registrations.json`), which is
    re-recorded for an intended move alone.

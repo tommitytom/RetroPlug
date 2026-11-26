@@ -81,7 +81,10 @@
       "plugin": ["core", "system", "sameboy", "dsp", "mgb", "lsdj", "graph-runtime", "n8-wire", "n8", "mesen",
                  "smsggdj", "risa", "host-io", "native", "bliptoaster"],
       "packs-host": ["core", "midi", "launchpad", "system", "sameboy", "dsp", "mgb", "lsdj", "lsdj-launchpad",
-                     "graph-runtime", "n8-wire", "n8", "smsggdj", "risa", "host-io", "native"]
+                     "graph-runtime", "n8-wire", "n8", "smsggdj", "risa", "host-io", "native"],
+      "packs-desktop": ["core", "audio", "audio-portaudio", "audio-sdl", "midi", "launchpad", "system", "sameboy", "dsp",
+                        "mgb", "lsdj", "lsdj-launchpad", "graph-runtime", "n8-wire", "n8", "smsggdj", "risa",
+                        "host-io", "native", "bliptoaster"]
     }
   },
   "dependencies": {
