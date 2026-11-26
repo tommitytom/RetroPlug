@@ -155,10 +155,12 @@ objects: the engine, the snapshot registry and the debug and audio RPC services 
 virtual functions. Wrapping `SystemBase` in C would be a large refactor, so the C++ boundary is accepted and pinned:
 
 - **The SDK fixes the toolchain per platform**, the release ones: gcc 13 with libstdc++ on Linux at the glibc 2.35
-  floor, Apple clang with libc++ on macOS, MSVC 14.5x with the dynamic C runtime on Windows. `SystemBase` and the
+  floor, Apple clang with libc++ on macOS, MSVC 14.5x with the static C runtime (`/MT`) on Windows, so each module has a heap of its own. `SystemBase` and the
   contract headers are covered by the API level.
-- **Crossing rules.** No RTTI cast across the boundary (there is none today; a test keeps it so). An object is freed by
-  the side that made it (a system is already destroyed through the `rp.host.systems` build service that built it). No
+- **Crossing rules.** No RTTI cast across the boundary (there is none today; a test keeps it so). No heap ownership crosses (decided
+  2026-11-25, [the M5a plan](downloadable-packs-m5a-plan.md)): a container crosses only by const reference or view, read
+  during the call; a result is handed to a sink the caller made (`system/Sink.hpp`); the build request is views. The one
+  object that crosses is a core, deleted through its virtual destructor, whose deleting form is the pack's. No
   exception crosses the C entry.
 - **A pack links its own static copies** of what it compiles against (node-sdk, system, n8-wire, reflect-cpp) and
   imports no symbol from RetroPlug: everything reaches the host through `rp_host` interfaces and vtables. Its symbols

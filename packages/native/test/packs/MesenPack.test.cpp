@@ -8,7 +8,8 @@
 // by host MIDI through rp.host.midi-in, renders the static build's PCM byte for byte, block for block, the two run
 // interleaved, silent until the first note and sounding after it, and publishes the same work RAM through SystemBase's
 // snapshot virtuals. That exercises the engine calling a pack's SystemBase through its vtable (the block, the snapshot
-// publish, the deleting destructor in Engine::destroySystem) and a build request's ownership crossing into the pack.
+// publish, the deleting destructor in Engine::destroySystem) and a build request's views read by the pack's build
+// function.
 //
 // What it does not: the two copies share this process's pid-keyed Mesen scratch paths (MesenGlobalInit.cpp's
 // /tmp/retroplug-mesen/<pid>, which each copy's first init clears, and NesEverdriveFifo.hpp's retroplug-sd-<pid>/<n>,
@@ -16,8 +17,9 @@
 // neither, which is why the case is the NES alone; the SMS and GBA stage files there and are left to M5, where Mesen is
 // a pack and no static copy sits beside it. It runs on Windows too: no heap ownership crosses the boundary
 // (docs/downloadable-packs-m5a-plan.md), so the static CRT's heap per module is sound, which retroplug-packs-heap-test
-// proves. Nor does it cover retroplug-sdl, which links -static-libstdc++: a pack there would carry a second C++
-// runtime across this boundary, and is now held to the same rule (Design questions 4).
+// proves. Nor does it cover retroplug-sdl, which links -static-libstdc++, so a pack there carries a second C++
+// runtime: with no ownership crossing that is sound by the heap test's argument, provided the two libstdc++ layouts
+// match (docs/downloadable-packs-m5a-plan.md, design question 4).
 //
 // Run via `pnpm test:plugin packs-test` or `build/bin/retroplug-packs-test "[packs-mesen]"`.
 

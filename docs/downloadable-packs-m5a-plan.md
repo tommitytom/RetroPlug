@@ -2125,3 +2125,58 @@ Ask the user to push `feature/modularize`. Then dispatch `build.yml` on it and r
 macos, and windows `/W4 /WX`. On Windows the heap test and `[packs-mesen]`'s PCM case must **run and pass** (not
 skip): read their lines in the `test.bat` plugin step's log. On linux and linux-arm64 the heap test runs with the
 static-runtime module; on macos it skips.
+
+## After the reviews
+
+M5a was built as `9a8321d80..38614cf65` (Tasks 1 to 6) and the docs commit after it (Task 7); Task 7's CI gate waits for
+the user's go-ahead to push. Where the task blocks above and the tree differ, the tree wins. What the per-task reviews
+changed from the plan while it ran, and why:
+
+- **Task 1.** The heap scenario counts today's crossings (`> 0`) instead of `[!shouldfail]`, which passes on any failure
+  and would have hidden a broken load during the rewrite. The module needed `RP_BOUNDARY_DECLARED mesen` (native owns the
+  target and does not declare mesen). The heap test joined the `/W4 /WX` targets. `allocateTagged` has an oversize
+  guard. The helpers are compiled only where a heap pack exists. The negative control also proves the host's `operator
+  new` is the tagged one. Measured at the start: the host freed 57 of the pack's blocks (6 in `SnapshotRegistry::claim`,
+  6 the request's by-value `romName`, 45 the stream layout and the debug service's containers) and the pack freed 0; 46
+  after Task 3, 6 after Task 4, 0 after Task 5.
+- **Task 2.** The scan's `CHECK_FALSE(found.empty())` interim is likewise a count of faults, not a should-fail. An `enum
+  class` inside `SramCapability` made the parser read the rest as private and skip `SramCapability::write`, so the
+  public virtuals are 61, not 60. Every `virtual` token must parse (a parenthesised parameter type now fails the scan
+  instead of hiding). The non-public virtuals are a pinned set. A pointer return to an owning type is a fault. By-value
+  parameters are held to an allow list. `SystemBuildRequest` by value is named a fault (`HostSystems.hpp` had no `std::`
+  token).
+- **Task 3.** The first-block allocation case measures the block's own capture (`captureStateSnapshot` into an empty
+  vector, through a derived probe) rather than the helper plus an adjustment.
+- **Task 4.** Comments only: the expansion-audio default, `readTraceInto`, the title view's lifetime.
+- **Task 5.** Comments and nits: the request is copied, not moved; `NodeRig`'s null-request text matches `Engine`'s.
+- **Task 6.** The Mesen PCM case runs on Windows, and `RP_API_LEVEL` is 2.
+
+## Design questions this plan found
+
+1. **The core's deleter is its vtable.** A C system ABI (Rust) would need an explicit `destroy` in the vtable, since a
+   foreign type has no C++ deleting destructor. Open.
+2. **The host runs `SystemBase`'s non-virtual snapshot members on a pack's core** (`readStateSnapshot`,
+   `stateSnapshotCapacity`, `stateRegions`, `rearmStateSnapshot`, `runUntilPc`), compiled into the host from the static
+   `retroplug-system`. They allocate nothing, so no ownership crosses, but they read the pack's object layout; a C ABI
+   would make them calls. Open.
+3. **A `Sink<T>`'s records hold strings** (`ProfiledFunction::label`, `CpuRegister::name`, `ExpansionAudioState`,
+   `PpuState`'s `rfl::Bytestring`), lent by const reference, so their layout must match on both sides: the pinned
+   toolchain gives that, a foreign-language pack would need view records. Open.
+4. **`retroplug-sdl` links `-static-libstdc++`** (the M1 plan's question 14). With no ownership crossing, a pack there
+   is sound by the same argument as the heap test's, provided the layouts match (the same libstdc++ version): whether
+   M5b loads packs in that host is its to decide. Open.
+5. **The heap test covers `operator new`, not `malloc`.** A C allocation crossing (a block one side `malloc`s and the
+   other `free`s) is not tagged; the C interfaces (`rp_node.h`) free what they allocate by their own reading. Open.
+6. **No heap test on macOS** (libc++ is a system library). The boundary rule holds there by the same code; only the
+   proof is missing. Open.
+7. **The heap test's Linux module needs a PIC `libstdc++.a`** (Ubuntu's gcc 13 has one). A runner without one fails the
+   module's link; the fallback is building it without the static runtime and skipping there. Open.
+8. **Other branches implement `SystemBase`** (feature/snes, feature/wonderswan, feature/megadrive, feature/m8's cores if
+   any): each needs this conversion when it merges (the `...Into` virtuals, a view request, `rp_error`), and the scan
+   and the heap test catch what a merge misses. Open.
+9. **The build copies the ROM in the build function** rather than in the node: the same one copy. spec/07's "P3: cores
+   borrow their pinned ROM" can now be had by a core keeping the span instead, if the pin's lifetime is made the core's.
+   Open.
+10. **The Linux heap leg cannot see a by-value owning parameter.** On Itanium the caller destroys a by-value argument;
+    on MSVC the callee does. So a by-value container parameter crossing shows only on Windows: the contract scan
+    (`parameterFault`) and the Windows CI gate hold that class (the Task 1 review). Answered by those two checks.

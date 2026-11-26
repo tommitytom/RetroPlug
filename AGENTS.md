@@ -51,6 +51,9 @@ topic, and a line here links to it. Keep it under 200 lines; a new rule cuts or 
 - **Never commit derived artifacts**: the embedded bundle and module-table C arrays (`build/native/*_data.c`).
 - **A commit that breaks packs bumps `RP_API_LEVEL`** (graph/rp_pack.h): the C ABI, `SystemBase` and the contract
   headers, the TS contract modules ([spec/02](spec/02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)).
+- **No heap ownership crosses a pack's boundary**: a virtual a pack implements returns no owning type (a result goes
+  to a sink, `system/Sink.hpp`) and takes one only by const reference; `[packs-boundary]` and
+  `retroplug-packs-heap-test` hold it ([spec/02](spec/02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)).
 - **Config migrations**: every config root is versioned raw JSON and keeps only its latest schema. A breaking change
   bumps the root's version constant and adds one raw, idempotent step to that root's migrations map, beside the constant
   (`PROJECT_MIGRATIONS` in `projectConfig.ts`; `migrate.ts` holds the shared machinery); an additive one needs no step.

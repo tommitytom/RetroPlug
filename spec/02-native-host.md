@@ -1576,14 +1576,19 @@ its desktop entries as a MODULE (`retroplug-<package>-pack`, built by name) from
 entry, staged at `build/packs/<id>/<version>/`. The module keeps every symbol but the entry to itself (a version script
 on Linux, an exported-symbols list on macOS, `dllexport` on Windows) and Linux links it `--no-undefined`, so a pack
 imports nothing from RetroPlug and its copies of node-sdk, system, reflect-cpp and its core never bind to the host's
-(`[packs-loader]` and `[packs-mesen]` read the modules' dynamic symbols on Linux). The boundary between a pack's systems
-and the engine is C++ (`SystemBase`), pinned by the toolchain and the API level, and heap ownership crosses it (a build
-request's vectors, a refusal's string, a core the engine deletes through its virtual destructor), so it needs one
-allocator shared by host and pack, which Windows' static CRT does not give: that decision is open
-([downloadable-packs-m1-plan.md](../docs/downloadable-packs-m1-plan.md#design-questions-this-plan-found), question 1),
-and the Mesen PCM case skips there. The host casts nothing by RTTI (`[packs-boundary]` scans every package's native
+(`[packs-loader]` and `[packs-mesen]` read the modules' dynamic symbols on Linux). The boundary between a pack's systems and the engine is C++ (`SystemBase`, its capability and debug interfaces, and
+the build request), pinned by the toolchain and the API level, and no heap ownership crosses it, since a pack's
+library has a heap of its own wherever its C runtime is its own (Windows' `/MT`): a public virtual returns no owning
+type but hands its result to a sink of the caller's ([system/Sink.hpp](../packages/system/native/src/system/Sink.hpp)),
+with an inline helper of the old name giving the caller a vector; a parameter is a view or a const reference; the
+build request is views of what the node holds, and a refusal an `rp_error` (`rp.host.systems/3`). A core is the one
+object that crosses, deleted through its virtual destructor, which is the pack's. `[packs-boundary]` scans the
+contract headers for an owning return or parameter, and `retroplug-packs-heap-test` loads the Mesen package as a
+pack with a heap of its own (`-static-libstdc++` on Linux, `/MT` on Windows; macOS skips) under a tagging allocator
+on both sides and holds the blocks each frees to its own, through builds, refusals, snapshots, debug services and
+destruction. The host casts nothing by RTTI (`[packs-boundary]` scans every package's native
 source but Mesen's, and the shell's own source and hosts), and `[packs-mesen]` boots a NES through the Mesen package
-built as a pack beside its static build and holds the two to the same PCM and work RAM, bit for bit, on Linux and macOS.
+built as a pack beside its static build and holds the two to the same PCM and work RAM, bit for bit, on every platform.
 
 ### Kit reproducibility
 
