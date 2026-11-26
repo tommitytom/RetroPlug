@@ -132,6 +132,13 @@ jobs:
           RP_RENDER_GOLDEN_REQUIRE_TARGET: "1"
         run: pnpm test:cli-ts
 
+      - name: CLI TypeScript harness with Mesen and BlipToaster loaded as packs
+        # The same suite on retroplug-cli-packs, which links neither, with both on every command's pack path; its
+        # smsggdj render runs on the Mesen pack and is held to the same golden (docs/downloadable-packs-cli-plan.md).
+        env:
+          RP_RENDER_GOLDEN_REQUIRE_TARGET: "1"
+        run: pnpm test:cli-ts:packs
+
       # retroplug-sdl is in the default `all` target, so the Build step compiles and links it on
       # every platform and it rides along in the artifact below; `pnpm sdl:smoke` above then proves
       # it RUNS, on this job only. It is deliberately absent from release.yml's packaging lists.

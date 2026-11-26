@@ -27,6 +27,7 @@
     "test:n8": "node scripts/cmake-build.js retroplug-n8-test retroplug-serial-test && node packages/retroplug/scripts/run-plugin-tests.mjs n8-test serial-test",
     "test:node": "node packages/native/node/test/run.mjs",
     "test:cli-ts": "node scripts/cmake-build.js retroplug-cli retroplug-ts-fixture-packs && tools/run-cli-ts-tests.sh",
+    "test:cli-ts:packs": "node scripts/cmake-build.js retroplug-cli-packs retroplug-mesen-pack retroplug-bliptoaster-pack retroplug-ts-fixture-packs && tools/run-cli-ts-tests.sh --packs",
     "sdl:smoke": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-smoke.sh",
     "sdl:pipewire": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-pipewire.sh",
     "sdl:controller": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-controller.sh",

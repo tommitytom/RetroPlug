@@ -12,14 +12,42 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# The build's CLI. RETROPLUG_CLI names another, which is how section 6h's exit cases are also run against an assertions
-# build (build-dbg): a JS reference the exit paths leak aborts JS_FreeRuntime's gc_obj_list check there, at exit, where
-# the release build cannot see it.
-CLI="${RETROPLUG_CLI:-$REPO/build/bin/retroplug-cli}"
 FIX="$REPO/tools/fixtures"
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) PSEP=";" ;; *) PSEP=":" ;; esac
+
+# --packs: the pack mode (docs/downloadable-packs-cli-plan.md). The CLI is retroplug-cli-packs, built for packs-desktop
+# (the desktop's list without mesen and bliptoaster), and every command runs with the two packs on its pack path,
+# BlipToaster's listed first as the other runners list it; a case that sets a pack path of its own adds to theirs
+# (packpath). RETROPLUG_CLI names another binary in either mode, which is how section 6h's exit cases are also run
+# against an assertions build (build-dbg): a JS reference the exit paths leak aborts JS_FreeRuntime's gc_obj_list check
+# there, at exit, where the release build cannot see it.
+PACKS_MODE=0
+if [ "${1:-}" = "--packs" ]; then
+	PACKS_MODE=1
+	shift
+fi
+CLI_TARGET=retroplug-cli
+if [ "$PACKS_MODE" = 1 ]; then CLI_TARGET=retroplug-cli-packs; fi
+CLI="${RETROPLUG_CLI:-$REPO/build/bin/$CLI_TARGET}"
+
+# The pack mode's packs, each at the version its pack.json names, and a run without one built stops here, naming it.
+BASE_PACKS=""
+if [ "$PACKS_MODE" = 1 ]; then
+	for id in bliptoaster mesen; do
+		ver="$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$REPO/packages/$id/pack.json" | head -1)"
+		dir="$REPO/build/packs/$id/$ver"
+		if [ ! -f "$dir/pack.json" ]; then
+			echo "error: the $id pack is not built at $dir (pnpm test:cli-ts:packs builds it)" >&2
+			exit 2
+		fi
+		BASE_PACKS="${BASE_PACKS:+$BASE_PACKS$PSEP}$dir"
+	done
+fi
+# packpath <path>: a case's own pack path, after the mode's packs (the mode's alone for an empty one).
+packpath() { printf '%s' "${BASE_PACKS:+$BASE_PACKS${1:+$PSEP}}$1"; }
 
 if [ ! -x "$CLI" ]; then
-	echo "error: $CLI not found (cmake --build build --target retroplug-cli)" >&2
+	echo "error: $CLI not found (cmake --build build --target $CLI_TARGET)" >&2
 	exit 2
 fi
 # Absolute, so a relative RETROPLUG_CLI still names the binary in the cases that change directory (6d's renders).
@@ -79,7 +107,8 @@ absent() { # absent <label> <haystack-file> <needle> - and it is NOT in there
 # Each case gets its own build dir so nothing is inherited between them.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-export RETROPLUG_PACKS_DIR="$TMP/packs" RETROPLUG_PACKS_CACHE_DIR="$TMP/packs-cache"; unset RETROPLUG_PACK_PATH
+export RETROPLUG_PACKS_DIR="$TMP/packs" RETROPLUG_PACKS_CACHE_DIR="$TMP/packs-cache"
+if [ -n "$BASE_PACKS" ]; then export RETROPLUG_PACK_PATH="$BASE_PACKS"; else unset RETROPLUG_PACK_PATH; fi
 
 echo "# retroplug-cli test / run"
 
@@ -752,12 +781,11 @@ done
 # 8. Packs (docs/downloadable-packs-m2c-plan.md): the TS fixture pack's tool is a command, and the broken packs beside
 #    it are refused with their reasons while the CLI goes on. The fixture is built by retroplug-ts-fixture-packs.
 PACKS="$REPO/build/packs"
-case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) PSEP=";" ;; *) PSEP=":" ;; esac
 PACKPATH="$PACKS/tsfix/1.0.0${PSEP}$PACKS/tsfix-cliclash/1.0.0${PSEP}$PACKS/tsfix-undeclared/1.0.0"
 PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-dependent/1.0.0${PSEP}$PACKS/tsfix-throws/1.0.0${PSEP}$PACKS/tsfix-protocol/1.0.0"
 PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-proto/1.0.0${PSEP}$PACKS/tsfix-proto-ports/1.0.0"
 PACKPATH="$PACKPATH${PSEP}$PACKS/tsfix-kind/1.0.0${PSEP}$PACKS/kindfix-taken/1.0.0"
-RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" --help >"$TMP/packs-help.out" 2>"$TMP/packs-help.err"
+RETROPLUG_PACK_PATH="$(packpath "$PACKPATH")" "$CLI" --help >"$TMP/packs-help.out" 2>"$TMP/packs-help.err"
 check "packs: --help with the fixture packs" 0 $?
 contains "packs: a pack's tool is in the index" "$TMP/packs-help.out" "tsfix-hello"
 contains "packs: a tool named after a built-in is refused" "$TMP/packs-help.err" \
@@ -776,10 +804,10 @@ contains "packs: ...and the refusal names the built-in app and its holder" "$TMP
 	"the controllerApps item lsdj-midimap, which this product's lsdj-launchpad holds"
 absent "packs: the kinds fixture pack is refused nowhere" "$TMP/packs-help.err" "pack tsfix-kind"
 absent "packs: ...and its folder was found" "$TMP/packs-help.err" "tsfix-kind/1.0.0"
-RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" tsfix-hello >"$TMP/packs-run.out" 2>/dev/null
+RETROPLUG_PACK_PATH="$(packpath "$PACKPATH")" "$CLI" tsfix-hello >"$TMP/packs-run.out" 2>/dev/null
 check "packs: a pack's tool runs" 0 $?
 contains "packs: the tool's output" "$TMP/packs-run.out" "hello from the ts fixture pack"
-RETROPLUG_PACK_PATH="$PACKPATH" "$CLI" render --help >/dev/null 2>&1
+RETROPLUG_PACK_PATH="$(packpath "$PACKPATH")" "$CLI" render --help >/dev/null 2>&1
 check "packs: a built-in command still routes beside them" 0 $?
 
 # A session file loads the launch packs as the dispatcher does (docs/downloadable-packs-cli-plan.md): the render
@@ -787,7 +815,7 @@ check "packs: a built-in command still routes beside them" 0 $?
 SP="$TMP/session-packs"
 mkdir -p "$SP/tests"
 cp "$FIX/ts-harness-packs/tests/pack-role.test.ts" "$SP/tests/"
-RETROPLUG_PACK_PATH="$PACKS/tsfix-render/1.0.0" RP_GB_ROM="$REPO/packages/mgb/rom/mGB.gb" \
+RETROPLUG_PACK_PATH="$(packpath "$PACKS/tsfix-render/1.0.0")" RP_GB_ROM="$REPO/packages/mgb/rom/mGB.gb" \
 	"$CLI" test "$SP/tests" >"$TMP/session-packs.out" 2>&1
 check "packs: a session file sees a launch pack's role" 0 $?
 contains "packs: ...the role's construct hook ran in the session" "$TMP/session-packs.out" "tsfix-render: constructed"
@@ -799,8 +827,8 @@ if [ -f "$REPO_ROM" ]; then
 	mkdir -p "$RR"
 	cp "$REPO_ROM" "$RR/rom.sms"
 	(cd "$RR" && RETROPLUG_DETERMINISTIC=1 "$CLI" render rom.sms --duration 1s --out plain.wav >plain.out 2>plain.err)
-	check "packs: a render with no pack exits 0" 0 $?
-	(cd "$RR" && RETROPLUG_PACK_PATH="$PACKS/tsfix-render/1.0.0" RETROPLUG_DETERMINISTIC=1 \
+	check "packs: a render with no fixture pack exits 0" 0 $?
+	(cd "$RR" && RETROPLUG_PACK_PATH="$(packpath "$PACKS/tsfix-render/1.0.0")" RETROPLUG_DETERMINISTIC=1 \
 		"$CLI" render rom.sms --duration 1s --out packed.wav >packed.out 2>packed.err)
 	check "packs: a render with the render fixture pack exits 0" 0 $?
 	cat "$RR/packed.out" "$RR/packed.err" >"$RR/packed.all"
@@ -811,7 +839,7 @@ if [ -f "$REPO_ROM" ]; then
 		echo "FAIL - packs: the pack's role changed the render's bytes"
 		fails=$((fails + 1))
 	fi
-	(cd "$RR" && RETROPLUG_PACK_PATH="$PACKS/tsfix-throws/1.0.0" RETROPLUG_DETERMINISTIC=1 \
+	(cd "$RR" && RETROPLUG_PACK_PATH="$(packpath "$PACKS/tsfix-throws/1.0.0")" RETROPLUG_DETERMINISTIC=1 \
 		"$CLI" render rom.sms --duration 1s --out thrown.wav >thrown.out 2>thrown.err)
 	check "packs: a render beside a pack whose half throws still exits 0" 0 $?
 	cat "$RR/thrown.out" "$RR/thrown.err" >"$RR/thrown.all"
@@ -828,8 +856,8 @@ fi
 proto_render_leg() {
 	local label="$1" RP="$2" rom="$3"
 	(cd "$RP" && RETROPLUG_DETERMINISTIC=1 "$CLI" render "$rom" --duration 1s --out plain.wav >plain.out 2>plain.err)
-	check "packs: a render of $label with no pack exits 0" 0 $?
-	(cd "$RP" && RETROPLUG_PACK_PATH="$PACKS/tsfix-proto/1.0.0" RETROPLUG_DETERMINISTIC=1 \
+	check "packs: a render of $label with no fixture pack exits 0" 0 $?
+	(cd "$RP" && RETROPLUG_PACK_PATH="$(packpath "$PACKS/tsfix-proto/1.0.0")" RETROPLUG_DETERMINISTIC=1 \
 		"$CLI" render "$rom" --duration 1s --out proto.wav >proto.out 2>proto.err)
 	check "packs: a render of $label with the protocol fixture pack exits 0" 0 $?
 	cat "$RP/proto.out" "$RP/proto.err" >"$RP/proto.all"
@@ -858,6 +886,28 @@ if [ -f "$REPO_ROM" ]; then
 	mkdir -p "$RP"
 	cp "$REPO_ROM" "$RP/rom.sms"
 	proto_render_leg smsggdj "$RP" rom.sms
+fi
+
+# 9. The consoles and carts a product links or loads as packs (docs/downloadable-packs-cli-plan.md): a session file
+#    builds NES and SMS systems, and BlipToaster's cli half is a command. Run in both modes: the desktop CLI links
+#    Mesen and BlipToaster, the pack mode's CLI gets them from the packs.
+CS="$TMP/console-session"
+mkdir -p "$CS/tests"
+cp "$FIX/ts-harness-console/tests/console.test.ts" "$CS/tests/"
+RP_NES_ROM="$REPO/resources/roms/bliptoaster.nes" RP_SMS_ROM="$REPO/resources/roms/smsggdj_v0_45.sms" \
+	"$CLI" test "$CS/tests" >"$TMP/console.out" 2>&1
+check "consoles: a session boots the BlipToaster cart and smsggdj" 0 $?
+contains "consoles: ...both cases passed" "$TMP/console.out" "# 2 passed, 0 skipped, 0 failed"
+"$CLI" bliptoaster-rom info "$REPO/resources/roms/bliptoaster.nes" >"$TMP/blip-info.out" 2>"$TMP/blip-info.err"
+check "consoles: bliptoaster-rom info exits 0" 0 $?
+contains "consoles: ...it reads the ROM's themes" "$TMP/blip-info.out" "themes: 16"
+contains "consoles: ...and its kit banks" "$TMP/blip-info.out" "kits: 16 populated / 16 banks"
+if [ "$PACKS_MODE" = 1 ]; then
+	# The tool above is the pack's: with no pack on the path the binary has no BlipToaster command at all.
+	RETROPLUG_PACK_PATH="" "$CLI" --help >"$TMP/nopack-help.out" 2>&1
+	check "pack mode: --help with no pack exits 0" 0 $?
+	absent "pack mode: the binary links no bliptoaster-rom" "$TMP/nopack-help.out" "bliptoaster-rom"
+	contains "pack mode: ...and lists it with the packs on the path" "$TMP/packs-help.out" "bliptoaster-rom"
 fi
 
 echo
