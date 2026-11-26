@@ -1034,10 +1034,14 @@ test("a node type two descriptors declare is refused, naming both", async () => 
   expect(error).toBe("two console descriptors declare the node type rp.alpha.nes: alpha.nes and beta.gb");
 });
 
-test("a real cart naming a platform no descriptor registers is refused", async () => {
-  const { error } = await drive("realcart-unregistered");
-  console.log(`# real cart with no platform: ${error}`);
-  expect(error).toBe("the real cart rp.alpha.cart names the platform n64, which no console descriptor registers");
+test("a real cart naming a platform no descriptor registers is dormant, not refused", async () => {
+  // The cart's package is in the product and the console that would register its platform is not (the N8's cart in a
+  // product without Mesen): the product generates and seeds, and the cart waits (src/consoles.ts lists only the carts
+  // whose platform a console registers). The generator cannot tell a platform no package declares from one a pack
+  // brings: descriptors are TS, so there is no refusal left at generate time.
+  const result = await drive("realcart-unregistered");
+  console.log(`# real cart with no platform: ${JSON.stringify(result)}`);
+  expect(result.error).toBe(undefined);
 });
 
 test("two real carts naming one platform are refused, naming both", async () => {

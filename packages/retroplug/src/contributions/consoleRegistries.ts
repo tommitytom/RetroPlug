@@ -32,19 +32,14 @@ export const consolesRegistry = new Registry<ConsoleDescriptor>("consoles", (ent
 
 /** The physical carts a project can drive. One cart per platform and one per node, because a document places at most
  *  one: the store's lookup, buildGraph's placement and the menu's jobs all resolve a platform's cart, and with two
- *  registered the answer would be whichever was registered last. */
-export const realCartsRegistry = new Registry<RealCart>("realCarts", (entries, view) => {
-  const platforms = new Set<string>();
-  for (const { item: descriptor } of view(consolesRegistry)) {
-    for (const platform of descriptor.platforms) platforms.add(platform.id);
-  }
+ *  registered the answer would be whichever was registered last. A cart whose platform no console registers yet is
+ *  dormant, not an error (docs/downloadable-packs-m5b-plan.md): a built-in cart beside a console a pack brings (the N8
+ *  beside Mesen's NES) waits for the pack's consoles, and src/consoles.ts lists only the carts whose platform is
+ *  registered, so a dormant cart is never offered or placed. */
+export const realCartsRegistry = new Registry<RealCart>("realCarts", (entries) => {
   const cartPlatforms = new Map<string, string>();
   const cartNodes = new Map<string, string>();
   for (const { item: realCart } of entries) {
-    if (!platforms.has(realCart.platform)) {
-      throw new Error(`the real cart ${realCart.cartNode} names the platform ${realCart.platform}, which no ` +
-        "console descriptor registers");
-    }
     const platformOwner = cartPlatforms.get(realCart.platform);
     if (platformOwner !== undefined) {
       throw new Error(`two real carts name the platform ${realCart.platform}: ${platformOwner} and ` +

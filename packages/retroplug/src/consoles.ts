@@ -36,6 +36,8 @@ interface ConsoleIndex {
   readonly platforms: readonly ConsolePlatform[];
   readonly cores: readonly Core[];
   readonly realCartByPlatform: Map<Platform, RealCart>;
+  /** The carts whose platform a registered console declares, in registration order (a dormant cart is absent). */
+  readonly realCarts: readonly RealCart[];
   /** The distinct prefix lengths the detectors run on, ascending: a file is read once per length, shortest first, and
    *  the read stops at the first answer (see classifyRom). */
   readonly sniffLengths: readonly number[];
@@ -61,13 +63,19 @@ const index = derived((): ConsoleIndex => {
       platforms.push(platform);
     }
   }
-  for (const cart of realCartsRegistry.items()) realCartByPlatform.set(cart.platform, cart);
+  const realCarts: RealCart[] = [];
+  for (const cart of realCartsRegistry.items()) {
+    // A cart whose platform no console registers yet is dormant (consoleRegistries.ts): absent from every lookup.
+    if (!byPlatform.has(cart.platform)) continue;
+    realCartByPlatform.set(cart.platform, cart);
+    realCarts.push(cart);
+  }
   const sniffLengths = [...new Set(detectors.map(({ detect }) => detect.prefixBytes))].sort((a, b) => a - b);
   const rankOrdered = [...detectors].sort((a, b) => {
     if (a.detect.rank !== b.detect.rank) return a.detect.rank - b.detect.rank;
     return a.descriptor.id < b.descriptor.id ? -1 : a.descriptor.id > b.descriptor.id ? 1 : 0;
   });
-  return { byPlatform, byNodeType, platforms, cores, realCartByPlatform, sniffLengths, rankOrdered };
+  return { byPlatform, byNodeType, platforms, cores, realCartByPlatform, realCarts, sniffLengths, rankOrdered };
 });
 
 /** A path's extension, lowercase and dot included, or undefined when it has none: the shell's own `path::extension`
@@ -137,9 +145,10 @@ export function platformCapabilities(platform: Platform): NonNullable<ConsoleDes
   return index().byPlatform.get(platform)?.descriptor.capabilities ?? {};
 }
 
-/** Every registered physical cart, in registration order (the product's, then packs'). */
+/** Every registered physical cart whose platform a console registers, in registration order (the product's, then
+ *  packs'). */
 export function registeredRealCarts(): readonly RealCart[] {
-  return realCartsRegistry.items();
+  return index().realCarts;
 }
 
 /** The registered physical cart for `platform`, if one is: at most one, which the real-carts registry's check refuses otherwise, so

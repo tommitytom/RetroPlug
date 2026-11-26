@@ -1771,7 +1771,7 @@ try {
       }
       break;
     case "realcart-unregistered":
-      // A real cart naming a platform no descriptor registers: nothing would ever receive what it sends.
+      // A real cart naming a platform no descriptor registers: dormant until a console registers the platform.
       writeTree("packages/alpha/ts/app.ts", consoleApp({ role: "alpha-core", keepsApp: true }));
       writeTree(
         "packages/alpha/ts/consoles.ts",

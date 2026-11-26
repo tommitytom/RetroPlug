@@ -73,9 +73,20 @@ test("a console declaring a platform already registered is refused, and nothing 
   expect(consoleDescriptors().length).toBe(count);
 });
 
-test("a real cart naming a platform no console registers is refused", () => {
+test("a real cart naming a platform no console registers is dormant until one does", () => {
   const orphan = { platform: "nowhere", cartNode: "rp.packfixture.orphan" } as unknown as RealCart;
-  expect(() => commitContributions([{ registry: realCartsRegistry, pkg: "packfixture", items: [orphan] }])).toThrow(
-    "the real cart rp.packfixture.orphan names the platform nowhere, which no console descriptor registers",
-  );
+  commitContributions([{ registry: realCartsRegistry, pkg: "packfixture", items: [orphan] }]);
+  expect(realCartOf("nowhere")).toBe(undefined);
+  expect(registeredRealCarts().some((cart) => cart.cartNode === "rp.packfixture.orphan")).toBe(false);
+  const nowhere = {
+    ...fixtureConsole,
+    id: "nowhere",
+    core: "nowhere-core",
+    nodeType: "rp.nowhere.system",
+    platforms: [{ id: "nowhere", label: "Nowhere", extensions: [".nwh"] }],
+    detect: undefined,
+  } as unknown as ConsoleDescriptor;
+  commitContributions([{ registry: consolesRegistry, pkg: "nowhere", items: [nowhere] }]);
+  expect(realCartOf("nowhere")?.cartNode).toBe("rp.packfixture.orphan");
+  expect(registeredRealCarts().some((cart) => cart.cartNode === "rp.packfixture.orphan")).toBe(true);
 });
