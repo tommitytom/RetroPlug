@@ -144,7 +144,7 @@ std::string trimmed(std::string s) {
 // The access in effect at `at`: the last access label, or, where a class or struct opened after it, that one's default.
 std::string accessAt(const std::string& code, std::size_t at) {
     static const std::regex kLabel(R"(\b(public|protected|private)\s*:)");
-    static const std::regex kOpen(R"(\b(class|struct)\s+\w+[^;{()]*\{)");
+    static const std::regex kOpen(R"(\b(enum\s+)?(class|struct)\s+\w+[^;{()]*\{)");
     std::string access = "public";
     std::size_t last = 0;
     bool        any = false;
@@ -155,11 +155,12 @@ std::string accessAt(const std::string& code, std::size_t at) {
         access = (*m)[1].str();
     }
     for (auto m = std::sregex_iterator(code.cbegin(), end, kOpen); m != std::sregex_iterator(); ++m) {
+        if ((*m)[1].matched) continue;  // an `enum class` opens no section
         const auto pos = static_cast<std::size_t>(m->position(0));
         if (!any || pos >= last) {
             last = pos;
             any = true;
-            access = (*m)[1].str() == "struct" ? "public" : "private";
+            access = (*m)[2].str() == "struct" ? "public" : "private";
         }
     }
     return access;
@@ -181,7 +182,17 @@ std::vector<std::string> parametersOf(const std::string& list) {
         }
     }
     out.push_back(current);
-    for (auto& p : out) p = trimmed(p.substr(0, p.find('=')));
+    for (auto& p : out) {
+        // A default argument starts at the first `=` outside angle brackets (`1 << 4` holds none of its own).
+        int d = 0;
+        std::size_t eq = p.size();
+        for (std::size_t i = 0; i < p.size() && eq == p.size(); ++i) {
+            if (p[i] == '<' && p.compare(i, 2, "<<") != 0) ++d;
+            if (p[i] == '>') --d;
+            if (p[i] == '=' && d == 0) eq = i;
+        }
+        p = trimmed(p.substr(0, eq));
+    }
     std::erase_if(out, [](const std::string& p) { return p.empty() || p == "void"; });
     return out;
 }
@@ -191,12 +202,25 @@ std::vector<std::string> parametersOf(const std::string& list) {
 std::string parameterFault(std::string p) {
     if (p.find("&&") != std::string::npos) return "takes an rvalue reference";
     p = std::regex_replace(p, std::regex(R"((rp::)?Sink<[^>]*>)"), "Sink");
+    if (p.find('*') == std::string::npos && p.find('&') == std::string::npos) {
+        // By value: only a plain type (a scalar, an enum, a view, a sink), never a struct that may hold an owner.
+        static const std::regex kName(R"(^(.*[\w>:])\s+\w+$)");
+        std::smatch             m;
+        const std::string       type = trimmed(std::regex_search(p, m, kName) ? m[1].str() : p);
+        static const std::set<std::string> kPlainParams = {"rp::MemoryType", "rp::AccessType", "MemoryType",
+                                                           "AccessType", "Sink", "rp::ByteSink", "ByteSink"};
+        if (kPlainReturns.contains(type) || kPlainParams.contains(type) || type.rfind("std::span<", 0) == 0) return {};
+        return "takes a type by value that is not a known plain one";
+    }
     if (!std::regex_search(p, kOwning)) return {};
     if (p.rfind("const ", 0) == 0 && p.find('&') != std::string::npos) return {};
     return "takes an owning type other than by const reference";
 }
 
 }  // namespace
+
+static_assert(std::is_standard_layout_v<rp::ByteSink> && std::is_trivially_copyable_v<rp::ByteSink>);
+static_assert(std::is_standard_layout_v<rp::Sink<int>> && std::is_trivially_copyable_v<rp::Sink<int>>);
 
 TEST_CASE("a sink copies into the container of the side that made it", "[packs-boundary]") {
     std::vector<std::uint8_t> bytes;
@@ -223,6 +247,8 @@ TEST_CASE("a sink copies into the container of the side that made it", "[packs-b
     CHECK(one == "second");
 
     const rp::ByteSink none{};
+    const rp::Sink<std::string> noItems{};
+    noItems(std::string("x"));  // likewise
     none(a, 3);  // a sink with no function takes nothing and does not crash
 }
 
@@ -231,20 +257,40 @@ TEST_CASE("the contract headers hand no heap ownership across a pack's boundary"
     static const std::regex kVirtual(R"(virtual\s+([^;{}()]*?)\s*\b(\w+)\s*\(([^()]*)\))");
     std::vector<std::string> found;
     std::size_t              publicVirtuals = 0;
+    std::vector<std::string> unreadable;
+    std::set<std::string>    nonPublic;
     for (const char* header : kContractHeaders) {
         const std::string code = withoutComments(readText(dir / header));
         REQUIRE_FALSE(code.empty());
+        std::size_t parsed = 0;
         for (auto m = std::sregex_iterator(code.cbegin(), code.cend(), kVirtual); m != std::sregex_iterator(); ++m) {
+            ++parsed;
             const std::string ret = trimmed((*m)[1].str());
             const std::string name = (*m)[2].str();
-            if (ret.empty() || ret.back() == '~') continue;  // a destructor
-            if (accessAt(code, static_cast<std::size_t>(m->position(0))) != "public") continue;
+            if (ret.empty()) {  // a return type the scan cannot read (decltype, a trailing return)
+                unreadable.push_back(std::string(header) + ": " + name);
+                continue;
+            }
+            if (ret.back() == '~') continue;  // a destructor
+            if (accessAt(code, static_cast<std::size_t>(m->position(0))) != "public") {
+                nonPublic.insert(name);
+                continue;
+            }
             ++publicVirtuals;
             const std::string where = std::string(header) + ": " + ret + " " + name + "(" + (*m)[3].str() + ")";
-            if (ret.back() != '*' && !kPlainReturns.contains(ret)) found.push_back(where + ": returns " + ret);
+            if (ret.back() == '*' ? std::regex_search(ret, kOwning) : !kPlainReturns.contains(ret))
+                found.push_back(where + ": returns " + ret);
             for (const auto& p : parametersOf((*m)[3].str()))
                 if (const auto fault = parameterFault(p); !fault.empty()) found.push_back(where + ": " + p + " " + fault);
         }
+        // Every `virtual` in the code is one the scan matched: a parameter with parentheses (a std::function<void()>) or
+        // an unusual declaration would otherwise be skipped without a word.
+        static const std::regex kToken(R"(\bvirtual\b)");
+        const auto tokens = static_cast<std::size_t>(
+            std::distance(std::sregex_iterator(code.cbegin(), code.cend(), kToken),
+                          std::sregex_iterator()));
+        INFO(header);
+        CHECK(parsed == tokens);
     }
     for (const char* header : kBuildHeaders) {
         // The one object that crosses is a core, carried out of a build function in a unique_ptr and deleted through
@@ -258,7 +304,14 @@ TEST_CASE("the contract headers hand no heap ownership across a pack's boundary"
         if (std::regex_search(code, std::regex(R"(\bSystemBuildRequest\s+\w)")))
             found.push_back(std::string(header) + ": passes a SystemBuildRequest by value");
     }
-    CHECK(publicVirtuals >= 50);  // the scan read the interfaces, not an empty match
+    CHECK(unreadable.empty());
+    // SystemBase's own members call these inside the pack; a new one is listed on purpose.
+    static const std::set<std::string> kNonPublic = {"stateSnapshotSize", "captureStateSnapshot",
+                                                      "stateSnapshotRegions", "loadStateBytes"};
+    CHECK(nonPublic == kNonPublic);
+    // The count moves only when an interface gains or loses a virtual (a conversion renames a virtual but adds and
+    // removes none; if one does change the count, that task updates this number).
+    CHECK(publicVirtuals == 61);
     UNSCOPED_INFO("public virtuals scanned: " << publicVirtuals);
     for (const auto& f : found) UNSCOPED_INFO(f);
     // Today's contract hands ownership across; docs/downloadable-packs-m5a-plan.md Task 5 makes this CHECK(found.empty()).

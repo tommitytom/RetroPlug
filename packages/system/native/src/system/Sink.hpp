@@ -8,6 +8,10 @@
 // gave. The helpers below are inline, so the sink's function is compiled in the module that makes it, and its copy
 // allocates in that module's heap. A sink is valid for the call it is passed to: a callee never keeps one.
 //
+// A sink's function may throw (std::bad_alloc from the caller's copy) through the callee's frames; a C system ABI would
+// need it noexcept. A Sink<ChannelStream>'s string_view items point into the callee's read-only data, valid while its
+// module is loaded (a pack never unloads).
+//
 // Both are C-shaped (a context pointer and a plain function pointer), as a C system ABI would need them.
 
 #include <cstddef>
