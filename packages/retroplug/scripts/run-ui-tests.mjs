@@ -27,13 +27,15 @@ const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-ui");
 
 // The pack mode (docs/downloadable-packs-m5b-plan.md): every file again, on retroplug-ui-test-packs, the UI harness on
-// packs-desktop (the desktop's list without mesen), which loads Mesen as a pack. A bundle reads that product's
-// generated registries, leaves the harness's shared contract modules (the app set's names, zod among them) external,
-// and starts with a prelude that loads the packs' halves.
+// packs-desktop (the desktop's list without mesen and bliptoaster), which loads Mesen and BlipToaster as packs. A bundle
+// reads that product's generated registries, leaves the harness's shared contract modules (the app set's names, zod
+// among them) external, and starts with a prelude that loads the packs' halves.
 const PACKS = process.argv.slice(2).includes("--packs");
 const PACK_PRODUCT = "packs-desktop";
 const MESEN_VERSION = JSON.parse(readFileSync(join(REPO, "packages/mesen/pack.json"), "utf8")).version;
 const MESEN_PACK = join(REPO, "build/packs/mesen", MESEN_VERSION);
+const BLIPTOASTER_VERSION = JSON.parse(readFileSync(join(REPO, "packages/bliptoaster/pack.json"), "utf8")).version;
+const BLIPTOASTER_PACK = join(REPO, "build/packs/bliptoaster", BLIPTOASTER_VERSION);
 const PRODUCT_TREE = join(REPO, "build/products", PACK_PRODUCT, "packages/retroplug");
 const PRELUDE = join(TEST_DIR, "_packsPrelude.ts");
 const OUT_DIR = join(PKG, PACKS ? ".ui-build-packs" : ".ui-build");
@@ -55,12 +57,16 @@ if (!existsSync(HOST)) {
   );
   process.exit(1);
 }
-if (PACKS && !existsSync(join(MESEN_PACK, "pack.json"))) {
-  console.error(
-    `the Mesen pack is not built: ${MESEN_PACK}\n` +
-      `build it:  cmake --build build --target retroplug-mesen-pack -j$(nproc)`,
-  );
-  process.exit(1);
+for (const [name, dir, target] of [
+  ["Mesen", MESEN_PACK, "retroplug-mesen-pack"],
+  ["BlipToaster", BLIPTOASTER_PACK, "retroplug-bliptoaster-pack"],
+]) {
+  if (PACKS && !existsSync(join(dir, "pack.json"))) {
+    console.error(
+      `the ${name} pack is not built: ${dir}\n` + `build it:  cmake --build build --target ${target} -j$(nproc)`,
+    );
+    process.exit(1);
+  }
 }
 
 // The UI front door (test/expect over the harness + the `ui` facade over
@@ -110,7 +116,7 @@ const fixtureFolder = (id) => {
 };
 const SEP = process.platform === "win32" ? ";" : ":";
 const packPath = (slug) =>
-  [...(PACKS ? [MESEN_PACK] : []), ...(PACK_TESTS[slug] ?? []).map(fixtureFolder)].join(SEP);
+  [...(PACKS ? [BLIPTOASTER_PACK, MESEN_PACK] : []), ...(PACK_TESTS[slug] ?? []).map(fixtureFolder)].join(SEP);
 
 const SHELL_SRC = join(PKG, "src");
 

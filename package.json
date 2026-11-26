@@ -17,11 +17,11 @@
     "check:boundaries": "node packages/retroplug/scripts/check-boundaries.mjs",
     "check:audio-linkage": "tools/check-audio-linkage.sh",
     "test": "node scripts/cmake-build.js tjs-cli retroplug-devtest-script-pack retroplug-modc tjsc && node packages/retroplug/scripts/run-tests.mjs",
-    "test:native:packs": "node scripts/cmake-build.js retroplug-host-packs retroplug-mesen-pack && node packages/retroplug/scripts/run-native-tests.mjs --packs",
+    "test:native:packs": "node scripts/cmake-build.js retroplug-host-packs retroplug-mesen-pack retroplug-bliptoaster-pack && node packages/retroplug/scripts/run-native-tests.mjs --packs",
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "lsdj:gen-offsets": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/gen-lsdj-offsets.mjs",
     "smsggdj:gen-symbols": "node packages/retroplug/scripts/gen-smsggdj-symbols.mjs",
-    "test:ui:packs": "node scripts/cmake-build.js retroplug-ui-test-packs retroplug-mesen-pack retroplug-ts-fixture-packs && node packages/retroplug/scripts/run-ui-tests.mjs --packs",
+    "test:ui:packs": "node scripts/cmake-build.js retroplug-ui-test-packs retroplug-mesen-pack retroplug-bliptoaster-pack retroplug-ts-fixture-packs && node packages/retroplug/scripts/run-ui-tests.mjs --packs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test retroplug-ts-fixture-packs && node packages/retroplug/scripts/run-ui-tests.mjs",
     "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-dynparams-test retroplug-classid-test retroplug-audio-test retroplug-sameboy-test retroplug-mesen-test retroplug-watcher-test retroplug-lottie-test retroplug-midi-test retroplug-audio-host-test retroplug-launchpad-test retroplug-graph-test retroplug-engine-graph-test retroplug-device-mode-test retroplug-packs-test retroplug-packs-heap-test retroplug-n8-test retroplug-serial-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
     "test:n8": "node scripts/cmake-build.js retroplug-n8-test retroplug-serial-test && node packages/retroplug/scripts/run-plugin-tests.mjs n8-test serial-test",
@@ -86,7 +86,7 @@
                      "graph-runtime", "n8-wire", "n8", "smsggdj", "risa", "host-io", "native"],
       "packs-desktop": ["core", "audio", "audio-portaudio", "audio-sdl", "midi", "launchpad", "system", "sameboy", "dsp",
                         "mgb", "lsdj", "lsdj-launchpad", "graph-runtime", "n8-wire", "n8", "smsggdj", "risa",
-                        "host-io", "native", "bliptoaster"]
+                        "host-io", "native"]
     }
   },
   "dependencies": {

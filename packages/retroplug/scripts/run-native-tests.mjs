@@ -27,13 +27,17 @@ const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-native");
 
 // The pack mode (docs/downloadable-packs-m5b-plan.md): every file again, on retroplug-host-packs, a host of
-// packs-desktop (the desktop's list without mesen) that loads Mesen as a pack. A bundle reads that product's generated
-// registries, leaves the host's shared contract modules (the render set's names, zod among them) external so the test
-// and the pack's halves share one instance of each, and starts with a prelude that loads the packs' halves.
+// packs-desktop (the desktop's list without mesen and bliptoaster) that loads Mesen and BlipToaster as packs. A bundle
+// reads that product's generated registries, leaves the host's shared contract modules (the render set's names, zod
+// among them) external so the test and the pack's halves share one instance of each, and starts with a prelude that
+// loads the packs' halves.
 const PACKS = process.argv.slice(2).includes("--packs");
 const PACK_PRODUCT = "packs-desktop";
 const MESEN_VERSION = JSON.parse(readFileSync(join(REPO, "packages/mesen/pack.json"), "utf8")).version;
 const MESEN_PACK = join(REPO, "build/packs/mesen", MESEN_VERSION);
+const BLIPTOASTER_VERSION = JSON.parse(readFileSync(join(REPO, "packages/bliptoaster/pack.json"), "utf8")).version;
+const BLIPTOASTER_PACK = join(REPO, "build/packs/bliptoaster", BLIPTOASTER_VERSION);
+const SEP = process.platform === "win32" ? ";" : ":";
 const PRODUCT_TREE = join(REPO, "build/products", PACK_PRODUCT, "packages/retroplug");
 const PRELUDE = join(TEST_DIR, "_packsPrelude.ts");
 const EXTERNALS = PACKS ? setContracts("render") : [];
@@ -74,12 +78,16 @@ if (!existsSync(HOST)) {
   );
   process.exit(1);
 }
-if (PACKS && !existsSync(join(MESEN_PACK, "pack.json"))) {
-  console.error(
-    `the Mesen pack is not built: ${MESEN_PACK}\n` +
-      `build it:  cmake --build build --target retroplug-mesen-pack -j$(nproc)`,
-  );
-  process.exit(1);
+for (const [name, dir, target] of [
+  ["Mesen", MESEN_PACK, "retroplug-mesen-pack"],
+  ["BlipToaster", BLIPTOASTER_PACK, "retroplug-bliptoaster-pack"],
+]) {
+  if (PACKS && !existsSync(join(dir, "pack.json"))) {
+    console.error(
+      `the ${name} pack is not built: ${dir}\n` + `build it:  cmake --build build --target ${target} -j$(nproc)`,
+    );
+    process.exit(1);
+  }
 }
 
 const jobs = resolveJobs();
@@ -187,7 +195,9 @@ async function runOne({ file, slug }) {
   if (slug.startsWith("parity/") || DETERMINISTIC_FILES.has(slug)) env.RETROPLUG_DETERMINISTIC = "1";
   else delete env.RETROPLUG_DETERMINISTIC;
   if (PACKS) {
-    env.RETROPLUG_PACK_PATH = MESEN_PACK;
+    // BlipToaster first, as a packs folder lists them (by id): the table loads it after Mesen, whose consoles bring the
+    // NES it requires (requires.platforms), so every pack-mode run holds that order.
+    env.RETROPLUG_PACK_PATH = [BLIPTOASTER_PACK, MESEN_PACK].join(SEP);
     env.RETROPLUG_PACKS_DIR = `${cfgDir}/packs`;
     env.RETROPLUG_PACKS_CACHE_DIR = `${cfgDir}/packs-cache`;
   } else delete env.RETROPLUG_PACK_PATH;

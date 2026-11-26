@@ -171,8 +171,7 @@
     "rp.host.audio-out",
     "rp.n8.nes",
     "rp.host.midi-in",
-    "rp.host.midi-out",
-    "rp.bliptoaster.midi-policy"
+    "rp.host.midi-out"
   ],
   "retroplug-node": [
     "rp.core.add",
@@ -370,7 +369,6 @@
     "rp.host.audio-out",
     "rp.n8.nes",
     "rp.host.midi-in",
-    "rp.host.midi-out",
-    "rp.bliptoaster.midi-policy"
+    "rp.host.midi-out"
   ]
 }
