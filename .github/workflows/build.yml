@@ -145,16 +145,39 @@ jobs:
       # tag the devcontainer's is, and the check needs none of its submodules; reflect-cpp comes from the desktop build
       # above, at the desktop's pin. x86 linux alone carries it: the image is the same from any host.
       # A stalled package mirror once held this install for 55 minutes with no output, twice in a row (2026-11-24), when
-      # it normally takes about 16: so apt drops a connection that sends nothing for a minute and retries it, a held
-      # dpkg lock fails rather than waits, each attempt is bounded and retried once, the step as a whole is bounded,
-      # and the install is not quiet, so a slow log says whether it was the download or the unpack.
+      # it normally takes about 16, and on 2026-11-26 the runner's EC2 mirror stalled on the 463 MB
+      # libstdc++-arm-none-eabi-newlib through both attempts, twice in a row. So the packages' .deb files are cached,
+      # keyed on the candidate versions, and apt reads and writes them in that cache directory: a run with a warm cache
+      # downloads nothing. A cold download still has apt drop a connection that sends nothing for a minute and retry it,
+      # a held dpkg lock fails rather than waits, each attempt is bounded, the second attempt goes to the primary archive
+      # instead of the runner's mirror list, the step as a whole is bounded, and the install is not quiet, so a slow log
+      # says whether it was the download or the unpack.
+      - name: Resolve the device toolchain's package versions
+        id: armdebs
+        run: |
+          set -eux
+          sudo apt-get update -q -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60
+          versions=$(apt-cache policy gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
+            | grep -E '^[^ ]|Candidate')
+          echo "$versions"
+          echo "key=$(printf '%s' "$versions" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the device toolchain's packages
+        id: armdebs-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/arm-debs
+          key: arm-none-eabi-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.armdebs.outputs.key }}
+
       - name: Install the device toolchain (arm-none-eabi, Pico SDK 2.1.1)
         timeout-minutes: 50
         run: |
           set -eux
+          debs="$RUNNER_TEMP/arm-debs"
+          mkdir -p "$debs/partial"
+          ls -la "$debs"
           apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60
-            -o DPkg::Lock::Timeout=120"
-          sudo apt-get update -q $apt_opts
+            -o DPkg::Lock::Timeout=120 -o Dir::Cache::Archives=$debs -o APT::Keep-Downloaded-Packages=true"
           for attempt in 1 2; do
             date -u
             if sudo timeout 22m apt-get install -y --no-install-recommends $apt_opts \
@@ -162,11 +185,25 @@ jobs:
               break
             fi
             [ "$attempt" = 2 ] && exit 1
+            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+            sudo apt-get update -q $apt_opts
             sleep 30
           done
           date -u
+          # apt wrote the cache as root, with a lock file only root reads; the cache save runs as the runner.
+          sudo rm -rf "$debs/partial" "$debs/lock"
+          sudo chown -R "$(id -u):$(id -g)" "$debs"
+          ls -la "$debs"
           git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
           arm-none-eabi-g++ --version
+
+      # Saved here rather than at the job's end, so a later failing step still leaves the cache warm.
+      - name: Save the device toolchain's packages
+        if: steps.armdebs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/arm-debs
+          key: ${{ steps.armdebs-cache.outputs.cache-primary-key }}
 
       - name: Device build (rp-device-check, the link trap)
         env:
