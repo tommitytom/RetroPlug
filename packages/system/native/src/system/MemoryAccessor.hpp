@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 #include "system/MemoryType.hpp"
 

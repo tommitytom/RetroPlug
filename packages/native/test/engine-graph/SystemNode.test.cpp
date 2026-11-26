@@ -3421,6 +3421,15 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
     }
 }
 
+// The capture a fresh core's first block makes: captureStateSnapshot into the empty scratch it reuses (protected, so
+// named through a derived class).
+struct CaptureProbe : SystemBase {
+    using SystemBase::SystemBase;
+    static bool capture(SystemBase& core, std::vector<std::uint8_t>& dst) {
+        return (core.*&CaptureProbe::captureStateSnapshot)(dst);
+    }
+};
+
 TEST_CASE("a freshly built core's first block costs the boot savestate and nothing else",
           "[engine-graph][system-node][alloc]") {
     // A system added while others play is built and activated on the control thread, and a Mesen core's FIRST block
@@ -3443,16 +3452,12 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
     // count follows its state's size, so a capture taken at boot (before the block) is not the same measurement.
     const auto captureAfterFirstBlock = [](SystemBase& twin, const std::vector<float*>& lanes) {
         wholeBlock(twin, 1024, lanes, false, NoInput{});
-        // Into a vector sized beforehand, so what is counted is the core's capture and not the caller's copy of it.
-        std::vector<std::uint8_t> bytes;
-        bytes.reserve(twin.stateSnapshotCapacity());
+        std::vector<std::uint8_t> scratch;
         rp::test::beginCountingAllocations(true);
-        twin.saveStateInto(rp::appendBytesTo(bytes));
-        auto counted = rp::test::endCountingAllocations();
-        // The core frees its own temporary inside the call, where saveStateBytes used to hand it out alive: the
-        // first block keeps its scratch the same way, so one free fewer is the like-for-like capture.
-        if (counted.frees > 0) --counted.frees;
-        REQUIRE(!bytes.empty());
+        const bool captured = CaptureProbe::capture(twin, scratch);
+        const auto counted = rp::test::endCountingAllocations();
+        REQUIRE(captured);
+        REQUIRE(!scratch.empty());
         return counted;
     };
     std::string why;

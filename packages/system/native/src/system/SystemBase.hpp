@@ -199,7 +199,7 @@ public:
     // not implement it; SameBoy + both Mesen systems override.
     virtual void setGainDb(float /*dB*/, bool /*immediate*/ = false) {}
 
-    // Cartridge battery RAM. Empty vector when the cartridge has no battery
+    // Cartridge battery RAM. The core hands `out` nothing when the cartridge has no battery
     // or the backend doesn't yet support snapshotting.
     virtual void saveSramInto(rp::ByteSink /*out*/) const {}
     std::vector<std::uint8_t> saveSramBytes() const {
@@ -208,7 +208,7 @@ public:
         return bytes;
     }
 
-    // Savestate, byte for byte. Empty when the backend doesn't support savestates.
+    // Savestate, byte for byte. The core hands `out` nothing when the backend doesn't support savestates.
     virtual void saveStateInto(rp::ByteSink /*out*/) const {}
     std::vector<std::uint8_t> saveStateBytes() const {
         std::vector<std::uint8_t> bytes;
