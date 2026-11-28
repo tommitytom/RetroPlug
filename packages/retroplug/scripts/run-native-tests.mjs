@@ -8,6 +8,10 @@
 // logical threads; override with --jobs N / -j N / TEST_JOBS, =1 for serial).
 //
 //   node scripts/run-native-tests.mjs [slugFilter] [--jobs N]
+//
+// A file under test-native/packless/ runs in the --packs mode only, with no prelude and no RETROPLUG_PACK_PATH: it
+// loads what it needs itself (loadPackNow), from the folders the runner defines as __MESEN_PACK__,
+// __BLIPTOASTER_PACK__ and __PACKS_BUILD_DIR__.
 
 import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -40,6 +44,10 @@ const BLIPTOASTER_PACK = join(REPO, "build/packs/bliptoaster", BLIPTOASTER_VERSI
 const SEP = process.platform === "win32" ? ";" : ":";
 const PRODUCT_TREE = join(REPO, "build/products", PACK_PRODUCT, "packages/retroplug");
 const PRELUDE = join(TEST_DIR, "_packsPrelude.ts");
+// A file under packless/ runs in the pack mode only, with no pack on the path and no prelude: the host links neither
+// Mesen nor BlipToaster and loads nothing until the file does (docs/downloadable-packs-m3-plan.md).
+const PACKLESS = "packless/";
+const PACKS_BUILD_DIR = join(REPO, "build/packs");
 const EXTERNALS = PACKS ? setContracts("render") : [];
 const OUT_DIR = join(PKG, PACKS ? ".native-build-packs" : ".native-build");
 
@@ -111,6 +119,7 @@ function matches(slug) {
 
 const tests = walk(TEST_DIR)
   .map((file) => ({ file, slug: relative(TEST_DIR, file).replace(/\.test\.ts$/, "").split(/[\\/]/).join("/") }))
+  .filter((t) => PACKS || !t.slug.startsWith(PACKLESS))
   .filter((t) => matches(t.slug))
   .sort((a, b) => a.slug.localeCompare(b.slug));
 
@@ -127,13 +136,16 @@ async function runOne({ file, slug }) {
   // yields backslashes; both node fs and the native host accept '/' there. No-op
   // elsewhere. Without this, path round-trip assertions mismatch on Windows.
   const cfgDir = mkdtempSync(join(tmpdir(), "rp-")).replaceAll("\\", "/");
+  const packless = PACKS && slug.startsWith(PACKLESS);
 
   try {
     // esbuild refuses entryPoints beside stdin, so the pack mode's options are built apart from the desktop's.
     const entry = PACKS
       ? {
           stdin: {
-            contents: `import ${JSON.stringify(PRELUDE.replaceAll("\\", "/"))};\nimport ${JSON.stringify(file.replaceAll("\\", "/"))};\n`,
+            contents:
+              (packless ? "" : `import ${JSON.stringify(PRELUDE.replaceAll("\\", "/"))};\n`) +
+              `import ${JSON.stringify(file.replaceAll("\\", "/"))};\n`,
             resolveDir: dirname(file),
             sourcefile: `${slug}.packs-entry.js`,
             loader: "js",
@@ -158,6 +170,10 @@ async function runOne({ file, slug }) {
         __REPO_RESOURCES_DIR__: JSON.stringify(REPO_RESOURCES_DIR),
         __MGB_ROM__: JSON.stringify(MGB_ROM),
         __RISA_SRC__: JSON.stringify(RISA_SRC),
+        // The pack folders a packless file loads from (test-native/packless).
+        __MESEN_PACK__: JSON.stringify(MESEN_PACK.replaceAll("\\", "/")),
+        __BLIPTOASTER_PACK__: JSON.stringify(BLIPTOASTER_PACK.replaceAll("\\", "/")),
+        __PACKS_BUILD_DIR__: JSON.stringify(PACKS_BUILD_DIR.replaceAll("\\", "/")),
         // The parity suite's baselines live beside its cases; a recording re-runs its own bundle per case.
         __PARITY_DIR__: JSON.stringify(join(TEST_DIR, "parity").replaceAll("\\", "/")),
         __SELF_BUNDLE__: JSON.stringify(outFile.replaceAll("\\", "/")),
@@ -198,6 +214,7 @@ async function runOne({ file, slug }) {
     // BlipToaster first, as a packs folder lists them (by id): the table loads it after Mesen, whose consoles bring the
     // NES it requires (requires.platforms), so every pack-mode run holds that order.
     env.RETROPLUG_PACK_PATH = [BLIPTOASTER_PACK, MESEN_PACK].join(SEP);
+    if (packless) delete env.RETROPLUG_PACK_PATH;
     env.RETROPLUG_PACKS_DIR = `${cfgDir}/packs`;
     env.RETROPLUG_PACKS_CACHE_DIR = `${cfgDir}/packs-cache`;
   } else delete env.RETROPLUG_PACK_PATH;

@@ -33,6 +33,7 @@ test("the control-plane bundle composes and exposes the __rp_* globals", () => {
   expect(typeof g.__rp_loadProjectPath).toBe("function");
   expect(typeof g.__rp_loadProjectB64).toBe("function");
   expect(typeof g.__rp_saveProjectB64).toBe("function");
+  expect(typeof g.__rp_loadPackNow).toBe("function"); // the live load's bridge
 });
 
 test("autoload an mGB .rplg.zip → the kernel plays it; base64 getState/setState round-trips", () => {

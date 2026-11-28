@@ -10,6 +10,7 @@
 //   __rp_newProject()           — DPF setState(""): reset to an empty project
 //   __rp_setHostOutputs(n)      - the host's output channel count: the graph's multi(n) shape
 //   __rp_packStatus()           - what the packs' halves loaded and refused
+//   __rp_loadPackNow(dir)       - load a development pack folder now (a test and M4's hook)
 //   __rp_ready                  - set true once composition succeeded and the packs' app halves were loaded or refused
 //
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the
@@ -21,6 +22,7 @@ import { projectParameterMap } from "./parameterMap";
 import { syncLatencyMs } from "./syncLatency";
 import { b64encode, b64decode } from "./base64";
 import { loadAppPacks, packStatus } from "./packs/loadPacks";
+import { loadPackNow } from "./packs/loadPackNow";
 
 // --- compose the app layer over the real backend ---
 // One store graph, composed here at construct. The editor, when it attaches (same runtime, separate
@@ -53,6 +55,7 @@ project.addOnSystemsChange(refreshWatchedRoms);
 const pluginNs = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as Record<string, unknown> | undefined;
 if (pluginNs) {
   pluginNs.stores = stores;
+  pluginNs.loadPackNow = loadPackNow;
   pluginNs.setUiNotify = (fn: ((channel: StoreChannel) => void) | null | undefined): void => {
     uiNotify.fn = typeof fn === "function" ? fn : () => {};
   };
@@ -110,6 +113,16 @@ g.__rp_parameterMapJson = (): string =>
 
 // What the packs' halves loaded and refused, for a test and Settings > Packs (M4).
 g.__rp_packStatus = packStatus;
+
+// The live load (docs/downloadable-packs-m3-design.md section 7): a development pack folder loaded now, its result in
+// the pack status and the project re-resolved. Fire and forget: the C++ boundary is synchronous. The re-resolve runs in
+// a microtask after this returns, so a caller that wants the DAW to hear a swap pumps the context and then re-reads
+// __rp_parameterMapJson and __rp_syncLatencyMs, as PluginDSP does after a project load (updateParameterMap and
+// updateLatency). Nothing does that after a live load yet: the editor's idle poll re-reads only the parameter map
+// (updateParameterMap), never the latency, and only with an editor open. The C++ caller M4 adds must re-read both.
+g.__rp_loadPackNow = (dir: string): void => {
+  void loadPackNow(dir);
+};
 
 // The packs' app, consoles, protocol and placer halves commit before the host is told the control plane is ready, so the
 // first project load (an autoload, the DAW's setState) finds their roles, consoles, protocol nodes and placers; the

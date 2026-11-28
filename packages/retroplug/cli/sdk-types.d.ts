@@ -548,6 +548,15 @@ export declare function hostArgs(): string[];
  *  1 with a message) rather than exiting the harness with a pass. */
 export declare function runSession(main: (session: Session) => void | Promise<void>): void;
 
+/** Load the pack whose version folder is `dir` into this session now (docs/downloadable-packs-m3-design.md section 7):
+ *  the next system booted sees what it provides, and an open project's placeholders it provides come alive. Resolves to
+ *  `{ loaded: <pack id> }` once the host and this session's loader both took the pack, or `{ refused: <why> }` (the
+ *  host's refusal, or this session's loader's for a half that throws, a manifest that does not hold or a load past its
+ *  budget); never rejects. The Node addon's SDK loads no pack and answers a
+ *  refusal. */
+export type LoadPackNowResult = { loaded: string } | { refused: string };
+export declare function loadPackNow(dir: string): Promise<LoadPackNowResult>;
+
 // ─── Timed-event scripting (Timeline + renderTimeline). ──────────────────────────────────────────────
 
 /** Note options — `channel` is 1-based (default 1); `velocity` 0..127 (default 100). */

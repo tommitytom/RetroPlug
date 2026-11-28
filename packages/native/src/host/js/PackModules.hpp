@@ -35,6 +35,9 @@ inline constexpr std::chrono::seconds kHostReadyDeadline{10};
  *    past the load budget: the one refusal that costs time to repeat).
  *  - `globalThis.__rp_packRefusals()` returns, as JSON, the table's refusals: each pack's id and reason, its folder's
  *    version when the folder is `<id>/<version>`, and `needsUpdate` for a refusal of the API level;
+ *  - `globalThis.__rp_packLoadNow(dir)` loads the pack whose version folder is `dir` into `table` now and returns, as
+ *    JSON, `{"loaded": id}` or `{"refused": reason}`; a folder already loaded answers its load again. Every Engine
+ *    registers it at its next setGraph; a kinds half waits for the next launch;
  *  The table is the process's (processPacks) in every host, and must outlive the runtime. Calling it again on a
  *  context is harmless. The table is process-wide: a later call with another table points every context's loader at
  *  that table. */

@@ -138,6 +138,15 @@ export const APP_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
 };
 
 const loaded = new Map<string, Set<HalfKind>>();
+
+/** The union of the builder sets this module set has loaded with: what a live load runs again (loadPackNow), so a pack
+ *  arriving later gets every half a pack loaded at launch got here. */
+let builtWith: Partial<Record<HalfKind, HalfBuilder>> | undefined;
+
+/** The builders this module set has loaded with, or undefined before its first load. */
+export function loadedBuilders(): Partial<Record<HalfKind, HalfBuilder>> | undefined {
+  return builtWith;
+}
 const refused = new Map<string, string>();
 
 /** What this module set loaded and refused: each pack's halves, and each refused pack's reason; the native table's
@@ -279,6 +288,7 @@ let chain: Promise<void> = Promise.resolve();
 /** Load every pack's halves `builders` names that this module set has not loaded yet. Never rejects: a pack that fails
  *  is refused, reported, and commits nothing, and a failure of the loader itself is reported and resolves. */
 export function loadPacks(host: PackHost, builders: Partial<Record<HalfKind, HalfBuilder>>): Promise<void> {
+  builtWith = { ...builtWith, ...builders };
   const run = chain.then(() => load(host, builders));
   chain = run.catch(() => {});
   return run;

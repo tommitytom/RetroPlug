@@ -20,8 +20,9 @@ class PackTable;
  *  (host/render/RenderHost). The same `pack:<id>/<half>` loader and the same guard, after registerSharedModules
  *  registered `contracts` there; any other name is passed through as written (QuickJS finds a registered module by its
  *  name) and is not found if no module has it, since a bare runtime loads no file. Installs `__rp_packList` and no
- *  `__rp_packRefused`: a render's refusals are its job's console lines, the context that loaded those halves first
- *  having recorded its own. The table is process-wide and must outlive the runtime. */
+ *  `__rp_packRefused`, `__rp_packRefusals` or `__rp_packLoadNow`: a render's refusals are its job's console lines,
+ *  the context that loaded those halves first having recorded its own. The table is process-wide and must outlive the
+ *  runtime. */
 void installBarePackLoader(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count);
 
 // What txiki's loader borrows from the core.
@@ -38,7 +39,8 @@ bool isPackName(const char* name);
 /** A `pack:<id>/<half>` name's module, compiled and not evaluated; null with an exception thrown on a refusal. */
 JSModuleDef* loadPackHalf(JSContext* ctx, const char* name, PackMetaFn setMeta);
 
-/** Point the loader at `table` and install the contracts object and the globals (`refusals`: __rp_packRefused). */
+/** Point the loader at `table` and install the contracts object and the globals (`refusals`: __rp_packRefused,
+ *  __rp_packRefusals and __rp_packLoadNow). */
 void installPackGlobals(JSContext* ctx, packs::PackTable& table, const rp_js_module* contracts, std::size_t count,
                         bool refusals);
 

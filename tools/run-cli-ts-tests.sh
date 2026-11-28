@@ -820,6 +820,16 @@ RETROPLUG_PACK_PATH="$(packpath "$PACKS/tsfix-render/1.0.0")" RP_GB_ROM="$REPO/p
 check "packs: a session file sees a launch pack's role" 0 $?
 contains "packs: ...the role's construct hook ran in the session" "$TMP/session-packs.out" "tsfix-render: constructed"
 
+# A session loads a pack live (docs/downloadable-packs-m3-plan.md): the render fixture pack, not on the launch path,
+# reaches the next system the session boots.
+LL="$TMP/live-load"
+mkdir -p "$LL/tests"
+cp "$FIX/ts-harness-packs/tests/live-load.test.ts" "$LL/tests/"
+RETROPLUG_PACK_PATH="$(packpath "")" RP_LIVE_PACK="$PACKS/tsfix-render/1.0.0" \
+	RP_GB_ROM="$REPO/packages/mgb/rom/mGB.gb" \
+	"$CLI" test "$LL/tests" >"$TMP/live-load.out" 2>&1
+check "packs: a session loads a pack live, and its next system carries the pack's role" 0 $?
+
 # A render job's worker loads the packs' app and consoles halves (docs/downloadable-packs-m2d-plan.md): the fixture's
 # role reaches the system the job builds, and adds nothing to its bytes.
 if [ -f "$REPO_ROM" ]; then

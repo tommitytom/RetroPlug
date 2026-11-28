@@ -161,6 +161,21 @@ TEST_CASE("the refusal list escapes a control character in a reason", "[pack-mod
     CHECK(readString(rt, "JSON.parse(globalThis.__rp_packRefusals())[0].reason") == "a\nb\t\"c\"\\d");
 }
 
+TEST_CASE("a live load answers the pack it loaded, or why it refused", "[pack-modules]") {
+    PackTable table;
+    Runtime rt;
+    REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
+    rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
+    const std::string good = fixture("pmgood").generic_string();
+    CHECK(readString(rt, "globalThis.__rp_packLoadNow(" + quoted(good) + ")") == R"({"loaded":"pmgood"})");
+    CHECK(table.find("pmgood") != nullptr);
+    // The same folder again answers the same.
+    CHECK(readString(rt, "globalThis.__rp_packLoadNow(" + quoted(good) + ")") == R"({"loaded":"pmgood"})");
+    const std::string refused = readString(rt, "globalThis.__rp_packLoadNow('/no/such/pack/1.0.0')");
+    CHECK(refused.rfind(R"({"refused":")", 0) == 0);
+    CHECK(readString(rt, "globalThis.__rp_packRefusals()").find("\"needsUpdate\":false") != std::string::npos);
+}
+
 TEST_CASE("a runtime freed with a pack half still pending frees cleanly", "[pack-modules]") {
     PackTable table;
     REQUIRE(table.load(fixture("pmpending")));

@@ -42,6 +42,8 @@ export function connectN8(opts?: N8ConnectOptions): N8Device {
 }
 export type { N8ConnectOptions, N8Device, N8LoadOptions, N8DirEntry } from "@retroplug/n8/device";
 export { keepAlive } from "./session";
+export { loadPackNow } from "../src/packs/loadPackNow";
+export type { LoadPackNowResult } from "../src/packs/loadPackNow";
 
 // Audio analysis DSP for tuning/timbre verification (F2-F7). Pure TS over rendered PCM; prefer the decoded
 // Hz readouts (getExpansionAudioState().frequency / getApuState) for pitch when available - these are the

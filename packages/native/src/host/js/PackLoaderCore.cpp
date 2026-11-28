@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -195,6 +196,32 @@ JSValue packRefusals(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_NewStringLen(ctx, out.data(), out.size());
 }
 
+// A live load (docs/downloadable-packs-m3-design.md section 7): the version folder `dir` loaded into the table now,
+// answered as JSON, {"loaded": id} or {"refused": reason}. A folder already loaded answers its load; a refusal is in
+// the table's refusals and on stderr, as a launch's are.
+JSValue packLoadNow(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    packs::PackTable* table = g_table.load();
+    if (!table || argc < 1) return JS_ThrowTypeError(ctx, "__rp_packLoadNow(dir) takes a pack's version folder");
+    const char* dir = JS_ToCString(ctx, argv[0]);
+    if (!dir) return JS_EXCEPTION;
+    // A C++ exception (bad_alloc, or on MSVC a system_error from the path conversion) must not unwind through
+    // QuickJS's C frames: it answers as a refusal.
+    std::string out;
+    try {
+        const std::filesystem::path path(std::u8string(reinterpret_cast<const char8_t*>(dir)));
+        const packs::PackLoad load = table->load(path);
+        if (!load) std::fprintf(stderr, "[packs] %s\n", load.error.c_str());
+        out = load ? "{\"loaded\":" + jsonString(load.pack->manifest.id) + "}"
+                   : "{\"refused\":" + jsonString(load.error) + "}";
+    } catch (const std::exception& e) {
+        out = "{\"refused\":" + jsonString(std::string("the live load failed: ") + e.what()) + "}";
+    } catch (...) {
+        out = "{\"refused\":\"the live load failed\"}";
+    }
+    JS_FreeCString(ctx, dir);
+    return JS_NewStringLen(ctx, out.data(), out.size());
+}
+
 JSValue packRefused(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     packs::PackTable* table = g_table.load();
     if (!table || argc < 2) return JS_UNDEFINED;
@@ -214,8 +241,8 @@ JSValue packRefused(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     return (id && reason) ? JS_UNDEFINED : JS_EXCEPTION;
 }
 
-// The frozen contracts object and the globals, once per context; `refusals` adds __rp_packRefused and
-// __rp_packRefusals (txiki's hosts).
+// The frozen contracts object and the globals, once per context; `refusals` adds __rp_packRefused,
+// __rp_packRefusals and __rp_packLoadNow (txiki's hosts).
 void installGlobals(JSContext* ctx, const rp_js_module* contracts, std::size_t count, bool refusals) {
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue mark = JS_GetPropertyStr(ctx, global, kContracts);
@@ -234,6 +261,8 @@ void installGlobals(JSContext* ctx, const rp_js_module* contracts, std::size_t c
                                       JS_NewCFunction(ctx, packRefused, "__rp_packRefused", 2), 0);
             JS_DefinePropertyValueStr(ctx, global, "__rp_packRefusals",
                                       JS_NewCFunction(ctx, packRefusals, "__rp_packRefusals", 0), 0);
+            JS_DefinePropertyValueStr(ctx, global, "__rp_packLoadNow",
+                                      JS_NewCFunction(ctx, packLoadNow, "__rp_packLoadNow", 1), 0);
         }
     }
     JS_FreeValue(ctx, global);
