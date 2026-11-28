@@ -405,7 +405,7 @@ function ownRole(provenance: Provenance | undefined, kind: string): PackRef | un
 
 /** The role kinds `raw` stores that no package registers, but the core's own config role (the console's pack provides
  *  it), each once, by the pack the file names for it. */
-function roleNeeds(raw: RawObject, provenance: Provenance | undefined): PackNeed[] {
+export function roleNeeds(raw: RawObject, provenance: Provenance | undefined): PackNeed[] {
   const roles = Array.isArray(raw.roles) ? (raw.roles as unknown[]) : [];
   const registered = new Set(rolesRegistry.items().map((r) => r.kind));
   const seen = new Set<string>();

@@ -43,8 +43,14 @@ export function scanMissingFiles(
 export function relinkInConfig(cfg: ProjectConfig, item: MissingFile, newPath: string): boolean {
   const sys = cfg.systems[item.systemIndex];
   if (!sys) return false;
-  if (item.itemKind === "rom") sys.romPath = newPath;
-  else sys.savPath = newPath;
+  const raw = cfg.sources?.[item.systemIndex]?.raw as Record<string, unknown> | undefined;
+  if (item.itemKind === "rom") {
+    sys.romPath = newPath;
+    if (raw) raw.romPath = newPath;
+  } else {
+    sys.savPath = newPath;
+    if (raw) raw.savPath = newPath;
+  }
   return true;
 }
 

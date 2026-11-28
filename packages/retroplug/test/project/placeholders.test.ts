@@ -7,7 +7,8 @@ import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { parseConfig } from "../../src/projectConfig";
-import { gbRomBattery } from "../systems/fixtures";
+import { needText } from "../../src/packs/needs";
+import { gbRomBattery, garbage } from "../systems/fixtures";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -258,4 +259,87 @@ test("a project holding only a placeholder is not pristine: a settings edit dirt
   expect(project.isDirty()).toBe(false);
   expect(project.setZoom(3)).toBe(true);
   expect(project.isDirty()).toBe(true);
+});
+
+test("a ROM no detector claims makes a placeholder at the adopt, and a ROM that is gone is still the relink's", () => {
+  const { be, project } = newProject();
+  be.seed("/roms/strange.fxrom", garbage()); // readable, and no console's detector claims it
+  const strange = {
+    platform: "gb",
+    core: "sameboy",
+    romPath: "/roms/strange.fxrom",
+    provenance: { platform: FX },
+  };
+  const doc = { schemaVersion: "4", settings: {}, systems: [gb("/roms/a.gb"), strange] };
+  be.seed("/proj/strange.rplg", JSON.stringify(doc));
+  const outcome = project.load("/proj/strange.rplg");
+  expect(outcome.kind).toBe("loaded");
+  if (outcome.kind !== "loaded") return;
+  const slots = project.systems.slotView();
+  expect(slots.length).toBe(2);
+  // The platform is registered, so the ROM is what this build cannot read: no pack resolves it, and none is counted.
+  expect(slots[1].placeholder?.needs).toEqual([{ what: "rom", key: "strange.fxrom", status: "missing" }]);
+  expect(outcome.missingPacks).toBe(undefined);
+  expect(needText(slots[1].placeholder!.needs[0])).toBe("The ROM strange.fxrom is not one this build reads");
+  expect(project.save("/proj/strange-saved.rplg")).toBe(true);
+  expect((JSON.parse(be.readText("/proj/strange-saved.rplg")!) as { systems: unknown[] }).systems[1]).toEqual(strange);
+
+  const gone = { platform: "gb", core: "sameboy", romPath: "/roms/gone.gb" };
+  be.seed("/proj/gone.rplg", JSON.stringify({ schemaVersion: "4", settings: {}, systems: [gone] }));
+  expect(project.load("/proj/gone.rplg").kind).toBe("missing");
+});
+
+test("a held ROM lists the role kinds nothing registers after its own need", () => {
+  const { be, project } = newProject();
+  be.seed("/roms/strange.fxrom", garbage());
+  const strange = {
+    platform: "gb",
+    core: "sameboy",
+    romPath: "/roms/strange.fxrom",
+    roles: [{ kind: "fx-marker", config: {} }],
+    provenance: { roles: { "fx-marker": FX_TRACKER } },
+  };
+  be.seed("/proj/roles.rplg", JSON.stringify({ schemaVersion: "4", settings: {}, systems: [strange] }));
+  const outcome = project.load("/proj/roles.rplg");
+  expect(outcome.kind).toBe("loaded");
+  if (outcome.kind !== "loaded") return;
+  expect(project.systems.slotView()[0].placeholder?.needs).toEqual([
+    { what: "rom", key: "strange.fxrom", status: "missing" },
+    { what: "role", key: "fx-marker", pack: FX_TRACKER, status: "missing" },
+  ]);
+  expect((outcome.missingPacks ?? []).map((p) => p.id)).toEqual(["fxtracker"]);
+});
+
+test("a relinked system's kept JSON follows the new path", () => {
+  const { be, project } = newProject();
+  be.seed("/roms/strange.fxrom", garbage());
+  be.seed("/proj/r.rplg", JSON.stringify({ schemaVersion: "4", settings: {}, systems: [gb("/old/a.gb")] }));
+  const pending = project.load("/proj/r.rplg");
+  expect(pending.kind).toBe("missing");
+  if (pending.kind !== "missing") return;
+  // Relinked to a file no detector claims, the system is held, and what it keeps is the new path.
+  expect(project.relink(pending.missing[0], "/roms/strange.fxrom").kind).toBe("loaded");
+  expect(project.systems.slotView()[0].placeholder !== undefined).toBe(true);
+  expect(project.save("/proj/r-saved.rplg")).toBe(true);
+  const saved = JSON.parse(be.readText("/proj/r-saved.rplg")!) as { systems: { romPath: string }[] };
+  expect(saved.systems[0].romPath).toBe("/roms/strange.fxrom");
+});
+
+test("a held system between two live ones keeps its own entries, and the next system its SRAM", () => {
+  const { be, project } = newProject();
+  be.seed("/roms/strange.fxrom", garbage());
+  const strange = { platform: "gb", core: "sameboy", romPath: "/roms/strange.fxrom" };
+  const zip = zipOf(be, [gb("/roms/a.gb"), strange, gb("/roms/b.gb")], {
+    "systems/0/sram": [1, 1, 1],
+    "systems/1/sram": [9, 8, 7],
+    "systems/2/sram": [3, 3, 3],
+  });
+  expect(project.loadBytes(zip, "").kind).toBe("loaded");
+  const slots = project.systems.slotView();
+  expect(slots.map((v) => v.placeholder !== undefined)).toEqual([false, true, false]);
+  expect(be.bootOf(slots[2].id)?.sramBytes).toEqual(new Uint8Array([3, 3, 3]));
+  const entries = be.unzip(project.exportBytes()!)!;
+  const byName = (name: string) => entries.find((e) => e.name === name)?.bytes;
+  expect(byName("systems/1/sram")).toEqual(new Uint8Array([9, 8, 7]));
+  expect(byName("systems/2/sram") !== undefined).toBe(true);
 });

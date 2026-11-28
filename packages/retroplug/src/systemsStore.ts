@@ -34,7 +34,7 @@ import {
   type Platform,
   type Core,
 } from "./platform";
-import { platformCapabilities, platformEntry } from "./consoles";
+import { platformCapabilities, platformEntry, registeredPlatforms } from "./consoles";
 import { embeddedRomOf } from "./embeds";
 import { derivedRoleConfigs, rolesForRom } from "./rolesForRom";
 
@@ -54,7 +54,11 @@ import {
   mergeSlots,
   type Slot,
 } from "./systemsList";
-import { statusOf, type PackNeed } from "./packs/needs";
+import { needOf, statusOf, type PackNeed } from "./packs/needs";
+import { readProvenance } from "./provenance";
+import { basename } from "./pathUtil";
+import { roleNeeds } from "./projectConfig";
+import type { RawObject } from "./migrate";
 import type { Provenance } from "./provenance";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
@@ -293,6 +297,50 @@ export class SystemsStore {
   slotView(): SystemView[] {
     const live = this.view();
     return mergeSlots(live, this.held).map((s) => ("live" in s ? s.live : this.placeholderView(s.held)));
+  }
+
+  /** A project load's adopt: a system `holdNeeds` finds something missing for is held as a placeholder with its JSON
+   *  and entries instead of dropped; anything else is adopted (and a ROM that is gone, which the load's relink
+   *  handles, is refused as before). The ROM is classified once, by holdNeeds, and adopt takes that answer. */
+  adoptOrHold(
+    config: Parameters<SystemsStore["adopt"]>[0] & { platform?: string },
+    raw: Readonly<Record<string, unknown>>,
+    seed: Parameters<SystemsStore["adopt"]>[1],
+    blobs: ReadonlyMap<string, Uint8Array>,
+  ): number | null {
+    const { needs, platform } = this.holdNeeds(config, raw);
+    if (needs.length) return this.addPlaceholder(raw, blobs, needs);
+    return this.adopt(config, seed, platform);
+  }
+
+  /** What `config` needs before adopt can build it (docs/downloadable-packs-m3-design.md section 1), and the platform
+   *  its ROM classified as when it was read. The first need is the ROM no detector claims or a platform with no default
+   *  core, followed by the role kinds nothing registers (as the parse's classifySystem lists them); nothing for an
+   *  embedded ROM (the parse checked its declaration) or a ROM file that is not there. A "rom" need is a ROM the
+   *  detectors do not read under a platform that IS registered (a corrupt or replaced file: no pack resolves it); an
+   *  unregistered platform is the "platform" need. Callable alone, for a placeholder re-checked against what is
+   *  registered now. */
+  holdNeeds(
+    config: { platform?: string; core?: Core; romPath?: string; embeddedRom?: string },
+    raw: Readonly<Record<string, unknown>>,
+  ): { needs: PackNeed[]; platform?: Platform } {
+    if (config.embeddedRom) return { needs: [] };
+    const romPath = config.romPath ?? "";
+    if (!romPath || !this.backend.fileExists(romPath)) return { needs: [] };
+    const provenance = readProvenance(raw.provenance);
+    const fmt = classifyRom(this.backend, romPath);
+    let first: PackNeed | undefined;
+    if (fmt === "unknown") {
+      const stored = config.platform ?? "";
+      first = registeredPlatforms().some((p) => p.id === stored)
+        ? needOf("rom", basename(romPath))
+        : needOf("platform", stored, provenance?.platform);
+    } else if ((config.core ?? defaultCoreFor(fmt)) === undefined) {
+      // Guards a descriptor that registers a platform with no core: its key is the platform id, the core being unknown.
+      first = needOf("core", fmt, provenance?.platform);
+    }
+    if (!first) return { needs: [], platform: fmt === "unknown" ? undefined : fmt };
+    return { needs: [first, ...roleNeeds(raw as RawObject, provenance)] };
   }
 
   /** Hold `raw` as a placeholder in the next slot, with its entries and needs, and answer its id. Quiet, as adopt is (a
@@ -1285,6 +1333,8 @@ export class SystemsStore {
     // ProjectStore.buildArchive) - parked again on the adopted system, to land once its cart is up.
     // `freshSram`: a battery newer than the savestate's own, written over it once the core is built.
     blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array; song?: WorkingSongImage; freshSram?: Uint8Array },
+    // The platform the ROM already classified as (holdNeeds), so it is read once.
+    classified?: Platform,
   ): number | null {
     const embeddedRom = config.embeddedRom ?? "";
     const romPath = config.romPath ?? "";
@@ -1298,7 +1348,7 @@ export class SystemsStore {
       if (!declared) return null;
       platform = declared.platform;
     } else {
-      const fmt = classifyRom(this.backend, romPath);
+      const fmt = classified ?? classifyRom(this.backend, romPath);
       if (fmt === "unknown") return null;
       platform = fmt;
     }

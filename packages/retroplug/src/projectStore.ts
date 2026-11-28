@@ -930,22 +930,24 @@ export class ProjectStore {
       // In file order, so each system takes its slot: a parsed one is adopted, a placeholder held with its entries.
       // Keyed by the system's index in the FILE: a system the parse dropped keeps its entries to itself.
       const order = [
-        ...cfg.systems.map((system, k) => ({ index: sourceIndexOf(cfg, k), system, held: undefined })),
-        ...(cfg.placeholders ?? []).map((held) => ({ index: held.index, system: undefined, held })),
+        ...cfg.systems.map((system, k) => ({
+          index: sourceIndexOf(cfg, k),
+          system,
+          raw: (cfg.sources?.[k]?.raw ?? (system as unknown)) as Readonly<Record<string, unknown>>,
+          held: undefined,
+        })),
+        ...(cfg.placeholders ?? []).map((held) => ({ index: held.index, system: undefined, raw: held.raw, held })),
       ].sort((a, b) => a.index - b.index);
-      for (const { index, system, held } of order) {
+      for (const { index, system, raw, held } of order) {
         const sram = blobs.get(sramKey(index));
         const state = blobs.get(stateKey(index));
         const songBytes = blobs.get(songKey(index));
-        if (held) {
-          const kept = new Map<string, Uint8Array>();
-          if (state) kept.set("state", state);
-          if (sram) kept.set("sram", sram);
-          if (songBytes) kept.set("song", songBytes);
-          this.systems.addPlaceholder(held.raw, kept, held.needs);
-        } else {
-          this.systems.adopt(system!, seedOf(sram, state, songBytes));
-        }
+        const kept = new Map<string, Uint8Array>();
+        if (state) kept.set("state", state);
+        if (sram) kept.set("sram", sram);
+        if (songBytes) kept.set("song", songBytes);
+        if (held) this.systems.addPlaceholder(held.raw, kept, held.needs);
+        else this.systems.adoptOrHold(system!, raw, seedOf(sram, state, songBytes), kept);
       }
     } catch (e) {
       // The systems adopted before the throw are built and listed, so place them as the final publish would, with

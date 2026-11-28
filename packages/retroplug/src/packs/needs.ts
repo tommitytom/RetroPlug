@@ -5,11 +5,12 @@
 import type { PackRef } from "../provenance";
 import type { SystemView } from "../systemsStore";
 
-export type NeedWhat = "platform" | "core" | "embed" | "role";
+export type NeedWhat = "platform" | "core" | "embed" | "role" | "rom";
 
 export interface PackNeed {
   readonly what: NeedWhat;
-  /** The platform id, core id, embedded ROM id or role kind the file names. */
+  /** The platform id, core id, embedded ROM id or role kind the file names; for "rom", the ROM file's name (a ROM this
+   *  build's detectors do not read, which no pack resolves). */
   readonly key: string;
   /** The package the file says provides it; absent for a file saved before M3. */
   readonly pack?: PackRef;
@@ -62,7 +63,7 @@ export function missingPacksOf(views: readonly SystemView[]): MissingPack[] {
     else g.systems.add(system);
   };
   for (const v of views) {
-    for (const need of v.placeholder?.needs ?? []) add(need, v.id, false);
+    for (const need of v.placeholder?.needs ?? []) if (need.what !== "rom") add(need, v.id, false);
     for (const need of v.missingRoles ?? []) add(need, v.id, true);
   }
   return [...groups].map(([id, g]) => {
@@ -83,6 +84,7 @@ export function missingPacksOf(views: readonly SystemView[]): MissingPack[] {
 
 /** A need as a placeholder's card says it: "Needs the Mesen pack", "Mesen 1.2 needs updating for this RetroPlug". */
 export function needText(need: PackNeed): string {
+  if (need.what === "rom") return `The ROM ${need.key} is not one this build reads`;
   const name = need.pack?.name;
   if (need.status === "refused") {
     const who = name ? `${name}${need.pack?.version ? ` ${need.pack.version}` : ""}` : need.key;
