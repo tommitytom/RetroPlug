@@ -180,7 +180,10 @@ export class SystemsStore {
   private ownGraph: EngineGraph | null = null;
   private onGraphChange: (rearmTap: boolean) => boolean = (rearmTap) => {
     this.ownGraph ??= new EngineGraph(this.backend);
-    return this.ownGraph.publish({ systems: this.graphSystems(), routing: "stereo" }, { rearmTap });
+    return this.ownGraph.publish(
+      { systems: this.graphSystems(), slots: this.graphSlots(), routing: "stereo" },
+      { rearmTap },
+    );
   };
   // A live param edit updates the graph's model without publishing, so a later publish (a render's shape among them)
   // builds the value the node runs rather than the stale one the last document carried.
@@ -277,6 +280,12 @@ export class SystemsStore {
   /** Every slot in save order: the live systems and the placeholders (what buildConfig and buildArchive write). */
   saveOrder(): Slot<SystemEntry, PlaceholderEntry>[] {
     return mergeSlots(this.entries, this.held);
+  }
+
+  /** Every slot's id in slot order, a placeholder's included: what the graph numbers its routing positions, buses and
+   *  lanes by (GraphModel.slots), so a placeholder holds its slot in the graph too. */
+  graphSlots(): number[] {
+    return this.saveOrder().map((s) => ("live" in s ? s.live.id : s.held.id));
   }
 
   /** The UI's systems: every slot in save order, a placeholder's view carrying `placeholder`

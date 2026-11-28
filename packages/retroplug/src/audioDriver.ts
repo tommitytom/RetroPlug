@@ -85,9 +85,10 @@ export interface AudioDriver {
   screenshot(id: number, path: string): boolean;
   /** Render `ms` through the engine and return the mixed stereo output, interleaved L,R,L,R…. */
   renderAudio(ms: number): Float32Array;
-  /** Render `ms` through the engine and return EACH live system's own interleaved-stereo output, in
-   *  slot order: the per-system isolation that proves LSDj link-cable sync (a follower sounds
-   *  only when it actually synced; a healthy two-system mix can't show that). Empty when no systems. */
+  /** Render `ms` through the engine and return one interleaved-stereo buffer per SLOT, in slot order: each live
+   *  system's own output, an empty slot's (a placeholder's) silent. The per-system isolation that proves LSDj
+   *  link-cable sync (a follower sounds only when it actually synced; a healthy two-system mix can't show that).
+   *  Empty when no systems. */
   renderAudioPerSystem(ms: number): Float32Array[];
   /** Render `ms` through the engine and return system `id`'s per-channel output: one interleaved-stereo
    *  buffer per stream in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty

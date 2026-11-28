@@ -294,6 +294,7 @@ export class ProjectStore {
     return this.graph.publish(
       {
         systems: this.systems.graphSystems(),
+        slots: this.systems.graphSlots(),
         routing: this.projectSettings.audioRouting,
         midiRouting: this.projectSettings.midiRouting,
         models: this.graphModels(),

@@ -1487,3 +1487,16 @@ test("DirectGraph puts the structure back when its document is refused", () => {
   expect(be.protocolNodes(1)).toEqual([]);
   expect(be.graphNode("routing")).toBe(undefined);
 });
+
+test("a lone store's own publish carries the slots: a placeholder's slot keeps its silent per-system bus", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/roms/a.gb", gbRom());
+  const sys = new SystemsStore(be);
+  const held = sys.addPlaceholder({ platform: "zz-missing", core: "zz" }, new Map(), []);
+  const a = sys.addSystem("/roms/a.gb")!;
+  expect(sys.graphSlots()).toEqual([held, a]);
+  // The store's own EngineGraph is private to it; a per-system shape on it numbers the buses by slot.
+  const own = (sys as unknown as { ownGraph: EngineGraph }).ownGraph;
+  expect(own.setShape({ kind: "perSystem" })).toBe(true);
+  expect(be.graphNode("out")?.settings?.buses).toEqual([2, 2]);
+});

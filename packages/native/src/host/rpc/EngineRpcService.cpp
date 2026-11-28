@@ -492,8 +492,16 @@ rfl::Bytestring EngineRpcService::renderAudio(double ms) {
 
 std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};  // as renderAudio
-    const std::size_t n = engine_.systemCount();
-    if (n == 0) return {};
+    if (engine_.systemCount() == 0) return {};
+    // One pair per slot: a placeholder's empty slot keeps its (silent) pair, so the planned host width, not the live
+    // system count, sizes the buffers. With no empty slot the two agree. A plan with fewer pairs than live systems is
+    // not the per-system shape (a stereo mix of two systems is two lanes), so it is refused as any other mismatch.
+    const std::size_t n = engine_.hostWidth() / 2;
+    if (n < engine_.systemCount()) {
+        std::fprintf(stderr, "[engine] a per-system render was refused: the planned graph writes %u channels for %zu "
+                             "systems\n", static_cast<unsigned>(engine_.hostWidth()), engine_.systemCount());
+        return {};
+    }
     if (!rendersInto(2 * n)) return {};
     // The PerSystem shape routes each core into its own pair, so linked systems interleave exactly as they do in the
     // mixed path.

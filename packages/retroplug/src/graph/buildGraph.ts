@@ -1,5 +1,5 @@
 // The engine's graph as TS builds it (docs/modular-graph-phase-b2-design.md section 2.1): the systems in slot
-// order, the project's audio routing and the host's output shape, turned into the document setGraph plans. Ahead of
+// order (an empty slot, a placeholder's, numbered but not placed), the project's audio routing and the host's output shape, turned into the document setGraph plans. Ahead of
 // the systems, each document places the script nodes that feed them (docs/modular-graph-phase-b3b-design.md
 // section 4): the MIDI routing, and a protocol node for each role of each system that has one, wired between the host's
 // I/O and the systems as the DSP kernel's ports were - and, in the slots a package's placer fills, that package's own
@@ -106,6 +106,11 @@ export interface GraphModel {
    *  only its placer knows how to turn into nodes. A key no listed package places is ignored, so a product without the
    *  package publishes the section's model to nothing. */
   models?: Readonly<Record<string, unknown>>;
+  /** Every slot's system id in slot order, an empty slot's (a placeholder's, docs/downloadable-packs-m3-design.md
+   *  section 1) included: what the MIDI routing's positions, the per-system buses, the multi-out lanes and the
+   *  one-system tests count, so a system keeps its numbers while a slot before it is empty. An empty slot places
+   *  nothing. Absent, or missing a system's id: the systems' own ids, today's numbering. */
+  slots?: readonly number[];
 }
 
 /** The NES tap the engine arms for a lone NES under a split routing: its pins (1) or its five channels (3).
@@ -390,8 +395,8 @@ function sumOrder(systems: readonly GraphSystem[], groups: number[][]): number[]
 
 /** The tap the engine arms for this model: a split routing with exactly one system, and that one a console whose core
  *  can be tapped (a NES). The mode is the split's own (its tapMode), so which splits exist is the descriptor's. */
-function tapArmOf(model: GraphModel): TapArm | null {
-  const only = model.systems.length === 1 ? model.systems[0] : undefined;
+function tapArmOf(model: GraphModel, slotCount: number): TapArm | null {
+  const only = slotCount === 1 && model.systems.length === 1 ? model.systems[0] : undefined;
   if (!isSplit(model.routing) || !only || capabilitiesOf(only.type).channelTap !== true) return null;
   const mode = splitOf(only.type, isPins(model.routing) ? "pins" : "channels")?.tapMode;
   if (mode !== 1 && mode !== 3) return null;
@@ -403,13 +408,26 @@ function nesMode(arm: TapArm | null, s: GraphSystem): number {
   return arm && arm.id === s.id ? arm.mode : s.exportMode;
 }
 
+/** Whether `slots` holds every live id, in the live systems' own relative order (else the live ids are numbered). */
+function liveInOrder(slots: readonly number[], systems: readonly GraphSystem[]): boolean {
+  const at = systems.map((s) => slots.indexOf(s.id));
+  return at.every((p, i) => p >= 0 && (i === 0 || p > at[i - 1]));
+}
+
 export function buildGraph(
   model: GraphModel,
   placers: readonly { pkg: string; placer: GraphPlacer<any> }[] = placerEntries(),
 ): BuiltGraph {
   const { systems, routing, shape } = model;
+  // Every slot's id, an empty one's included; a live system's number is its index here (slotOf).
+  const given = model.slots;
+  const slotIds: readonly number[] =
+    given && liveInOrder(given, systems) ? given : systems.map((s) => s.id);
+  const slotOf = (s: GraphSystem): number => slotIds.indexOf(s.id);
+  // The one system of a one-slot project: what a split, the NES tap and the per-channel shape need.
+  const lone = slotIds.length === 1 && systems.length === 1 ? systems[0] : undefined;
   // One decision for the wiring and the arm returned with it, so the two always agree.
-  const tapArm = tapArmOf(model);
+  const tapArm = tapArmOf(model, slotIds.length);
   const nodes: NodeDoc[] = [];
   const wires: WireDoc[] = [];
   const wire = (from: string, to: string) => wires.push({ from, to });
@@ -462,10 +480,10 @@ export function buildGraph(
   // and a node that reads what a system sent goes after the systems.
   //
   // The routing: the host's MIDI fanned out to the systems in slot order (positional routing reads it), an output
-  // for each, sys-<id>.
+  // for each, sys-<id>; an empty slot keeps its position, its output unread.
   const midiRouting = model.midiRouting ?? null;
   if (midiRouting !== null) {
-    nodes.push({ id: "routing", type: MIDI_ROUTE, settings: { mode: midiRouting, systems: systems.map((s) => s.id) } });
+    nodes.push({ id: "routing", type: MIDI_ROUTE, settings: { mode: midiRouting, systems: [...slotIds] } });
     wire("midi-in.midi", "routing.midiIn");
   }
   // Host MIDI out's inputs: the placements' first (a controller's, so it wins a tie at a frame: rp.host.midi-out merges
@@ -560,15 +578,16 @@ export function buildGraph(
 
   const buses: number[] = [];
   if (shape.kind === "perSystem") {
-    // Slot i's mix on channels 2i and 2i + 1.
-    systems.forEach((s, i) => {
-      wire(`${systemNodeId(s.id)}.mix`, outPort(2 * i, 2));
+    // Slot i's mix on channels 2i and 2i + 1; an empty slot's bus stays, silent.
+    slotIds.forEach((id, i) => {
+      const s = systems.find((x) => x.id === id);
+      if (s) wire(`${systemNodeId(s.id)}.mix`, outPort(2 * i, 2));
       buses.push(2);
     });
   } else if (shape.kind === "perChannel") {
     // One system's stream k on channels 2k and 2k + 1; a mono stream fills only 2k.
-    if (systems.length === 1) {
-      const s = systems[0];
+    if (lone) {
+      const s = lone;
       streamsOf(s.type, nesMode(tapArm, s)).forEach((stream, k) => {
         if (stream.stereo) {
           wire(`${systemNodeId(s.id)}.${stream.port}`, outPort(2 * k, 2));
@@ -588,11 +607,11 @@ export function buildGraph(
     // A split holds for one system, the pin splits only on a console that declares a pins layout (a NES), and only with
     // room for its lanes.
     let splitValid =
-      isSplit(routing) && systems.length === 1 && !(isPins(routing) && splitOf(systems[0].type, "pins") === undefined);
+      isSplit(routing) && lone !== undefined && !(isPins(routing) && splitOf(lone.type, "pins") === undefined);
     let streams: readonly ConsoleStream[] = [];
     let stride = 2;
     if (splitValid) {
-      streams = streamsOf(systems[0].type, nesMode(tapArm, systems[0]));
+      streams = streamsOf(lone!.type, nesMode(tapArm, lone!));
       const allMono = streams.every((s) => !s.stereo);
       const pairPerMono = allMono && routing === "stereoPinSplit";
       stride = allMono && !pairPerMono ? 1 : 2;
@@ -601,7 +620,7 @@ export function buildGraph(
     if (splitValid) {
       // The split: stream k on lane (stride * k) mod n and, for a stereo stream, the next. A mono stream on a
       // pair (StereoPinSplit) fills both lanes.
-      const s = systems[0];
+      const s = lone!;
       streams.forEach((stream, k) => {
         const l = (stride * k) % n;
         const from = `${systemNodeId(s.id)}.${stream.port}`;
@@ -620,10 +639,10 @@ export function buildGraph(
         const s = systems[i];
         const [lo, ro] = halves(`${systemNodeId(s.id)}.mix`, `split-${s.id}`);
         if (routing === "onePerInstance") {
-          addTo(i % n, lo);
-          addTo(i % n, ro);
+          addTo(slotOf(s) % n, lo);
+          addTo(slotOf(s) % n, ro);
         } else if (routing === "twoPerInstance") {
-          const p = (2 * i) % n;
+          const p = (2 * slotOf(s)) % n;
           addTo(p, lo);
           addTo((p + 1) % n, ro);
         } else {

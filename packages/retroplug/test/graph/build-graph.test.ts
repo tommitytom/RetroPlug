@@ -711,3 +711,57 @@ test("a cart the controller drives in MI.MAP captures nothing, whatever its stor
   // Driving a real Game Boy forces no cart, so none loses its capture.
   expect(captures(built(systems, "stereo", multi(2), withController({ target: "midiOut" })))).toEqual(["drive", "listen"]);
 });
+
+test("an empty slot keeps its number: the routing's positions, the per-system buses and the lanes count it", () => {
+  // docs/downloadable-packs-m3-design.md section 1: slot 1 (id 7) is a placeholder's, which places nothing.
+  const model = {
+    systems: [gb(5), gb(9)],
+    routing: "twoPerInstance" as AudioRouting,
+    shape: multi(8),
+    midiRouting: "midiChannelToInstance" as MidiRouting,
+    slots: [5, 7, 9],
+  };
+  const { document, slots } = buildGraph(model);
+  expect(slots).toEqual([5, 9]);
+  expect(document.nodes.some((n) => n.id === "sys-7")).toBe(false);
+  const routing = document.nodes.find((n) => n.id === "routing")!.settings as { systems: number[] };
+  expect(routing.systems).toEqual([5, 7, 9]);
+  expect(document.wires.some((w) => w.from === "split-9.out1" && w.to === "out.out.5")).toBe(true);
+  const perSystem = buildGraph({ ...model, shape: { kind: "perSystem" } }).document;
+  expect(perSystem.wires.some((w) => w.from === "sys-9.mix" && w.to === "out.out.5-6")).toBe(true);
+  expect(perSystem.nodes.find((n) => n.id === "out")!.settings).toEqual({ buses: [2, 2, 2] });
+});
+
+test("a split and the NES tap need one slot, not one live system; a slot list missing a live id is ignored", () => {
+  const two = buildGraph({ systems: [nes(3)], routing: "channelSplit", shape: multi(8), slots: [3, 4] });
+  expect(two.tapArm).toBe(null);
+  expect(two.document.nodes.some((n) => n.id.startsWith("stem-"))).toBe(false);
+  expect(two.document.wires.some((w) => w.from === "split-3.out1")).toBe(true);
+  const wrong = buildGraph({
+    systems: [gb(5)],
+    routing: "stereo",
+    shape: multi(2),
+    midiRouting: "sendToAll" as MidiRouting,
+    slots: [6],
+  });
+  const settings = wrong.document.nodes.find((n) => n.id === "routing")!.settings as { systems: number[] };
+  expect(settings.systems).toEqual([5]);
+});
+
+test("a reordered slot list is ignored; one-per-instance lanes and the per-channel shape count slots", () => {
+  const routing = (m: GraphModel) =>
+    (buildGraph(m).document.nodes.find((n) => n.id === "routing")!.settings as { systems: number[] }).systems;
+  const base = { systems: [gb(5), gb(9)], routing: "stereo" as AudioRouting, shape: multi(2) };
+  expect(routing({ ...base, midiRouting: "sendToAll" as MidiRouting, slots: [9, 5] })).toEqual([5, 9]);
+
+  const one = buildGraph({ ...base, routing: "onePerInstance", shape: multi(8), slots: [5, 7, 9] }).document;
+  // Slot 2's L and R both sum onto host channel 2 (slot 1's empty).
+  expect(one.wires.some((w) => w.from === "split-9.out1" && w.to.startsWith("lane-2."))).toBe(true);
+  expect(one.wires.some((w) => w.from === "split-9.out2" && w.to.startsWith("lane-2."))).toBe(true);
+
+  const perChannel = (slots: number[]) =>
+    buildGraph({ systems: [nes(3)], routing: "stereo", shape: { kind: "perChannel" }, slots }).document;
+  const toOut = (d: { wires: { to: string }[] }) => d.wires.filter((w) => w.to.startsWith("out.")).length;
+  expect(toOut(perChannel([3]))).toBeGreaterThan(0);
+  expect(toOut(perChannel([3, 4]))).toBe(0);
+});

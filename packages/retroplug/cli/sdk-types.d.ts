@@ -449,7 +449,8 @@ export interface SystemsStore {
 export interface AudioDriver {
   /** Advance the render `ms` and return interleaved-stereo Float32 PCM @ 44100 (L,R,L,R…). */
   renderAudio(ms: number): Float32Array;
-  /** Advance `ms` and return EACH live system's own interleaved-stereo output, in project-slot order. */
+  /** Advance `ms` and return one interleaved-stereo buffer per project slot, in slot order: each live system's own
+   *  output, an empty slot's (a placeholder's) silent. */
   renderAudioPerSystem(ms: number): Float32Array[];
   /** Advance `ms` and return system `id`'s per-channel output: one interleaved-stereo buffer per stream
    *  in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty unless the project

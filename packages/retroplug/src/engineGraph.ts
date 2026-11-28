@@ -57,6 +57,7 @@ export class EngineGraph {
       routing: model.routing,
       midiRouting: model.midiRouting ?? null,
       models: { ...(model.models ?? {}) },
+      ...(model.slots ? { slots: model.slots.slice() } : {}),
     };
     return this.send(this.shape_, opts.rearmTap === true);
   }

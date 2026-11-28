@@ -103,8 +103,10 @@ g.__rp_syncLatencyMs = (): string => String(syncLatencyMs(project.systems.view()
 // from this map whenever it changes (spec/12-dynamic-parameters.md), so a DAW shows "PU1 Pulse Width"
 // instead of "CC 1". Polled by the plugin after each load, on activate, and from the editor's idle loop
 // (a ROM loaded through the UI never passes through setState); it re-declares only when the JSON moves.
+// Projected over every slot: a placeholder has no roles, so it claims no lane, and a system after it keeps the lanes
+// (and the pre-routing channel) it has where the pack is loaded, so a DAW's automation stays on its system.
 g.__rp_parameterMapJson = (): string =>
-  JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting, stores.registry));
+  JSON.stringify(projectParameterMap(project.systems.slotView(), project.settings().midiRouting, stores.registry));
 
 // What the packs' halves loaded and refused, for a test and Settings > Packs (M4).
 g.__rp_packStatus = packStatus;
