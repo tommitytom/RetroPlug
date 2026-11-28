@@ -29,7 +29,7 @@ inline constexpr std::chrono::seconds kHostReadyDeadline{10};
  *    pack module and the specifier, before txiki's import map is consulted. Every other module's imports go to txiki's
  *    normalizer and loader as before;
  *  - `globalThis.__rp_packList()` returns, as JSON, every pack of `table` with a half other than the native one: its
- *    id, version, half kinds, provides and requires, in load order;
+ *    id, name, version, half kinds, provides and requires, in load order;
  *  - `globalThis.__rp_packRefused(id, reason, skipLater)` records "pack <id> is refused: <reason>" in `table`'s
  *    refusals; with `skipLater` true the process also leaves the pack out of every later `__rp_packList` (a pack that ran
  *    past the load budget: the one refusal that costs time to repeat).

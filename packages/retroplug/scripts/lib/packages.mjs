@@ -851,6 +851,18 @@ function kindBlocks({ packages, kindDecls }) {
   return lines;
 }
 
+/** [id, name] for each package with a pack.json that names it, in product order. */
+function packNames(packages) {
+  const out = [];
+  for (const p of packages) {
+    const file = join(p.pkg.dir, "pack.json");
+    if (!existsSync(file)) continue;
+    const name = readJson(file).name;
+    if (typeof name === "string" && name !== "") out.push([p.pkg.name, name]);
+  }
+  return out;
+}
+
 function renderPackages({ packages, outDir, shellDir, names, product }) {
   const app = packages.filter((p) => p.app);
   // Each declaring package's kind module: the control-plane half's `accept` and `check`, imported rather than
@@ -915,6 +927,12 @@ function renderPackages({ packages, outDir, shellDir, names, product }) {
     "export const PACKAGE_IDS: readonly string[] = [",
     ...names.map((name) => `  ${JSON.stringify(name)},`),
     "];",
+    "",
+    "/** Each package's display name where its pack.json gives one (a package with none is named by its id): what a",
+    " *  saved project's provenance records for a built-in package (docs/downloadable-packs-m3-design.md section 4). */",
+    "export const PACKAGE_NAMES: Readonly<Record<string, string>> = {",
+    ...packNames(packages).map(([id, name]) => `  ${JSON.stringify(id)}: ${JSON.stringify(name)},`),
+    "};",
     "",
     "/** Each package's app contribution, in product order. */",
     "const APPS: readonly { pkg: string; app: PackageContributions }[] = [",

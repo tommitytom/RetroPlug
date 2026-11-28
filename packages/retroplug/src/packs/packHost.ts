@@ -24,6 +24,8 @@ export interface PackProtocol {
 /** A pack as its pack.json declares it: what the loader holds its halves to. */
 export interface PackInfo {
   readonly id: string;
+  /** pack.json's name: what a project's provenance and Settings > Packs call the pack (absent from a test's host). */
+  readonly name?: string;
   readonly version: string;
   /** Every half the manifest names but the native one. */
   readonly halves: readonly string[];

@@ -42,6 +42,11 @@ export const PACKAGE_IDS: readonly string[] = [
   "beta",
 ];
 
+/** Each package's display name where its pack.json gives one (a package with none is named by its id): what a
+ *  saved project's provenance records for a built-in package (docs/downloadable-packs-m3-design.md section 4). */
+export const PACKAGE_NAMES: Readonly<Record<string, string>> = {
+};
+
 /** Each package's app contribution, in product order. */
 const APPS: readonly { pkg: string; app: PackageContributions }[] = [
   { pkg: "alpha", app: app_alpha },

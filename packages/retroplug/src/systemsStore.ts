@@ -52,6 +52,7 @@ import {
   pickSiblingRom,
   nextFocusAfterRemove,
 } from "./systemsList";
+import type { Provenance } from "./provenance";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
 import type { Host } from "@retroplug/core/host";
@@ -459,6 +460,7 @@ export class SystemsStore {
       settings: { ...src.settings },
       roles: src.roles.map((r) => ({ kind: r.kind, config: { ...r.config } })),
       ...(src.savedOrder ? { savedOrder: [...src.savedOrder] } : {}),
+      ...(src.provenance ? { provenance: src.provenance } : {}),
     });
     if (!prepared) {
       console.warn(`[systems] duplicateSystem(${id}) failed (a resource would not put) - no instance added`);
@@ -1155,6 +1157,7 @@ export class SystemsStore {
       settings?: Partial<CommonSettings>;
       roles?: RoleInstance[];
       workingSlot?: TrackedSlot;
+      provenance?: Provenance;
     },
     // `song`: a working song the exported project was still carrying across a reboot (see
     // ProjectStore.buildArchive) - parked again on the adopted system, to land once its cart is up.
@@ -1251,6 +1254,7 @@ export class SystemsStore {
       roles,
       workingSlot: config.workingSlot ? { ...config.workingSlot } : undefined,
       ...(savedOrder ? { savedOrder } : {}),
+      ...(config.provenance ? { provenance: config.provenance } : {}),
     });
     if (!prepared) return null; // its LSDj capture, if any, comes with the document that places it
     // The stored core config stays as written, so the system node leaves out a value its node would refuse (or a

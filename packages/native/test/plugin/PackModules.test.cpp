@@ -126,8 +126,8 @@ TEST_CASE("the pack list and the refusal report", "[pack-modules]") {
     REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
     rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
     CHECK(readString(rt, "globalThis.__rp_packList()") ==
-          R"([{"id":"pmgood","version":"1.0.0","halves":["app","ui"],)"
-          R"("provides":{"platforms":[],"nodeTypes":[],"roles":[]},"requires":{"packs":[],"platforms":[]}}])");
+          R"json([{"id":"pmgood","name":"Pack modules fixture (good)","version":"1.0.0","halves":["app","ui"],)json"
+          R"json("provides":{"platforms":[],"nodeTypes":[],"roles":[]},"requires":{"packs":[],"platforms":[]}}])json");
     evalModule(rt, "globalThis.__rp_packRefused('pmgood', 'its app half failed');");
     REQUIRE(table.refusals().size() == 1);
     CHECK(table.refusals()[0].id == "pmgood");

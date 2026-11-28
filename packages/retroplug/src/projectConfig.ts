@@ -10,6 +10,7 @@
 // system-settings/kits domains land.
 
 import { inSavedOrder, type SystemEntry } from "./systemsList";
+import { provenanceOf, provenanceSchema, type Provenance } from "./provenance";
 import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { registeredCores, registeredPlatforms } from "./consoles";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
@@ -59,6 +60,8 @@ export interface SystemThin {
   settings?: Partial<CommonSettings>; // only non-default universal settings
   roles?: RoleInstance[]; // the generic roles (core-config + feature); absent = re-derive
   workingSlot?: { index: number; fingerprint: number; count?: number; above?: number }; // which saved slot a work-RAM working song is (smsggdj)
+  // Which package provided what it names (docs/downloadable-packs-m3-design.md section 4).
+  provenance?: Provenance;
 }
 
 export interface ProjectConfig {
@@ -377,6 +380,8 @@ const systemThinSchema = z.object({
     })
     .optional()
     .catch(undefined),
+  // Additive, so no migration: absent for a file saved before M3.
+  provenance: provenanceSchema.optional().catch(undefined),
 });
 
 // The root: schemaVersion coerced to a string; settings/systems validated separately
@@ -579,8 +584,16 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], n
       if (e.embeddedRom) t.embeddedRom = e.embeddedRom;
       const settings = thinSettings(e.settings);
       if (settings) t.settings = settings;
-      if (e.roles && e.roles.length) t.roles = inSavedOrder(e.roles, e.savedOrder);
+      const roles = inSavedOrder(e.roles ?? [], e.savedOrder);
+      if (roles.length) t.roles = roles;
       if (e.workingSlot) t.workingSlot = { ...e.workingSlot };
+      const provenance = provenanceOf({
+        platform: e.platform,
+        embeddedRom: e.embeddedRom,
+        roles,
+        provenance: e.provenance,
+      });
+      if (provenance) t.provenance = provenance;
       return t;
     }),
   };

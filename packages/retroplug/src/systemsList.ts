@@ -13,6 +13,7 @@ import type { TrackedSlot } from "@retroplug/tracker/songCatalog";
 import type { Platform, Core } from "./platform";
 import type { CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
+import type { Provenance } from "./provenance";
 import type { SystemResources } from "./graph/systemResources";
 
 /** The per-system record TS owns. `savSuffix` + `savPath` (an override, `""` when the
@@ -45,6 +46,9 @@ export interface SystemEntry {
    *  (SystemsStore.suggestedFirst), so the file keeps the order it had
    *  (docs/downloadable-packs-m3-design.md section 3). Absent: `roles` is that order. Not serialized. */
   savedOrder?: readonly number[];
+  /** The provenance the system was read with: what a save names for a role kind nothing registers now. Not
+   *  rewritten here; buildConfig writes a fresh one. */
+  provenance?: Provenance;
 }
 
 /** The live system with `id`, or undefined. */
