@@ -33,6 +33,8 @@ inline constexpr std::chrono::seconds kHostReadyDeadline{10};
  *  - `globalThis.__rp_packRefused(id, reason, skipLater)` records "pack <id> is refused: <reason>" in `table`'s
  *    refusals; with `skipLater` true the process also leaves the pack out of every later `__rp_packList` (a pack that ran
  *    past the load budget: the one refusal that costs time to repeat).
+ *  - `globalThis.__rp_packRefusals()` returns, as JSON, the table's refusals: each pack's id and reason, its folder's
+ *    version when the folder is `<id>/<version>`, and `needsUpdate` for a refusal of the API level;
  *  The table is the process's (processPacks) in every host, and must outlive the runtime. Calling it again on a
  *  context is harmless. The table is process-wide: a later call with another table points every context's loader at
  *  that table. */

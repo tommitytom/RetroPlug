@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -97,8 +98,16 @@ JSModuleDef* bareLoad(JSContext* ctx, const char* name, void*, JSValueConst) {
 std::string jsonString(const std::string& s) {
     std::string out = "\"";
     for (const char c : s) {
-        if (c == '"' || c == '\\') out += '\\';
-        out += c;
+        if (c == '"' || c == '\\') {
+            out += '\\';
+            out += c;
+        } else if (static_cast<unsigned char>(c) < 0x20) {
+            char buf[8];
+            std::snprintf(buf, sizeof buf, "\\u%04x", static_cast<unsigned>(static_cast<unsigned char>(c)));
+            out += buf;
+        } else {
+            out += c;
+        }
     }
     return out + "\"";
 }
@@ -168,6 +177,24 @@ JSValue packList(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_NewStringLen(ctx, out.data(), out.size());
 }
 
+// The table's refusals, as JSON: each pack's id, reason, its folder's version when the folder is <id>/<version>, and
+// whether it was refused for its API level (docs/downloadable-packs-m3-design.md section 5).
+JSValue packRefusals(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    std::string out = "[";
+    if (packs::PackTable* table = g_table.load()) {
+        bool first = true;
+        for (const packs::PackRefusal& r : table->refusals()) {
+            const std::string leaf = r.dir.filename().generic_string();
+            const std::string version = packs::isPackVersion(leaf) ? ",\"version\":" + jsonString(leaf) : std::string();
+            out += std::string(first ? "" : ",") + "{\"id\":" + jsonString(r.id) + ",\"reason\":" +
+                   jsonString(r.reason) + version + ",\"needsUpdate\":" + (r.needsUpdate ? "true" : "false") + "}";
+            first = false;
+        }
+    }
+    out += "]";
+    return JS_NewStringLen(ctx, out.data(), out.size());
+}
+
 JSValue packRefused(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     packs::PackTable* table = g_table.load();
     if (!table || argc < 2) return JS_UNDEFINED;
@@ -187,7 +214,8 @@ JSValue packRefused(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     return (id && reason) ? JS_UNDEFINED : JS_EXCEPTION;
 }
 
-// The frozen contracts object and the globals, once per context; `refusals` adds __rp_packRefused (txiki's hosts).
+// The frozen contracts object and the globals, once per context; `refusals` adds __rp_packRefused and
+// __rp_packRefusals (txiki's hosts).
 void installGlobals(JSContext* ctx, const rp_js_module* contracts, std::size_t count, bool refusals) {
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue mark = JS_GetPropertyStr(ctx, global, kContracts);
@@ -201,9 +229,12 @@ void installGlobals(JSContext* ctx, const rp_js_module* contracts, std::size_t c
         JS_FreezeObject(ctx, set);
         JS_DefinePropertyValueStr(ctx, global, kContracts, set, 0);
         JS_DefinePropertyValueStr(ctx, global, "__rp_packList", JS_NewCFunction(ctx, packList, "__rp_packList", 0), 0);
-        if (refusals)
+        if (refusals) {
             JS_DefinePropertyValueStr(ctx, global, "__rp_packRefused",
                                       JS_NewCFunction(ctx, packRefused, "__rp_packRefused", 2), 0);
+            JS_DefinePropertyValueStr(ctx, global, "__rp_packRefusals",
+                                      JS_NewCFunction(ctx, packRefusals, "__rp_packRefusals", 0), 0);
+        }
     }
     JS_FreeValue(ctx, global);
 }

@@ -201,6 +201,9 @@ export class SystemsStore {
    *  chain ends in does (remove, discard, clear), and the whole map is capped, because a session that resets one system
    *  a thousand times would otherwise keep a thousand dead ids. */
   private readonly replacedBy = new Map<number, number>();
+  /** Role kinds the engine answered unknown-type for (a pack it refused), with the planner's message: left out of the
+   *  graph until a commit (retryMissingRoles in the re-resolve). */
+  private readonly unplaceable = new Map<string, string>();
   // Working songs being carried across a reboot, keyed by the NEW system id - see carryWorkingSong.
   // No time budget: a carry is keyed by a system id, which dies with its system, so one that waits can
   // only ever land in the cart it was made for. (A budget used to drop it after ~15 s of UI frames, which
@@ -252,6 +255,39 @@ export class SystemsStore {
     return null;
   }
 
+  /** Leave role `kind` of system `id` out of the graph, as the engine cannot place its node (it answered unknown-type,
+   *  `reason`). True when that is new (the caller then sends the document again); false for a system with no such role,
+   *  or a kind already left out. */
+  leaveOut(id: number, kind: string, reason: string): boolean {
+    const e = findById(this.entries, id);
+    if (!e || !e.roles.some((r) => r.kind === kind) || this.unplaceable.has(kind)) return false;
+    this.unplaceable.set(kind, reason);
+    return true;
+  }
+
+  /** `roles` without the kinds the engine cannot place. */
+  private placeable(roles: readonly RoleInstance[]): RoleInstance[] {
+    return this.unplaceable.size ? roles.filter((r) => !this.unplaceable.has(r.kind)) : roles.slice();
+  }
+
+  /** The roles `e` stores that the graph cannot place: a kind nothing registers, or one the engine could not place;
+   *  each once, by the pack its provenance names (docs/downloadable-packs-m3-design.md section 2.3). */
+  private missingRolesOf(e: SystemEntry): PackNeed[] {
+    if (!this.registry) return [];
+    const out: PackNeed[] = [];
+    const seen = new Set<string>();
+    for (const r of e.roles) {
+      if (seen.has(r.kind)) continue;
+      seen.add(r.kind);
+      const pack = e.provenance?.roles?.[r.kind];
+      if (!this.registry.roleType(r.kind)) out.push(statusOf(needOf("role", r.kind, pack)));
+      else if (this.unplaceable.has(r.kind)) {
+        out.push(statusOf(needOf("role", r.kind, pack), this.unplaceable.get(r.kind), true));
+      }
+    }
+    return out;
+  }
+
   /** Snapshot for the UI, with live focus + missing flags. */
   view(): SystemView[] {
     return this.entries.map((e) => ({
@@ -268,7 +304,8 @@ export class SystemsStore {
       missing: e.romPath !== "" && e.embeddedRom === "" && !this.backend.fileExists(e.romPath),
       settings: e.settings ?? DEFAULT_COMMON_SETTINGS,
       roles: e.roles ?? [],
-      placed: placedKinds(e.roles ?? []),
+      placed: placedKinds(this.placeable(e.roles ?? [])),
+      ...((m) => (m.length ? { missingRoles: m } : {}))(this.missingRolesOf(e)),
     }));
   }
 
@@ -429,7 +466,7 @@ export class SystemsStore {
         exportMode: exportModeOf(type, coreConfig),
         resources: e.resources,
         romName: e.romName,
-        pipeline: protocolPipeline(e.roles),
+        pipeline: protocolPipeline(this.placeable(e.roles)),
         gainDb: e.settings.gainDb,
       };
       return coreConfig ? { ...system, coreConfig } : system;

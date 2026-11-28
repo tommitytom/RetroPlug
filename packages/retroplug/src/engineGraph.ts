@@ -12,6 +12,7 @@
 // document plans, even a shape change to the current shape is sent.
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "./graph/buildGraph";
 import { toGraphJson } from "@retroplug/core/graphDocument";
+import { noteEngineRefusals } from "./packs/refusals";
 import type { Backend, GraphError, SetGraphRequest, SetGraphResult } from "./backend";
 
 export type GraphBackend = Pick<Backend, "setGraph">;
@@ -136,6 +137,7 @@ export class EngineGraph {
         this.notPlanned(rearm);
         throw e;
       }
+      if (result.refusedPacks) noteEngineRefusals(result.refusedPacks);
       if (!result.ok) {
         for (const e of result.errors) {
           const at = e.nodeId ? ` at ${e.nodeId}${e.port ? "." + e.port : ""}` : "";

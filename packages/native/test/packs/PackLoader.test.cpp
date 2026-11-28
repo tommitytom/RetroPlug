@@ -182,6 +182,7 @@ TEST_CASE("a pack requiring a platform loads after the pack that provides it, wh
 TEST_CASE("a pack whose requirement is not loaded is refused, naming it", "[packs-loader]") {
     PackTable table(rp::graph::productPackages());
     checkRefused(table, "packfixture-dependent", "requires pack packfixture, which is not loaded");
+    CHECK_FALSE(table.refusals().back().needsUpdate);
     // Through loadAll too: it waits for a pack that never comes, then is refused.
     const auto loads = table.loadAll({{fixture("packfixture-dependent")}});
     CHECK(loads.loaded.empty());
@@ -195,9 +196,11 @@ TEST_CASE("a pack built for another API level is refused, saying which side is o
     checkRefused(table, "packfixture-api-newer",
                  "is built for API level " + std::to_string(RP_API_LEVEL + 1) + ", and this RetroPlug is level " +
                      std::to_string(RP_API_LEVEL) + ": update RetroPlug");
+    CHECK(table.refusals().back().needsUpdate);
     checkRefused(table, "packfixture-api-older",
                  "is built for API level " + std::to_string(RP_API_LEVEL - 1) + ", and this RetroPlug is level " +
                      std::to_string(RP_API_LEVEL) + ": update the pack");
+    CHECK(table.refusals().back().needsUpdate);
     // A manifest of another level is judged on its level alone: whatever else it changed (a half this host has no word
     // for, a member of another shape) must not hide the advice.
     {
@@ -220,6 +223,7 @@ TEST_CASE("a pack built for another API level is refused, saying which side is o
     checkRefused(table, "packfixture-api-mismatch",
                  "'s library reports API level " + std::to_string(RP_API_LEVEL + 1) + ", and this RetroPlug is level " +
                      std::to_string(RP_API_LEVEL) + ": update RetroPlug");
+    CHECK(table.refusals().back().needsUpdate);
 }
 
 TEST_CASE("a pack whose library is missing or exports no entry is refused", "[packs-loader]") {

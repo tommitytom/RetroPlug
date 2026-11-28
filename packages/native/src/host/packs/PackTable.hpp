@@ -103,7 +103,7 @@ public:
 private:
     PackLoad loadLocked(const PackCandidate& offered);
     PackLoad refuse(const PackCandidate& candidate, std::string id, std::string reason,
-                    std::shared_ptr<FileLock> hold);
+                    std::shared_ptr<FileLock> hold, bool needsUpdate = false);
 
     std::vector<const rp_package*>           builtIns_;
     std::filesystem::path                    dataRoot_;

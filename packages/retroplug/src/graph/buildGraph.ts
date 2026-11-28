@@ -140,7 +140,8 @@ const MIDI_ROUTE = "rp.midi.route";
 export const systemNodeId = (id: number): string => `sys-${id}`;
 
 /** A system's protocol node: sys-<id>/<role-kind>, the main design's convention. */
-const protocolId = (system: number, kind: string): string => `${systemNodeId(system)}/${kind}`;
+/** A role node's id in the document: `sys-<id>/<kind>`, and its second node's is that with `/out`. */
+export const protocolId = (system: number, kind: string): string => `${systemNodeId(system)}/${kind}`;
 
 /** The rp.n8.nes node a system is driven by: cart-<id>, so the node a document places for a system is derivable from
  *  the system's id alone (the UI stages a settings message at it, and reads its capabilities, without the document). */

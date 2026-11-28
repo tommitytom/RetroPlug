@@ -18,7 +18,9 @@
 #include "graph/Packages.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/packs/PackTable.hpp"
+#include "host/engine/EngineInvoker.hpp"
 #include "host/packs/ProcessPacks.hpp"
+#include "host/rpc/EngineRpcService.hpp"
 
 // The fixture's types as this binary links them (retroplug-packfixture-nodes), beside the module's own copy.
 extern "C" const rp_package* rp_packfixture_package(void);
@@ -118,6 +120,28 @@ TEST_CASE("an Engine that already holds a pack's type refuses the whole pack, an
     CHECK(other.refusedPacks().empty());
     CHECK(firstSample(holder) == 0.5f);
     CHECK(firstSample(other) == 0.5f);
+}
+
+TEST_CASE("every setGraph answer over the RPC layer names the packs its Engine refused, with why", "[packs-engines]") {
+    PackTable table(rp::graph::productPackages());
+    Engine holder(kRate, table);
+    REQUIRE(holder.addNodePackage(rp_packfixture_package()));
+    REQUIRE(table.load(fixture("packfixture")));
+    QueuedInvoker invoker(holder);
+    EngineRpcService rpc(holder, invoker);
+    const Engine::GraphRequest doc = toneDocument(0.5f);
+    const RpcSetGraphResult answer = rpc.setGraph(RpcSetGraphRequest{doc.document, {}, std::nullopt});
+    CHECK(answer.ok);
+    REQUIRE(answer.refusedPacks.size() == 1);
+    CHECK(answer.refusedPacks[0].id == "packfixture");
+    CHECK_FALSE(answer.refusedPacks[0].reason.empty());
+    CHECK(answer.refusedPacks[0].reason == holder.refusalReason("packfixture"));
+    // A refused document answers with them too.
+    const std::string bad = R"({"nodes":[{"id":"x","type":"rp.no.such"}],"wires":[]})";
+    const RpcSetGraphResult refused = rpc.setGraph(RpcSetGraphRequest{bad, {}, std::nullopt});
+    CHECK_FALSE(refused.ok);
+    REQUIRE(refused.refusedPacks.size() == 1);
+    CHECK(refused.refusedPacks[0].id == "packfixture");
 }
 
 TEST_CASE("a pack of two packages whose second clashes in an Engine registers neither there", "[packs-engines]") {

@@ -519,6 +519,108 @@ test("a load's retry drops a system whose protocol node the refusal names, and p
   expect(warnings.some((w) => w.includes("the engine refused it, so the project loads without it"))).toBe(true);
 });
 
+test("a role whose node type the engine does not have is left out, its system placed, and the role kept", () => {
+  // docs/downloadable-packs-m3-design.md section 2.3: an unknown-type naming a role's node is a missing role, not a
+  // discarded system. The engine here refuses any document placing an lsdj-sync node, as one whose pack it refused
+  // would.
+  const { be, p, sys } = project();
+  const lsdj = sys.addSystem("/roms/lsdj.gb")!;
+  sys.setRoleConfig(lsdj, "lsdj-sync", { mode: LsdjSyncMode.MidiSync });
+  const bytes = p.exportBytes()!;
+  const before = sys.view()[0].roles.map((r) => r.kind);
+  const setGraph = be.setGraph.bind(be);
+  be.setGraph = (request) => {
+    const doc = JSON.parse(request.document) as GraphDocument;
+    const role = doc.nodes.find((n) => /^sys-\d+\/lsdj-sync$/.test(n.id));
+    if (role) {
+      be.graphRequests.push(request);
+      return {
+        ok: false,
+        errors: [
+          { nodeId: role.id, port: "", code: "unknown-type", message: `no node type "${role.type}" is registered` },
+        ],
+      };
+    }
+    return setGraph(request);
+  };
+  const { result, warnings } = warned(() => p.loadBytes(bytes, "/"));
+  // The export wrote the role's provenance (the lsdj package), so the need names it; its reason is the planner's.
+  const why = 'no node type "rp.lsdj.sync" is registered';
+  expect(result).toEqual({
+    kind: "loaded",
+    systems: 1,
+    missingPacks: [{ id: "lsdj", name: "lsdj", status: "refused", reason: why, systems: 0, roles: 1 }],
+  });
+  const [view] = sys.view();
+  expect(view.roles.some((r) => r.kind === "lsdj-sync")).toBe(true); // kept in the config, at its position
+  expect(view.placed.includes("lsdj-sync")).toBe(false);
+  expect(view.missingRoles?.map((n) => [n.key, n.status])).toEqual([["lsdj-sync", "refused"]]);
+  expect(be.lastDocument()!.nodes.some((n) => n.id === `sys-${view.id}`)).toBe(true); // the system runs
+  expect(warnings.some((w) => w.includes("loads without it"))).toBe(false);
+  // An edit publishes without it too, and a save keeps it.
+  expect(sys.setRoleConfig(view.id, "lsdj-sync", { mode: LsdjSyncMode.MidiMap })).toBe(true);
+  be.setGraph = setGraph;
+  expect(p.save("/proj/left-out.rplg")).toBe(true);
+  const saved = JSON.parse(new TextDecoder().decode(be.readFile("/proj/left-out.rplg")!)) as {
+    systems: { roles: { kind: string }[] }[];
+  };
+  expect(saved.systems[0].roles.some((r) => r.kind === "lsdj-sync")).toBe(true);
+  // Kept at its position: the saved order is the order the roles stood in before the load.
+  expect(saved.systems[0].roles.map((r) => r.kind)).toEqual(before);
+});
+
+test("a role left out for the first time on an edit is marked, and the edit still publishes the system", () => {
+  const { be, sys } = project();
+  const lsdj = sys.addSystem("/roms/lsdj.gb")!;
+  const before = sys.view()[0].roles.map((r) => r.kind);
+  expect(sys.view()[0].placed.includes("lsdj-sync")).toBe(true); // placed: the document planned at first
+  const setGraph = be.setGraph.bind(be);
+  be.setGraph = (request) => {
+    const doc = JSON.parse(request.document) as GraphDocument;
+    const role = doc.nodes.find((n) => /^sys-\d+\/lsdj-sync$/.test(n.id));
+    if (!role) return setGraph(request);
+    be.graphRequests.push(request);
+    return { ok: false, errors: [{ nodeId: role.id, port: "", code: "unknown-type", message: "no such node" }] };
+  };
+  expect(sys.setRoleConfig(lsdj, "lsdj-sync", { mode: LsdjSyncMode.MidiMap })).toBe(true);
+  be.setGraph = setGraph;
+  const [view] = sys.view();
+  expect(view.roles.map((r) => r.kind)).toEqual(before);
+  expect(view.placed.includes("lsdj-sync")).toBe(false);
+  expect(view.missingRoles?.map((n) => [n.key, n.status, n.reason])).toEqual([["lsdj-sync", "refused", "no such node"]]);
+  expect(be.lastDocument()!.nodes.some((n) => n.id === `sys-${lsdj}`)).toBe(true);
+});
+
+test("a stored role kind nothing registers is a missing role of a live system", () => {
+  const { sys } = project();
+  const id = sys.adopt({ romPath: "/roms/a.gb", roles: [{ kind: "sameboy", config: {} }, { kind: "ghost", config: {} }] });
+  expect(id !== null).toBe(true);
+  const [view] = sys.view();
+  expect(view.roles.some((r) => r.kind === "ghost")).toBe(true);
+  expect(view.missingRoles?.map((n) => [n.what, n.key, n.status])).toEqual([["role", "ghost", "missing"]]);
+});
+
+test("an unknown-type naming the node of a kind that holds a slash leaves that role out", () => {
+  const { be, sys } = project();
+  const setGraph = be.setGraph.bind(be);
+  let refused = false;
+  be.setGraph = (request) => {
+    const slots = request.slots;
+    if (!refused && slots.length > 0) {
+      refused = true;
+      be.graphRequests.push(request);
+      return { ok: false, errors: [{ nodeId: `sys-${slots[0]}/odd/kind/out`, port: "", code: "unknown-type", message: "x" }] };
+    }
+    return setGraph(request);
+  };
+  const id = sys.adopt({ romPath: "/roms/a.gb", roles: [{ kind: "sameboy", config: {} }, { kind: "odd/kind", config: {} }] });
+  be.setGraph = setGraph;
+  expect(id !== null).toBe(true);
+  expect(refused).toBe(true);
+  expect(sys.view()[0].missingRoles?.map((n) => n.key)).toEqual(["odd/kind"]);
+  expect(be.lastDocument()!.nodes.some((n) => n.id === `sys-${id}`)).toBe(true);
+});
+
 test("a load whose final publish throws still tells the observers once", () => {
   const { be, p, sys } = project();
   sys.addSystem("/roms/a.gb");

@@ -137,6 +137,30 @@ TEST_CASE("the pack list and the refusal report", "[pack-modules]") {
     CHECK(readString(rt, "Object.keys(globalThis).includes('__rp_packContracts')") == "false");
 }
 
+TEST_CASE("the refusal list carries each refusal's reason, its folder's version and its API-level flag",
+          "[pack-modules]") {
+    PackTable table;
+    table.recordRefusal({"pmold", fs::path("/packs/pmold/1.2.0"), "pack pmold is built for API level 1", true});
+    table.recordRefusal({"pmplain", fs::path("/dev/pmplain"), "pack pmplain has no library", false});
+    Runtime rt;
+    REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
+    rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
+    CHECK(readString(rt, "globalThis.__rp_packRefusals()") ==
+          R"([{"id":"pmold","reason":"pack pmold is built for API level 1","version":"1.2.0","needsUpdate":true},)"
+          R"({"id":"pmplain","reason":"pack pmplain has no library","needsUpdate":false}])");
+}
+
+TEST_CASE("the refusal list escapes a control character in a reason", "[pack-modules]") {
+    PackTable table;
+    table.recordRefusal({"pmctl", fs::path("/dev/pmctl"), std::string("a\nb\t\"c\"\\d"), false});
+    Runtime rt;
+    REQUIRE(rp::host::registerSharedModules(rt.ctx(), rp_fx_modules, rp_fx_modules_count).empty());
+    rp::host::installPackLoader(rt.ctx(), table, rp_fx_modules, rp_fx_modules_count);
+    CHECK(readString(rt, "globalThis.__rp_packRefusals()") ==
+          R"json([{"id":"pmctl","reason":"a\u000ab\u0009\"c\"\\d","needsUpdate":false}])json");
+    CHECK(readString(rt, "JSON.parse(globalThis.__rp_packRefusals())[0].reason") == "a\nb\t\"c\"\\d");
+}
+
 TEST_CASE("a runtime freed with a pack half still pending frees cleanly", "[pack-modules]") {
     PackTable table;
     REQUIRE(table.load(fixture("pmpending")));

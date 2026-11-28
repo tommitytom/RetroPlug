@@ -4,6 +4,7 @@
 // shell names no pack, platform or kind: every string the UI shows is built here from a need.
 import type { PackRef } from "../provenance";
 import type { SystemView } from "../systemsStore";
+import { engineRefusals, nativeRefusals, tsRefusals } from "./refusals";
 
 export type NeedWhat = "platform" | "core" | "embed" | "role" | "rom";
 
@@ -26,10 +27,31 @@ export function needOf(what: NeedWhat, key: string, pack?: PackRef): PackNeed {
   return pack ? { what, key, pack, status: "missing" } : { what, key, status: "missing" };
 }
 
-/** `need` with its status as the packs stand now. (Refusals are read here from the refusal sources, see
- *  src/packs/refusals.ts.) */
-export function statusOf(need: PackNeed): PackNeed {
-  return need;
+/** `need` with its status as the packs stand now: refused (with the reason, and the refused folder's version) when its
+ *  pack was refused natively, in TS or by this context's Engine; else refused with `fallback` when the caller has a
+ *  reason of its own (a role node the engine could not place); else missing. `engineOnly` skips the native and TS refusals. A "rom" need names no pack, so it is left
+ *  as it is. */
+export function statusOf(need: PackNeed, fallback?: string, engineOnly = false): PackNeed {
+  if (need.what === "rom") return need;
+  if (engineOnly) {
+    // A role the engine could not place is one TS registered, so its pack loaded: a native or TS refusal under its id
+    // belongs to another folder or predates a live load, and only the Engine's reason (then the planner's) applies.
+    // The re-resolve that follows a later load is where those stale entries get cleared.
+    const reason = (need.pack ? engineRefusals().get(need.pack.id) : undefined) ?? fallback;
+    const base = need.pack ? needOf(need.what, need.key, need.pack) : needOf(need.what, need.key);
+    return reason !== undefined ? { ...base, status: "refused", reason } : base;
+  }
+  const base: PackNeed = need.pack
+    ? { what: need.what, key: need.key, pack: need.pack, status: "missing" }
+    : needOf(need.what, need.key);
+  const id = need.pack?.id;
+  const n = id ? nativeRefusals().get(id) : undefined;
+  if (n && need.pack) {
+    const pack = n.version !== undefined ? { ...need.pack, version: n.version } : need.pack;
+    return { ...base, pack, status: "refused", reason: n.reason, ...(n.needsUpdate ? { needsUpdate: true } : {}) };
+  }
+  const reason = (id ? (tsRefusals().get(id) ?? engineRefusals().get(id)) : undefined) ?? fallback;
+  return reason !== undefined ? { ...base, status: "refused", reason } : base;
 }
 
 /** One pack (or, with no provenance, one platform or kind) a project needs, and what it covers. */

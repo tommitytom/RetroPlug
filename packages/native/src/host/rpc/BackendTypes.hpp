@@ -88,7 +88,10 @@ struct RpcSetGraphRequest {
     std::optional<RpcTapRequest> tap;
 };
 struct RpcGraphError { std::string nodeId; std::string port; std::string code; std::string message; };
-struct RpcSetGraphResult { bool ok; std::vector<RpcGraphError> errors; };
+// A pack this Engine refused (Engine::refusedPacks), with why: every setGraph answer lists them, so TS learns of an
+// Engine's refusal in the answer to the first document that named its node (docs/downloadable-packs-m3-design.md 5).
+struct RpcRefusedPack { std::string id; std::string reason; };
+struct RpcSetGraphResult { bool ok; std::vector<RpcGraphError> errors; std::vector<RpcRefusedPack> refusedPacks; };
 
 // loadScriptPack (docs/modular-graph-phase-c1-design.md section 7): a pack of script node types, by its id, its source
 // (global code, as Engine::loadScriptPack takes it) and the memory limit each of its runtimes is held to, in bytes,

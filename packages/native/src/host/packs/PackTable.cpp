@@ -248,7 +248,7 @@ LoadReport PackTable::loadAll(const std::vector<PackCandidate>& candidates) {
 }
 
 PackLoad PackTable::refuse(const PackCandidate& candidate, std::string id, std::string reason,
-                           std::shared_ptr<FileLock> hold) {
+                           std::shared_ptr<FileLock> hold, bool needsUpdate) {
     if (id.empty()) id = candidate.id;
     // An installed folder is packs/<id>/<version>, and a development one often is (build/packs/<id>/<version>): before
     // its manifest parses, its pack is named by its folder, which is the parent when the folder is a version.
@@ -260,7 +260,7 @@ PackLoad PackTable::refuse(const PackCandidate& candidate, std::string id, std::
     }
     // One hold per folder, however often a load of it is retried and refused.
     if (hold) folderHolds_.emplace(canonicalOr(candidate.dir), std::move(hold));
-    refusals_.push_back({id, candidate.dir, reason});
+    refusals_.push_back({id, candidate.dir, reason, needsUpdate});
     return PackLoad{nullptr, std::move(reason)};
 }
 
@@ -289,8 +289,8 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     // A refusal keeps the folder's hold only once the pack's library is open: until then nothing of the folder is
     // mapped, and the hold goes with the refusal.
     bool opened = false;
-    const auto refuseHere = [&](std::string id, std::string reason) {
-        return refuse(candidate, std::move(id), std::move(reason), opened ? hold : nullptr);
+    const auto refuseHere = [&](std::string id, std::string reason, bool needsUpdate = false) {
+        return refuse(candidate, std::move(id), std::move(reason), opened ? hold : nullptr, needsUpdate);
     };
 
     auto manifest = readPackManifest(candidate.dir, &why, RP_API_LEVEL);
@@ -302,7 +302,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
     if (manifest->apiLevel != RP_API_LEVEL)
         return refuseHere(id, pack + " is built for API level " + std::to_string(manifest->apiLevel) +
                                   ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) + ": " +
-                                  levelAdvice(manifest->apiLevel));
+                                  levelAdvice(manifest->apiLevel), true);
 
     // An installed pack is packs/<id>/<version>/: anything else is a folder state.json does not describe.
     if (candidate.origin == PackOrigin::Installed &&
@@ -381,7 +381,7 @@ PackLoad PackTable::loadLocked(const PackCandidate& offered) {
         if (level != RP_API_LEVEL)
             return refuseHere(id, pack + "'s library reports API level " + std::to_string(level) +
                                       ", and this RetroPlug is level " + std::to_string(RP_API_LEVEL) + ": " +
-                                      levelAdvice(level));
+                                      levelAdvice(level), true);
         if (list == nullptr || count == 0) return refuseHere(id, pack + "'s library registers no package");
         loaded->packages.assign(list, list + count);
     }

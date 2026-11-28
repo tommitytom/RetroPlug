@@ -14,6 +14,7 @@
 //     loads back through the same scan/relink tail, its blobs seeding each system.
 
 import type { ControlPlaneBackend, GraphError, ZipEntry } from "./backend";
+import { protocolId } from "./graph/buildGraph";
 import { SystemsStore } from "./systemsStore";
 import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
@@ -288,19 +289,38 @@ export class ProjectStore {
   // changes what the graph places for a system, and the settings the script nodes read (the MIDI routing, the
   // controller) publish it themselves. An edit that changes none of it sends nothing (the graph's dedupe).
   // `rearmTap` re-arms the NES tap, as every edit that builds or drops a core does. A load holds it back while it
-  // adopts (holdGraph), then publishes once.
+  // adopts (holdGraph), then publishes once. A role node the engine cannot place is left out and the rest sent again.
   private publishGraph(rearmTap: boolean): boolean {
     if (this.holdGraph) return true;
-    return this.graph.publish(
-      {
-        systems: this.systems.graphSystems(),
-        slots: this.systems.graphSlots(),
-        routing: this.projectSettings.audioRouting,
-        midiRouting: this.projectSettings.midiRouting,
-        models: this.graphModels(),
-      },
-      { rearmTap },
-    );
+    for (;;) {
+      const planned = this.graph.publish(
+        {
+          systems: this.systems.graphSystems(),
+          slots: this.systems.graphSlots(),
+          routing: this.projectSettings.audioRouting,
+          midiRouting: this.projectSettings.midiRouting,
+          models: this.graphModels(),
+        },
+        { rearmTap },
+      );
+      if (planned) return true;
+      // A role node whose type the engine does not have (a pack it refused, or one no build of it carries) is a
+      // missing role, not a refused system (docs/downloadable-packs-m3-design.md section 2.3): it is left out and the
+      // document sent again, for a load and an edit alike. Each pass leaves out at least one more kind, so this ends.
+      let more = false;
+      for (const error of this.graph.lastErrors) {
+        if (error.code !== "unknown-type") continue;
+        // The node's id is matched against each system's own roles (a kind may hold a "/"), as buildGraph names it.
+        for (const e of this.systems.systems()) {
+          for (const r of e.roles) {
+            const id = protocolId(e.id, r.kind);
+            if (error.nodeId !== id && error.nodeId !== `${id}/out`) continue;
+            if (this.systems.leaveOut(e.id, r.kind, error.message)) more = true;
+          }
+        }
+      }
+      if (!more) return false;
+    }
   }
 
   /** The services' models, by key: what the graph placers place (docs/modular-graph-phase-f5a-design.md section 6.3).

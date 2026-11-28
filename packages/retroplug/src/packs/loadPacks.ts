@@ -18,6 +18,7 @@ import type { ConsoleDescriptor, ConsolesContribution } from "@retroplug/core/co
 import { placersRegistry } from "../contributions/placers";
 import type { GraphPlacer } from "@retroplug/core/placer";
 import { nativePackHost, type HalfKind, type PackHost, type PackInfo, type PackProtocol } from "./packHost";
+import { engineRefusals, nativeRefusals, noteTsRefusal, type NativeRefusal } from "./refusals";
 import { protocolAdditions } from "./protocolHalf";
 import { kindAdditions, kindsAdded, packKindItems, type PackKindItems } from "./kindsHalf";
 
@@ -132,11 +133,19 @@ export const APP_BUILDERS: Partial<Record<HalfKind, HalfBuilder>> = {
 const loaded = new Map<string, Set<HalfKind>>();
 const refused = new Map<string, string>();
 
-/** What this module set loaded and refused: each pack's halves, and each refused pack's reason. */
-export function packStatus(): { loaded: Record<string, HalfKind[]>; refused: Record<string, string> } {
+/** What this module set loaded and refused: each pack's halves, and each refused pack's reason; the native table's
+ *  refusals and this context's Engine's beside them (docs/downloadable-packs-m3-design.md section 5). */
+export function packStatus(): {
+  loaded: Record<string, HalfKind[]>;
+  refused: Record<string, string>;
+  native: Record<string, NativeRefusal>;
+  engine: Record<string, string>;
+} {
   return {
     loaded: Object.fromEntries([...loaded].map(([id, halves]) => [id, [...halves]])),
     refused: Object.fromEntries(refused),
+    native: Object.fromEntries(nativeRefusals()),
+    engine: Object.fromEntries(engineRefusals()),
   };
 }
 
@@ -145,6 +154,7 @@ class BudgetError extends Error {}
 
 function refuse(host: PackHost, id: string, reason: string, skipLater = false): void {
   refused.set(id, reason);
+  noteTsRefusal(id, reason);
   console.warn(`[packs] pack ${id} is refused: ${reason}`);
   try {
     host.refuse(id, reason, skipLater);

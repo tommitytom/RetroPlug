@@ -828,6 +828,9 @@ export interface GraphError {
 export interface SetGraphResult {
   ok: boolean;
   errors: GraphError[];
+  /** The packs this Engine refused, with why, on every answer (docs/downloadable-packs-m3-design.md section 5). Absent
+   *  from a mock. */
+  refusedPacks?: { id: string; reason: string }[];
 }
 
 /** A pack of script node types for `loadScriptPack`: its id, its source (global code) and the memory limit each of its

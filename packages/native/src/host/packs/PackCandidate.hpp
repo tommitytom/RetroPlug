@@ -29,6 +29,7 @@ struct PackRefusal {
     std::string           id;  // the manifest's id, else the candidate's, else the pack's folder name (or "state.json")
     std::filesystem::path dir;
     std::string           reason;
+    bool needsUpdate = false;  // refused for its API level: the pack (or RetroPlug) needs updating
 };
 
 }  // namespace rp::host::packs
