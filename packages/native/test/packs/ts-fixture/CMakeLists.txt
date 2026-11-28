@@ -4,6 +4,7 @@
 # tsfix-render  an app half whose role every ROM gets, which a render's console shows
 # tsfix-proto   an app, a protocol and a placer half (a role placed as a script node)
 # tsfix-kind    an app half and a kinds half (a controller app's runtime)
+# tsfix-proto-kind  an app, a protocol and a kinds half: an Engine refuses it when it is loaded live
 # Every staged folder is claimed once (cmake/packs.cmake's RP_PACK_STAGED), so two fixtures cannot stage one id: a second
 # claim is a configure error here, as retroplug_pack_module's is.
 function(_tsfix_claim id)
@@ -99,7 +100,8 @@ add_custom_target(retroplug-ts-fixture-packs DEPENDS "${_tsfix_out}/pack.json" $
                   "${_tsp_out}/pack.json" ${_tsp_halves}
                   "${_tsk_out}/pack.json" ${_tsk_halves})
 
-foreach(_v tsfix-throws tsfix-guard tsfix-undeclared tsfix-cliclash tsfix-dependent tsfix-protocol tsfix-proto-ports)
+foreach(_v tsfix-throws tsfix-guard tsfix-undeclared tsfix-cliclash tsfix-dependent tsfix-protocol tsfix-proto-ports
+        tsfix-proto-kind)
     _tsfix_claim(${_v})
     configure_file("${_tsfix_dir}/variants/${_v}/pack.json.in" "${RP_PACKS_DIR}/${_v}/1.0.0/pack.json" @ONLY)
     file(GLOB _v_js RELATIVE "${_tsfix_dir}/variants/${_v}" CONFIGURE_DEPENDS "${_tsfix_dir}/variants/${_v}/js/*.js")

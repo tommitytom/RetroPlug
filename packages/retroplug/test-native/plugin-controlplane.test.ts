@@ -9,6 +9,7 @@ import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 import { createAudioDriver } from "../src/audioDriver";
 import "../src/pluginControlPlane"; // side-effect: compose the control plane + define the __rp_* globals
+import { b64encode, b64decode } from "../src/base64";
 import { lsdjRom } from "../test/systems/fixtures";
 import type { AppStores } from "../src/appStores";
 
@@ -121,4 +122,39 @@ test("a render listed for a system leaves the list when the plugin's own wiring 
     ns.setUiNotify(null);
     backend.engineRun = real;
   }
+});
+
+test("getState after opening a project with a placeholder writes it back, and its slot keeps the DAW's lanes", () => {
+  // docs/downloadable-packs-m3-design.md sections 1 and 3: the DPF state chunk goes through the same save path, so a
+  // DAW save keeps a system whose pack is missing (no package provides the platform below); and the placeholder holds
+  // slot 0, so the mGB after it keeps slot 1's automation lanes, as it has where the pack is loaded.
+  const be = createRealBackend();
+  const held = {
+    platform: "m3-plugin-missing",
+    core: "m3-plugin-core",
+    romPath: "/nowhere/song.m3p",
+    futureField: [1, 2],
+  };
+  const doc = {
+    schemaVersion: "4",
+    settings: { midiRouting: "midiChannelToInstance" },
+    systems: [held, { platform: "gb", core: "sameboy", embeddedRom: "mgb" }],
+  };
+  const chunk = be.zip([
+    { name: "project.json", bytes: new TextEncoder().encode(JSON.stringify(doc)) },
+    { name: "systems/0/sram", bytes: new Uint8Array([5, 4, 3, 2, 1]) },
+  ])!;
+  const loadB64 = g.__rp_loadProjectB64 as (b: string) => boolean;
+  const saveB64 = g.__rp_saveProjectB64 as () => string;
+  expect(loadB64(b64encode(chunk))).toBeTruthy();
+  const lanes = JSON.parse((g.__rp_parameterMapJson as () => string)()) as { slot: number; channel: number }[];
+  expect(lanes.length > 0).toBe(true);
+  expect(lanes.every((l) => l.slot >= 160 && l.slot < 320 && l.channel === 1)).toBe(true); // CC_SLOTS_PER_SYSTEM
+  const entries = be.unzip(b64decode(saveB64()))!;
+  const project = JSON.parse(new TextDecoder().decode(entries.find((e) => e.name === "project.json")!.bytes)) as {
+    systems: unknown[];
+  };
+  expect(project.systems[0]).toEqual(held);
+  expect(entries.find((e) => e.name === "systems/0/sram")?.bytes).toEqual(new Uint8Array([5, 4, 3, 2, 1]));
+  (g.__rp_newProject as () => void)();
 });

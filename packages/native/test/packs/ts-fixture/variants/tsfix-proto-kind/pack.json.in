@@ -1,0 +1,13 @@
+{
+  "id": "tsfix-proto-kind", "name": "TS fixture variant tsfix-proto-kind", "version": "1.0.0",
+  "apiLevel": @RP_API_LEVEL@,
+  "license": "MIT", "source": "packages/native/test/packs/ts-fixture",
+  "requires": { "packs": [], "platforms": [] },
+  "provides": { "platforms": [], "nodeTypes": ["rp.tsfix-proto-kind.echo"], "roles": ["tsfix-proto-kind"] },
+  "halves": { "app": "js/app.js", "protocol": "js/protocol.js", "kinds": "js/kinds.js" },
+  "protocol": {
+    "nodes": [{ "type": "rp.tsfix-proto-kind.echo", "midiIn": "in", "writes": [], "midiOut": true }],
+    "roles": { "tsfix-proto-kind": "rp.tsfix-proto-kind.echo" }
+  },
+  "kinds": { "controllerApps": [{ "id": "tsfix-proto-kind-app" }] }
+}
