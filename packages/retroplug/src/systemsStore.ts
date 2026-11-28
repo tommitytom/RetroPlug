@@ -458,6 +458,7 @@ export class SystemsStore {
       battery: src.battery, // the same source, read again
       settings: { ...src.settings },
       roles: src.roles.map((r) => ({ kind: r.kind, config: { ...r.config } })),
+      ...(src.savedOrder ? { savedOrder: [...src.savedOrder] } : {}),
     });
     if (!prepared) {
       console.warn(`[systems] duplicateSystem(${id}) failed (a resource would not put) - no instance added`);
@@ -1190,9 +1191,21 @@ export class SystemsStore {
     const notes: string[] = [];
     const suggested = this.defaultRoles(core, platform, romPath, embeddedRom);
     const stored = config.roles?.length ? this.parsedForTheirNodes(config.roles, core, suggested, rom, notes) : null;
-    const roles = stored
-      ? this.suggestedFirst(this.withMissingFeatureRoles(stored, core, suggested, romPath, embeddedRom), suggested)
-      : suggested;
+    // The order a save writes is the file's (docs/downloadable-packs-m3-design.md section 3): suggestedFirst moves a
+    // role ahead for the pipeline and the tracker lookup, and savedOrder puts each role back where the file had it (a
+    // role the load appended goes after the stored ones, where it was appended).
+    const ordered = stored
+      ? this.suggestedFirst(
+          this.withMissingFeatureRoles(stored, core, suggested, romPath, embeddedRom).map((role, at) => ({
+            kind: role.kind,
+            role,
+            at,
+          })),
+          suggested,
+        )
+      : null;
+    const roles = ordered ? ordered.map((o) => o.role) : suggested;
+    const savedOrder = ordered?.some((o, k) => o.at !== k) ? ordered.map((o) => o.at) : undefined;
     // A loaded system's roles can hold two whose nodes write one input, or a kind twice (graph/protocolNodes.ts,
     // beside the protocol tables), and every publish leaves the later one out of its pipeline, quietly; this notes it
     // for the log, which is written once the core has built, where the roles enter.
@@ -1237,6 +1250,7 @@ export class SystemsStore {
       settings,
       roles,
       workingSlot: config.workingSlot ? { ...config.workingSlot } : undefined,
+      ...(savedOrder ? { savedOrder } : {}),
     });
     if (!prepared) return null; // its LSDj capture, if any, comes with the document that places it
     // The stored core config stays as written, so the system node leaves out a value its node would refuse (or a
@@ -1438,15 +1452,18 @@ export class SystemsStore {
    *  lsdj-sync as a missing feature role, and first-wins would keep running mGB's protocol on an LSDj cart, whose menu
    *  then shows sync controls that do nothing (and the reverse on an mGB cart). Every other role keeps its place, so
    *  with no collision, or none the ROM settles (no registry, or neither role suggested), the order is as stored and
-   *  the first wins. A save writes the moved order, which is harmless: the suggested role goes ahead of one a fresh
-   *  system on this ROM would not have at all. */
-  private suggestedFirst(roles: RoleInstance[], suggested: readonly RoleInstance[]): RoleInstance[] {
+   *  the first wins. The move is in memory only: adopt records each role's stored place (SystemEntry.savedOrder) and
+   *  a save writes that order. */
+  private suggestedFirst<T extends { readonly kind: string }>(
+    roles: readonly T[],
+    suggested: readonly RoleInstance[],
+  ): T[] {
     const wanted = new Set(suggested.map((r) => r.kind));
     const out = roles.slice();
     for (let i = 0; i < out.length; ++i) {
       if (!wanted.has(out[i].kind)) continue;
       const writes = occupied(out[i].kind);
-      const collides = (q: RoleInstance) => occupied(q.kind).some((w) => writes.includes(w));
+      const collides = (q: T) => occupied(q.kind).some((w) => writes.includes(w));
       const j = out.findIndex((q, k) => k < i && !wanted.has(q.kind) && collides(q));
       if (j >= 0) out.splice(j, 0, ...out.splice(i, 1));
     }
@@ -1466,7 +1483,8 @@ export class SystemsStore {
    *  produced when the project was created. Adding what they suggest now cannot override a user's
    *  decision, because no such decision is expressible. **If a "remove role" affordance is ever added
    *  that stops being true** - this would resurrect a removed role - and it will need a tombstone in the
-   *  project schema. There is nothing to tombstone today.
+   *  project schema. There is nothing to tombstone today. (A role insert or removal must also keep
+   *  SystemEntry.savedOrder aligned with `roles`.)
    *
    *  Three deliberate limits:
    *

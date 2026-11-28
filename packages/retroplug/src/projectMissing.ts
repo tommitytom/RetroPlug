@@ -2,9 +2,10 @@
 // paired .sav) which no longer exist — a moved file makes a load incomplete, so the
 // UI locates them before applying. Port of the thin subset of missingFiles.ts (rom +
 // sram); kit samples arrive with the kits domain, so the blobKeys arg is already
-// here for that reuse. Addressed by config INDEX (systems don't exist yet at load).
+// here for that reuse. Addressed by config INDEX (systems don't exist yet at load); the blob keys are the file's
+// index (sourceIndexOf).
 
-import type { ProjectConfig } from "./projectConfig";
+import { sourceIndexOf, type ProjectConfig } from "./projectConfig";
 import { basename } from "./pathUtil";
 import { romKey, sramKey, stateKey } from "./projectBinaries";
 
@@ -27,10 +28,11 @@ export function scanMissingFiles(
 ): MissingFile[] {
   const out: MissingFile[] = [];
   cfg.systems.forEach((sys, i) => {
-    const romOk = !!sys.embeddedRom || blobKeys.has(romKey(i)) || (!!sys.romPath && exists(sys.romPath));
+    const at = sourceIndexOf(cfg, i);
+    const romOk = !!sys.embeddedRom || blobKeys.has(romKey(at)) || (!!sys.romPath && exists(sys.romPath));
     if (!romOk) out.push({ systemIndex: i, itemKind: "rom", path: sys.romPath ?? "" });
 
-    const savOk = !sys.savPath || blobKeys.has(sramKey(i)) || blobKeys.has(stateKey(i)) || exists(sys.savPath);
+    const savOk = !sys.savPath || blobKeys.has(sramKey(at)) || blobKeys.has(stateKey(at)) || exists(sys.savPath);
     if (!savOk) out.push({ systemIndex: i, itemKind: "sram", path: sys.savPath ?? "" });
   });
   return out;

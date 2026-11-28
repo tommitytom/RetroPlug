@@ -40,6 +40,7 @@ import {
   serializeConfig,
   parseConfig,
   toAbsolute,
+  sourceIndexOf,
   projectSection,
   readableProjectSection,
   defaultSections,
@@ -121,6 +122,18 @@ export interface SongRequest {
 /** A JSON object, which is what a section's value always is. */
 const isObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** A system's seed from its archive entries: a savestate is the complete machine snapshot (it already holds the
+ *  battery-backed SRAM), so a system boots from it ALONE; also seeding the battery would cold-reseed it and drop the
+ *  restored runtime state (e.g. an LSDj armed in "wait for MIDI"). The sram entry seeds a system with no savestate (a
+ *  thin load, or a battery-only export). With a working-song entry the archive is one moment only if the battery is
+ *  too: the savestate's own battery lags by up to 0.5 s, so the exported battery (current, like the song and the
+ *  tracked slot) is written over it once the core exists, live, so the restored runtime state is kept. */
+function seedOf(sram?: Uint8Array, state?: Uint8Array, songBytes?: Uint8Array): Parameters<SystemsStore["adopt"]>[1] {
+  const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
+  const song = songBytes ? decodeWorkingSong(songBytes) : null;
+  return song ? { ...sysBlobs, song, freshSram: state ? sram : undefined } : sysBlobs;
+}
 
 /** What `settleSong` did with the parked request this time. */
 export type SongSettle =
@@ -893,20 +906,10 @@ export class ProjectStore {
       this.systems.clear();
       // Built one by one, placed together: the graph is published once, with the loaded routing.
       this.holdGraph = true;
-      cfg.systems.forEach((s, i) => {
-        const sram = blobs.get(sramKey(i));
-        const state = blobs.get(stateKey(i));
-        // A savestate is the complete machine snapshot (it already contains the battery-backed SRAM), so
-        // boot from it ALONE - also seeding sramBytes cold-reseeds the battery and drops the restored
-        // runtime state (e.g. an LSDj armed in "wait for MIDI"). The sram blob only seeds a system that
-        // has no savestate (a thin load, or a battery-only export).
-        const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
-        const songBytes = blobs.get(songKey(i));
-        const song = songBytes ? decodeWorkingSong(songBytes) : null;
-        // With a working-song blob the archive is one moment only if the battery is too: the savestate's own
-        // battery lags by up to 0.5 s, so the exported battery (current, like the song and the tracked slot)
-        // is written over it once the core exists - live, so the restored runtime state is kept.
-        this.systems.adopt(s, song ? { ...sysBlobs, song, freshSram: state ? sram : undefined } : sysBlobs);
+      cfg.systems.forEach((s, k) => {
+        // Keyed by the system's index in the FILE: a system the parse dropped keeps its entries to itself.
+        const i = sourceIndexOf(cfg, k);
+        this.systems.adopt(s, seedOf(blobs.get(sramKey(i)), blobs.get(stateKey(i)), blobs.get(songKey(i))));
       });
     } catch (e) {
       // The systems adopted before the throw are built and listed, so place them as the final publish would, with

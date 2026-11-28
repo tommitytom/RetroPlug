@@ -7,7 +7,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
-import { gbRom } from "../systems/fixtures";
+import { gbRom, gbRomBattery } from "../systems/fixtures";
 
 const dec = new TextDecoder();
 
@@ -109,4 +109,30 @@ test("load export: a moved cartridge ROM reports missing (blobs cover only sram/
   expect(done).toEqual({ kind: "loaded", systems: 1 });
   expect(project.systems.view()[0].romPath).toBe("/new/a.gb");
   expect(be.restoredIds().length).toBe(1); // still restored from the archive after relink
+});
+
+test("a zip's entries reach the system they were written for when an entry before it is dropped", () => {
+  // The design's blob shift (docs/downloadable-packs-m3-design.md, "Where things stand"): the parse drops system 0, and
+  // the system after it used to read systems/0/sram, the dropped one's.
+  const be = new MockBackend("/cfg");
+  be.seed("/proj/a.gb", gbRomBattery());
+  const { project } = newProject(be);
+  const enc = new TextEncoder();
+  const doc = {
+    schemaVersion: "4",
+    settings: {},
+    systems: [
+      { platform: 42, core: "sameboy", romPath: "/proj/a.gb" }, // malformed: the parse drops it
+      { platform: "gb", core: "sameboy", romPath: "/proj/a.gb" },
+    ],
+  };
+  const own = new Uint8Array([7, 7, 7, 7]);
+  const zip = be.zip([
+    { name: "project.json", bytes: enc.encode(JSON.stringify(doc)) },
+    { name: "systems/0/sram", bytes: new Uint8Array([1, 1, 1, 1]) },
+    { name: "systems/1/sram", bytes: own },
+  ])!;
+  expect(project.loadBytes(zip, "")).toEqual({ kind: "loaded", systems: 1 });
+  const [entry] = project.systems.systems();
+  expect(be.bootOf(entry.id)?.sramBytes).toEqual(own);
 });

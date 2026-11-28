@@ -41,6 +41,10 @@ export interface SystemEntry {
   /** The saved song slot a work-RAM working song (smsggdj) came from, when known - see
    *  SystemsStore.noteSongSlot. Persisted, so a reopened session saves back over the same slot. */
   workingSlot?: TrackedSlot;
+  /** Where each of `roles` sits in the order a save writes, index for index: set when a load moved a role ahead
+   *  (SystemsStore.suggestedFirst), so the file keeps the order it had
+   *  (docs/downloadable-packs-m3-design.md section 3). Absent: `roles` is that order. Not serialized. */
+  savedOrder?: readonly number[];
 }
 
 /** The live system with `id`, or undefined. */
@@ -66,6 +70,15 @@ export function replaceById(list: SystemEntry[], id: number, next: SystemEntry):
   const out = list.slice();
   out[idx] = next;
   return out;
+}
+
+/** `roles` in the order a save writes them (SystemEntry.savedOrder). */
+export function inSavedOrder<T>(roles: readonly T[], savedOrder: readonly number[] | undefined): T[] {
+  if (!savedOrder || savedOrder.length !== roles.length) return roles.slice();
+  return roles
+    .map((role, k) => ({ role, at: savedOrder[k] ?? k }))
+    .sort((a, b) => a.at - b.at)
+    .map((r) => r.role);
 }
 
 /** True when a live system for `romPath` already holds `suffix` — the `isOwned`

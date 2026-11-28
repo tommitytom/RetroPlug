@@ -9,7 +9,7 @@
 // round-trips faithfully. Only user-customized fields are lost until the
 // system-settings/kits domains land.
 
-import type { SystemEntry } from "./systemsList";
+import { inSavedOrder, type SystemEntry } from "./systemsList";
 import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { registeredCores, registeredPlatforms } from "./consoles";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
@@ -66,6 +66,21 @@ export interface ProjectConfig {
   name?: string; // display name (seeded from the primary system's sav/rom stem); absent = derive on load
   settings: ProjectSettings;
   systems: SystemThin[];
+  /** Each of `systems`' place in the file, index for index (parseConfig fills it; absent for a config a test or a
+   *  build made, where `systems[k]` is the file's k-th). */
+  sources?: SystemSource[];
+}
+
+/** A parsed system's place in the file: its index in the file's `systems` array (what a zip's `systems/{i}/...` entries
+ *  are keyed by) and its JSON as read, migrated. */
+export interface SystemSource {
+  index: number;
+  raw: RawObject;
+}
+
+/** The file index of `cfg.systems[k]`: its source's, else `k`. */
+export function sourceIndexOf(cfg: Pick<ProjectConfig, "sources">, k: number): number {
+  return cfg.sources?.[k]?.index ?? k;
 }
 
 /** A `.rplg`'s `settings` as the file carries it, which buildConfig writes and serializeConfig serializes: the four
@@ -82,7 +97,7 @@ export interface ProjectFileSettings {
 }
 
 /** A config as the file carries it: buildConfig's output, which serializeConfig writes. */
-export interface ProjectFileConfig extends Omit<ProjectConfig, "settings"> {
+export interface ProjectFileConfig extends Omit<ProjectConfig, "settings" | "sources"> {
   settings: ProjectFileSettings;
 }
 
@@ -564,7 +579,7 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], n
       if (e.embeddedRom) t.embeddedRom = e.embeddedRom;
       const settings = thinSettings(e.settings);
       if (settings) t.settings = settings;
-      if (e.roles && e.roles.length) t.roles = e.roles;
+      if (e.roles && e.roles.length) t.roles = inSavedOrder(e.roles, e.savedOrder);
       if (e.workingSlot) t.workingSlot = { ...e.workingSlot };
       return t;
     }),
@@ -584,7 +599,14 @@ function mapSystemPaths(cfg: { systems: SystemThin[] }, fn: (path: string) => st
  *  empty `baseDir` leaves paths absolute. `canonicalize` backs the realpath-hard
  *  toRelative test. */
 export function serializeConfig(cfg: ProjectFileConfig, baseDir: string, canonicalize: (p: string) => string): string {
-  const out: ProjectFileConfig = { ...cfg, settings: { ...cfg.settings }, systems: cfg.systems.map((s) => ({ ...s })) };
+  // The file's four members, in the order buildConfig writes them: a parsed config handed back here (a test's round
+  // trip) carries `sources` and `placeholders`, which are the parse's bookkeeping and not the file's.
+  const out: ProjectFileConfig = {
+    schemaVersion: cfg.schemaVersion,
+    ...(cfg.name !== undefined ? { name: cfg.name } : {}),
+    settings: { ...cfg.settings },
+    systems: cfg.systems.map((s) => ({ ...s })),
+  };
   if (baseDir) mapSystemPaths(out, (p) => rebaseToRelative(p, baseDir, canonicalize));
   return stringifyConfig(out);
 }
@@ -611,16 +633,20 @@ export function parseConfig(json: string, sections: readonly SectionEntry[] = pr
   const core = (sp.success ? sp.data : projectSettingsSchema.parse({})) as Omit<ProjectSettings, "sections">;
   const settings: ProjectSettings = { ...core, sections: parseSections(parsed.settings, sections) };
 
-  // Systems: keep each valid (object) entry, drop garbage.
+  // Systems: keep each valid (object) entry, drop garbage. Each kept one remembers its index in the file, which its zip
+  // entries are keyed by, and its JSON as read.
   const systems: SystemThin[] = [];
-  for (const raw of parsed.systems as unknown[]) {
+  const sources: SystemSource[] = [];
+  (parsed.systems as unknown[]).forEach((raw, index) => {
     const r = systemThinSchema.safeParse(raw);
-    if (r.success) systems.push(r.data as SystemThin);
-  }
+    if (!r.success) return;
+    systems.push(r.data as SystemThin);
+    sources.push({ index, raw: raw as RawObject });
+  });
 
   // Spread `parsed` first, then override the validated members. (`parsed` has already been
   // through projectConfigSchema, so unknown root fields are gone by this point.)
-  return { ...parsed, schemaVersion: parsed.schemaVersion as string, settings, systems } as ProjectConfig;
+  return { ...parsed, schemaVersion: parsed.schemaVersion as string, settings, systems, sources } as ProjectConfig;
 }
 
 /** Rebase each asset path to absolute against `baseDir`, in place (load side). */

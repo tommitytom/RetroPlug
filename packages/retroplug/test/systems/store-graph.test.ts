@@ -928,7 +928,8 @@ test("of two roles whose nodes write serialIn, a loaded system places the one it
   ];
   for (const [romPath, stale, placed, left] of cases) {
     const { result: id, warnings } = warned(() => sys.adopt({ romPath, core: "sameboy", roles: [sameboy, stale] })!);
-    // The role the ROM calls for goes ahead of the stale one, which is the order a save then writes.
+    // The role the ROM calls for goes ahead of the stale one, in memory; a save writes the order the file stored
+    // (docs/downloadable-packs-m3-design.md section 3).
     const kinds = sys.view().find((v) => v.id === id)!.roles.map((r) => r.kind);
     expect(kinds.slice(0, 3)).toEqual(["sameboy", placed, left]);
     expect(be.protocolNodes(id)).toEqual(roleNodes(id, placed));
@@ -986,7 +987,8 @@ test("of two tracker markers, a loaded system resolves the one its ROM earns, an
     const stored = sys.view().find((v) => v.id === id)!.roles;
     expect(resolveTracker(stored)?.id).toBe(earned);
     // The stale marker and the asset overrides it holds stay on the system, in the stored order, after the earned
-    // marker (which the load moved ahead of them) and before the roles the load appended; a save writes that order.
+    // marker (which the load moved ahead of them) and before the roles the load appended; a save writes the order the
+    // file stored.
     const stale = earned === "bliptoaster" ? "risa" : "bliptoaster";
     const kinds = stored.map((r) => r.kind);
     expect(kinds.indexOf(earned) < kinds.indexOf(stale)).toBe(true);
@@ -998,48 +1000,58 @@ test("of two tracker markers, a loaded system resolves the one its ROM earns, an
   }
 });
 
-test("a project storing both tracker markers resolves the one its ROM earns, and a save writes the moved order", () => {
-  // The design's own scenario: an existing project can hold the stale marker FIRST, so the move has to pass a STORED
-  // marker rather than one the load appended. resolveTracker reads the system's own order either way, and the order a
-  // load moves it to is what the save writes, so loading that save again resolves the same cart.
-  const { be, p, sys } = project();
-  be.seed("/roms/bliptoaster.nes", blipToasterRom());
-  const systems = [
-    {
-      platform: "nes",
-      core: "mesen",
-      romPath: "/roms/bliptoaster.nes",
-      roles: [
-        { kind: "mesen", config: {} },
-        { kind: "risa", config: {} },
-        { kind: "risa-assets", config: { overrides: [] } },
-        { kind: "bliptoaster", config: {} },
-      ],
-    },
-  ];
-  be.seed("/proj/stale.rplg", new TextEncoder().encode(JSON.stringify({ schemaVersion: "4", settings: {}, systems })));
-  const settle = (path: string): RoleInstance[] => {
-    const { result } = warned(() => p.load(path));
-    expect(result.kind).toBe("loaded");
-    const [entry] = sys.systems();
-    return sys.view().find((v) => v.id === entry.id)!.roles;
-  };
-  const moved = ["mesen", "bliptoaster", "risa", "risa-assets"];
-  const first = settle("/proj/stale.rplg");
-  expect(first.map((r) => r.kind).slice(0, 4)).toEqual(moved);
-  expect(resolveTracker(first)?.id).toBe("bliptoaster");
-  expect(p.save("/proj/stale-saved.rplg")).toBe(true);
-  // The saved document ITSELF: a second load re-runs suggestedFirst, so it would move an un-moved save back and agree
-  // with the first load either way. The file is what a later build reads first, so its role order is the one pinned:
-  // the four stored roles come first, in the order the load moved them to, and the roles the ROM earns follow them.
-  const saved = JSON.parse(new TextDecoder().decode(be.readFile("/proj/stale-saved.rplg")!)) as {
-    systems: { roles: { kind: string }[] }[];
-  };
-  expect(saved.systems[0].roles.map((r) => r.kind).slice(0, 4)).toEqual(moved);
-  const again = settle("/proj/stale-saved.rplg");
-  expect(again.map((r) => r.kind)).toEqual(first.map((r) => r.kind));
-  expect(resolveTracker(again)?.id).toBe("bliptoaster");
-});
+test(
+  "a project storing both tracker markers resolves the one its ROM earns, and a save writes the order the file stored",
+  () => {
+    // The design's own scenario: an existing project can hold the stale marker FIRST, so the move has to pass a STORED
+    // marker rather than one the load appended. resolveTracker reads the system's own order either way; the load moves
+    // the earned marker ahead in memory while the file keeps the order it had, so loading that save again resolves the
+    // same cart.
+    const { be, p, sys } = project();
+    be.seed("/roms/bliptoaster.nes", blipToasterRom());
+    const systems = [
+      {
+        platform: "nes",
+        core: "mesen",
+        romPath: "/roms/bliptoaster.nes",
+        roles: [
+          { kind: "mesen", config: {} },
+          { kind: "risa", config: {} },
+          { kind: "risa-assets", config: { overrides: [] } },
+          { kind: "bliptoaster", config: {} },
+        ],
+      },
+    ];
+    const doc = { schemaVersion: "4", settings: {}, systems };
+    be.seed("/proj/stale.rplg", new TextEncoder().encode(JSON.stringify(doc)));
+    const settle = (path: string): RoleInstance[] => {
+      const { result } = warned(() => p.load(path));
+      expect(result.kind).toBe("loaded");
+      const [entry] = sys.systems();
+      return sys.view().find((v) => v.id === entry.id)!.roles;
+    };
+    const moved = ["mesen", "bliptoaster", "risa", "risa-assets"];
+    const first = settle("/proj/stale.rplg");
+    expect(first.map((r) => r.kind).slice(0, 4)).toEqual(moved);
+    expect(resolveTracker(first)?.id).toBe("bliptoaster");
+    expect(p.save("/proj/stale-saved.rplg")).toBe(true);
+    // The saved document ITSELF: a second load re-runs suggestedFirst, so it agrees with the first load either way.
+    // The file keeps the order it had, so its role order is the one pinned: the four stored roles come first, as
+    // stored, and the roles the ROM earns follow them.
+    const saved = JSON.parse(new TextDecoder().decode(be.readFile("/proj/stale-saved.rplg")!)) as {
+      systems: { roles: { kind: string }[] }[];
+    };
+    expect(saved.systems[0].roles.map((r) => r.kind).slice(0, 4)).toEqual([
+      "mesen",
+      "risa",
+      "risa-assets",
+      "bliptoaster",
+    ]);
+    const again = settle("/proj/stale-saved.rplg");
+    expect(again.map((r) => r.kind)).toEqual(first.map((r) => r.kind));
+    expect(resolveTracker(again)?.id).toBe("bliptoaster");
+  },
+);
 
 test("a ROM that earns no tracker marker leaves the stored marker order standing, either way round", () => {
   // A ROM neither provider recognises earns no marker, so there is nothing to move ahead of anything and the first
@@ -1075,6 +1087,27 @@ test("a ROM that earns no tracker marker leaves the stored marker order standing
   );
   expect(absent).toBe(null);
   expect(sys.systems()).toEqual([]); // the refusal places nothing, which is what the null means
+});
+
+test("a save writes the roles in the order the file stored them, whatever order the load placed them in", () => {
+  // docs/downloadable-packs-m3-design.md section 3: the load still moves the role this ROM calls for ahead (the
+  // pipeline and the tracker read the system's order), and the file keeps its own.
+  const { be, p, sys } = project();
+  seedLsdjProject(be, "/proj/order-kept.rplg", [
+    { kind: "sameboy", config: {} },
+    { kind: "mgb", config: {} },
+    { kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiMap } },
+  ]);
+  const { result } = warned(() => p.load("/proj/order-kept.rplg"));
+  expect(result.kind).toBe("loaded");
+  const [entry] = sys.systems();
+  expect(sys.view()[0].roles.map((r) => r.kind).slice(0, 3)).toEqual(["sameboy", "lsdj-sync", "mgb"]);
+  expect(be.protocolNodes(entry.id)).toEqual(roleNodes(entry.id, "lsdj-sync"));
+  expect(p.save("/proj/order-kept-saved.rplg")).toBe(true);
+  const saved = JSON.parse(new TextDecoder().decode(be.readFile("/proj/order-kept-saved.rplg")!)) as {
+    systems: { roles: { kind: string }[] }[];
+  };
+  expect(saved.systems[0].roles.map((r) => r.kind).slice(0, 3)).toEqual(["sameboy", "mgb", "lsdj-sync"]);
 });
 
 test("a collision's outcome survives a save and a load: the ROM's role first and placed, the stale one kept after it", () => {
