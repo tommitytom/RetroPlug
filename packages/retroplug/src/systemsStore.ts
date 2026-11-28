@@ -679,7 +679,8 @@ export class SystemsStore {
     return prepared.entry.id;
   }
 
-  /** Load `romPath`, replacing the focused tile (or adopting into an empty project).
+  /** Load `romPath`, replacing the focused tile (or adopting into an empty project; with a placeholder focused it
+   *  appends a new system instead and leaves the placeholder).
    *  With no paired save, defers to a sibling `<rom>.rplg` when one exists. */
   loadRom(romPath: string, opts?: { explicitSav?: string }): LoadResult {
     if (!opts?.explicitSav) {
@@ -690,8 +691,9 @@ export class SystemsStore {
     return id === null ? null : { system: id };
   }
 
-  /** Load the binary-baked ROM `id` names (mGB's synth, say), replacing the focused tile: no file, no dialog. The
-   *  platform comes from the package's declaration, and an id no package declares loads nothing. */
+  /** Load the binary-baked ROM `id` names (mGB's synth, say), replacing the focused tile (appending, with a
+   *  placeholder focused): no file, no dialog. The platform comes from the package's declaration, and an id no
+   *  package declares loads nothing. */
   loadEmbedded(id: string): number | null {
     const embed = embeddedRomOf(id);
     if (!embed) return null;
@@ -1672,13 +1674,16 @@ export class SystemsStore {
 
   // --- internals ----------------------------------------------------------
 
-  // Replace the focused tile (or adopt into an empty project), focusing the result.
+  // Replace the focused tile, or append a new system (an empty project, or a focused placeholder), focusing the result.
   private loadInPlace(romPath: string, embeddedRom: string, explicitSav?: string): number | null {
-    const empty = this.entries.length === 0;
-    const target = empty ? undefined : this.effectiveFocus();
+    // An empty project appends the ROM; so does one whose focus is on a placeholder: replacing the placeholder would
+    // drop the data it keeps, and the fallback to the first live system would replace one the user did not focus, so
+    // the load appends after every slot instead.
+    const append = this.entries.length === 0 || this.held.some((h) => h.id === this.focusedId);
+    const target = append ? undefined : this.effectiveFocus();
     const prepared = this.construct(romPath, embeddedRom, this.replacementSuffix(target, romPath), explicitSav);
     if (!prepared) return null;
-    if (empty) {
+    if (append) {
       const placed = this.commitEdit("load", {
         entries: appendEntry(this.entries, prepared.entry),
         focusedId: prepared.entry.id,

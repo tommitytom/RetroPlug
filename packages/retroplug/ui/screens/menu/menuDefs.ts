@@ -28,6 +28,7 @@ import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsSto
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath, SAV_PATTERNS } from "../../../src/savPaths";
 import { stem, dirname, basename, extension, joinPath, sanitizeName, shortenMiddle } from "../../../src/pathUtil";
+import { needText, roleNeedText } from "../../../src/packs/needs";
 import { romPatterns } from "../../../src/fileSelection";
 import { filesPngHost } from "../../../src/hostGroups";
 import { createUiHost, type UiHost } from "../../host/uiHost";
@@ -925,7 +926,8 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
  *  catalogue parses a ROM once per path rather than once per menu build, and a bake drops it when it rewrites one). */
 function buildContext(ctx: MenuContext): MenuBuildContext {
   return {
-    systems: ctx.systems,
+    // A peer-only row (a Link Group) counts live systems: a placeholder is no peer.
+    systems: ctx.systems.filter((v) => !v.placeholder),
     assetRom: (path) => assetRomBytes(ctx.stores.backend, path),
     romPatterns: romPatterns(),
   };
@@ -1312,8 +1314,22 @@ function instanceTitle(ctx: MenuContext, sys: SystemView): string {
   return segs.join(" - ");
 }
 
+/** A placeholder's menu (docs/downloadable-packs-m3-design.md section 8): what it needs, then Remove, its only edit. */
+function placeholderMenu(ctx: MenuContext, sys: SystemView): MenuTree {
+  const reasons = [...new Set((sys.placeholder?.needs ?? []).map(needText))];
+  const items: MenuItem[] = [
+    ...reasons.map((reason, i) => ({ ...infoRow(`inst-needs-${i}`, reason), warn: true })),
+    separator("inst-sep-needs"),
+    action("inst-remove", "Remove Instance", () => ctx.stores.project.systems.removeSystem(sys.id)),
+  ];
+  const base = ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
+  const rom = basename(sys.romPath) || sys.embeddedRom;
+  return { title: rom ? `${base} - ${rom}` : base, items };
+}
+
 export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const sys = ctx.system!;
+  if (sys.placeholder) return placeholderMenu(ctx, sys);
   const systems = ctx.stores.project.systems;
   const multi = ctx.systems.length > 1; // Replace / Remove / Link Group are peer-only rows
   // The tracker submenu (LSDj / risa / …) — one generic branch, gated on the marker role the ROM sniffed.
@@ -1370,7 +1386,13 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   ];
   // A duplicate id here would replace the row a user can see (the menu is keyed by id), and a hand-edited asset
   // override can produce one: the first row is kept, the later ones are reported, and the menu still renders.
-  const unique = firstWinsMenuIds(items, `the ${sys.platform} instance menu`);
+  // A role the graph cannot place, its pack missing or refused, is marked at the top of the menu in the warning style
+  // (docs/downloadable-packs-m3-design.md section 8): read-only, so the cursor opens on the first real row.
+  const missing: MenuItem[] = (sys.missingRoles ?? []).map((need, i) => ({
+    ...infoRow(`inst-missing-${i}`, `${roleNeedText(need)} [!]`),
+    warn: true,
+  }));
+  const unique = firstWinsMenuIds([...missing, ...items], `the ${sys.platform} instance menu`);
   return { title: instanceTitle(ctx, sys), items: unique };
 }
 

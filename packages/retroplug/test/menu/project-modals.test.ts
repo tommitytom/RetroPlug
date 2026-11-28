@@ -7,7 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import type { AppStores } from "../../src/appStores";
-import { buildProjectModal, type ProjectModalHandlers } from "../../ui/app/projectModals";
+import { buildProjectModal, NoticeQueue, type ProjectModalHandlers } from "../../ui/app/projectModals";
 import type { MenuItem, MenuTree } from "@retroplug/ui/menu";
 import { gbRomBattery } from "../systems/fixtures";
 
@@ -73,4 +73,34 @@ test("an unsaved-song replace opens on Save song first, after the read-only line
   expect(first.id).toBe("song-replace-save");
   first.onSelect!();
   expect(calls).toEqual(["saveSongThen"]);
+});
+
+test("the missing-packs notice lists the packs, says they are kept, and opens on OK", () => {
+  const { stores, calls, h } = setup();
+  const tree = buildProjectModal(
+    { kind: "missingPacks", packs: [{ id: "mpx", name: "MPX", status: "missing", systems: 1, roles: 0 }] },
+    stores,
+    h,
+  );
+  expect(tree.title).toBe("Missing Packs");
+  expect(tree.items.map((i) => i.label)).toEqual(["MPX: 1 system", "Kept and saved unchanged", "OK"]);
+  const first = openingRow(tree);
+  expect(first.id).toBe("missing-packs-ok");
+  first.onSelect!();
+  expect(calls).toEqual(["close"]);
+});
+
+test("a notice waits behind a song-discard prompt and is raised when it clears, once", () => {
+  const packs = [{ id: "mpx", name: "MPX", status: "missing" as const, systems: 1, roles: 0 }];
+  const q = new NoticeQueue();
+  q.queue(packs);
+  q.covered(); // nothing showing yet: the notice stays waiting
+  expect(q.take()).toBe(packs); // shown
+  q.covered(); // a prompt raised over it sends it back to wait
+  expect(q.take()).toBe(packs); // the prompt cleared
+  q.dismissed();
+  expect(q.take()).toBe(null); // not raised twice
+  q.queue(packs);
+  q.queue(null); // a later load with nothing missing drops it
+  expect(q.take()).toBe(null);
 });

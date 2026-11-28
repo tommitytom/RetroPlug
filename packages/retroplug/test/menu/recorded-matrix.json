@@ -55514,6 +55514,12 @@
  "hand-no-core-role": {
   "tree": [
    {
+    "id": "inst-missing-0",
+    "kind": "action",
+    "label": "retro-role pack missing [!]",
+    "disabled": true
+   },
+   {
     "id": "inst-load",
     "kind": "action",
     "label": "Load..."

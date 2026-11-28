@@ -354,7 +354,8 @@ export const CASES: readonly RecordedCase[] = [
       // A hand-edited project whose non-empty roles list holds no role of the system's core kind: the store never
       // re-adds it (withMissingFeatureRoles skips the core role), so the menu's core-config rows have no role to read.
       // Its record is the NEW menu's: base drew the six SameBoy rows anyway, and they were dead (setRoleConfig refuses
-      // an absent role), which is design section 6's E13 edge.
+      // an absent role), which is design section 6's E13 edge. Its role kind registers nothing, so the tree also leads
+      // with the missing-role warning row (the M3 design's section 8).
       s.project.systems.adopt({ romPath: "/roms/h.gb", core: "sameboy", roles: [{ kind: "retro-role", config: {} }] });
     },
   },

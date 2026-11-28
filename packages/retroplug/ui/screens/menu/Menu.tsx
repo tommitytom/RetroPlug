@@ -614,7 +614,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           }
           const isCapturing = capturingId === item.id;
           const isFocused = focusedId === item.id;
-          const rowColor = item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? ACCENT : "#ffffff";
+          const rowColor = item.warn ? WARN_COLOR : item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : isFocused ? ACCENT : "#ffffff";
           // The chrome every row shares: the full-width highlight bar, the depth indent, the vertical rhythm.
           const rowStyle = {
             width: "100%",

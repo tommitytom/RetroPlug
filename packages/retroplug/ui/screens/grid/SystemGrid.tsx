@@ -1,4 +1,4 @@
-// The emulator grid: one live tile per system, laid out from the store's systems view.
+// The emulator grid: one tile per slot (a placeholder's slot renders its card), laid out from the store's slot view.
 //
 // Reads useSystems() for the tiles and useProjectSettings()/useUserConfig() for layout + zoom, and
 // mutates through useStores() (setFocus) with no action wrapper. Tiles are wrapped in a StableSlot (the
@@ -14,6 +14,7 @@ import { Box } from "@retroplug/ui-react";
 import { useWindowSize } from "../../lvgl/useWindowSize";
 import { StableSlot } from "../../lvgl/StableSlot";
 import { EmulatorTile } from "./EmulatorTile";
+import { PlaceholderTile } from "./PlaceholderTile";
 import { tileViews } from "../../host/viewContributions";
 import { Menu } from "../menu/Menu";
 import type { MenuTree } from "@retroplug/ui/menu";
@@ -69,6 +70,18 @@ export function SystemGrid({
                       console, a menu row) leaves the count, so the tiles stay mounted. */}
                   {showMenu ? (
                     <Menu width={tw} height={th} zoom={zoom} tree={menuTree!} onClose={onMenuClose ?? (() => {})} />
+                  ) : sys.placeholder ? (
+                    <PlaceholderTile
+                      key={`placeholder-${sys.id}`}
+                      view={sys}
+                      focused={sys.focused}
+                      single={single}
+                      width={tw}
+                      height={th}
+                      testId={`placeholder-${index}`}
+                      dimTestId={`dim-${index}`}
+                      onFocus={() => stores.project.systems.setFocus(sys.id)}
+                    />
                   ) : (
                     <EmulatorTile
                       key={`tile-${sys.id}-${tileViews().length}`}

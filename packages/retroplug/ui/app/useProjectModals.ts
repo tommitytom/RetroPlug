@@ -16,16 +16,16 @@
 // the frame the project loaded; this hook is what ticks it, and what raises the discard prompt when the
 // store reports that loading would destroy unsaved work.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
-import type { LoadOutcome } from "../../src/projectStore";
+import type { LoadOutcome, ProjectStore } from "../../src/projectStore";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { savEditWouldDiscard, saveWorkingSong } from "../../src/tracker/liveSav";
 import { flushDirtySram } from "../../src/sramAutoSave";
 import { useNativeEvent } from "@retroplug/ui-react";
 import type { Overlay } from "./overlay";
-import { buildProjectModal, SONG_SAVE_REFUSED, type PendingModal } from "./projectModals";
+import { buildProjectModal, NoticeQueue, SONG_SAVE_REFUSED, type PendingModal } from "./projectModals";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 
 export interface ProjectModals extends Overlay {
@@ -42,6 +42,11 @@ export interface ProjectModals extends Overlay {
   guardSongReplace: (id: number, proceed: () => void) => void;
 }
 
+/** The project revision the missing-packs notice last showed for, per store: once per project, whether the load came
+ *  through a menu here or (in the plugin) through the control plane before the editor opened. Spent only when the
+ *  notice is actually displayed. */
+const noticeRevision = new WeakMap<ProjectStore, number>();
+
 export function useProjectModals(stores: AppStores): ProjectModals {
   const [pending, setPending] = useState<PendingModal | null>(null);
   const project = stores.project;
@@ -53,14 +58,38 @@ export function useProjectModals(stores: AppStores): ProjectModals {
   // battery write to land), and what runs after it must not outlive the overlay: Cancel pressed while it
   // was in flight used to be followed by the save landing and running the very op the user cancelled.
   const modalEpoch = useRef(0);
+  // The missing-packs notice waiting for the modal in front of it (a song-discard prompt) to clear, and the one on
+  // screen now (a prompt raised over it sends it back to the queue).
+  const notices = useRef(new NoticeQueue());
+
+  // Show the queued notice, spending the project's revision only now that it displays.
+  const flushNotice = (): void => {
+    const packs = notices.current.take();
+    if (!packs) return;
+    noticeRevision.set(project, project.revision());
+    setPending({ kind: "missingPacks", packs });
+  };
+
+  // A project the control plane loaded before this editor mounted (a DAW session's state chunk) raises the notice here,
+  // once per project.
+  useEffect(() => {
+    const packs = project.missingPacks();
+    if (packs.length && noticeRevision.get(project) !== project.revision()) {
+      notices.current.queue(packs);
+      flushNotice();
+    }
+  }, []);
 
   // Give the parked song request a chance to apply. "waiting" means the cart is not up yet (or the discard
   // prompt is showing) and the frame tick will ask again; "discard" raises that prompt; anything else is
   // finished, one way or the other, and there is nothing to show for it.
-  const settleSong = (): void => {
+  const settleSong = (): boolean => {
     const r = project.settleSong();
-    if (r === "waiting") return;
-    if (typeof r === "object") setPending({ kind: "songDiscard", song: r.song, working: r.working });
+    if (r === "waiting" || typeof r !== "object") return false;
+    // The prompt replaces whatever shows: a notice under it waits for the prompt to clear.
+    notices.current.covered();
+    setPending({ kind: "songDiscard", song: r.song, working: r.working });
+    return true;
   };
   useNativeEvent("frame", () => {
     if (project.hasSongRequest()) settleSong();
@@ -81,15 +110,18 @@ export function useProjectModals(stores: AppStores): ProjectModals {
     switch (outcome.kind) {
       case "loaded": {
         setPending(null);
+        notices.current.queue(outcome.missingPacks?.length ? outcome.missingPacks : null);
         // The row's song is a REQUEST, not a load: the project has only just been rebuilt, and on a
         // console whose working song is work RAM the cart is still booting - a write now is a write the
         // boot erases. The store applies it on the first tick the cart is ready (LSDj / risa: this very
         // call), and guards it THEN, when the cart's working song is real; the discard prompt, if any,
         // comes back through settleSong.
+        let prompted = false;
         if (song) {
           project.requestSong({ name: song, confirmed: false });
-          settleSong();
+          prompted = settleSong();
         }
+        if (!prompted) flushNotice();
         break;
       }
       case "incompatible":
@@ -138,13 +170,15 @@ export function useProjectModals(stores: AppStores): ProjectModals {
       if (p?.kind === "songDiscard") project.cancelSong(); // "Keep current song": the request is withdrawn
       return null;
     });
+    notices.current.dismissed();
+    flushNotice();
   };
 
   // "Discard & load": the store has the request; agreeing is what lets the next settle apply it.
   const proceedSong = (): void => {
     project.confirmSong();
     setPending(null);
-    settleSong();
+    if (!settleSong()) flushNotice();
   };
 
   const guardSongReplace = (id: number, proceed: () => void): void => {

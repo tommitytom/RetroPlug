@@ -240,7 +240,7 @@ export function App() {
       },
       isMenuModalActive() ? [] : contributedActions(),
       uiHost,
-      empty ? null : stores.project.systems.focused(),
+      empty || focusedSys?.placeholder ? null : stores.project.systems.focused(),
     );
   };
 
@@ -333,8 +333,9 @@ export function App() {
 
   // Game input: route keyboard/gamepad to the focused instance's joypad only while in play (a tile showing,
   // no menu/overlay) — otherwise arrows/Enter belong to menu navigation.
-  useGameInput({ active: playing, focusedId: stores.project.systems.focused() });
-  useGamepadInput({ active: playing, focusedId: stores.project.systems.focused() });
+  // A placeholder has no core to press a button on: the input goes to the focused system only when it is live.
+  useGameInput({ active: playing && !focusedSys?.placeholder, focusedId: stores.project.systems.focused() });
+  useGamepadInput({ active: playing && !focusedSys?.placeholder, focusedId: stores.project.systems.focused() });
 
   // Exit (standalone Exit menu row): route through the SAME native close path the window-close button
   // uses — __rp_onCloseRequested raises the unsaved-changes prompt and vetoes when dirty; a clean project

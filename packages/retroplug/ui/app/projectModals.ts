@@ -7,6 +7,7 @@ import type { MissingFile } from "../../src/projectMissing";
 import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
 import { romPatterns } from "../../src/fileSelection";
+import { missingPackText, type MissingPack } from "../../src/packs/needs";
 import { unsavedRows } from "./unsavedRows";
 import { button, infoRow, noticeTree, type MenuTree } from "@retroplug/ui/menu";
 
@@ -18,12 +19,46 @@ export type PendingModal =
   | { kind: "confirm"; proceed: () => void; saving?: boolean }
   | { kind: "notice"; title: string; body: string }
   | { kind: "relink"; missing: MissingFile[] }
+  // A load's packs it does not have (docs/downloadable-packs-m3-design.md section 8): what each covers, kept and saved.
+  | { kind: "missingPacks"; packs: MissingPack[] }
   // A recent SONG row's load, when the cart it lands on holds uncommitted working-song work. The row asked
   // to open song X; silently destroying song Y on the way is not what was agreed to.
   | { kind: "songDiscard"; song: string; working: string }
   // An op that REPLACES what one cart holds (a dropped .sav or ROM), when that cart's working song lives
   // outside its battery and is unsaved. `error` is set when "Save song first" could not store it.
   | { kind: "songReplace"; id: number; proceed: () => void; error?: string; saving?: boolean };
+
+/** The missing-packs notice's place in the overlay order: at most one modal shows, so a notice waits for the one in
+ *  front of it (a song-discard prompt) and a prompt raised over a showing notice sends it back to wait. */
+export class NoticeQueue {
+  private waiting: MissingPack[] | null = null;
+  private showing: MissingPack[] | null = null;
+
+  /** A load's notice, to show once nothing is in front of it; replaces any older one. */
+  queue(packs: MissingPack[] | null): void {
+    this.showing = null;
+    this.waiting = packs;
+  }
+
+  /** The notice to raise now, or null; it counts as showing from here. */
+  take(): MissingPack[] | null {
+    const packs = this.waiting;
+    this.waiting = null;
+    this.showing = packs;
+    return packs;
+  }
+
+  /** Another modal replaced the notice on screen: it waits for that one to clear. */
+  covered(): void {
+    if (this.showing) this.waiting = this.showing;
+    this.showing = null;
+  }
+
+  /** The modal on screen was dismissed. */
+  dismissed(): void {
+    this.showing = null;
+  }
+}
 
 export interface ProjectModalHandlers {
   /** Route a load's outcome to the next overlay (a relink's load finishes through here too). */
@@ -104,6 +139,17 @@ export function buildProjectModal(pending: PendingModal, stores: AppStores, h: P
         infoRow("song-discard-what", `"${working}" has unsaved changes`),
         button("song-discard-cancel", "Keep current song", onClose),
         button("song-discard-go", `Discard & load "${song}"`, proceedSong),
+      ],
+    };
+  }
+
+  if (pending.kind === "missingPacks") {
+    return {
+      title: "Missing Packs",
+      items: [
+        ...pending.packs.map((p, i) => infoRow(`missing-pack-${i}`, missingPackText(p))),
+        infoRow("missing-packs-kept", "Kept and saved unchanged"),
+        button("missing-packs-ok", "OK", onClose),
       ],
     };
   }

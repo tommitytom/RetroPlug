@@ -64,10 +64,10 @@ export function useStoreSnapshot<T>(channel: StoreChannel, read: () => T): T {
 // --- public hooks (one per store view) ---------------------------------------------------------------
 
 /** The systems list (id / platform / core / paths / focus / settings / roles), re-read on any structural
- *  edit, load, or new. */
+ *  edit, load, or new: every slot, a placeholder's view carrying `placeholder`. */
 export function useSystems() {
   const { project } = useStores();
-  return useStoreSnapshot("systems", () => project.systems.view());
+  return useStoreSnapshot("systems", () => project.systems.slotView());
 }
 
 /** One system's view by id, or undefined once it's gone (removed, or the project reloaded). Re-renders on the

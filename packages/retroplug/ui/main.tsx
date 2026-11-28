@@ -44,7 +44,7 @@ function unmountUI() {
 function initialWindowSize(): { width: number; height: number } | null {
   const stores = pluginNamespace()?.stores;
   if (!stores) return null;
-  const count = stores.project.systems.view().length;
+  const count = stores.project.systems.slotView().length;
   if (count === 0) return null;
   const settings = stores.project.settings();
   const zoom = resolveZoom(settings.zoom, stores.userConfig.config().defaultZoom);
