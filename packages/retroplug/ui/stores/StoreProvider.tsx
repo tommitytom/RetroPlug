@@ -39,7 +39,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
 
     // Reuse the control plane's published graph when present; otherwise (ui-test harness) own one.
-    const stores = ns?.stores ?? composeAppStores({ notify });
+    const stores = ns?.stores ?? composeAppStores({ notify, live: true });
     ref.current = { stores, subscribe };
   }
 

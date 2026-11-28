@@ -48,6 +48,24 @@ export function noteTsRefusal(id: string, reason: string): void {
   ts.set(id, reason);
 }
 
+/** `id` is to be tried again (a live load of it): its TS refusal is stale, and the native ones are read again. */
+export function forgetRefusalsOf(id: string): void {
+  ts.delete(id);
+  forgetNativeRefusals();
+}
+
+const loadedIds = new Set<string>();
+
+/** `id` loaded in this module set: a native or TS refusal under it is another folder's or an earlier attempt's, and
+ *  no longer says anything about a need of it (statusOf). */
+export function noteLoadedPack(id: string): void {
+  loadedIds.add(id);
+}
+
+export function isLoadedPack(id: string): boolean {
+  return loadedIds.has(id);
+}
+
 export function tsRefusals(): ReadonlyMap<string, string> {
   return ts;
 }
@@ -59,4 +77,27 @@ export function noteEngineRefusals(list: readonly { readonly id: string; readonl
 
 export function engineRefusals(): ReadonlyMap<string, string> {
   return engine;
+}
+
+const listeners = new Set<() => void>();
+
+/** Call `listener` when the packs' status moves outside a registry commit (a live load answered: a pack loaded or
+ *  refused natively). Returns the unsubscribe. */
+export function subscribePackStatus(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** The status moved: the native refusals are read again, and every listener told (a listener's throw is reported). */
+export function packStatusChanged(): void {
+  forgetNativeRefusals();
+  for (const listener of [...listeners]) {
+    try {
+      listener();
+    } catch (e) {
+      console.warn(`[packs] a status listener threw: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }

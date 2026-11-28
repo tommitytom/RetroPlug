@@ -53,6 +53,10 @@ export interface ComposeOptions {
   /** The project's contributions, when a test wants its own instead of the generated registries': a synthetic section
    *  is the only way to exercise the versioned and throw-isolated paths no product's package uses today. */
   contributions?: ProjectContributions;
+  /** This graph's project is the module set's live one, which a pack's arrival re-resolves
+   *  (ProjectStore.followPacks): the plugin's control plane, or the UI's own stores where no control plane shares
+   *  its. */
+  live?: boolean;
 }
 
 /** Build the store graph over `backend` (the real native backend by default). Mirrors
@@ -62,6 +66,7 @@ export function composeAppStores({
   backend = createRealBackend({ debug: false }),
   notify = () => {},
   contributions,
+  live = false,
 }: ComposeOptions = {}): AppStores {
   const registry = buildAppRegistry();
 
@@ -89,6 +94,7 @@ export function composeAppStores({
   }
 
   const project = new ProjectStore(backend, recent, registry, contributions);
+  if (live) project.followPacks();
   const renders = new RenderJobs(backend, () => project.systems.view().map((s) => s.id));
   project.addOnSystemsChange(() => {
     renders.prune();

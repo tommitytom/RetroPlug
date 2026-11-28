@@ -29,7 +29,7 @@ import { loadAppPacks, packStatus } from "./packs/loadPacks";
 // registers its React re-render fan-out through `uiNotify`; it's a mutable slot because the control
 // plane composes long before any editor exists (and the editor comes and goes).
 const uiNotify: { fn: (channel: StoreChannel) => void } = { fn: () => {} };
-const stores: AppStores = composeAppStores({ notify: (channel) => uiNotify.fn(channel) });
+const stores: AppStores = composeAppStores({ notify: (channel) => uiNotify.fn(channel), live: true });
 const project = stores.project;
 
 // The file watcher's TS policy half: drains native's changed paths and reacts (reload config, refresh

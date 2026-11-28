@@ -26,12 +26,15 @@ export interface Session {
 /** Stand up the control plane the way every host does: build the registry and compose the store graph
  *  over the real backend.
  *  One session at a time: each owns an EngineGraph over the process's one native engine, so a new
- *  session's first edit publishes a graph without the systems earlier sessions built, which frees their cores. */
+ *  session's first edit publishes a graph without the systems earlier sessions built, which frees their cores. A
+ *  session's project is the live one, so a pack it loads (`loadPackNow`) re-resolves it; a newer session takes over, as
+ *  its engine use already does. */
 export function bootSession(): Session {
   const backend = createRealBackend();
   const registry = buildAppRegistry();
   const recent = new RecentStore(backend);
   const project = new ProjectStore(backend, recent, registry);
+  project.followPacks();
   // The render calls set their host shape on the project's graph (docs/modular-graph-phase-b2-design.md 4).
   const audio = createAudioDriver(project.graph);
 

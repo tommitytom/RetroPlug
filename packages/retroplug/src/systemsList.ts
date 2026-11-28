@@ -46,6 +46,9 @@ export interface SystemEntry {
    *  (SystemsStore.suggestedFirst), so the file keeps the order it had
    *  (docs/downloadable-packs-m3-design.md section 3). Absent: `roles` is that order. Not serialized. */
   savedOrder?: readonly number[];
+  /** The role kinds it stores that had no registered type when it was built (their construct hooks did not run): a
+   *  commit that registers one with a hook rebuilds it (SystemsStore.retryMissingRoles). Not serialized. */
+  builtWithout?: readonly string[];
   /** The provenance the system was read with: what a save names for a role kind nothing registers now. Not
    *  rewritten here; buildConfig writes a fresh one. */
   provenance?: Provenance;

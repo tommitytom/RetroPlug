@@ -2,9 +2,10 @@
 // (__rp_packRefusals: API level, no library, discovery), the TS loader's, and an Engine's (each setGraph answer's
 // refusedPacks), so a need whose pack is refused reads `refused` with the reason, the "needs updating" card's data.
 import { test, expect } from "@retroplug/testing";
-import { needOf, statusOf } from "../../src/packs/needs";
-import { forgetNativeRefusals, noteEngineRefusals, noteTsRefusal } from "../../src/packs/refusals";
-import { packStatus } from "../../src/packs/loadPacks";
+import { needOf, needText, statusOf } from "../../src/packs/needs";
+import { forgetNativeRefusals, noteEngineRefusals, noteTsRefusal, tsRefusals } from "../../src/packs/refusals";
+import { APP_BUILDERS, forgetRefused, loadPacks, packStatus } from "../../src/packs/loadPacks";
+import type { PackHost } from "../../src/packs/packHost";
 import { EngineGraph } from "../../src/engineGraph";
 
 const g = globalThis as Record<string, unknown>;
@@ -78,4 +79,93 @@ test("an Engine's refusal rides its setGraph answer and reaches the status", () 
     reason: "a clash in this engine",
   });
   noteEngineRefusals([]);
+});
+
+test("a pack refused in TS and tried again after forgetRefused loses its refusals once it loads", async () => {
+  let broken = true;
+  const host: PackHost = {
+    list: () => [
+      {
+        id: "refix-later",
+        version: "1.0.0",
+        halves: ["app"],
+        provides: { platforms: [], nodeTypes: [], roles: [] },
+        requires: { packs: [], platforms: [] },
+      },
+    ],
+    importHalf: async () => {
+      if (broken) throw new Error("its app half threw");
+      return { default: {} };
+    },
+    refuse: () => {},
+  };
+  const need = needOf("platform", "refix-later-platform", { id: "refix-later", name: "Refix Later" });
+  await loadPacks(host, APP_BUILDERS);
+  expect(packStatus().refused["refix-later"]).toBe("its app half threw");
+  expect(statusOf(need).status).toBe("refused");
+  // Without forgetting, the loader skips a refused id.
+  broken = false;
+  await loadPacks(host, APP_BUILDERS);
+  expect(packStatus().loaded["refix-later"]).toBe(undefined);
+  forgetRefused("refix-later");
+  await loadPacks(host, APP_BUILDERS);
+  expect(tsRefusals().has("refix-later")).toBe(false);
+  expect(packStatus().refused["refix-later"]).toBe(undefined);
+  expect(packStatus().loaded["refix-later"]).toEqual(["app"]);
+  expect(statusOf(need).status).toBe("missing");
+});
+
+test("a pack that loaded ignores a native refusal of another folder of the same id", async () => {
+  g.__rp_packRefusals = () => JSON.stringify([{ id: "refix-folder", reason: "an older folder was refused" }]);
+  forgetNativeRefusals();
+  const need = needOf("platform", "refix-folder-platform", { id: "refix-folder", name: "Refix Folder" });
+  expect(statusOf(need).status).toBe("refused");
+  const host: PackHost = {
+    list: () => [
+      {
+        id: "refix-folder",
+        version: "2.0.0",
+        halves: ["app"],
+        provides: { platforms: [], nodeTypes: [], roles: [] },
+        requires: { packs: [], platforms: [] },
+      },
+    ],
+    importHalf: async () => ({ default: {} }),
+    refuse: () => {},
+  };
+  await loadPacks(host, APP_BUILDERS);
+  expect(statusOf(need).status).toBe("missing");
+  delete g.__rp_packRefusals;
+  forgetNativeRefusals();
+});
+
+test("a pack that loaded and is also refused by the Engine still shows the Engine's refusal", async () => {
+  const host: PackHost = {
+    list: () => [
+      {
+        id: "refix-both",
+        version: "1.0.0",
+        halves: ["app"],
+        provides: { platforms: [], nodeTypes: [], roles: [] },
+        requires: { packs: [], platforms: [] },
+      },
+    ],
+    importHalf: async () => ({ default: {} }),
+    refuse: () => {},
+  };
+  await loadPacks(host, APP_BUILDERS);
+  noteEngineRefusals([{ id: "refix-both", reason: "a clash in this engine" }]);
+  const need = needOf("role", "refix-both-role", { id: "refix-both", name: "Refix Both" });
+  expect(statusOf(need).reason).toBe("a clash in this engine");
+  expect(statusOf(need).status).toBe("refused");
+  noteEngineRefusals([]);
+});
+
+test("a build-failed need reads with and without a reason", () => {
+  const base = needOf("rom", "song.rrone");
+  expect(needText(base)).toBe("The ROM song.rrone is not one this build reads");
+  expect(needText({ ...base, status: "refused" })).toBe("The ROM song.rrone could not be built");
+  expect(needText({ ...base, status: "refused", reason: "the core refused it" })).toBe(
+    "The ROM song.rrone could not be built: the core refused it",
+  );
 });

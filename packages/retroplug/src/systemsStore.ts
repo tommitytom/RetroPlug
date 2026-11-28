@@ -266,8 +266,10 @@ export class SystemsStore {
   }
 
   /** `roles` without the kinds the engine cannot place. */
-  private placeable(roles: readonly RoleInstance[]): RoleInstance[] {
-    return this.unplaceable.size ? roles.filter((r) => !this.unplaceable.has(r.kind)) : roles.slice();
+  private placeable(roles: readonly RoleInstance[], builtWithout: readonly string[] = []): RoleInstance[] {
+    return this.unplaceable.size || builtWithout.length
+      ? roles.filter((r) => !this.unplaceable.has(r.kind) && !builtWithout.includes(r.kind))
+      : roles.slice();
   }
 
   /** The roles `e` stores that the graph cannot place: a kind nothing registers, or one the engine could not place;
@@ -393,6 +395,130 @@ export class SystemsStore {
     return id;
   }
 
+  /** Build placeholder `id` through the load path (docs/downloadable-packs-m3-design.md section 6.1): under the
+   *  same id, in the same slot, seeded from its entries. holdNeeds decides: with something still missing the
+   *  placeholder stays and its needs are read again (null). A build that fails, or whose document the engine refuses,
+   *  leaves it a placeholder too, with a need saying so (null). Quiet, as adopt is. */
+  adoptInto(
+    id: number,
+    config: Parameters<SystemsStore["adopt"]>[0] & { platform?: string },
+    seed: Parameters<SystemsStore["adopt"]>[1],
+  ): number | null {
+    const at = this.held.findIndex((h) => h.id === id);
+    if (at < 0) return null;
+    const held = this.held[at];
+    const { needs, platform } = this.holdNeeds(config, held.raw);
+    if (needs.length) {
+      held.needs = needs;
+      return null;
+    }
+    // Out of the list while it builds, so the slots a publish counts are the project's, each once; back in before a
+    // refused edit's restored model is sent again (commitEdit's rollback), or on any other failure.
+    const liveIndex = held.slot - this.held.filter((h) => h.slot < held.slot).length;
+    this.held.splice(at, 1);
+    let back = false;
+    const putBack = (): void => {
+      if (back) return;
+      back = true;
+      this.held.splice(at, 0, held);
+    };
+    let built: number | null = null;
+    try {
+      built = this.adoptAs(id, config, seed, platform, liveIndex, putBack);
+    } catch (e) {
+      console.warn(`[systems] building ${held.raw.romPath ?? "a placeholder"} threw: ${String(e)}`);
+    }
+    if (built === null) {
+      // Back only when nothing was committed: a throw after a successful commit leaves the system live.
+      if (findById(this.entries, id)) return id;
+      putBack();
+      held.needs = [buildFailed(held.raw)];
+    }
+    return built;
+  }
+
+  /** Put system `id` back as a placeholder holding `held`'s JSON and entries, in the slot it has now: the engine
+   *  refused the system a re-resolve swapped in, so the file's own data must survive it. `reason` is the planner's.
+   *  False when `id` is not a live system. */
+  discardToPlaceholder(id: number, held: PlaceholderEntry, reason?: string): boolean {
+    const slot = this.slotOf(id);
+    const wasFocused = this.focusedId === id;
+    if (!this.discard(id)) return false;
+    for (const h of this.held) if (h.slot >= slot) h.slot++;
+    this.held.push({ ...held, slot, needs: [buildFailed(held.raw, reason)] });
+    if (wasFocused) this.focusedId = id;
+    return true;
+  }
+
+  /** Replace placeholder `id`'s needs (a commit read them again). */
+  setNeeds(id: number, needs: readonly PackNeed[]): void {
+    const held = this.held.find((h) => h.id === id);
+    if (held) held.needs = needs;
+  }
+
+  /** The role kinds of `e` that have a registered type now, though its build found none. */
+  private lateKinds(e: SystemEntry): string[] {
+    return (e.builtWithout ?? []).filter((kind) => this.registry?.roleType(kind));
+  }
+
+  /** `e`'s roles with the late kinds' stored configs parsed for their nodes, as adopt parses them: a kind that
+   *  arrived after the build was sent to its node as written. */
+  private withLateParsed(e: SystemEntry, late: readonly string[]): RoleInstance[] {
+    const rom = e.romPath || `the embedded ${e.embeddedRom}`;
+    const notes: string[] = [];
+    const suggested = this.defaultRoles(e.core, e.platform, e.romPath, e.embeddedRom);
+    const parsed = this.parsedForTheirNodes(e.roles, e.core, suggested, rom, notes);
+    for (const note of notes) console.warn(note);
+    return e.roles.map((r, k) => (late.includes(r.kind) ? parsed[k] : r));
+  }
+
+  /** After a commit (docs/downloadable-packs-m3-design.md section 6.2), the part that needs no rebuild: forget the
+   *  role kinds the engine could not place, so the next publish tries them (a pack loaded since may register their node
+   *  types; one still refused is left out again), and note on each live system built while a role of it had no
+   *  registered type that has one now, with no construct hook, that the kind is placed, its stored config parsed for
+   *  its node. A system whose late kind has a hook is rebuilt by rebuildLateRoles, after the document is published.
+   *  Leaves the store as dirty as it was. True when anything moved. */
+  retryMissingRoles(): boolean {
+    const wasDirty = this.dirty;
+    let moved = this.unplaceable.size > 0;
+    this.unplaceable.clear();
+    for (const e of this.entries.slice()) {
+      const late = this.lateKinds(e);
+      if (!late.length) continue;
+      moved = true;
+      if (late.some((kind) => this.registry!.roleType(kind)!.onConstruct)) continue;
+      const rest = e.builtWithout!.filter((kind) => !late.includes(kind));
+      const entry: SystemEntry = { ...e, roles: this.withLateParsed(e, late) };
+      if (rest.length) entry.builtWithout = rest;
+      else delete entry.builtWithout;
+      this.entries = replaceById(this.entries, e.id, entry);
+    }
+    this.dirty = wasDirty;
+    return moved;
+  }
+
+  /** The rest of it: rebuild in place each live system whose late role kind has a construct hook, its battery and
+   *  working song carried as a reload carries them. Through the ordinary edit, so a document the engine refuses rolls
+   *  the rebuild back and the running system stays as it was (still marked, to be tried again). Leaves the store as
+   *  dirty as it was. True when anything was rebuilt. */
+  rebuildLateRoles(): boolean {
+    const wasDirty = this.dirty;
+    let rebuilt = false;
+    for (const e of this.entries.slice()) {
+      const late = this.lateKinds(e);
+      if (!late.some((kind) => this.registry!.roleType(kind)!.onConstruct)) continue;
+      const rest = e.builtWithout!.filter((kind) => !late.includes(kind));
+      this.flushBeforeDrop(e);
+      const song = this.takeWorkingSong(e);
+      const sramBytes = this.backend.readSram(e.id) ?? undefined;
+      const roles = this.withLateParsed(e, late);
+      const id = this.carryWorkingSong(this.rebuildInPlace(e.id, { sramBytes }, { roles, builtWithout: rest }), song);
+      if (id !== null && findById(this.entries, id)) rebuilt = true;
+    }
+    this.dirty = wasDirty;
+    return rebuilt;
+  }
+
   private placeholderView(h: PlaceholderEntry): SystemView {
     const str = (v: unknown): string => (typeof v === "string" ? v : "");
     const embeddedRom = str(h.raw.embeddedRom);
@@ -466,7 +592,8 @@ export class SystemsStore {
         exportMode: exportModeOf(type, coreConfig),
         resources: e.resources,
         romName: e.romName,
-        pipeline: protocolPipeline(this.placeable(e.roles)),
+        // A kind the system was built without is not placed until it is rebuilt for it (a hook ran, its config parsed).
+        pipeline: protocolPipeline(this.placeable(e.roles, e.builtWithout)),
         gainDb: e.settings.gainDb,
       };
       return coreConfig ? { ...system, coreConfig } : system;
@@ -715,7 +842,7 @@ export class SystemsStore {
   private rebuildInPlace(
     id: number,
     seed: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
-    opts: { savPathOverride?: string; roles?: RoleInstance[] } = {},
+    opts: { savPathOverride?: string; roles?: RoleInstance[]; builtWithout?: readonly string[] } = {},
   ): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
@@ -747,8 +874,10 @@ export class SystemsStore {
       savPath: override,
       roles,
       workingSlot: undefined,
+      ...("builtWithout" in opts ? { builtWithout: opts.builtWithout } : {}),
     });
     if (!prepared) return null;
+    if (!prepared.entry.builtWithout?.length) delete prepared.entry.builtWithout;
     const rebuilt = this.replaceWith(id, src, prepared);
     if (rebuilt === null) return null;
     this.rememberReplacement(id, rebuilt);
@@ -1373,6 +1502,34 @@ export class SystemsStore {
     // The platform the ROM already classified as (holdNeeds), so it is read once.
     classified?: Platform,
   ): number | null {
+    return this.adoptAs(allocSystemId(), config, blobs, classified);
+  }
+
+  /** adopt under `id`, inserted at live index `at` (appended when omitted). */
+  private adoptAs(
+    id: number,
+    config: {
+      core?: Core; // persisted since the v2 project schema (else auto-derived from platform)
+      romPath?: string;
+      savPath?: string;
+      savSuffix?: number;
+      embeddedRom?: string;
+      settings?: Partial<CommonSettings>;
+      roles?: RoleInstance[];
+      workingSlot?: TrackedSlot;
+      provenance?: Provenance;
+    },
+    // `song`: a working song the exported project was still carrying across a reboot (see
+    // ProjectStore.buildArchive) - parked again on the adopted system, to land once its cart is up.
+    // `freshSram`: a battery newer than the savestate's own, written over it once the core is built.
+    blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array; song?: WorkingSongImage; freshSram?: Uint8Array },
+    // The platform the ROM already classified as (holdNeeds), so it is read once.
+    classified?: Platform,
+    // A live index to insert at (a placeholder swapped in); appended when omitted.
+    at?: number,
+    // Runs when the adopt's document is refused and the edit rolled back (the swapped placeholder goes back).
+    onRestore?: () => void,
+  ): number | null {
     const embeddedRom = config.embeddedRom ?? "";
     const romPath = config.romPath ?? "";
     const savSuffix = config.savSuffix ?? 0;
@@ -1435,7 +1592,6 @@ export class SystemsStore {
     // a throw here leaves nothing put, and once: the note below holds the stored config against it.
     const systemRole = config.roles?.find((r) => r.kind === core);
     const parsed = systemRole ? parsedRoleConfig(this.registry, systemRole) : undefined;
-    const id = allocSystemId();
     const spec = this.applyConstructHooks({
       romPath,
       platform,
@@ -1450,6 +1606,8 @@ export class SystemsStore {
     // before the build, so a throw here leaves no core behind.
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const battery = this.detectBattery(romPath, embeddedRom, platform);
+    const registry = this.registry;
+    const missing = registry ? [...new Set(roles.filter((r) => !registry.roleType(r.kind)).map((r) => r.kind))] : [];
     const prepared = this.boot(spec, {
       id,
       platform,
@@ -1461,6 +1619,7 @@ export class SystemsStore {
       battery,
       settings,
       roles,
+      ...(missing.length ? { builtWithout: missing } : {}),
       workingSlot: config.workingSlot ? { ...config.workingSlot } : undefined,
       ...(savedOrder ? { savedOrder } : {}),
       ...(config.provenance ? { provenance: config.provenance } : {}),
@@ -1494,9 +1653,14 @@ export class SystemsStore {
     for (const note of notes) console.warn(note);
     const wasEmpty = this.entries.length === 0;
     if (!this.commitEdit("adopt", {
-      entries: appendEntry(this.entries, prepared.entry),
-      focusedId: wasEmpty ? id : this.focusedId,
+      entries:
+        at === undefined
+          ? appendEntry(this.entries, prepared.entry)
+          : [...this.entries.slice(0, at), prepared.entry, ...this.entries.slice(at)],
+      // A swap into a placeholder's slot leaves the focus where it is: the id is the placeholder's own.
+      focusedId: wasEmpty && at === undefined ? id : this.focusedId,
       put: prepared.handles,
+      onRestore,
     })) return null;
     // A working song the archive carried lands once the cart is up (settleCarries), and a battery newer than the
     // savestate's own is written over it, live, once the engine places the system: at once when this adopt's own
@@ -1900,7 +2064,15 @@ export class SystemsStore {
   // document's own answer is the caller's, not whatever the transport did to a handle afterwards.
   private commitEdit(
     what: string,
-    edit: { entries: SystemEntry[]; focusedId?: number; put?: number[]; drop?: number[]; closeSlot?: number },
+    edit: {
+      entries: SystemEntry[];
+      focusedId?: number;
+      put?: number[];
+      drop?: number[];
+      closeSlot?: number;
+      /** Runs at the end of a rollback, before the restored model is sent again. */
+      onRestore?: () => void;
+    },
     rearmTap = true,
   ): boolean {
     const entries = this.entries;
@@ -1921,6 +2093,7 @@ export class SystemsStore {
           console.warn(`[systems] ${what}: giving back the edit's resource threw too: ${String(e)}`);
         }
       }
+      edit.onRestore?.();
     };
     // The restored model's own send, after a refusal or a throw: the graph's model is the edit's either way, so the
     // plan the engine runs is only what a later publish builds once this lands. Its failure is said, never thrown:
@@ -1959,6 +2132,14 @@ export class SystemsStore {
     resend();
     return false;
   }
+}
+
+/** The need a placeholder keeps when it could not be built after all (the build failed, or the engine refused its
+ *  document): a "rom" need, which names no pack, refused with the reason. */
+function buildFailed(raw: Readonly<Record<string, unknown>>, reason?: string): PackNeed {
+  const name = basename(String(raw.romPath ?? "")) || String(raw.embeddedRom ?? "");
+  const need = { ...needOf("rom", name), status: "refused" as const };
+  return reason === undefined ? need : { ...need, reason };
 }
 
 /** A system TS has booted, its resources put and its handles held, but not yet placed: the entry it becomes and the

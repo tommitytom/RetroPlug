@@ -18,7 +18,14 @@ import type { ConsoleDescriptor, ConsolesContribution } from "@retroplug/core/co
 import { placersRegistry } from "../contributions/placers";
 import type { GraphPlacer } from "@retroplug/core/placer";
 import { nativePackHost, type HalfKind, type PackHost, type PackInfo, type PackProtocol } from "./packHost";
-import { engineRefusals, nativeRefusals, noteTsRefusal, type NativeRefusal } from "./refusals";
+import {
+  engineRefusals,
+  forgetRefusalsOf,
+  nativeRefusals,
+  noteLoadedPack,
+  noteTsRefusal,
+  type NativeRefusal,
+} from "./refusals";
 import { protocolAdditions } from "./protocolHalf";
 import { kindAdditions, kindsAdded, packKindItems, type PackKindItems } from "./kindsHalf";
 
@@ -147,6 +154,13 @@ export function packStatus(): {
     native: Object.fromEntries(nativeRefusals()),
     engine: Object.fromEntries(engineRefusals()),
   };
+}
+
+/** Forget that `id` was refused, so the next loadPacks tries it again (a live load of its folder): the loader skips a
+ *  refused id, and its native and TS refusals are stale once it loads. */
+export function forgetRefused(id: string): void {
+  refused.delete(id);
+  forgetRefusalsOf(id);
 }
 
 /** A half that ran past the load budget: the one refusal worth remembering process-wide, since it cost the budget. */
@@ -329,6 +343,8 @@ async function loadUnguarded(host: PackHost, builders: Partial<Record<HalfKind, 
     const halves = loaded.get(s.pack.id) ?? new Set<HalfKind>();
     for (const kind of s.kinds) halves.add(kind);
     loaded.set(s.pack.id, halves);
+    // A loaded pack's native and TS refusals no longer count: they are another folder's or an earlier attempt's.
+    noteLoadedPack(s.pack.id);
     kindsAdded(s.pack.id, s.kindItems);
   };
   try {

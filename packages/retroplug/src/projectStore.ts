@@ -15,7 +15,7 @@
 
 import type { ControlPlaneBackend, GraphError, ZipEntry } from "./backend";
 import { protocolId } from "./graph/buildGraph";
-import { SystemsStore } from "./systemsStore";
+import { SystemsStore, type PlaceholderEntry } from "./systemsStore";
 import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
 import type { RoleRegistry } from "@retroplug/core/systemRoles";
@@ -47,11 +47,14 @@ import {
   defaultSections,
   readSectionVersion,
   type SectionEntry,
+  classifySystem,
 } from "./projectConfig";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
 import { missingPacksOf, type MissingPack } from "./packs/needs";
+import { subscribeContributions } from "./contributions/registry";
+import { subscribePackStatus } from "./packs/refusals";
 import { PROJECT_JSON, sramKey, stateKey, songKey, partitionEntries } from "./projectBinaries";
 import { encodeWorkingSong, decodeWorkingSong } from "@retroplug/tracker/workingSongBlob";
 
@@ -158,6 +161,30 @@ const SETTING_VALUES = {
   audioRouting: AUDIO_ROUTING_VALUES,
 } as const;
 
+/** The store a pack's arrival re-resolves: the one its host registered with followPacks (the plugin's control
+ *  plane, the UI's own stores where no control plane shares its, a CLI session). One per module set; a store nobody
+ *  registered adopts what arrived lazily, on its own reads, as every store always has. */
+let liveStore: ProjectStore | null = null;
+let following = false;
+let scheduled = false;
+
+/** One re-resolve of the live store, in a microtask: it runs once the code that committed has finished its synchronous
+ *  stretch (loadPacks' commit, its halves marked loaded and its kind items accepted, its fallback's per-pack commits),
+ *  and before anything awaiting that load continues. A promise job, not a timer: the native test host never fires
+ *  one. */
+function scheduleReresolve(): void {
+  if (scheduled || !liveStore) return;
+  scheduled = true;
+  void Promise.resolve().then(() => {
+    scheduled = false;
+    try {
+      liveStore?.reresolve();
+    } catch (e) {
+      console.warn(`[project] re-resolving the project after a pack arrived threw: ${String(e)}`);
+    }
+  });
+}
+
 export class ProjectStore {
   readonly systems: SystemsStore;
   private projectSettings: ProjectSettings = defaultSettings();
@@ -191,6 +218,7 @@ export class ProjectStore {
   private systemsObservers: Array<() => void> = [];
   private onChangeCb: () => void = () => {};
   private holdGraph = false; // a load's adopts: the graph is published once they are all built
+  private reresolving = false; // a pack's arrival is re-resolving: the systems store's edit signal is not told on
   /** Section keys whose stamped-newer refusal this session already warned about: one warning per key, not one per
    *  patch, as a root's warnStampedNewer warns once at load. */
   private refusedSections = new Set<string>();
@@ -215,6 +243,7 @@ export class ProjectStore {
     this.systems = new SystemsStore(
       backend,
       () => {
+        if (this.reresolving) return;
         this.markDirty();
         this.notifySystemsChange();
       },
@@ -273,6 +302,83 @@ export class ProjectStore {
     this.notifySystemsChange();
     this.onChangeCb(); // the "project" channel hears an adopted section as it hears a setSection
     return true;
+  }
+
+  /** Make this store the module set's live project: a commit to the registries, or a move in the packs' status (a
+   *  live load answered), re-resolves it (docs/downloadable-packs-m3-design.md section 6). The host that owns the live
+   *  project calls this once; a later call by another store takes over. */
+  followPacks(): void {
+    liveStore = this;
+    if (following) return;
+    following = true;
+    subscribeContributions(scheduleReresolve);
+    subscribePackStatus(scheduleReresolve);
+  }
+
+  /** What a pack's arrival does to the open project (docs/downloadable-packs-m3-design.md section 6): each placeholder
+   *  is tried again through the load path, a success taking its id and slot with its ROM and entries, and one that
+   *  still fails keeps its needs, read again; the roles that were missing are placed (SystemsStore.retryMissingRoles);
+   *  the sections and services committed since are adopted. The observers are told once; the graph is published by the
+   *  place step and once more for each system rebuilt for a role that arrived. Nothing the user did changed the
+   *  project, so it is as clean or dirty as it was. True when anything changed. Called by the scheduler for the
+   *  registered store, after the load that committed. */
+  reresolve(): boolean {
+    const wasDirty = this.dirty;
+    let changed = false;
+    // The systems store's own edit signal (a rebuild's markDirty) is held back: the re-resolve tells observers once.
+    this.reresolving = true;
+    try {
+      // The placeholders swapped in, by id, with what they held: one the engine refuses goes back as it was.
+      const swapped = new Map<number, PlaceholderEntry>();
+      this.holdGraph = true;
+      try {
+        for (const held of this.systems.placeholders()) {
+          const parsed = classifySystem(held.raw);
+          if (!parsed) continue; // a raw that parsed once parses again: kept as it is
+          if ("needs" in parsed) {
+            this.systems.setNeeds(held.id, parsed.needs);
+            continue;
+          }
+          const seed = seedOf(held.blobs.get("sram"), held.blobs.get("state"), held.blobs.get("song"));
+          if (this.systems.adoptInto(held.id, parsed.system, seed) !== null) {
+            swapped.set(held.id, held);
+            changed = true;
+          }
+        }
+        try {
+          if (this.systems.retryMissingRoles()) changed = true;
+        } catch (e) {
+          // A pack's own provider or schema threw: the swaps above are made, so they are still placed and told.
+          console.warn(`[project] noting the roles that arrived threw: ${String(e)}`);
+          changed = true;
+        }
+      } finally {
+        this.holdGraph = false;
+      }
+      const adopted = this.adoptPending();
+      if (changed || adopted) {
+        try {
+          // As a load places its systems: a system the engine refuses for a reason of its own is discarded, noted.
+          this.placeLoadedSystems(swapped);
+          this.systems.writeHeldBatteries();
+        } catch (e) {
+          console.warn(`[project] placing what a commit brought threw: ${String(e)}`);
+        }
+      }
+      // After the document is out, through the ordinary edit: a refused rebuild rolls back, the system keeps running.
+      try {
+        if (this.systems.rebuildLateRoles()) changed = true;
+      } catch (e) {
+        console.warn(`[project] rebuilding a system for a role that arrived threw: ${String(e)}`);
+      }
+      changed = changed || adopted;
+    } finally {
+      this.reresolving = false;
+      this.dirty = wasDirty;
+      this.notifySystemsChange();
+      this.onChangeCb();
+    }
+    return changed;
   }
 
   /** Parse a project's JSON with the sections registered now, remembering how many, so a section registered between
@@ -1050,7 +1156,7 @@ export class ProjectStore {
   /** Place the systems a load adopted, once for all of them. A document the engine refuses is published again without
    *  the system the refusal names (an unreadable ROM, a node whose stored settings this build cannot read), with a
    *  note saying which, until a document plans or no system is left: one bad system costs only itself. */
-  private placeLoadedSystems(): void {
+  private placeLoadedSystems(swapped: ReadonlyMap<number, PlaceholderEntry> = new Map()): void {
     for (;;) {
       if (this.publishGraph(true)) return;
       // A system's own node is sys-<id>; its protocol nodes are sys-<id>/<kind> and sys-<id>/<kind>/out, and native
@@ -1066,7 +1172,26 @@ export class ProjectStore {
         id = Number(match[1]);
         break;
       }
-      const dropped = id > 0 ? this.systems.discard(id) : undefined;
+      // A system a re-resolve swapped in is not lost with its document: it goes back as the placeholder it was.
+      const held = swapped.get(id);
+      const nameOf = (raw: Readonly<Record<string, unknown>>): string =>
+        String(raw.romPath || "") || (raw.embeddedRom ? `the embedded ${String(raw.embeddedRom)}` : "a system");
+      let dropped: { name: string } | undefined;
+      if (held) {
+        if (this.systems.discardToPlaceholder(id, held, refusal?.message)) dropped = { name: nameOf(held.raw) };
+      } else if (id > 0 && this.reresolving) {
+        // A system that ran before this re-resolve is not lost to what a pack brought: the role node the engine
+        // refused is left out and the document sent again; a refusal of its own node leaves it as it was.
+        if (refusal && this.leaveOutRefusedRole(id, refusal)) continue;
+        console.warn(
+          `[systems] the engine refused a document naming system ${id} (${refusal?.code}: ${refusal?.message}); ` +
+            `the project keeps it`,
+        );
+        return;
+      } else if (id > 0) {
+        const gone = this.systems.discard(id);
+        if (gone) dropped = { name: gone.romPath || `the embedded ${gone.embeddedRom}` };
+      }
       if (!dropped) {
         // A refusal no system explains leaves the store listing systems the engine does not run: say so rather
         // than returning silently, so a user knows why nothing plays.
@@ -1081,10 +1206,27 @@ export class ProjectStore {
         return; // nothing left to drop: either no refusal named a system, or the system it named is already gone
       }
       console.warn(
-        `[systems] ${dropped.romPath || `the embedded ${dropped.embeddedRom}`}: the engine refused it, so the project ` +
-          `loads without it (${refusal?.code}: ${refusal?.message})`,
+        held
+          ? `[systems] ${dropped.name}: the engine refused it, so it is held as a placeholder ` +
+              `(${refusal?.code}: ${refusal?.message})`
+          : `[systems] ${dropped.name}: the engine refused it, so the project loads without it ` +
+              `(${refusal?.code}: ${refusal?.message})`,
       );
     }
+  }
+
+  /** Leave out the role of system `id` whose node `error` names (`sys-<id>/<kind>` or its `/out`); false when it names
+   *  no role of the system, or the kind is already left out. */
+  private leaveOutRefusedRole(id: number, error: GraphError): boolean {
+    const e = this.systems.systems().find((s) => s.id === id);
+    if (!e) return false;
+    for (const r of e.roles) {
+      const node = protocolId(id, r.kind);
+      if (error.nodeId === node || error.nodeId === `${node}/out`) {
+        return this.systems.leaveOut(id, r.kind, error.message);
+      }
+    }
+    return false;
   }
 
   private markDirty(): void {
