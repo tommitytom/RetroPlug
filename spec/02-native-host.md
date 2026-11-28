@@ -701,7 +701,7 @@ The document `buildGraph` writes:
   | Shape | Set by | Channels |
   |---|---|---|
   | `multi(n)` | the plugin (8, through `__rp_setHostOutputs` once the control plane is up), the SDL standalone (its device's channel count, likewise), TS's audio driver for `startAudio` and `renderAudio` (2) and `renderBlocks` (its `outputs`) | the routing above |
-  | `perSystem` | TS's audio driver for `renderAudioPerSystem` | slot i's mix on channels `2i`, `2i + 1` |
+  | `perSystem` | TS's audio driver for `renderAudioPerSystem` | slot i's mix on channels `2i`, `2i + 1`; one pair per SLOT, so a placeholder's empty slot returns a silent buffer and native sizes the pull by the planned host width / 2, refusing a plan with fewer pairs than live systems |
   | `perChannel` | TS's audio driver for `renderAudioPerChannel` (one system) | stream s on channels `2s`, `2s + 1`; a mono stream fills only `2s` |
 
   The render calls set their shape, render, and put the one before it back. Natively, each render RPC
@@ -1461,6 +1461,39 @@ Engine that already holds one of a pack's ids (a script node's, or a test's `add
 there alone (`refusedPacks()`), and so a pack requiring one it refused; a refusal is not retried in that Engine (a new
 Engine judges afresh). The offline pool keeps its fixed `core` and `dsp` subset and registers no pack.
 
+**The live load, and refusals in the pack status.** `__rp_packLoadNow(dir)` loads one pack's version folder into the
+process's table now (`PackTable::load`) and answers `{"loaded": id}` or `{"refused": reason}`; a folder already loaded
+answers its load again, a refusal is in the table's refusals and on stderr as a launch's is, and a C++ exception (a
+`bad_alloc`, a path conversion) answers as a refusal rather than unwinding through QuickJS's frames. Every Engine
+registers the pack at its next `setGraph` (`syncPacks`, above); a kinds half added live waits for the next launch in
+every running Engine (M2f), so a pack with one shows refused until a relaunch. TS reaches it through `loadPackNow()`
+(`src/packs/loadPackNow.ts`: the CLI SDK exports it, the plugin's control plane binds it as `__rp_loadPackNow`, and the
+test hosts call it): native, then this module set's loader again with the builders it loaded with (only the new
+pack's halves load), then the registry commit schedules the re-resolve
+([03](03-ts-layer.md#placeholders-and-the-live-load)). It answers `{ loaded }` only when TS took the pack as well; a
+pack native loaded that TS then refuses (its app half throws, its manifest does not hold, it ran past the load budget)
+answers `{ refused }` with the TS reason. It calls `packStatusChanged()` only when nothing committed (a refusal, or a
+folder already loaded), since a successful load's commit schedules the re-resolve itself. A pack refused in TS is tried
+again, its refusal forgotten first. The limits that stay are the host's: QuickJS-ng caches a module by its import name
+(`pack:<id>/<half>`) in the context's `loaded_modules`, so a half that compiled and resolved stays cached for the
+context's life, a half whose body threw is cached with its rejection, `pack.json` is never re-read for a folder the
+table already holds, and a pack refused for running past the load budget stays out of `__rp_packList` for the process.
+Only a half that failed to compile, or whose import the contract guard refused, picks up new code on a retry; a fixed
+pack otherwise takes a restart. A plugin's `__rp_loadPackNow` is fire and forget and the DAW is not told that the
+parameter map or the sync latency moved: the C++ caller M4 adds must re-read both
+([07](07-remaining-work.md#downloadable-packs)).
+
+Refusals reach TS three ways, all read by `statusOf` (`src/packs/needs.ts`): the table's `PackTable::refusals()` through
+`__rp_packRefusals`, the TS loader's own, and each Engine's, which `RpcSetGraphResult.refusedPacks` carries on every
+`setGraph` answer (`{ id, reason }` for each id `Engine::refusedPacks()` lists). `__rp_packStatus` reports all three.
+A role node an Engine cannot place (`unknown-type` at `sys-<id>/<kind>` or its `/out`) is a MISSING ROLE: the control
+plane leaves that role out of the document and sends it again, and the system runs without it. A role's node id is
+matched against the system's own roles (`protocolId`), never parsed, since a kind may hold a `/`. Any other refusal
+naming a system's node or one of its role nodes discards that system on a load; a system a re-resolve swapped in goes
+back to a placeholder instead, and on a system that was live before the re-resolve a refused role node is left out and a
+refusal of its own node keeps it with a warning. A refusal naming no node discards nothing: it is logged, and the store
+keeps listing systems the engine does not run.
+
 **A pack's script half** is a device script pack (MicroQuickJS nodes, as BlipToaster's is), shipped as the ES5 source the
 device-pack toolchain writes ([06](06-build-test.md#the-ts-loader-and-its-fixture-packs)). The manifest's `halves.script`
 is the whole pack's file (the one the desktop's control context runs) and its `script` member is
@@ -1533,9 +1566,12 @@ dynamic imports, not code the pack evaluates through `eval` or `new Function` (t
 a pack's mistakes, and part 1 does not defend against a pack set on going around it (packs run in the app's realm). The
 accepted set is a frozen object written into the context from the table `registerSharedModules` read, so it is the
 context's own: the CLI's holds the shell's contracts, the app's the UI's too. The installer also defines two globals,
-`__rp_packList()` (every pack with a half besides the native one: id, version, halves, `provides`, `requires`, in load
-order, as JSON) and `__rp_packRefused(id, reason, skipLater)` (records the refusal in the
-table, `PackTable::recordRefusal`; with `skipLater` the pack is also left out of every later list in the process).
+`__rp_packList()` (every pack with a half besides the native one: id, `name`, version, halves, `provides`,
+`requires`, in load order, as JSON) and `__rp_packRefused(id, reason, skipLater)` (records the refusal in the
+table, `PackTable::recordRefusal`; with `skipLater` the pack is also left out of every later list in the process). A
+txiki host's context also gets `__rp_packRefusals()` (the table's refusals as JSON: id, reason, the folder's version
+when it is `<id>/<version>`, and `needsUpdate` for an API-level refusal, `PackRefusal.needsUpdate`) and
+`__rp_packLoadNow(dir)` (the live load, above); the render worker's bare runtime has neither.
 
 The TS loader (`src/packs/loadPacks.ts`, [06](06-build-test.md#the-ts-loader-and-its-fixture-packs)) reads the list and
 imports the halves; a host starts it after installing its hooks and waits for it by time, not by pump count. The control

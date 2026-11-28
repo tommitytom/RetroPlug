@@ -204,6 +204,13 @@ automation** on systems 2-4, whose pool indices are `system * CC_SLOTS_PER_SYSTE
 derived from `(system, n)` so DPF's own state restore survives, but CLAP's `clap_id` and VST3's
 `param_id` are the flat index), so it is deliberately generous rather than tight.
 
+**A placeholder keeps its range.** The control plane projects the map over every slot (`systems.slotView()`), so a
+placeholder, a system whose pack is missing, reserves its pool range and claims no lane (it has no roles), and a later
+system's lanes, and its pre-routing channel, stay where they are while the pack is missing: a DAW's automation stays on
+its system, and the pack's arrival fills the range in place. A swap that adds lanes is not re-declared to the DAW until
+something re-reads `__rp_parameterMapJson`
+([07](07-remaining-work.md#downloadable-packs)).
+
 **The map.** [parameterMap.ts](../packages/retroplug/src/parameterMap.ts) holds one `RomSpec` per ROM
 build: its voice names per 0-based MIDI channel, and every CC it responds to with the channels that
 accept it. `expandRomSpec` turns that into one lane per (CC, channel), named `"<Voice> <Control>"`.

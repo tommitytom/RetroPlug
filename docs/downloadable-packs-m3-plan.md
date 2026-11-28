@@ -3955,4 +3955,88 @@ macOS and linux-arm64 the native changes build and their tiers pass.
 
 ## After the reviews
 
+What the build found that the plan did not say, and where the code differs from the plan's text (the code wins):
+
+- **Task 1.** `inSavedOrder` returns the roles as they are unless the saved order is exactly as long as the list, so a
+  role added or removed since the parse cannot misplace one; two comments were corrected.
+- **Task 2.** The plan's `PackModules.test.cpp` expectation was a plain `R"(...)"` raw string, which the fixture's
+  name `Pack modules fixture (good)` ends early at its `)"`, so the file did not compile; it uses `R"json(...)json"`.
+  The case lives in `retroplug-classid-test`, not `retroplug-plugin-test`, which is why the plan's run missed it.
+  Provenance is written and read through own-property guards, so a hand-edited `__proto__` or `constructor` kind is
+  data and never the record's prototype, and a provenance case at the systems-store level holds that a saved system
+  names its packages through the store, not only through `buildConfig`.
+- **Task 3.** A slot closes before the graph publishes (`commitEdit`'s `closeSlot`), so a publish never counts a slot
+  its removal already emptied; `removePlaceholder` publishes; focus falls back to a placeholder when no live system is
+  left; `isPristine` counts slots, so a project holding only a placeholder is not pristine.
+- **Task 4.** `renderAudioPerSystem` returns one stereo buffer per SLOT, a placeholder's silent, rather than reverting
+  the shape to live numbering (decided in review). Native sizes the pull by the planned host width / 2 and refuses a
+  plan with fewer pairs than live systems (`EngineGraph.test.cpp`); the slot check in `buildGraph` also requires the
+  live systems to keep their order within the slots, else the live ids are numbered.
+- **Task 5.** The `"rom"` need, decided in review: a ROM no detector claims while its stored platform IS registered (a
+  corrupt or replaced file), and a build that failed, are held with a need that names no pack and is not counted in
+  `missingPacks`; the platform need, which names a pack, is for an unregistered platform. A role need is added on an
+  adopt-time hold. `holdNeeds` decides for `adoptOrHold` and `adoptInto` alike, and each ROM is classified once,
+  `adopt` taking the platform `holdNeeds` found.
+- **Task 6.** `statusOf` has an engine-only mode for a role the engine could not place: it is a role TS registered, so
+  its pack loaded, and a native or TS refusal under that id belongs to another folder. A role node's id is matched
+  against the system's own roles (`protocolId`), not parsed, since a kind may hold a `/`. `jsonString` escapes control
+  characters, so a refusal reason with a newline reaches TS as JSON.
+- **Task 7.** The re-resolve swaps through `adoptInto` and never `adoptOrHold`, which would append a new placeholder
+  beside the one it is trying. An engine-refused swap goes back to a placeholder (`discardToPlaceholder`) with the
+  planner's reason in its need. Rebuilds for a late hooked kind run after the hold, through the edit path
+  (`rebuildLateRoles`), so a refusal rolls back and the running system stays. A deviation from the plan's text, and a
+  behaviour change: `graphSystems` leaves out a live system's `builtWithout` kinds, so a late role's node is placed
+  only by a re-resolve that rebuilt or noted it, and a store nobody registered with `followPacks` never places it. In a
+  re-resolve, a refused role on an already-live system is left out (`leaveOutRefusedRole`) and a refusal of its own
+  node keeps the system with a warning. `forgetRefused` (the loader's) and `noteLoadedPack` clear a stale refusal when
+  its pack loads later, so a pack refused at startup and loaded live loses its old reason. One notify goes out per
+  re-resolve.
+- **Task 8.** `loadPackNow` answers loaded only when TS took the pack, and `{ refused }` with the TS reason when it did
+  not. `packStatusChanged` is called only when nothing committed, since a successful load's commit schedules the
+  re-resolve. The native hook catches C++ exceptions and answers them as a refusal. A fixed pack's new code needs a
+  restart in most cases: QuickJS's `loaded_modules` caches a module by its import name for the context's life, a half
+  whose body threw stays cached with its rejection, `pack.json` is not re-read for a folder the table holds, and a
+  budget refusal is sticky; only a compile failure or a contract-guard refusal picks up new code. The plugin's
+  `__rp_loadPackNow` is fire and forget, and the DAW's parameter and latency re-poll is left to M4's C++ caller.
+- **Task 9.** A ROM load with a placeholder focused appends a new system and leaves the placeholder alone (decided
+  in review, from the Task 3 review's finding); `primary()` falls back to the first live system with a placeholder
+  focused (accepted in review). The menus count slots, so an audio split is not offered for one live system beside a
+  placeholder (from the Task 4 review). The warning colour takes precedence over `disabled`. The notice waits behind a
+  song prompt (`NoticeQueue`) and is tracked per store.
+- **The verification gap.** `run-plugin-tests.mjs engine-graph` does not run the `[engine-graph]` cases, which is how
+  Task 4's first per-slot render change broke one unseen; a native render or RPC change runs
+  `build/bin/retroplug-engine-graph-test` whole.
+- **Task 10.** Assertion tightening only.
+- **The verification (2026-11-28).** The parallel tip-verify (`.superpowers/verify/runs/m3`) passed every leg but
+  `native`, whose one failure is the known machine-local `app-cores` GBA case; `test:native:packs` fails only the same
+  case, and `test:ui:packs` and `test:cli-ts:packs` pass. Against `runs/cli-packs` the differences are additions (the
+  new files and cases, 266 pure files, 51 UI files, 178 native files, the live-load CLI leg) and the `plugin` and
+  `egfix` legs passing where that run had the product-registrations golden miss; the parity, kit and render legs are
+  unchanged.
+
 ## Design questions this plan found
+
+- **An empty slot's MIDI and audio.** A placeholder holds its routing position and its buses, so the channels a
+  per-instance routing sends it and the host channels it would sum into carry nothing while its pack is missing, and a
+  `renderAudioPerSystem` returns its slot silent. Should the card say which channel it holds?
+- **More than one project per module set.** One store is registered (`followPacks`); a host holding two live projects
+  in one module set would need the registration to be a list. Two plugin instances sharing a module set would take over
+  each other's re-resolve (M5d).
+- **A gone ROM on a placeholder** is not offered for relink and stays a placeholder after its pack arrives (adopt
+  refuses the missing file). Should the relink scan include placeholders?
+- **A v1 file** with an unknown platform is still dropped, its core never being backfilled.
+- **The reactive leave-out** costs one refused `setGraph` after each re-resolve while an Engine refuses a pack.
+- **Engine refusals only grow** in TS, since an Engine never takes a pack back, so a pack refused by one plugin
+  instance's Engine reads refused in that instance only.
+- **A live load's kinds half** waits for the next launch in every running Engine (M2f), so a pack with one shows refused
+  until a relaunch.
+- **The notice on a control-plane load.** A load made while the editor is open (a DAW `setState`,
+  `__rp_loadProjectPath`) raises no missing-packs notice until the next editor open; a revision watch on the project
+  channel would cover mount and live alike.
+- **A store not registered with `followPacks` never places a late role.** The registration is the host's to make; a
+  store built by a test or a tool without it keeps a late role's node out of the graph.
+- **A refused rebuild retries.** A system whose late role has a construct hook, and whose rebuilt document the engine
+  refuses, stays marked and is rebuilt again, at a boot's cost, on every later re-resolve.
+- **A per-system render cannot catch a too-wide plan.** Native sizes the pull by the planned host width, so a plan
+  wider than the slots is rendered as it is, and only one narrower than the live systems is refused.
+- **M4's live-load caller.** It must re-read the parameter map and the sync latency on the main thread (spec/07).

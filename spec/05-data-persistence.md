@@ -118,6 +118,10 @@ build) there is no host chunk, so the plugin starts **empty** unless
 `RETROPLUG_AUTOLOAD_PROJECT` seeds it. A standalone that reopens the last-saved
 project from disk on launch is *not yet built* (see below).
 
+A DAW chunk keeps a placeholder: `getState` writes the project through the same save path, so a session saved while a
+pack is missing carries the placeholder's JSON and entries and replays them when the pack is there
+([the persistence policy](#persistence-policy-the-precise-statement)).
+
 ## Config models on disk
 
 Three per-user, machine-global files live under `configDir()` (per-OS:
@@ -285,6 +289,35 @@ suggest), and a repair is logged once. That parse drops a key this build's schem
 already did, so the next save no longer carries it (a newer build's additive field in a role config survives a
 load only in a build that reads it). The core's config role, roles with no node and kinds the registry does not
 register stay as written. See [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).
+
+**A system a missing pack provides is a placeholder**
+([downloadable-packs-m3-design.md](../docs/downloadable-packs-m3-design.md),
+[its plan](../docs/downloadable-packs-m3-plan.md)). A system whose platform or core no registered console has, whose
+embedded ROM no embed registry declares, whose ROM no detector claims, or whose platform has no default core, is not
+dropped: the systems store holds it in a slot of its own with its JSON exactly as read (`raw`), its zip entries as
+untouched bytes (`blobs`) and what it `needs` (`src/packs/needs.ts`: each need a `platform`, `core`, `embed`, `role` or
+`rom`, with the pack the file names for it and whether that pack is missing or refused). It builds no core and the graph
+places nothing for it; its only edit is Remove. A save writes its `raw` and its blobs back byte for byte, so a project
+opened without a pack and saved again is the file it was, and a DAW's `getState` goes through the same path. A ROM no
+detector reads under a platform that IS registered (a corrupt or replaced file), and a system whose build failed, are
+held with a `"rom"` need, which names no pack and is not counted in `missingPacks`. A system that fails the parse for
+any other reason (a malformed field) is still dropped, as is a v1 file's system with an unknown platform (its core is
+never backfilled).
+`loaded` carries `missingPacks` (the distinct packs the placeholders and the live systems' missing roles need, with
+their counts) when there are any. When the pack arrives the project re-resolves and the placeholder is built from its
+kept JSON and entries ([03](03-ts-layer.md#placeholders-and-the-live-load)).
+
+**`provenance`** is a member of each saved system: `platform` (the package that provided its platform and core), `embed`
+(its embedded ROM's) and `roles` (each role kind's package), each `{ id, name, version? }`, written from the registries
+at every save. A built-in package is named too (no `version`), so a project saved where Mesen is built in names it when
+it opens where Mesen is a pack. It is additive and tolerant (a malformed member reads as absent, and the system still
+parses), so it needed no migration step; a file saved before it names the platform or role kind alone. A placeholder
+keeps the provenance it was read with.
+
+**Order and index.** A save writes each system's roles in the order the file held them (`SystemEntry.savedOrder`; a
+known kind's config is still parsed, nothing moves). Zip entries are keyed by the SLOT index at save, and the load reads
+them by the system's index in the FILE, which the parse keeps (`ProjectConfig.sources`): a system the parse dropped
+keeps its entries to itself, and the system after it keeps its own SRAM rather than receiving the dropped one's.
 
 Two things stay outside the JSON-migration model: the per-system **role-config** that
 crosses to native is re-parsed there with reflect-cpp `rfl::DefaultIfMissing` (tolerant —

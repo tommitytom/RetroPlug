@@ -51,6 +51,13 @@ TS session at build time; the binary runs the JS). See the CLI scaffold in
   `keepAlive()` keeps the loop running until `tjs.exit`, a Ctrl-C or an uncaught error, for a session that awaits a
   timer or a child process, and an error nothing catches ends any session with exit 1 and its text, unless the session exits in the same loop turn
   ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)).
+- **A live pack load**: `loadPackNow(dir)` (the SDK's export,
+  [src/packs/loadPackNow.ts](../packages/retroplug/src/packs/loadPackNow.ts)) loads one development pack folder
+  into the session now, and answers `{ loaded: id }` once the host and the session's loader both took it, or
+  `{ refused: why }`; it never rejects. The next system the session boots sees what the pack provides, and an open
+  project's placeholders it provides come alive. The Node addon's SDK loads no pack and answers a
+  refusal ([02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)). `renderAudioPerSystem` returns one
+  buffer per project slot, an empty slot's silent.
 - **The real N8**: `connectN8()` opens an Everdrive N8 Pro for a session script: its card's files, a ROM booted at the
   menu, the live sniffer region and raw FIFO bytes, synchronous calls over the n8 pack's facet
   ([spec/14](14-hosts-harnesses.md#retroplug-cli-as-a-test-harness)).

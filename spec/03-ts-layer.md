@@ -269,7 +269,9 @@ Editor-driven like the file watcher: a DAW instance with its editor closed recor
 ### The engine's graph: `buildGraph`, `EngineGraph`, `DirectGraph`
 
 [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts) is a pure function from the model
-(`{ systems, routing, shape, midiRouting?, controller? }`) to the document `setGraph` plans
+(`{ systems, routing, shape, midiRouting?, controller?, slots? }`; `slots` is every slot's system id in slot order, a
+placeholder's included, so the MIDI routing's positions, the per-system buses and the multi-out lanes keep a later
+system's numbers while an earlier slot is empty, and an empty slot places nothing) to the document `setGraph` plans
 ([modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md) section 2.1; the node order, the routing
 as wiring and the host shapes are in [02-native-host.md](02-native-host.md)). Besides the system nodes, each with its
 core's knobs as its settings and params (`systemKnobs`, and a Game Boy's serial-out capture for the mode its LSDj's
@@ -414,7 +416,8 @@ RPC:
 | `__rp_saveProjectB64()` | DPF `getState`: export the project as a base64 `.rplg` chunk |
 | `__rp_newProject()` | DPF `setState("")`: reset to an empty project |
 | `__rp_ready` | Set true once composition has run and the packs' app and consoles halves have committed or been refused |
-| `__rp_packStatus()` | What this module set's pack loader did: `{ loaded: { <packId>: [<half kinds>] }, refused: { <packId>: <reason> } }` |
+| `__rp_packStatus()` | What this module set's pack loader did: `{ loaded: { <packId>: [<half kinds>] }, refused: { <packId>: <reason> }, native: { <packId>: { id, reason, version?, needsUpdate? } }, engine: { <packId>: <reason> } }` - `refused` is this loader's, `native` the process table's, `engine` this context's Engine's |
+| `__rp_loadPackNow(dir)` | The plugin's bridge to the live load ([02](02-native-host.md#packs-a-packages-native-half-loaded-at-run-time)): fire and forget; the re-resolve runs in a microtask after it |
 
 Base64 is done **here** in runtime-independent code, not native, because DPF state is NUL-terminated UTF-8 while a
 `.rplg` is binary PKZIP - the C++ boundary stays string-only.
@@ -499,9 +502,12 @@ instance/zoom change unless a tiling WM owns geometry (`isWindowSizeControlled()
 
 ### The grid - [`screens/grid/`](../packages/retroplug/ui/screens/grid)
 
-- [`SystemGrid.tsx`](../packages/retroplug/ui/screens/grid/SystemGrid.tsx) renders one tile per system from
-  `useSystems()`. `fitZoom` ([SystemGrid.tsx:25](../packages/retroplug/ui/screens/grid/SystemGrid.tsx#L25)) caps zoom to
-  keep the whole grid visible. Each tile is wrapped in a `StableSlot key={slot-${sys.id}}`; the slot matching
+- [`SystemGrid.tsx`](../packages/retroplug/ui/screens/grid/SystemGrid.tsx) renders one tile per SLOT from
+  `useSystems()`, which reads `systems.slotView()` (every slot in save order, a placeholder's view carrying
+  `placeholder: { needs }`); a placeholder's slot renders a `PlaceholderTile`
+  ([PlaceholderTile.tsx](../packages/retroplug/ui/screens/grid/PlaceholderTile.tsx)).
+  `fitZoom` ([SystemGrid.tsx:25](../packages/retroplug/ui/screens/grid/SystemGrid.tsx#L25)) caps zoom to keep the whole
+  grid visible. Each tile is wrapped in a `StableSlot key={slot-${sys.id}}`; the slot matching
   `menuSystemId` swaps its single child EmulatorTile↔`<Menu>` so sibling tiles keep rendering.
 - [`EmulatorTile.tsx`](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx) pulls `backend.getFrame(systemId)` on
   each native `"frame"` event and blits it into an LVGL `Canvas` via `setBuffer`
@@ -520,6 +526,52 @@ instance/zoom change unless a tiling WM owns geometry (`isWindowSizeControlled()
 single child swaps. Its `tagTestId`
 ([StableSlot.tsx:21](../packages/retroplug/ui/lvgl/StableSlot.tsx#L21)) tags a widget's native uid for the test harness
 and is inert in production.
+
+### Placeholders and the live load
+
+A system a missing pack provides is a placeholder in the systems store
+([05](05-data-persistence.md#persistence-policy-the-precise-statement)). The store keeps two lists: `view()` is the live
+systems, what runs and what drives a system (the game input, the focused tile's frame, a peer-only menu row such as a
+Link Group), and `slotView()` is every slot in save order, which the grid, `useSystems()` and the menus' slot counts
+read (a single-system audio split is offered only when the project has one slot, a placeholder counted). `focus` can
+land on a placeholder. A ROM load with a placeholder focused appends a new system and leaves the placeholder alone:
+replacing it would drop the data it keeps, and falling back to the first live system would replace one the user did not
+focus.
+
+- **The tile and its menu.** A placeholder's tile has the live tile's frame, dim overlay and focus border, and text in
+  place of the screen: the platform's label, the ROM's file name and each need as a line ("Needs the Mesen pack", "Mesen
+  1.2 needs updating for this RetroPlug"; [needs.ts](../packages/retroplug/src/packs/needs.ts) builds every string, so
+  the shell names no pack). Its menu lists the needs in the warning style, then Remove Instance, its only edit. The
+  warning colour takes precedence over `disabled`.
+- **A missing role** on a live system is a `[!]` row at the top of its menu ("BlipToaster pack missing"), read-only; the
+  cursor opens on the first real row.
+- **The notice.** A load whose outcome lists `missingPacks` raises one overlay (the `noticeTree` the incompatible and
+  error outcomes use): each pack, what it covers, and "Kept and saved unchanged". It waits behind a song-discard prompt
+  and returns to the queue when a prompt is raised over it (`NoticeQueue`,
+  [projectModals.ts](../packages/retroplug/ui/app/projectModals.ts)). It shows once per project revision, tracked per
+  store, spent only when it displays. A project the control plane loaded before the editor mounted (a DAW session's
+  state chunk) raises it when the editor opens. A control-plane load while the editor is already open (a DAW `setState`,
+  `__rp_loadProjectPath`) raises none until the next editor open.
+- **The re-resolve.** `ProjectStore.followPacks()` makes a store the module set's live project (the plugin's control
+  plane, the UI's own stores where none shares its, a CLI session via `bootSession`); a later call by another store
+  takes over. A registry commit, or a move in the packs' status (a live load answered: `subscribePackStatus`), schedules
+  one `reresolve()` in a microtask, after the code that committed has finished (a promise job, not a timer: the native
+  test host never fires one). It tries each placeholder again through `adoptInto` (never `adoptOrHold`, which would
+  append a new placeholder): a success takes the placeholder's id and slot with its ROM, SRAM, state and roles; one
+  still missing a pack keeps it with its needs read again; a build the engine refuses goes back to a placeholder
+  (`discardToPlaceholder`). It then places the roles that arrived (`retryMissingRoles`), and rebuilds, after the
+  document is out and through the ordinary edit (so a refusal rolls back), a system whose late role has a construct
+  hook (`rebuildLateRoles`). A late kind's node stays out of the graph (`builtWithout`) until a re-resolve notes it
+  (a kind with no construct hook) or rebuilds its system (one with a hook): a store nobody registered with
+  `followPacks` never places it. Refused role nodes on an already-live system are left
+  out (`leaveOutRefusedRole`); a refusal of the system's own node keeps it with a warning. One notify goes out per
+  re-resolve, and the project is as clean or dirty as it was.
+- **Refusals.** `src/packs/refusals.ts` holds where a pack was refused as this module set hears of it: the native
+  table's (`__rp_packRefusals`), this loader's, and this context's Engine's (each `setGraph` answer's `refusedPacks`).
+  `statusOf` reads them for a need; once a pack has loaded here (`noteLoadedPack`), the table's and the loader's
+  earlier refusals under its id are no longer read. An Engine's refusals only grow, so a pack refused by one plugin
+  instance's Engine reads refused in that instance only. `loadPackNow` clears the id's stale refusals (`forgetRefused`)
+  before it loads.
 
 ### The menu - [`screens/menu/`](../packages/retroplug/ui/screens/menu)
 

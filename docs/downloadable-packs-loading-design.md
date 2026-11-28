@@ -231,15 +231,21 @@ pack is missing, refused for its API level, or waiting on an update).
 
 - **The graph document.** A node whose type is not registered becomes a `rp.core.missing` node holding the original
   type and its settings untouched. The engine plans it as nothing (no ports, no work); its edges stay in the document
-  and are left out of the plan.
+  and are left out of the plan. **Deferred to user-built graphs:** no saved file names a node type (the graph is derived
+  from systems, roles and section models at every publish), so M3 built nothing here; a role whose node the Engine
+  cannot place is left out of the document and kept in the config as a missing role.
 - **The project config.** A system whose platform or roles nothing provides keeps its raw config exactly as read: its
   roles, its ROM path, its settings. The UI shows it as a card, "Needs the Mesen pack" (or "Mesen 1.2 needs updating
-  for this RetroPlug"), with no core built.
+  for this RetroPlug"), with no core built. **Built (M3, [its plan](downloadable-packs-m3-plan.md)).**
 - **Saving** writes every such raw part back byte for byte. Today's stores assume every role kind is registered, so this
-  is a raw passthrough beside the parsed config, new work.
+  is a raw passthrough beside the parsed config, new work. **Built (M3):** a placeholder is a system in the systems
+  store holding its JSON and zip entries, and each saved system names the package that provided what it uses
+  (`provenance`).
 - **When the pack arrives** (installed live, or a development pack added), the project re-resolves: the placeholder
   systems are built from their kept config as a project load builds them, and the placeholder nodes become real nodes
-  at the next graph change.
+  at the next graph change. **Built (M3):** the live-load hook is `loadPackNow`, which M4's install and Settings >
+  Packs are to call; a development pack folder loads through it now, from the CLI SDK, the plugin's bridge and the test
+  hosts.
 - **A project-level notice** lists the missing packs; part 5 hangs the download offer on it.
 
 **Settings > Packs** lists every pack, installed and development: its version, licence and source link, and its status
@@ -269,7 +275,10 @@ built-in, a half that throws while loading. Each is refused with its message and
 
 **Placeholders.** A project naming a missing pack saves back byte for byte; installing the pack live turns the
 placeholder into a running system with its ROM and roles intact; a refused pack's systems show the "needs updating"
-card.
+card. The proof is `test-native/packless/missing-packs.test.ts`, on a host that links neither Mesen nor BlipToaster: a
+project with a BlipToaster NES system, a Game Boy system and a system on a pack refused for its API level opens with
+the Game Boy running and the others placeholders, saves back to identical bytes, and comes alive as Mesen and
+BlipToaster load live; the pure, UI and plugin tiers cover the rest.
 
 **Each host.** The plugin: two instances in one process share one load (a `test:plugin` case), and a pack installed live
 reaches both. The standalone, DPF and SDL. The CLI: `pack install`, `list`, `remove`, `--pack`, a pack's tools as
