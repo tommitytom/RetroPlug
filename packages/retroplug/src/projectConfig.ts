@@ -9,8 +9,10 @@
 // round-trips faithfully. Only user-customized fields are lost until the
 // system-settings/kits domains land.
 
-import { inSavedOrder, type SystemEntry } from "./systemsList";
-import { provenanceOf, provenanceSchema, type Provenance } from "./provenance";
+import { inSavedOrder, mergeSlots, type SystemEntry } from "./systemsList";
+import { needOf, type PackNeed } from "./packs/needs";
+import { embeddedRomOf } from "./embeds";
+import { provenanceOf, provenanceSchema, readProvenance, type PackRef, type Provenance } from "./provenance";
 import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { registeredCores, registeredPlatforms } from "./consoles";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
@@ -26,7 +28,7 @@ import type { ProjectSection } from "@retroplug/core/definePackage";
 // The product's registrations, and through them every declared contribution kind's `accept`: each kind fills the table
 // its declaring package's schema, defaults or placer reads. A module that reads a kind-filled registry imports the
 // generated registry for that reason; this one also needs the project sections itself.
-import { projectSectionEntries } from "./contributions/app";
+import { projectSectionEntries, rolesRegistry } from "./contributions/app";
 
 /** The settings keys the SHELL owns, which no package may contribute as a section (the app registries refuse one
  *  that does). Everything else under `settings` belongs to whichever package contributed it. Keep in step with
@@ -72,6 +74,8 @@ export interface ProjectConfig {
   /** Each of `systems`' place in the file, index for index (parseConfig fills it; absent for a config a test or a
    *  build made, where `systems[k]` is the file's k-th). */
   sources?: SystemSource[];
+  /** The systems kept as placeholders, in file order; absent when there are none. */
+  placeholders?: PlaceholderThin[];
 }
 
 /** A parsed system's place in the file: its index in the file's `systems` array (what a zip's `systems/{i}/...` entries
@@ -79,6 +83,15 @@ export interface ProjectConfig {
 export interface SystemSource {
   index: number;
   raw: RawObject;
+}
+
+/** A system the file holds that this build cannot build, because a name a pack provides is not registered
+ *  (docs/downloadable-packs-m3-design.md section 1): its index in the file's `systems`, its JSON as read (migrated;
+ *  beginLoad makes its paths absolute, as every system's are) and what it needs. */
+export interface PlaceholderThin {
+  index: number;
+  raw: RawObject;
+  needs: PackNeed[];
 }
 
 /** The file index of `cfg.systems[k]`: its source's, else `k`. */
@@ -100,7 +113,7 @@ export interface ProjectFileSettings {
 }
 
 /** A config as the file carries it: buildConfig's output, which serializeConfig writes. */
-export interface ProjectFileConfig extends Omit<ProjectConfig, "settings" | "sources"> {
+export interface ProjectFileConfig extends Omit<ProjectConfig, "settings" | "sources" | "placeholders"> {
   settings: ProjectFileSettings;
 }
 
@@ -344,7 +357,7 @@ const roleInstanceSchema = z.object({
 // The known values are the console registry's (src/consoles.ts over the descriptors the product's packages contribute),
 // read when the refine runs rather than when this module loads, so a package's console reaches validation without an
 // import of it. A file naming a platform or core no build registers is refused rather than parsed: the refinement's
-// message names the set, which a direct caller sees and parseConfig's silent drop does not.
+// message names the set, which a direct caller sees (parseConfig keeps such a system as a placeholder instead).
 export const platformSchema = z.string().superRefine((v: string, ctx) => {
   if (registeredPlatforms().some((platform) => platform.id === v)) return;
   ctx.addIssue({
@@ -383,6 +396,53 @@ const systemThinSchema = z.object({
   // Additive, so no migration: absent for a file saved before M3.
   provenance: provenanceSchema.optional().catch(undefined),
 });
+
+/** The pack the file names for role `kind`: an own property only, so an inherited name is never a provenance. */
+function ownRole(provenance: Provenance | undefined, kind: string): PackRef | undefined {
+  const roles = provenance?.roles;
+  return roles && Object.prototype.hasOwnProperty.call(roles, kind) ? roles[kind] : undefined;
+}
+
+/** The role kinds `raw` stores that no package registers, but the core's own config role (the console's pack provides
+ *  it), each once, by the pack the file names for it. */
+function roleNeeds(raw: RawObject, provenance: Provenance | undefined): PackNeed[] {
+  const roles = Array.isArray(raw.roles) ? (raw.roles as unknown[]) : [];
+  const registered = new Set(rolesRegistry.items().map((r) => r.kind));
+  const seen = new Set<string>();
+  const out: PackNeed[] = [];
+  for (const r of roles) {
+    const kind = r && typeof r === "object" ? (r as RawObject).kind : undefined;
+    if (typeof kind !== "string" || kind === raw.core || registered.has(kind) || seen.has(kind)) continue;
+    seen.add(kind);
+    out.push(needOf("role", kind, ownRole(provenance, kind)));
+  }
+  return out;
+}
+
+/** One system of the file as this build reads it: parsed, a placeholder's needs (it fails only on a platform or core no
+ *  console registers, or names an embedded ROM no package declares), or null for a malformed entry (dropped). */
+export function classifySystem(raw: unknown): { system: SystemThin } | { needs: PackNeed[] } | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw as RawObject;
+  const provenance = readProvenance(obj.provenance);
+  const r = systemThinSchema.safeParse(obj);
+  if (r.success) {
+    const system = r.data as SystemThin;
+    if (system.embeddedRom && !embeddedRomOf(system.embeddedRom)) {
+      return { needs: [needOf("embed", system.embeddedRom, provenance?.embed), ...roleNeeds(obj, provenance)] };
+    }
+    return { system };
+  }
+  // Only the two registry refinements fail with a custom issue: anything else wrong with the entry is a malformed one.
+  const issues = r.error.issues;
+  const packOnly = issues.every((i) => i.code === "custom" && (i.path[0] === "platform" || i.path[0] === "core"));
+  if (!packOnly) return null;
+  const platformMissing = issues.some((i) => i.path[0] === "platform");
+  const first = platformMissing
+    ? needOf("platform", obj.platform as string, provenance?.platform)
+    : needOf("core", obj.core as string, provenance?.platform);
+  return { needs: [first, ...roleNeeds(obj, provenance)] };
+}
 
 // The root: schemaVersion coerced to a string; settings/systems validated separately
 // (per-element tolerant) in parseConfig.
@@ -558,10 +618,37 @@ function thinSettings(s: CommonSettings | undefined): Partial<CommonSettings> | 
   return Object.keys(out).length ? out : undefined;
 }
 
-/** Live systems + settings → a thin ProjectConfig, dropping runtime ids and any
- *  field at its default. Stamps the running schema version. `name` is omitted when
- *  empty (thin convention — the reader derives one). */
-export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], name = ""): ProjectFileConfig {
+/** One live system as the file writes it: every field at its default left out, a fresh provenance. */
+function thinOf(e: SystemEntry): SystemThin {
+  const t: SystemThin = { platform: e.platform, core: e.core };
+  if (e.romPath) t.romPath = e.romPath;
+  if (e.savPath) t.savPath = e.savPath;
+  if (e.savSuffix) t.savSuffix = e.savSuffix;
+  if (e.embeddedRom) t.embeddedRom = e.embeddedRom;
+  const settings = thinSettings(e.settings);
+  if (settings) t.settings = settings;
+  const roles = inSavedOrder(e.roles ?? [], e.savedOrder);
+  if (roles.length) t.roles = roles;
+  if (e.workingSlot) t.workingSlot = { ...e.workingSlot };
+  const provenance = provenanceOf({
+    platform: e.platform,
+    embeddedRom: e.embeddedRom,
+    roles,
+    provenance: e.provenance,
+  });
+  if (provenance) t.provenance = provenance;
+  return t;
+}
+
+/** Live systems + settings (+ the placeholders, each at its slot) → a thin ProjectConfig, dropping runtime ids and
+ *  any field at its default. Stamps the running schema version. `name` is omitted when
+ *  empty (thin convention - the reader derives one). */
+export function buildConfig(
+  settings: ProjectSettings,
+  systems: SystemEntry[],
+  name = "",
+  held: readonly { readonly slot: number; readonly raw: Readonly<Record<string, unknown>> }[] = [],
+): ProjectFileConfig {
   return {
     schemaVersion: String(K_PROJECT),
     ...(name ? { name } : {}),
@@ -576,36 +663,23 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], n
           .map(([key, value]) => [key, serializeSection(key, value)]),
       ),
     },
-    systems: systems.map((e) => {
-      const t: SystemThin = { platform: e.platform, core: e.core };
-      if (e.romPath) t.romPath = e.romPath;
-      if (e.savPath) t.savPath = e.savPath;
-      if (e.savSuffix) t.savSuffix = e.savSuffix;
-      if (e.embeddedRom) t.embeddedRom = e.embeddedRom;
-      const settings = thinSettings(e.settings);
-      if (settings) t.settings = settings;
-      const roles = inSavedOrder(e.roles ?? [], e.savedOrder);
-      if (roles.length) t.roles = roles;
-      if (e.workingSlot) t.workingSlot = { ...e.workingSlot };
-      const provenance = provenanceOf({
-        platform: e.platform,
-        embeddedRom: e.embeddedRom,
-        roles,
-        provenance: e.provenance,
-      });
-      if (provenance) t.provenance = provenance;
-      return t;
-    }),
+    systems: mergeSlots(systems.map(thinOf), held).map((s) =>
+      // A placeholder's JSON as read, written back unchanged; a reader of a built config reads the members it knows.
+      "live" in s ? s.live : (s.held.raw as unknown as SystemThin),
+    ),
   };
 }
 
-// Apply `fn` to every asset path a system carries (romPath + savPath), storing the
-// result back. The single place path fields are enumerated (mirrors native visitPaths).
-function mapSystemPaths(cfg: { systems: SystemThin[] }, fn: (path: string) => string): void {
-  for (const s of cfg.systems) {
-    if (s.romPath) s.romPath = fn(s.romPath);
-    if (s.savPath) s.savPath = fn(s.savPath);
-  }
+// Apply `fn` to the asset paths a system carries (romPath + savPath), storing the result back: the one place the fields
+// are enumerated (mirrors native visitPaths). A raw system (a placeholder's, or a source kept beside a parsed one)
+// carries whatever its file had, so only a non-empty string is a path.
+function mapPaths(s: { romPath?: unknown; savPath?: unknown }, fn: (path: string) => string): void {
+  if (typeof s.romPath === "string" && s.romPath) s.romPath = fn(s.romPath);
+  if (typeof s.savPath === "string" && s.savPath) s.savPath = fn(s.savPath);
+}
+
+function mapSystemPaths(cfg: { systems: readonly object[] }, fn: (path: string) => string): void {
+  for (const s of cfg.systems) mapPaths(s as { romPath?: unknown; savPath?: unknown }, fn);
 }
 
 /** Serialize to JSON, rebasing each asset path relative to `baseDir` (portable). An
@@ -627,8 +701,9 @@ export function serializeConfig(cfg: ProjectFileConfig, baseDir: string, canonic
 /** Parse config JSON with the zod schemas: migrate an older raw shape up to current
  *  (three steps today - see PROJECT_MIGRATIONS), then validate + default + clamp
  *  (unknown fields are stripped, except a `settings` key no package contributes, which is kept: E5). Never
- *  throws — malformed JSON / a non-object root yield an empty-default config, a
- *  garbage system entry is dropped, out-of-range/wrong-type values are coerced. */
+ *  throws — malformed JSON / a non-object root yield an empty-default config, a system that fails only on a name a
+ *  pack provides is kept as a placeholder, a malformed system entry is still dropped, out-of-range/wrong-type values
+ *  are coerced. */
 export function parseConfig(json: string, sections: readonly SectionEntry[] = projectSectionEntries()): ProjectConfig {
   let doc: unknown;
   try {
@@ -646,23 +721,40 @@ export function parseConfig(json: string, sections: readonly SectionEntry[] = pr
   const core = (sp.success ? sp.data : projectSettingsSchema.parse({})) as Omit<ProjectSettings, "sections">;
   const settings: ProjectSettings = { ...core, sections: parseSections(parsed.settings, sections) };
 
-  // Systems: keep each valid (object) entry, drop garbage. Each kept one remembers its index in the file, which its zip
-  // entries are keyed by, and its JSON as read.
+  // Systems: a valid entry is kept, one that fails only on a name a pack provides is kept as a placeholder, and a
+  // malformed one is dropped. Each parsed one remembers its index in the file, which its
+  // zip entries are keyed by, and its JSON as read.
   const systems: SystemThin[] = [];
   const sources: SystemSource[] = [];
+  const placeholders: PlaceholderThin[] = [];
   (parsed.systems as unknown[]).forEach((raw, index) => {
-    const r = systemThinSchema.safeParse(raw);
-    if (!r.success) return;
-    systems.push(r.data as SystemThin);
-    sources.push({ index, raw: raw as RawObject });
+    const c = classifySystem(raw);
+    if (!c) return;
+    if ("system" in c) {
+      systems.push(c.system);
+      sources.push({ index, raw: raw as RawObject });
+    } else {
+      placeholders.push({ index, raw: raw as RawObject, needs: c.needs });
+    }
   });
 
   // Spread `parsed` first, then override the validated members. (`parsed` has already been
   // through projectConfigSchema, so unknown root fields are gone by this point.)
-  return { ...parsed, schemaVersion: parsed.schemaVersion as string, settings, systems, sources } as ProjectConfig;
+  return {
+    ...parsed,
+    schemaVersion: parsed.schemaVersion as string,
+    settings,
+    systems,
+    sources,
+    ...(placeholders.length ? { placeholders } : {}),
+  } as ProjectConfig;
 }
 
-/** Rebase each asset path to absolute against `baseDir`, in place (load side). */
+/** Rebase each asset path to absolute against `baseDir`, in place (load side): the parsed systems, and the raw ones a
+ *  placeholder or a source keeps, so a placeholder saved elsewhere still names its files. */
 export function toAbsolute(cfg: ProjectConfig, baseDir: string): void {
-  mapSystemPaths(cfg, (p) => rebaseToAbsolute(p, baseDir));
+  const abs = (p: string) => rebaseToAbsolute(p, baseDir);
+  mapSystemPaths(cfg, abs);
+  for (const s of cfg.sources ?? []) mapPaths(s.raw, abs);
+  for (const h of cfg.placeholders ?? []) mapPaths(h.raw, abs);
 }

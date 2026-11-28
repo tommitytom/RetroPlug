@@ -309,8 +309,8 @@ test("projectConfig refuses an unknown platform and core, naming the registered 
   const core = coreSchema.safeParse("gambatte");
   expect(core.success).toBe(false);
   expect(core.error?.issues[0]?.message).toBe(`unknown core "gambatte" (known: sameboy, mesen)`);
-  // parseConfig drops the entries that fail the strict parse silently, as it dropped an unknown platform's before, so
-  // a file with one bad entry still loads the others.
+  // parseConfig keeps an entry that fails only on a platform or core no package registers as a placeholder
+  // (docs/downloadable-packs-m3-design.md section 1), so a file with one such entry loads the others and saves it back.
   const loaded = parseConfig(
     JSON.stringify({
       schemaVersion: "4",
@@ -321,6 +321,7 @@ test("projectConfig refuses an unknown platform and core, naming the registered 
     }),
   );
   expect(loaded.systems.map((s) => s.platform)).toEqual(["gb"]);
+  expect(loaded.placeholders?.map((p) => p.needs)).toEqual([[{ what: "platform", key: "n64", status: "missing" }]]);
 });
 
 // ---- the byte builders the two-read test needs, kept minimal: the case list's fixtures are elsewhere ----------------

@@ -50,11 +50,12 @@ import {
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
+import { missingPacksOf, type MissingPack } from "./packs/needs";
 import { PROJECT_JSON, sramKey, stateKey, songKey, partitionEntries } from "./projectBinaries";
 import { encodeWorkingSong, decodeWorkingSong } from "@retroplug/tracker/workingSongBlob";
 
 export type LoadOutcome =
-  | { kind: "loaded"; systems: number }
+  | { kind: "loaded"; systems: number; missingPacks?: MissingPack[] } // missingPacks: present when any is missing
   | { kind: "incompatible" } // schema stamped newer than this build
   | { kind: "missing"; missing: MissingFile[] } // needs relink before it can apply
   | { kind: "error" }; // unreadable / corrupt archive / not a RetroPlug project
@@ -499,6 +500,12 @@ export class ProjectStore {
     return this.dirty;
   }
 
+  /** The packs the open project needs (docs/downloadable-packs-m3-design.md section 2.4): its placeholders' and its
+   *  live systems' missing roles', each pack once with what it covers. */
+  missingPacks(): MissingPack[] {
+    return missingPacksOf(this.systems.slotView());
+  }
+
   // The system every derived name speaks for: the focused one, else the first. undefined with no systems.
   private primarySystem(): SystemEntry | undefined {
     return this.systems.primary();
@@ -746,7 +753,9 @@ export class ProjectStore {
    *  in recents + as the current project, and marks clean. */
   save(path: string): boolean {
     this.adoptPending();
-    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName); // blank name → omitted
+    // A blank name is omitted.
+    const held = this.systems.placeholders();
+    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName, held);
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     if (!this.backend.writeFileAtomic(path, enc.encode(json))) return false;
     this.recordProjectRow(path); // the recents label - the cart's identity unless the user named it
@@ -801,11 +810,22 @@ export class ProjectStore {
    *  `loadBytes` round-trips with no rebase. Everything else was duplicated between them verbatim. */
   private buildArchive(baseDir: string): Uint8Array | null {
     this.adoptPending();
-    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
+    const held = this.systems.placeholders();
+    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName, held);
     const json = serializeConfig(cfg, baseDir, (p) => this.backend.canonicalize(p));
     const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
-    // The store's systems() order matches buildConfig's, so index i keys both alike.
-    this.systems.systems().forEach((sys, i) => {
+    // Index i is the slot's, as buildConfig writes the systems: a placeholder's entries go back byte for byte under its
+    // slot's index, and a removed system renumbers every later one's.
+    this.systems.saveOrder().forEach((slot, i) => {
+      if ("held" in slot) {
+        const keyOf: Record<string, (i: number) => string> = { state: stateKey, sram: sramKey, song: songKey };
+        for (const [name, bytes] of slot.held.blobs) {
+          const key = keyOf[name];
+          if (key) entries.push({ name: key(i), bytes });
+        }
+        return;
+      }
+      const sys = slot.live;
       const state = this.backend.readState(sys.id);
       if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
       const sram = this.backend.readSram(sys.id);
@@ -906,11 +926,26 @@ export class ProjectStore {
       this.systems.clear();
       // Built one by one, placed together: the graph is published once, with the loaded routing.
       this.holdGraph = true;
-      cfg.systems.forEach((s, k) => {
-        // Keyed by the system's index in the FILE: a system the parse dropped keeps its entries to itself.
-        const i = sourceIndexOf(cfg, k);
-        this.systems.adopt(s, seedOf(blobs.get(sramKey(i)), blobs.get(stateKey(i)), blobs.get(songKey(i))));
-      });
+      // In file order, so each system takes its slot: a parsed one is adopted, a placeholder held with its entries.
+      // Keyed by the system's index in the FILE: a system the parse dropped keeps its entries to itself.
+      const order = [
+        ...cfg.systems.map((system, k) => ({ index: sourceIndexOf(cfg, k), system, held: undefined })),
+        ...(cfg.placeholders ?? []).map((held) => ({ index: held.index, system: undefined, held })),
+      ].sort((a, b) => a.index - b.index);
+      for (const { index, system, held } of order) {
+        const sram = blobs.get(sramKey(index));
+        const state = blobs.get(stateKey(index));
+        const songBytes = blobs.get(songKey(index));
+        if (held) {
+          const kept = new Map<string, Uint8Array>();
+          if (state) kept.set("state", state);
+          if (sram) kept.set("sram", sram);
+          if (songBytes) kept.set("song", songBytes);
+          this.systems.addPlaceholder(held.raw, kept, held.needs);
+        } else {
+          this.systems.adopt(system!, seedOf(sram, state, songBytes));
+        }
+      }
     } catch (e) {
       // The systems adopted before the throw are built and listed, so place them as the final publish would, with
       // their protocol nodes: a graph left at the clear's would free their cores under the store, and refuse
@@ -950,7 +985,10 @@ export class ProjectStore {
     this.dirty = false;
     this.notifySystemsChange(); // its observers: the rebuilt systems (the adopt path is quiet)
     this.onChangeCb();
-    return { kind: "loaded", systems: this.systems.systems().length };
+    const missingPacks = this.missingPacks();
+    return missingPacks.length
+      ? { kind: "loaded", systems: this.systems.systems().length, missingPacks }
+      : { kind: "loaded", systems: this.systems.systems().length };
   }
 
   private setEnumSetting(key: "layout" | "midiRouting" | "audioRouting", value: string): boolean {
@@ -969,7 +1007,7 @@ export class ProjectStore {
    *  a ROM resets it with the rest of the settings. A pathless project WITH systems is a project: it is what the close
    *  guard exists for. */
   private isPristine(): boolean {
-    return this.systems.systems().length === 0 && this.path === "" && this.projectName === "";
+    return this.systems.slotView().length === 0 && this.path === "" && this.projectName === "";
   }
 
   /** A settings edit landed: unsaved work in a project, an edit alone in an empty one. The change callback fires either

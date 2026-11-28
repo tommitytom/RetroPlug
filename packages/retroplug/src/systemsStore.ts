@@ -51,7 +51,10 @@ import {
   resolveSavOverride,
   pickSiblingRom,
   nextFocusAfterRemove,
+  mergeSlots,
+  type Slot,
 } from "./systemsList";
+import { statusOf, type PackNeed } from "./packs/needs";
 import type { Provenance } from "./provenance";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
@@ -138,6 +141,23 @@ export interface SystemView {
   /** The kinds of `roles` the graph places (graph/protocolNodes.ts placedKinds): a stored role it leaves out stays in
    *  `roles` and is not here. */
   placed: string[];
+  /** Set for a placeholder (SystemsStore.slotView): what it needs. Its other fields are read from its JSON, and it
+   *  runs nothing (no roles, nothing placed, no battery). */
+  placeholder?: { readonly needs: readonly PackNeed[] };
+  /** The roles this system stores that the graph cannot place, with why (absent when there are none). */
+  missingRoles?: readonly PackNeed[];
+}
+
+/** A system the store holds but cannot build (docs/downloadable-packs-m3-design.md section 1): no core, nothing in the
+ *  graph. `slot` is its place among every slot (live systems and placeholders together), in the order a save writes. */
+export interface PlaceholderEntry {
+  readonly id: number;
+  slot: number;
+  /** Its JSON as read (paths absolute), written back unchanged. */
+  readonly raw: Readonly<Record<string, unknown>>;
+  /** Its zip entries by the name after `systems/<i>/` ("sram", "state", "song"), untouched. */
+  readonly blobs: ReadonlyMap<string, Uint8Array>;
+  needs: readonly PackNeed[];
 }
 
 /** loadRom outcome: defer to a sibling project, a built system, or a failure. */
@@ -145,6 +165,7 @@ export type LoadResult = { deferredProject: string } | { system: number } | null
 
 export class SystemsStore {
   private entries: SystemEntry[] = [];
+  private held: PlaceholderEntry[] = [];
   private focusedId = 0;
   private dirty = false;
   /** The handles on the engine's resources every live entry's node names (graph/systemResources.ts): every boot puts
@@ -213,6 +234,7 @@ export class SystemsStore {
    *  one (the instance menu anchored to it) follows it here instead of holding a dead id. `id` itself when
    *  it is still live; null when it is gone for good (removed, or its project closed). */
   currentId(id: number): number | null {
+    if (this.held.some((h) => h.id === id)) return id;
     let cur = id;
     for (let hops = 0; hops <= this.successors.size; hops++) {
       if (findById(this.entries, cur)) return cur;
@@ -245,6 +267,90 @@ export class SystemsStore {
 
   systems(): SystemEntry[] {
     return this.entries.slice();
+  }
+
+  /** The placeholders, in slot order. */
+  placeholders(): readonly PlaceholderEntry[] {
+    return [...this.held].sort((a, b) => a.slot - b.slot);
+  }
+
+  /** Every slot in save order: the live systems and the placeholders (what buildConfig and buildArchive write). */
+  saveOrder(): Slot<SystemEntry, PlaceholderEntry>[] {
+    return mergeSlots(this.entries, this.held);
+  }
+
+  /** The UI's systems: every slot in save order, a placeholder's view carrying `placeholder`
+   *  (docs/downloadable-packs-m3-design.md section 8). `view()` stays the live systems, which is what runs. */
+  slotView(): SystemView[] {
+    const live = this.view();
+    return mergeSlots(live, this.held).map((s) => ("live" in s ? s.live : this.placeholderView(s.held)));
+  }
+
+  /** Hold `raw` as a placeholder in the next slot, with its entries and needs, and answer its id. Quiet, as adopt is (a
+   *  project load holds them in file order). It takes the focus only when nothing has it. */
+  addPlaceholder(
+    raw: Readonly<Record<string, unknown>>,
+    blobs: ReadonlyMap<string, Uint8Array>,
+    needs: readonly PackNeed[],
+  ): number {
+    const id = allocSystemId();
+    this.held.push({ id, slot: this.entries.length + this.held.length, raw, blobs, needs });
+    if (this.focusedId === 0) this.focusedId = id;
+    return id;
+  }
+
+  private placeholderView(h: PlaceholderEntry): SystemView {
+    const str = (v: unknown): string => (typeof v === "string" ? v : "");
+    const embeddedRom = str(h.raw.embeddedRom);
+    return {
+      id: h.id,
+      platform: str(h.raw.platform),
+      core: str(h.raw.core),
+      romPath: str(h.raw.romPath),
+      savPath: str(h.raw.savPath),
+      savSuffix: typeof h.raw.savSuffix === "number" ? h.raw.savSuffix : 0,
+      embedded: embeddedRom !== "",
+      embeddedRom,
+      battery: false,
+      focused: h.id === this.focusedId,
+      missing: false,
+      settings: DEFAULT_COMMON_SETTINGS,
+      roles: [],
+      placed: [],
+      placeholder: { needs: h.needs.map((need) => statusOf(need)) },
+    };
+  }
+
+  /** The slot `id` holds (live or placeholder), or -1. */
+  private slotOf(id: number): number {
+    return this.saveOrder().findIndex((s) => ("live" in s ? s.live.id : s.held.id) === id);
+  }
+
+  /** The focus after live system `id` went from the list: as nextFocusAfterRemove, falling back to the first
+   *  placeholder when no live system is left. */
+  private focusAfterRemove(remaining: SystemEntry[], id: number): number {
+    return nextFocusAfterRemove(remaining, id, this.focusedId) || (this.placeholders()[0]?.id ?? 0);
+  }
+
+  /** A slot was removed: every placeholder after it moves up one. */
+  private closeSlot(slot: number): void {
+    for (const h of this.held) if (h.slot > slot) h.slot--;
+  }
+
+  /** Remove placeholder `id`: its slot closes and its entries go with it. An ordinary edit: dirty, and notified. */
+  private removePlaceholder(id: number): boolean {
+    const at = this.held.findIndex((h) => h.id === id);
+    if (at < 0) return false;
+    const h = this.held[at];
+    // The slots close before the publish, so the document the engine gets numbers the later systems by their new slots.
+    this.held.splice(at, 1);
+    const focusedId = this.focusedId === id ? (this.entries[0]?.id ?? this.placeholders()[0]?.id ?? 0) : this.focusedId;
+    if (!this.commitEdit("remove", { entries: this.entries, focusedId, closeSlot: h.slot })) {
+      this.held.splice(at, 0, h);
+      return false;
+    }
+    this.markDirty();
+    return true;
   }
   /** The systems as the engine's graph places them, in slot order (graph/buildGraph.ts), each with the roles that
    *  have a protocol node, in order, as its pipeline, its core-config role's config and its gain: the features with no
@@ -318,7 +424,7 @@ export class SystemsStore {
    *  a re-render but does not mark the project dirty. */
   setFocus(id: number): boolean {
     if (id === this.focusedId) return false;
-    if (!this.entries.some((e) => e.id === id)) return false;
+    if (!this.entries.some((e) => e.id === id) && !this.held.some((h) => h.id === id)) return false;
     this.focusedId = id;
     this.onFocusChange();
     return true;
@@ -328,11 +434,12 @@ export class SystemsStore {
    *  "cycle instances" app action. No-op with fewer than two instances; a stale/absent focus starts at the
    *  front. Reuses setFocus, so it's transient + fires the same re-render signal. */
   focusNext(dir: 1 | -1): boolean {
-    const n = this.entries.length;
+    const ids = this.saveOrder().map((s) => ("live" in s ? s.live.id : s.held.id));
+    const n = ids.length;
     if (n < 2) return false; // n===0 would make % 0 NaN; a single instance has nowhere to go
-    let idx = this.entries.findIndex((e) => e.id === this.focusedId);
+    let idx = ids.indexOf(this.focusedId);
     if (idx < 0) idx = 0; // no live focus → start at the front
-    return this.setFocus(this.entries[(idx + dir + n) % n].id); // +n so dir=-1 doesn't go negative in JS
+    return this.setFocus(ids[(idx + dir + n) % n]); // +n so dir=-1 doesn't go negative in JS
   }
 
   /** Append a new instance of `romPath`, disambiguating its sav suffix against the
@@ -474,14 +581,17 @@ export class SystemsStore {
 
   /** Drop a system; refocus the front if it was focused. False when absent. */
   removeSystem(id: number): boolean {
+    if (this.held.some((h) => h.id === id)) return this.removePlaceholder(id);
     const e = findById(this.entries, id);
     if (!e) return false;
+    const slot = this.slotOf(id);
     this.flushBeforeDrop(e);
     const entries = removeById(this.entries, id);
     if (!this.commitEdit("remove", {
       entries,
-      focusedId: nextFocusAfterRemove(entries, id, this.focusedId),
+      focusedId: this.focusAfterRemove(entries, id),
       drop: systemHandles(e.resources),
+      closeSlot: slot,
     })) return false;
     this.forgetReplacementsEndingIn(id);
     this.forgetWorkingSongState(id);
@@ -1086,6 +1196,7 @@ export class SystemsStore {
     for (const e of this.entries) this.flushBeforeDrop(e);
     const dropped = this.entries.flatMap((e) => systemHandles(e.resources));
     this.entries = [];
+    this.held = [];
     this.focusedId = 0;
     // Every chain ends in a system that no longer exists, so no old id can name anything a later document places.
     this.replacedBy.clear();
@@ -1121,8 +1232,10 @@ export class SystemsStore {
   discard(id: number): SystemEntry | undefined {
     const e = findById(this.entries, id);
     if (!e) return undefined;
+    const slot = this.slotOf(id);
     this.entries = removeById(this.entries, id);
-    this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
+    this.closeSlot(slot);
+    this.focusedId = this.focusAfterRemove(this.entries, id);
     // Called from a project load's retry, where the list is already shortened: a release the transport died on is said
     // rather than thrown, or the load fails with the handles behind this one held by an engine that named no system.
     for (const handle of systemHandles(e.resources)) {
@@ -1691,16 +1804,20 @@ export class SystemsStore {
   // document's own answer is the caller's, not whatever the transport did to a handle afterwards.
   private commitEdit(
     what: string,
-    edit: { entries: SystemEntry[]; focusedId?: number; put?: number[]; drop?: number[] },
+    edit: { entries: SystemEntry[]; focusedId?: number; put?: number[]; drop?: number[]; closeSlot?: number },
     rearmTap = true,
   ): boolean {
     const entries = this.entries;
     const focusedId = this.focusedId;
+    const slots = this.held.map((h) => h.slot);
     this.entries = edit.entries;
     if (edit.focusedId !== undefined) this.focusedId = edit.focusedId;
+    // A removed slot closes before the publish: the document numbers every later system by its slot.
+    if (edit.closeSlot !== undefined) this.closeSlot(edit.closeSlot);
     const restore = (): void => {
       this.entries = entries;
       this.focusedId = focusedId;
+      this.held.forEach((h, i) => (h.slot = slots[i]));
       for (const id of edit.put ?? []) {
         try {
           this.pool.drop(id);

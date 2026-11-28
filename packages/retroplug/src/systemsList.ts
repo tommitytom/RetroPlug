@@ -133,3 +133,23 @@ export function nextFocusAfterRemove(
   if (focusedId !== removedId) return focusedId;
   return remaining.length ? remaining[0].id : 0;
 }
+
+/** One slot of a project in save order: a live system, or a held one (a placeholder) at its slot number. */
+export type Slot<L, H> = { live: L } | { held: H };
+
+/** `live` and `held` merged into slots: each held entry at its `slot`, the live ones in order around them. Never loses
+ *  an entry: a held slot past the end (which no edit leaves) goes last. */
+export function mergeSlots<L, H extends { readonly slot: number }>(
+  live: readonly L[],
+  held: readonly H[],
+): Slot<L, H>[] {
+  const order = [...held].sort((a, b) => a.slot - b.slot);
+  const out: Slot<L, H>[] = [];
+  let next = 0;
+  for (const h of order) {
+    while (next < live.length && out.length < h.slot) out.push({ live: live[next++] });
+    out.push({ held: h });
+  }
+  while (next < live.length) out.push({ live: live[next++] });
+  return out;
+}
